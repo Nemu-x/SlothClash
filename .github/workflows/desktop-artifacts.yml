@@ -28,14 +28,14 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # Version comes from package.json "packageManager" (do not set version: here — conflicts).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -63,14 +63,13 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -95,14 +94,13 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -127,14 +125,13 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Linux GUI deps (GTK + WebKit2GTK)
         run: |

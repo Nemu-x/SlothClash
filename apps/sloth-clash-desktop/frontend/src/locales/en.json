@@ -1,0 +1,45 @@
+{
+  "advanced": {
+    "title": "Advanced",
+    "connection": "Connection"
+  },
+  "nav": {
+    "home": "Home",
+    "profiles": "Profiles",
+    "proxies": "Proxies",
+    "rules": "Rules",
+    "advanced": "Advanced",
+    "settings": "Settings",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar"
+  },
+  "settings": {
+    "title": "Settings",
+    "lead": "Runtime, updates, diagnostics — dense layout.",
+    "general": "General",
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeDark": "Dark",
+    "themeLight": "Light",
+    "language": "Language",
+    "startMinimized": "Start minimized",
+    "launchOnStartup": "Launch on startup",
+    "closeToTray": "Close to tray (else quit)",
+    "connection": "Connection",
+    "smartDns": "Smart DNS fallback",
+    "ipv6Dns": "Enable IPv6 DNS",
+    "allowLanBinding": "Allow LAN binding",
+    "dnsHint": "UI defaults only — core DNS wiring later.",
+    "installService": "Install service",
+    "guidedTun": "Guided TUN setup",
+    "profilesUpdates": "Profiles & Updates",
+    "dataDiag": "Data & Diagnostics",
+    "info": "Info"
+  },
+  "common": {
+    "on": "On",
+    "off": "Off",
+    "yes": "Yes",
+    "no": "No"
+  }
+}

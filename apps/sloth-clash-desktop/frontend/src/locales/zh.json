@@ -1,0 +1,45 @@
+{
+  "advanced": {
+    "title": "高级",
+    "connection": "连接"
+  },
+  "nav": {
+    "home": "首页",
+    "profiles": "配置",
+    "proxies": "代理",
+    "rules": "规则",
+    "advanced": "高级",
+    "settings": "设置",
+    "expandSidebar": "展开侧栏",
+    "collapseSidebar": "收起侧栏"
+  },
+  "settings": {
+    "title": "设置",
+    "lead": "运行、更新与诊断（紧凑布局）。",
+    "general": "常规",
+    "theme": "主题",
+    "themeSystem": "跟随系统",
+    "themeDark": "深色",
+    "themeLight": "浅色",
+    "language": "语言",
+    "startMinimized": "启动时最小化",
+    "launchOnStartup": "开机启动",
+    "closeToTray": "关闭到托盘（否则退出）",
+    "connection": "连接",
+    "smartDns": "智能 DNS 回退",
+    "ipv6Dns": "启用 IPv6 DNS",
+    "allowLanBinding": "允许 LAN 绑定",
+    "dnsHint": "仅界面默认 — 核心 DNS 后续接入。",
+    "installService": "安装服务",
+    "guidedTun": "TUN 引导设置",
+    "profilesUpdates": "配置与更新",
+    "dataDiag": "数据与诊断",
+    "info": "信息"
+  },
+  "common": {
+    "on": "开",
+    "off": "关",
+    "yes": "是",
+    "no": "否"
+  }
+}

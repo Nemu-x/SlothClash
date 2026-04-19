@@ -1,0 +1,45 @@
+{
+  "advanced": {
+    "title": "Расширенное",
+    "connection": "Подключение"
+  },
+  "nav": {
+    "home": "Главная",
+    "profiles": "Профили",
+    "proxies": "Прокси",
+    "rules": "Правила",
+    "advanced": "Расширенное",
+    "settings": "Настройки",
+    "expandSidebar": "Развернуть панель",
+    "collapseSidebar": "Свернуть панель"
+  },
+  "settings": {
+    "title": "Настройки",
+    "lead": "Рантайм, обновления, диагностика — компактный вид.",
+    "general": "Общие",
+    "theme": "Тема",
+    "themeSystem": "Системная",
+    "themeDark": "Тёмная",
+    "themeLight": "Светлая",
+    "language": "Язык",
+    "startMinimized": "Запуск свёрнутым",
+    "launchOnStartup": "Автозапуск",
+    "closeToTray": "Закрывать в трей (иначе выход)",
+    "connection": "Подключение",
+    "smartDns": "Умный DNS fallback",
+    "ipv6Dns": "Включить IPv6 DNS",
+    "allowLanBinding": "Разрешить LAN binding",
+    "dnsHint": "Только UI — ядро DNS позже.",
+    "installService": "Установить сервис",
+    "guidedTun": "Мастер TUN",
+    "profilesUpdates": "Профили и обновления",
+    "dataDiag": "Данные и диагностика",
+    "info": "Сведения"
+  },
+  "common": {
+    "on": "Вкл",
+    "off": "Выкл",
+    "yes": "Да",
+    "no": "Нет"
+  }
+}

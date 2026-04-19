@@ -59,15 +59,15 @@ args = [
 # --- Jobs ---
 
 [tasks.frontend-format]
-description = "Frontend format checks"
-dependencies = ["i18n-format", "i18n-types", "git-add", "lint-staged"]
+description = "Frontend format checks (legacy i18n pipeline; optional)"
+dependencies = ["lint-staged"]
 
 # --- Git Hooks ---
 
 [tasks.pre-commit]
-description = "Pre-commit checks: format only"
-dependencies = ["rust-format", "frontend-format"]
+description = "Pre-commit: lint-staged only (no root Rust workspace)"
+dependencies = ["lint-staged"]
 
 [tasks.pre-push]
-description = "Pre-push checks: lint and typecheck"
-dependencies = ["rust-clippy", "typecheck"]
+description = "Pre-push: TypeScript check (no root cargo clippy)"
+dependencies = ["typecheck"]

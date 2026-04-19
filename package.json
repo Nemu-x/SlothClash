@@ -122,10 +122,10 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs}": [
-      "eslint --fix --max-warnings=0",
+      "eslint -c eslint.config.ts --fix --max-warnings=0 --no-warn-ignored",
       "biome format --write"
     ],
-    "*.{css,scss,json,yaml,yml}": [
+    "*.{css,scss,json}": [
       "biome format --write"
     ]
   },

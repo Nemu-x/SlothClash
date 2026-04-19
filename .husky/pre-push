@@ -1,9 +1,9 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
-if ! command -v "cargo-make" >/dev/null 2>&1; then
-  echo "❌ cargo-make is required for pre-push checks."
-  cargo install --force cargo-make
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required for pre-push."
+  exit 1
 fi
 
-cargo make pre-push
+pnpm run typecheck

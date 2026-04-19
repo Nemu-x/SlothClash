@@ -7,6 +7,14 @@ import zh from './locales/zh.json'
 
 export const LS_LANG = 'sloth-lang'
 
+function detectSystemUiLang(): 'en' | 'ru' | 'zh' {
+  if (typeof navigator === 'undefined') return 'en'
+  const n = String(navigator.language || '').toLowerCase()
+  if (n.startsWith('zh')) return 'zh'
+  if (n.startsWith('ru')) return 'ru'
+  return 'en'
+}
+
 export function readStoredLang(): 'en' | 'ru' | 'zh' {
   try {
     const v = localStorage.getItem(LS_LANG)
@@ -14,7 +22,7 @@ export function readStoredLang(): 'en' | 'ru' | 'zh' {
   } catch {
     /* no localStorage */
   }
-  return 'en'
+  return detectSystemUiLang()
 }
 
 void i18n.use(initReactI18next).init({

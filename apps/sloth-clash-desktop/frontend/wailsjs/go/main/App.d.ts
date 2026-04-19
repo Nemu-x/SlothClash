@@ -5,6 +5,8 @@ import { options } from '../models'
 
 export function ActivateProfile(arg1: string): Promise<main.AppState>
 
+export function ApplyUpdate(): Promise<void>
+
 export function AutoSelectProxyGroup(): Promise<main.AppState>
 
 export function CheckForUpdates(): Promise<main.UpdateState>

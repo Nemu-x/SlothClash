@@ -66,7 +66,8 @@ func NewApp(bundle embed.FS) *App {
 		},
 		profiles: []Profile{},
 		update: UpdateState{
-			Channel: "stable",
+			Channel:        "stable",
+			CurrentVersion: AppVersion,
 		},
 	}
 }
@@ -77,6 +78,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadProfilesFromDisk()
 	go a.startProfileAutoUpdateLoop(ctx)
+	go a.updateCheckLoop(ctx)
 	a.emitAppStateChanged()
 	// Deep link may arrive before the webview attaches EventsOn — short delay on cold start only.
 	args := os.Args[1:]
@@ -996,13 +998,6 @@ func (a *App) GetUpdateState() UpdateState {
 	return a.update
 }
 
-func (a *App) CheckForUpdates() UpdateState {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.update.LastCheckedAt = time.Now().Unix()
-	a.update.HasUpdate = false
-	return a.update
-}
 
 func (a *App) SetUpdateChannel(channel string) (UpdateState, error) {
 	a.mu.Lock()

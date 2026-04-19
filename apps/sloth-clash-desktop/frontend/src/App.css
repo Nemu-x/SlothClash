@@ -2296,6 +2296,59 @@
   margin-top: 16px;
 }
 
+.spotlightRoot {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.spotlightDim {
+  pointer-events: auto;
+}
+
+.spotlightCard {
+  pointer-events: auto;
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px));
+  border-radius: 18px;
+  padding: 16px 18px 14px;
+  background: linear-gradient(165deg, #1a222c, #12171e);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+}
+
+.shell[data-theme="light"] .spotlightCard {
+  background: linear-gradient(165deg, #ffffff, #eef1f6);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.spotlightStep {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.spotlightTitle {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.spotlightBody {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.spotlightActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .rulesTableWrap {
   margin-top: 12px;
   max-height: 360px;

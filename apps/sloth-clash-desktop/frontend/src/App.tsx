@@ -15,6 +15,7 @@ import './App.css'
 import titleBarLogo from '../../build/appicon.png'
 import {
   ActivateProfile,
+  ApplyUpdate,
   AutoSelectProxyGroup,
   CheckForUpdates,
   Connect,
@@ -82,6 +83,8 @@ import {
   IconSettings,
 } from './navIcons'
 import { parseMihomoRulesJson } from './rulesTable'
+import { SpotlightTour } from './SpotlightTour'
+import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 
 type Screen =
   | 'home'
@@ -107,7 +110,7 @@ const NAV_DEFS: {
 type ImportModalReason = 'beacon' | 'connect' | 'manual'
 
 const LS_THEME = 'sloth-theme'
-const LS_ONBOARD = 'sloth-onboarding-dismissed-v1'
+const LS_SPOTLIGHT = 'sloth-spotlight-tour-v2'
 const LS_NAV_COLLAPSED = 'sloth-nav-collapsed-v1'
 const LS_SETTINGS = 'sloth-settings-v1'
 const APP_REPO_URL = 'https://github.com/Nemu-x/SlothClash'
@@ -499,11 +502,10 @@ function App() {
     return 'dark'
   })
   const [lang, setLang] = useState<'en' | 'ru' | 'zh'>(() => readStoredLang())
-  const [onboardingOpen, setOnboardingOpen] = useState(
-    () => localStorage.getItem(LS_ONBOARD) !== '1',
+  const [spotlightOpen, setSpotlightOpen] = useState(
+    () => localStorage.getItem(LS_SPOTLIGHT) !== '1',
   )
-  const [onboardingStep, setOnboardingStep] = useState(0)
-  const onboardingTotal = 3
+  const [spotlightStep, setSpotlightStep] = useState(0)
   const [connectBusy, setConnectBusy] = useState(false)
   const [optimisticMode, setOptimisticMode] = useState<string | null>(null)
   const [optimisticTraffic, setOptimisticTraffic] = useState<string | null>(
@@ -531,11 +533,27 @@ function App() {
   }, [refresh])
 
   useEffect(() => {
+    void GetUpdateState().then(setUpdateSnap)
+  }, [])
+
+  useEffect(() => {
     const off = EventsOn('app:state', () => {
       void refresh()
     })
     return () => off()
   }, [refresh])
+
+  useEffect(() => {
+    const off = EventsOn('app:update', () => {
+      void GetUpdateState().then(setUpdateSnap)
+    })
+    return () => off()
+  }, [])
+
+  useEffect(() => {
+    if (!spotlightOpen) return
+    setScreen('home')
+  }, [spotlightOpen])
 
   useEffect(() => {
     const off = EventsOn('app:install-config', (payload: unknown) => {
@@ -896,7 +914,7 @@ function App() {
   }
 
   const clearTempUiState = () => {
-    localStorage.removeItem(LS_ONBOARD)
+    localStorage.removeItem(LS_SPOTLIGHT)
     setTunBanner('Temporary UI/cache state cleared.')
   }
 
@@ -913,7 +931,7 @@ function App() {
       localStorage.removeItem(LS_LANG)
       localStorage.removeItem(LS_SETTINGS)
       localStorage.removeItem(LS_NAV_COLLAPSED)
-      localStorage.removeItem(LS_ONBOARD)
+      localStorage.removeItem(LS_SPOTLIGHT)
       if (withProfiles) {
         const profiles = state?.profile?.profiles ?? []
         for (const p of profiles) {
@@ -1159,9 +1177,9 @@ function App() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
   }, [filteredRulesRows])
 
-  const dismissOnboarding = useCallback(() => {
-    localStorage.setItem(LS_ONBOARD, '1')
-    setOnboardingOpen(false)
+  const dismissSpotlight = useCallback(() => {
+    localStorage.setItem(LS_SPOTLIGHT, '1')
+    setSpotlightOpen(false)
   }, [])
 
   const openImportModal = (reason: ImportModalReason) => {
@@ -1196,7 +1214,7 @@ function App() {
       }
       await ImportProfileFromURL(name, importUrl.trim())
       await refresh()
-      dismissOnboarding()
+      dismissSpotlight()
       setImportUrl('')
       setImportName('')
       closeImportModal()
@@ -1444,7 +1462,7 @@ function App() {
 
             <div className="connectArea">
               <div className="connectRow">
-                <div className="connectSide connectSideLeft">
+                <div className="connectSide connectSideLeft" data-tour="mode">
                   <span className="sideLabel sideLabelCentered">Mode</span>
                   <div
                     className="segmentInset segmentInset3"
@@ -1509,6 +1527,7 @@ function App() {
                   <button
                     type="button"
                     className="connectBtn"
+                    data-tour="connect"
                     data-visual={connectVisual}
                     disabled={connectBusy}
                     onClick={connectAction}
@@ -1530,7 +1549,10 @@ function App() {
                     )}
                   </div>
                 </div>
-                <div className="connectSide connectSideRight">
+                <div
+                  className="connectSide connectSideRight"
+                  data-tour="traffic"
+                >
                   <span className="sideLabel sideLabelCentered">Traffic</span>
                   <div
                     className="segmentInset segmentInset2"
@@ -1577,7 +1599,7 @@ function App() {
 
             <div className="homeStatusGrid">
               <div className="statusCard statusCardCompact">
-                <div className="statusRow">
+                <div className="statusRow" data-tour="service">
                   <span>Service</span>
                   <div className="statusRowValue">
                     {!service?.installed ? (
@@ -2776,11 +2798,13 @@ function App() {
                     </strong>
                   </div>
                   <div className="settingsKpi">
-                    <span>App</span>
+                    <span>{t('settings.appVersionLabel')}</span>
                     <strong>
-                      {(import.meta.env.VITE_APP_VERSION as
-                        | string
-                        | undefined) ?? 'dev'}
+                      {String(updateSnap?.currentVersion ?? '').trim()
+                        ? String(updateSnap.currentVersion)
+                        : ((import.meta.env.VITE_APP_VERSION as
+                            | string
+                            | undefined) ?? 'dev')}
                     </strong>
                   </div>
                   <div className="settingsKpi">
@@ -2799,23 +2823,91 @@ function App() {
                   </div>
                 </div>
                 <div className="settingsInfoDevActions">
+                  {updateSnap?.hasUpdate ? (
+                    <p className="banner" role="status">
+                      {t('settings.updateAvailable', {
+                        version: String(updateSnap.latestVersion ?? ''),
+                      })}
+                    </p>
+                  ) : updateSnap?.lastCheckedAt && !updateSnap?.lastError ? (
+                    <p className="muted small" role="status">
+                      {t('settings.upToDate')}
+                    </p>
+                  ) : null}
+                  {updateSnap?.lastError ? (
+                    <p className="error small">
+                      {String(updateSnap.lastError)}
+                    </p>
+                  ) : null}
+                  <p className="muted small">{t('settings.updateHint')}</p>
                   <div className="row settingsInfoDevBtnRow">
                     <button
                       type="button"
                       className="btn"
                       onClick={() =>
-                        run(() => Promise.resolve(CheckForUpdates()))
+                        void (async () => {
+                          setError('')
+                          try {
+                            const u = await CheckForUpdates()
+                            setUpdateSnap(u)
+                          } catch (e: any) {
+                            setError(String(e))
+                          }
+                        })()
                       }
                     >
-                      Check updates
+                      {t('settings.checkUpdates')}
                     </button>
                     <button
                       type="button"
                       className="btn ghost"
-                      onClick={() => run(() => SetUpdateChannel('stable'))}
+                      onClick={() =>
+                        void (async () => {
+                          setError('')
+                          try {
+                            const u = await SetUpdateChannel('stable')
+                            setUpdateSnap(u)
+                          } catch (e: any) {
+                            setError(String(e))
+                          }
+                        })()
+                      }
                     >
-                      Stable channel
+                      {t('settings.stableChannel')}
                     </button>
+                    {updateSnap?.hasUpdate &&
+                    String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={() =>
+                          void (async () => {
+                            setError('')
+                            try {
+                              await ApplyUpdate()
+                            } catch (e: any) {
+                              setError(String(e))
+                            }
+                            await refresh()
+                            const u = await GetUpdateState()
+                            setUpdateSnap(u)
+                          })()
+                        }
+                      >
+                        {t('settings.downloadInstaller')}
+                      </button>
+                    ) : null}
+                    {String(updateSnap?.releaseUrl ?? '').trim() ? (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() =>
+                          BrowserOpenURL(String(updateSnap.releaseUrl))
+                        }
+                      >
+                        {t('settings.openReleasePage')}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -4033,93 +4125,18 @@ function App() {
         </div>
       ) : null}
 
-      {onboardingOpen ? (
-        <div
-          className="onboardingOverlay"
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) dismissOnboarding()
-          }}
-        >
-          <div
-            className="onboardingCard"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="onboardingStep">
-              {onboardingStep + 1} / {onboardingTotal}
-            </p>
-            {onboardingStep === 0 ? (
-              <>
-                <h3 className="onboardingTitle">Welcome to Sloth Clash</h3>
-                <p className="muted small">
-                  Short tour — like Koala’s hints, but ours. You can skip
-                  anytime.
-                </p>
-              </>
-            ) : null}
-            {onboardingStep === 1 ? (
-              <>
-                <h3 className="onboardingTitle">Add a subscription</h3>
-                <p className="muted small">
-                  There are no profiles yet. Use the glowing{' '}
-                  <strong>Add subscription</strong> button (top-right on Home),
-                  or open <strong>Profiles</strong> and import from there.
-                </p>
-              </>
-            ) : null}
-            {onboardingStep === 2 ? (
-              <>
-                <h3 className="onboardingTitle">Connect</h3>
-                <p className="muted small">
-                  After import, press the big <strong>Connect</strong> button to
-                  start the embedded core. Pick nodes under{' '}
-                  <strong>Proxies</strong>. If you try Connect with zero
-                  profiles, we open the import dialog for you.
-                </p>
-              </>
-            ) : null}
-            <div className="onboardingActions">
-              <button
-                type="button"
-                className="btn ghost"
-                disabled={onboardingStep === 0}
-                onClick={() => setOnboardingStep((s) => Math.max(0, s - 1))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => dismissOnboarding()}
-              >
-                Skip
-              </button>
-              {onboardingStep < onboardingTotal - 1 ? (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() =>
-                    setOnboardingStep((s) =>
-                      Math.min(onboardingTotal - 1, s + 1),
-                    )
-                  }
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => dismissOnboarding()}
-                >
-                  Got it
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {spotlightOpen ? (
+        <SpotlightTour
+          open={spotlightOpen}
+          stepIndex={spotlightStep}
+          onNext={() =>
+            setSpotlightStep((s) =>
+              Math.min(SPOTLIGHT_TOUR_STEP_COUNT - 1, s + 1),
+            )
+          }
+          onPrev={() => setSpotlightStep((s) => Math.max(0, s - 1))}
+          onSkip={dismissSpotlight}
+        />
       ) : null}
     </div>
   )

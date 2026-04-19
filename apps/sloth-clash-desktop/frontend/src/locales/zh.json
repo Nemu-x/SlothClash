@@ -34,7 +34,29 @@
     "guidedTun": "TUN 引导设置",
     "profilesUpdates": "配置与更新",
     "dataDiag": "数据与诊断",
-    "info": "信息"
+    "info": "信息",
+    "checkUpdates": "检查更新",
+    "stableChannel": "稳定通道",
+    "appVersionLabel": "应用版本",
+    "updateAvailable": "有可用更新：{{version}}",
+    "upToDate": "已是最新版本。",
+    "downloadInstaller": "下载并安装更新",
+    "openReleasePage": "打开发布页",
+    "updateHint": "Windows 安装程序会在原目录上覆盖升级，无需先卸载。"
+  },
+  "tour": {
+    "back": "上一步",
+    "next": "下一步",
+    "skip": "跳过",
+    "done": "完成",
+    "connectTitle": "连接",
+    "connectBody": "用于启动或停止内置内核。导入订阅后，点击连接即可按旁边的模式与流量开关接管流量。",
+    "modeTitle": "路由模式",
+    "modeBody": "规则：按规则列表分流。全局：主要走代理组。直连：不走代理（仅本地）。",
+    "trafficTitle": "流量模式",
+    "trafficBody": "系统代理：为系统设置 HTTP/S 代理。TUN：虚拟网卡接管各应用流量；在 Windows 上通常需要安装辅助服务。",
+    "serviceTitle": "Windows 服务（TUN）",
+    "serviceBody": "使用 TUN 时请先安装服务。若按钮不显示，说明服务已安装。"
   },
   "common": {
     "on": "开",

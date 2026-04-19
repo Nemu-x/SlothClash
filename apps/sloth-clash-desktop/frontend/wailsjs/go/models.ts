@@ -400,6 +400,12 @@ export namespace main {
     channel: string
     hasUpdate: boolean
     lastCheckedAt?: number
+    currentVersion?: string
+    latestVersion?: string
+    releaseUrl?: string
+    assetName?: string
+    assetDownloadUrl?: string
+    lastError?: string
 
     static createFrom(source: any = {}) {
       return new UpdateState(source)
@@ -410,6 +416,12 @@ export namespace main {
       this.channel = source['channel']
       this.hasUpdate = source['hasUpdate']
       this.lastCheckedAt = source['lastCheckedAt']
+      this.currentVersion = source['currentVersion']
+      this.latestVersion = source['latestVersion']
+      this.releaseUrl = source['releaseUrl']
+      this.assetName = source['assetName']
+      this.assetDownloadUrl = source['assetDownloadUrl']
+      this.lastError = source['lastError']
     }
   }
 }

@@ -34,7 +34,29 @@
     "guidedTun": "Guided TUN setup",
     "profilesUpdates": "Profiles & Updates",
     "dataDiag": "Data & Diagnostics",
-    "info": "Info"
+    "info": "Info",
+    "checkUpdates": "Check for updates",
+    "stableChannel": "Stable channel",
+    "appVersionLabel": "App version",
+    "updateAvailable": "Update available: {{version}}",
+    "upToDate": "You are on the latest release.",
+    "downloadInstaller": "Download & install update",
+    "openReleasePage": "Open release page",
+    "updateHint": "The Windows installer upgrades in place over the same folder."
+  },
+  "tour": {
+    "back": "Back",
+    "next": "Next",
+    "skip": "Skip",
+    "done": "Done",
+    "connectTitle": "Connect",
+    "connectBody": "Use this button to start or stop the embedded core. After you import a subscription, Connect turns traffic on according to the mode and traffic switches next to it.",
+    "modeTitle": "Routing mode",
+    "modeBody": "Rule uses your rules list. Global sends most traffic through the main proxy group. Direct bypasses the proxy (local only).",
+    "trafficTitle": "Traffic",
+    "trafficBody": "Proxy sets the system HTTP/S proxy to Sloth. TUN creates a virtual adapter so all apps are routed — on Windows this usually needs the helper service.",
+    "serviceTitle": "Windows service (TUN)",
+    "serviceBody": "For TUN mode, install the service once. If the button is missing, the service is already installed."
   },
   "common": {
     "on": "On",

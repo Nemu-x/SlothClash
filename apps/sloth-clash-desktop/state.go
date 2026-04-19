@@ -108,9 +108,15 @@ type UIState struct {
 }
 
 type UpdateState struct {
-	Channel       string `json:"channel"`
-	HasUpdate     bool   `json:"hasUpdate"`
-	LastCheckedAt int64  `json:"lastCheckedAt,omitempty"`
+	Channel            string `json:"channel"`
+	HasUpdate          bool   `json:"hasUpdate"`
+	LastCheckedAt      int64  `json:"lastCheckedAt,omitempty"`
+	CurrentVersion     string `json:"currentVersion,omitempty"`
+	LatestVersion      string `json:"latestVersion,omitempty"`
+	ReleaseURL         string `json:"releaseUrl,omitempty"`
+	AssetName          string `json:"assetName,omitempty"`
+	AssetDownloadURL   string `json:"assetDownloadUrl,omitempty"`
+	LastError          string `json:"lastError,omitempty"`
 }
 
 type TunSetupResult struct {

@@ -6,6 +6,10 @@ export function ActivateProfile(arg1) {
   return window['go']['main']['App']['ActivateProfile'](arg1)
 }
 
+export function ApplyUpdate() {
+  return window['go']['main']['App']['ApplyUpdate']()
+}
+
 export function AutoSelectProxyGroup() {
   return window['go']['main']['App']['AutoSelectProxyGroup']()
 }

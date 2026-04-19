@@ -1,136 +1,85 @@
-# CONTRIBUTING
+# Contributing to Sloth Clash
 
-Thank you for your interest in contributing to **Clash Verge Rev**! This guide provides instructions to help you set up your development environment and start contributing effectively.
+Thanks for helping improve **Sloth Clash** — a **Wails + Go + React** desktop client around **Mihomo** (Clash Meta), hosted under `apps/sloth-clash-desktop/`.
 
 ## Internationalization (i18n)
 
-We welcome translations and improvements to existing locales. For details on contributing translations, please see [CONTRIBUTING_i18n.md](docs/CONTRIBUTING_i18n.md).
+UI strings live in flat JSON files per language. For where to edit and how to keep locales aligned, see **[docs/CONTRIBUTING_i18n.md](docs/CONTRIBUTING_i18n.md)** (short guide).
 
-## Development Setup
+## What you need
 
-Before contributing, you need to set up your development environment. Follow the steps below carefully.
+| Tool | Notes |
+| --- | --- |
+| **Go** | 1.23+ ([go.dev/dl](https://go.dev/dl)); on `PATH` for `wails` / CI. |
+| **Node.js** | 20+ |
+| **pnpm** | `corepack enable` then use repo `packageManager` (see `package.json`). |
+| **Wails v2** | Invoked via `node scripts/wails.mjs` (downloads the CLI with `go run`); global install optional. |
+| **NSIS** | Windows only, for **`-nsis`** installer builds (`choco install nsis` or [nsis.sourceforge.io](https://nsis.sourceforge.io/Download)). |
 
-### Prerequisites
+This repository does **not** use Tauri or the old `src-tauri` workspace — ignore upstream Verge docs that refer to them.
 
-1. **Install Rust and Node.js**  
-   Our project requires both Rust and Node.js. Follow the official installation instructions [here](https://tauri.app/start/prerequisites/).
-
-### Windows Users
-
-> [!NOTE]  
-> **Windows ARM users must also install [LLVM](https://github.com/llvm/llvm-project/releases) (including clang) and set the corresponding environment variables.**  
-> The `ring` crate depends on `clang` when building on Windows ARM.
-
-Additional steps for Windows:
-
-- Ensure Rust and Node.js are added to your system `PATH`.
-
-- Install the GNU `patch` tool.
-
-- Use the MSVC toolchain for Rust:
+## Clone and install
 
 ```bash
-rustup target add x86_64-pc-windows-msvc
-rustup set default-host x86_64-pc-windows-msvc
+pnpm install --frozen-lockfile
 ```
 
-### Install Node.js Package Manager
-
-Enable `corepack`:
+## Desktop resources (Mihomo, geo DBs, service binaries, icons)
 
 ```bash
-corepack enable
+pnpm run desktop:resources
 ```
 
-### Install Project Dependencies
+This runs `prebuild`, Wails asset prep, Windows icon generation, and copies `packaging/windows/project.nsi` into the Wails build tree. Output goes under `apps/sloth-clash-desktop/build/` (gitignored).
 
-Node.js dependencies:
+**Windows service binaries** are downloaded from [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases); override tag with `SLOTH_SERVICE_RELEASE_TAG` if needed (see `scripts/prebuild.mjs`).
+
+## Development
 
 ```bash
-pnpm install
+pnpm run wails:dev
 ```
 
-Ubuntu-only system packages:
+Runs the Wails v2 dev server for `apps/sloth-clash-desktop` (frontend + Go backend).
+
+## Production-like builds
 
 ```bash
-sudo apt-get install -y libxslt1.1 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+# Windows installer (NSIS) — run on Windows with NSIS installed
+pnpm run desktop:build:windows
+
+# Other platforms (no NSIS)
+pnpm run desktop:build:darwin:arm64
+pnpm run desktop:build:darwin:amd64
+pnpm run desktop:build:linux:amd64
 ```
 
-### Download the Mihomo Core Binary (Automatic)
+## Linux (local dev)
+
+Install GTK + WebKit2GTK dev packages (names vary by distro). Example for Debian/Ubuntu:
 
 ```bash
-pnpm run prebuild
-pnpm run prebuild --force  # Re-download and overwrite Mihomo core and service binaries
+sudo apt-get update
+sudo apt-get install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
 ```
 
-### Run the Development Server
+## Checks before a PR
 
 ```bash
-pnpm dev           # Standard
-pnpm dev:diff      # If an app instance already exists
-pnpm dev:tauri     # Run Tauri development mode
+pnpm run lint
+pnpm run typecheck
+pnpm run format:check   # optional; or pnpm run format to write
 ```
 
-### Build the Project
+Go code: `cd apps/sloth-clash-desktop && go vet ./...` (and `gofmt` as you prefer).
 
-Standard build:
+## Commits and PRs
 
-```bash
-pnpm build
-```
+1. Fork and branch from the default branch.
+2. Keep commits focused; write clear messages.
+3. Open a PR describing **what** and **why**; screenshots help for UI/i18n.
+4. Signed commits are welcome but not required unless maintainers ask.
 
-Fast build for testing:
+CI: [.github/workflows/desktop-artifacts.yml](.github/workflows/desktop-artifacts.yml) builds Windows (with NSIS via Chocolatey), macOS, and Linux artifacts on tag `v*` or manual **workflow_dispatch**.
 
-```bash
-pnpm build:fast
-```
-
-### Clean Build
-
-```bash
-pnpm clean
-```
-
-### Portable Version (Windows Only)
-
-```bash
-pnpm portable
-```
-
-## Contributing Your Changes
-
-### Before Committing
-
-**Code quality checks:**
-
-```bash
-# Rust backend
-cargo clippy-all
-# Frontend
-pnpm lint
-```
-
-**Code formatting:**
-
-```bash
-# Rust backend
-cargo fmt
-# Frontend
-pnpm format
-```
-
-### Signing your commit
-
-Signed commits are required to verify authorship and ensure your contributions can be merged. Reference signing-commits [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits).
-
-### Submitting Your Changes
-
-1. Fork the repository.
-
-2. Create a new branch for your feature or bug fix.
-
-3. Commit your changes with clear messages and make sure it's signed.
-
-4. Push your branch and submit a pull request.
-
-We appreciate your contributions and look forward to your participation!
+Thank you for contributing.

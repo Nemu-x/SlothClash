@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="./apps/sloth-clash-desktop/build/appicon.png" alt="Sloth Clash" width="128" />
+  <img src="docs/appicon.png" alt="Sloth Clash" width="256" />
   <br />
   Sloth Clash
   <br />

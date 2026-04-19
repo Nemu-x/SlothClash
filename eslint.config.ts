@@ -37,6 +37,7 @@ export default defineConfig([
   },
   {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    ignores: ['scripts/**/*.mjs'],
 
     plugins: {
       js: eslintJS,
@@ -174,12 +175,13 @@ export default defineConfig([
     },
   },
   {
-    files: ['scripts/*.mjs'],
-
+    files: ['scripts/**/*.mjs'],
+    extends: [eslintJS.configs.recommended],
     languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node,
+      globals: globals.node,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
       },
     },
   },

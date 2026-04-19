@@ -1,0 +1,196 @@
+# Builds Sloth Clash desktop for Windows / macOS (Intel + Apple) / Linux and uploads artifacts.
+# Run manually (workflow_dispatch) or push a version tag (e.g. v0.1.0-alpha.1).
+
+name: Desktop artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-amd64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Icons + sidecars
+        run: |
+          pnpm run icons:windows
+          pnpm run prebuild
+          pnpm run prepare:wails
+
+      - name: Wails build (windows/amd64)
+        working-directory: apps/sloth-clash-desktop
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform windows/amd64 -clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sloth-clash-windows-amd64
+          path: apps/sloth-clash-desktop/build/bin/
+
+  darwin-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sidecars (skip Windows-only resources where applicable)
+        run: |
+          pnpm run prebuild
+          pnpm run prepare:wails
+
+      - name: Wails build (darwin/arm64)
+        working-directory: apps/sloth-clash-desktop
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/arm64 -clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sloth-clash-darwin-arm64
+          path: apps/sloth-clash-desktop/build/bin/
+
+  darwin-amd64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sidecars
+        run: |
+          pnpm run prebuild
+          pnpm run prepare:wails
+
+      - name: Wails build (darwin/amd64)
+        working-directory: apps/sloth-clash-desktop
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/amd64 -clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sloth-clash-darwin-amd64
+          path: apps/sloth-clash-desktop/build/bin/
+
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Linux GUI deps (GTK + WebKit2GTK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgtk-3-dev
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || sudo apt-get install -y libwebkit2gtk-4.1-dev
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sidecars
+        run: |
+          pnpm run prebuild
+          pnpm run prepare:wails
+
+      - name: Wails build (linux/amd64)
+        working-directory: apps/sloth-clash-desktop
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform linux/amd64 -clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sloth-clash-linux-amd64
+          path: apps/sloth-clash-desktop/build/bin/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - windows-amd64
+      - darwin-arm64
+      - darwin-amd64
+      - linux-amd64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Pack artifacts for GitHub Release
+        run: |
+          mkdir -p dist
+          for d in artifacts/sloth-clash-*; do
+            name=$(basename "$d")
+            (cd "$d" && zip -r "../../dist/${name}-${GITHUB_REF_NAME}.zip" .)
+          done
+          ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: dist/*.zip

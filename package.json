@@ -15,6 +15,11 @@
     "web:build": "tsc --noEmit && vite build",
     "web:serve": "vite preview",
     "prebuild": "node scripts/prebuild.mjs",
+    "prepare:wails": "node scripts/wails-prepare.mjs",
+    "icons:windows": "node scripts/generate-windows-icon.mjs",
+    "wails:dev": "node scripts/wails.mjs dev",
+    "wails:build": "node scripts/wails.mjs build",
+    "desktop:resources": "pnpm run prebuild && pnpm run prepare:wails && pnpm run icons:windows",
     "updater": "node scripts/updater.mjs",
     "updater-fixed-webview2": "node scripts/updater-fixed-webview2.mjs",
     "portable": "node scripts/portable.mjs",
@@ -113,8 +118,10 @@
     "lint-staged": "^16.4.0",
     "node-fetch": "^3.3.2",
     "sass": "^1.98.0",
+    "sharp": "^0.34.5",
     "tar": "^7.5.12",
     "terser": "^5.46.1",
+    "to-ico": "^1.1.5",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.57.1",
     "vite": "^8.0.1",
@@ -137,6 +144,7 @@
       "core-js",
       "es5-ext",
       "meta-json-schema",
+      "sharp",
       "unrs-resolver"
     ]
   }

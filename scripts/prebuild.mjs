@@ -55,6 +55,21 @@ const ARCH_MAP = {
   'loongarch64-unknown-linux-gnu': 'loong64',
 }
 
+/** When `rustc` is not installed (Wails-only dev), infer a Rust triple from Node. */
+function defaultRustTripleFromProcess() {
+  const key = `${process.platform}-${process.arch}`
+  const map = {
+    'win32-x64': 'x86_64-pc-windows-msvc',
+    'win32-arm64': 'aarch64-pc-windows-msvc',
+    'win32-ia32': 'i686-pc-windows-msvc',
+    'darwin-x64': 'x86_64-apple-darwin',
+    'darwin-arm64': 'aarch64-apple-darwin',
+    'linux-x64': 'x86_64-unknown-linux-gnu',
+    'linux-arm64': 'aarch64-unknown-linux-gnu',
+  }
+  return map[key] || 'x86_64-pc-windows-msvc'
+}
+
 const arg1 = process.argv.slice(2)[0]
 const arg2 = process.argv.slice(2)[1]
 const target = arg1 === '--force' || arg1 === '-f' ? arg2 : arg1
@@ -64,12 +79,26 @@ const { platform, arch } = target
 
 const SIDECAR_HOST = target
   ? target
-  : execSync('rustc -vV')
-      .toString()
-      .match(/(?<=host: ).+(?=\s*)/g)[0]
+  : (() => {
+      try {
+        const out = execSync('rustc -vV').toString()
+        const m = out.match(/(?<=host: ).+(?=\s*)/g)
+        if (m?.[0]) return m[0]
+      } catch {
+        /* no rustc */
+      }
+      return defaultRustTripleFromProcess()
+    })()
 
-const RESOURCES_DIR = path.join(cwd, 'src-tauri', 'resources')
-const SIDECAR_DIR = path.join(cwd, 'src-tauri', 'sidecar')
+const desktopRoot = path.join(cwd, 'apps', 'sloth-clash-desktop')
+const useDesktopWails = fs.existsSync(path.join(desktopRoot, 'wails.json'))
+
+const RESOURCES_DIR = useDesktopWails
+  ? path.join(desktopRoot, 'build', 'resources')
+  : path.join(cwd, 'src-tauri', 'resources')
+const SIDECAR_DIR = useDesktopWails
+  ? path.join(desktopRoot, 'build', 'sidecar')
+  : path.join(cwd, 'src-tauri', 'sidecar')
 // Linux service binaries are bundled as externalBin sidecars (see tauri.linux.conf.json)
 const SERVICE_DIR = platform === 'linux' ? SIDECAR_DIR : RESOURCES_DIR
 
@@ -120,7 +149,7 @@ async function calculateFileHash(filePath) {
     const hashSum = createHash('sha256')
     hashSum.update(fileBuffer)
     return hashSum.digest('hex')
-  } catch (ignoreErr) {
+  } catch {
     return null
   }
 }

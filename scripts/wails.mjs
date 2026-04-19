@@ -61,16 +61,22 @@ if (process.platform === 'win32' && goExe === 'go') {
 }
 
 const resourcesDir = path.join(appDir, 'build', 'resources')
+const sidecarDir = path.join(appDir, 'build', 'sidecar')
+
 const hasServiceInstaller = () => {
-  try {
-    const files = fs.readdirSync(resourcesDir)
-    return files.some((f) => {
-      const x = f.toLowerCase()
-      return x.includes('sloth-clash-service-install')
-    })
-  } catch {
-    return false
+  const checkDir = (dir) => {
+    try {
+      const files = fs.readdirSync(dir)
+      return files.some((f) => {
+        const x = f.toLowerCase()
+        return x.includes('sloth-clash-service-install')
+      })
+    } catch {
+      return false
+    }
   }
+  // Linux prebuild puts service binaries under sidecar; Windows/macOS under resources.
+  return checkDir(resourcesDir) || checkDir(sidecarDir)
 }
 
 if (!hasServiceInstaller()) {

@@ -11,11 +11,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "paths": {
-      "@/*": ["./src/*"],
-      "@root/*": ["./*"]
-    },
     "types": ["vite/client", "vite-plugin-svgr/client"]
   },
-  "include": ["./src"]
+  "include": ["./eslint.config.ts"],
+  "exclude": ["**/node_modules"]
 }

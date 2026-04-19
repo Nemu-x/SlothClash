@@ -36,8 +36,37 @@ export default defineConfig([
     ],
   },
   {
+    name: 'vite-config-no-react',
+    files: [
+      'vite.config.mts',
+      'apps/sloth-clash-desktop/frontend/vite.config.ts',
+    ],
+    plugins: {
+      js: eslintJS,
+      'import-x': pluginImportX,
+    },
+    extends: [
+      eslintJS.configs.recommended,
+      tseslint.configs.disableTypeChecked,
+    ],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'import-x/no-unresolved': 'off',
+    },
+  },
+  {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    ignores: ['scripts/**/*.mjs'],
+    ignores: [
+      'scripts/**/*.mjs',
+      'vite.config.mts',
+      'apps/sloth-clash-desktop/frontend/vite.config.ts',
+    ],
 
     plugins: {
       js: eslintJS,
@@ -59,7 +88,8 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.ts', 'src/polyfills/*.js'],
+          allowDefaultProject: ['src/polyfills/*.js'],
+          noWarnOnMultipleProjects: true,
         },
       },
     },
@@ -156,16 +186,10 @@ export default defineConfig([
     },
   },
   {
-    files: [
-      'vite.config.mts',
-      'apps/sloth-clash-desktop/frontend/vite.config.ts',
-    ],
-    extends: [tseslint.configs.disableTypeChecked],
-  },
-  {
     files: ['apps/sloth-clash-desktop/frontend/src/App.tsx'],
     rules: {
       // Large UI shell: relax until split/refactor (blocks lint-staged otherwise).
+      'import-x/no-unresolved': 'off',
       'react-compiler/react-compiler': 'off',
       '@eslint-react/unsupported-syntax': 'off',
       '@eslint-react/set-state-in-effect': 'off',

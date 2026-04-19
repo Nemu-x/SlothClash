@@ -4,20 +4,6 @@ skip_git_env_info = true
 skip_rust_env_info = true
 skip_crate_env_info = true
 
-# --- Backend ---
-
-[tasks.rust-format]
-install_crate = "rustfmt"
-command = "cargo"
-args = ["fmt", "--", "--emit=files"]
-
-[tasks.rust-clippy]
-description = "Run cargo clippy to lint the code"
-command = "cargo"
-args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
-
-# --- Frontend ---
-
 [tasks.typecheck]
 description = "Run type checks"
 command = "pnpm"
@@ -32,42 +18,23 @@ args = ["exec", "lint-staged"]
 [tasks.lint-staged.windows]
 command = "pnpm.cmd"
 
-[tasks.i18n-format]
-description = "Format i18n keys"
-command = "pnpm"
-args = ["i18n:format"]
-[tasks.i18n-format.windows]
-command = "pnpm.cmd"
-
-[tasks.i18n-types]
-description = "Generate i18n key types"
-command = "pnpm"
-args = ["i18n:types"]
-[tasks.i18n-types.windows]
-command = "pnpm.cmd"
-
 [tasks.git-add]
-description = "Add changed files to git"
+description = "Add desktop locale files to git"
 command = "git"
-args = [
-  "add",
-  "src/locales",
-  "crates/clash-verge-i18n/locales",
-  "src/types/generated",
-]
+args = ["add", "apps/sloth-clash-desktop/frontend/src/locales"]
 
 # --- Jobs ---
 
 [tasks.frontend-format]
-description = "Frontend format checks (legacy i18n pipeline; optional)"
+description = "Frontend format checks"
 dependencies = ["lint-staged"]
 
 # --- Git Hooks ---
 
 [tasks.pre-commit]
-description = "Pre-commit: lint-staged only (no root Rust workspace)"
+description = "Pre-commit: lint-staged only"
 dependencies = ["lint-staged"]
 
 [tasks.pre-push]
-description = "Pre-push: TypeScript check (no root cargo clippy)"
+description = "Pre-push: TypeScript check"
 dependencies = ["typecheck"]

@@ -1,7 +1,7 @@
 # Builds Sloth Clash desktop (Wails + Go + React) for Windows / macOS / Linux.
 # Service binaries for `pnpm run prebuild` / `prepare:wails` come from:
 # https://github.com/Nemu-x/sloth-clash-service-ipc/releases (per-target tags, e.g. x86_64-pc-windows-msvc).
-# Run manually (workflow_dispatch) or push a version tag (e.g. v0.1.0-alpha.1).
+# Run manually (workflow_dispatch) or push a version tag (e.g. v0.1.0).
 
 name: Desktop artifacts
 

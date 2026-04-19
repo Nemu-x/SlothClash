@@ -22,6 +22,44 @@ const appDir = path.join(repoRoot, 'apps', 'sloth-clash-desktop')
 const args = process.argv.slice(2)
 const commandArgs = args.length > 0 ? args : ['dev']
 
+/** IDE terminals often have a minimal PATH; `spawn('go')` then fails with ENOENT on Windows. */
+function resolveGoExe() {
+  if (process.platform !== 'win32') return 'go'
+  try {
+    const out = execFileSync('where.exe', ['go'], { encoding: 'utf8' }).trim()
+    const first = out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith('INFO:'))
+    if (first && fs.existsSync(first)) return first
+  } catch {
+    /* where failed */
+  }
+  const candidates = [
+    process.env.GOROOT && path.join(process.env.GOROOT, 'bin', 'go.exe'),
+    'C:\\Program Files\\Go\\bin\\go.exe',
+    path.join(
+      process.env.LOCALAPPDATA || '',
+      'Programs',
+      'Go',
+      'bin',
+      'go.exe',
+    ),
+  ].filter(Boolean)
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c
+  }
+  return 'go'
+}
+
+const goExe = resolveGoExe()
+if (process.platform === 'win32' && goExe === 'go') {
+  console.error(
+    '[wails] go.exe not found (not in PATH and not under Program Files\\Go). Install Go: https://go.dev/dl/',
+  )
+  process.exit(1)
+}
+
 const resourcesDir = path.join(appDir, 'build', 'resources')
 const hasServiceInstaller = () => {
   try {
@@ -59,13 +97,51 @@ if (commandArgs[0] === 'build') {
   }
 }
 
+/** Prepend Go + NSIS dirs so Wails child processes (e.g. makensis) resolve reliably on Windows. */
+function spawnEnvForWails() {
+  const env = { ...process.env }
+  if (process.platform !== 'win32') {
+    return env
+  }
+  const sep = path.delimiter
+  // Windows stores the variable as "Path"; only "PATH" is often undefined → was wiping PATH for children.
+  let p = env.PATH || env.Path || ''
+  if (goExe !== 'go' && fs.existsSync(goExe)) {
+    const goBin = path.dirname(goExe)
+    p = `${goBin}${sep}${p}`
+  }
+  if (commandArgs[0] === 'build') {
+    const nsisDirs = [
+      path.join(process.env['ProgramFiles(x86)'] || '', 'NSIS'),
+      path.join(process.env.ProgramFiles || '', 'NSIS'),
+      path.join(process.env['ProgramFiles(x86)'] || '', 'NSIS', 'Bin'),
+      path.join(process.env.ProgramFiles || '', 'NSIS', 'Bin'),
+    ]
+    for (const dir of nsisDirs) {
+      if (fs.existsSync(path.join(dir, 'makensis.exe'))) {
+        p = `${dir}${sep}${p}`
+        console.log(`[wails] NSIS found, prepended to PATH: ${dir}`)
+        break
+      }
+    }
+  }
+  env.PATH = p
+  env.Path = p
+  return env
+}
+
+if (goExe !== 'go') {
+  console.log(`[wails] using Go: ${goExe}`)
+}
+
 const child = spawn(
-  'go',
+  goExe,
   ['run', 'github.com/wailsapp/wails/v2/cmd/wails@latest', ...commandArgs],
   {
     cwd: appDir,
     stdio: 'inherit',
     shell: false,
+    env: spawnEnvForWails(),
   },
 )
 

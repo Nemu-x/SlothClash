@@ -90,16 +90,17 @@ const SIDECAR_HOST = target
       return defaultRustTripleFromProcess()
     })()
 
+/** Wails desktop only — no src-tauri / Tauri workspace in this repo. */
 const desktopRoot = path.join(cwd, 'apps', 'sloth-clash-desktop')
-const useDesktopWails = fs.existsSync(path.join(desktopRoot, 'wails.json'))
+if (!fs.existsSync(desktopRoot)) {
+  throw new Error(
+    `[prebuild] Missing ${desktopRoot}. Clone or add the Sloth Wails app (apps/sloth-clash-desktop).`,
+  )
+}
 
-const RESOURCES_DIR = useDesktopWails
-  ? path.join(desktopRoot, 'build', 'resources')
-  : path.join(cwd, 'src-tauri', 'resources')
-const SIDECAR_DIR = useDesktopWails
-  ? path.join(desktopRoot, 'build', 'sidecar')
-  : path.join(cwd, 'src-tauri', 'sidecar')
-// Linux service binaries are bundled as externalBin sidecars (see tauri.linux.conf.json)
+const RESOURCES_DIR = path.join(desktopRoot, 'build', 'resources')
+const SIDECAR_DIR = path.join(desktopRoot, 'build', 'sidecar')
+// Linux: service binaries live under sidecar; Windows/macOS: under resources (Wails bundle).
 const SERVICE_DIR = platform === 'linux' ? SIDECAR_DIR : RESOURCES_DIR
 
 // =======================
@@ -570,9 +571,9 @@ const resolvePlugin = async () => {
 // service chmod (保留并使用 glob)
 const resolveServicePermission = async () => {
   const serviceExecutables = [
-    'clash-verge-service*',
-    'clash-verge-service-install*',
-    'clash-verge-service-uninstall*',
+    'sloth-clash-service*',
+    'sloth-clash-service-install*',
+    'sloth-clash-service-uninstall*',
   ]
   const hashCache = await loadHashCache()
   let hasChanges = false
@@ -606,32 +607,44 @@ const resolveServicePermission = async () => {
 // =======================
 // Other resource resolvers (service, mmdb, geosite, geoip, enableLoopback)
 // =======================
-const SERVICE_URL = `https://github.com/clash-verge-rev/clash-verge-service-ipc/releases/download/${SIDECAR_HOST}`
+// Sloth Windows service IPC binaries (fork of clash-verge-service-ipc).
+// Release asset tag is usually the Rust host triple. GNU Windows hosts often
+// have no matching GitHub release — use MSVC triple for downloads instead.
+// Override with: SLOTH_SERVICE_RELEASE_TAG=v0.1.0 pnpm run prebuild
+const SERVICE_DOWNLOAD_TAG =
+  process.env.SLOTH_SERVICE_RELEASE_TAG ||
+  (platform === 'win32' && SIDECAR_HOST.includes('pc-windows-gnu')
+    ? SIDECAR_HOST.replace('pc-windows-gnu', 'pc-windows-msvc')
+    : SIDECAR_HOST)
+
+const SERVICE_URL = `https://github.com/Nemu-x/sloth-clash-service-ipc/releases/download/${SERVICE_DOWNLOAD_TAG}`
+
+/** Same filenames as GitHub Release assets (see sloth-clash-service-ipc release.yml). */
 const resolveService = () => {
   const ext = platform === 'win32' ? '.exe' : ''
-  const suffix = platform === 'linux' ? '-' + SIDECAR_HOST : ''
+  const name = `sloth-clash-service${ext}`
   return resolveResource({
-    file: 'clash-verge-service' + suffix + ext,
+    file: name,
     dir: SERVICE_DIR,
-    downloadURL: `${SERVICE_URL}/clash-verge-service${ext}`,
+    downloadURL: `${SERVICE_URL}/${name}`,
   })
 }
 const resolveInstall = () => {
   const ext = platform === 'win32' ? '.exe' : ''
-  const suffix = platform === 'linux' ? '-' + SIDECAR_HOST : ''
+  const name = `sloth-clash-service-install${ext}`
   return resolveResource({
-    file: 'clash-verge-service-install' + suffix + ext,
+    file: name,
     dir: SERVICE_DIR,
-    downloadURL: `${SERVICE_URL}/clash-verge-service-install${ext}`,
+    downloadURL: `${SERVICE_URL}/${name}`,
   })
 }
 const resolveUninstall = () => {
   const ext = platform === 'win32' ? '.exe' : ''
-  const suffix = platform === 'linux' ? '-' + SIDECAR_HOST : ''
+  const name = `sloth-clash-service-uninstall${ext}`
   return resolveResource({
-    file: 'clash-verge-service-uninstall' + suffix + ext,
+    file: name,
     dir: SERVICE_DIR,
-    downloadURL: `${SERVICE_URL}/clash-verge-service-uninstall${ext}`,
+    downloadURL: `${SERVICE_URL}/${name}`,
   })
 }
 

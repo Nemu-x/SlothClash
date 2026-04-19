@@ -9,7 +9,8 @@ Unicode true
 ####
 !include "wails_tools.nsh"
 
-# The version information for this two must consist of 4 parts
+# INFO_PRODUCTVERSION comes from wails.json info.productVersion — must be numeric X.Y.Z only
+# (no pre-release suffixes): Wails appends ".0" for NSIS VI*Version, which must look like X.X.X.X.
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
 VIFileVersion    "${INFO_PRODUCTVERSION}.0"
 
@@ -38,6 +39,7 @@ ManifestDPIAware true
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
@@ -46,6 +48,10 @@ ManifestDPIAware true
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Russian"
 !insertmacro MUI_LANGUAGE "SimpChinese"
+
+LangString SL_DESKTOP_SHORTCUT ${LANG_ENGLISH} "Desktop shortcut"
+LangString SL_DESKTOP_SHORTCUT ${LANG_RUSSIAN} "Ярлык на рабочем столе"
+LangString SL_DESKTOP_SHORTCUT ${LANG_SIMPCHINESE} "桌面快捷方式"
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe"
@@ -57,7 +63,8 @@ Function .onInit
   !insertmacro wails.checkArchitecture
 FunctionEnd
 
-Section
+Section "${INFO_PRODUCTNAME}" SecApp
+    SectionIn RO
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
@@ -67,12 +74,16 @@ Section
     !insertmacro wails.files
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
     !insertmacro wails.writeUninstaller
+SectionEnd
+
+; Optional: user opts in on the Components page (unchecked by default).
+Section /o "$(SL_DESKTOP_SHORTCUT)" SecDesktop
+    CreateShortcut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 SectionEnd
 
 Section "uninstall"

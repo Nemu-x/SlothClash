@@ -33,7 +33,7 @@ In `Cargo.toml`, `[[bin]]` `name` values drive output filenames. You can keep cr
 
 ## SlothClash repo follow-up
 
-- `scripts/prebuild.mjs`: download or copy **your** release assets instead of upstream `clash-verge-service-*` names (or rename after download).
+- `scripts/prebuild.mjs`: pulls **`sloth-clash-service*.exe`** from **`https://github.com/Nemu-x/sloth-clash-service-ipc/releases/download/<tag>/`**. Default `<tag>` is the Rust host triple; on **Windows GNU** toolchains the tag is mapped to **`…-pc-windows-msvc`** so the MSVC artifacts resolve. Override: `SLOTH_SERVICE_RELEASE_TAG=my-tag pnpm run prebuild`. You must publish a GitHub **Release** whose tag matches that string and attach the three binaries.
 - `apps/sloth-clash-desktop/app.go` — `findServiceInstaller` should match the new installer basename.
 - Re-test **Install service** + TUN with Verge’s service **stopped** / not registered under the same name.
 

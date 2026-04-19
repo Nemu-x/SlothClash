@@ -1,120 +1,72 @@
 <h1 align="center">
-  <img src="../src-tauri/icons/icon.png" alt="Clash" width="128" />
-  <br>
-  Continuation of <a href="https://github.com/zzzgydi/clash-verge">Clash Verge</a>
-  <br>
+  <img src="../apps/sloth-clash-desktop/build/appicon.png" alt="Sloth Clash" width="128" />
+  <br />
+  Sloth Clash
+  <br />
 </h1>
 
-<h3 align="center">
-Clash Meta GUI базируется на <a href="https://github.com/tauri-apps/tauri">Tauri</a>.
-</h3>
+<p align="center">
+  <b>Clash Meta (Mihomo)</b> — десктоп-клиент на <b>Wails · Go · React</b><br />
+  Windows · macOS · Linux
+</p>
 
 <p align="center">
-  Языки:
-  <a href="../README.md">简体中文</a> ·
-  <a href="./README_en.md">English</a> ·
-  <a href="./README_es.md">Español</a> ·
+  <a href="../README.md">English</a> ·
+  <a href="./README_en.md">English (docs)</a> ·
   <a href="./README_ru.md">Русский</a> ·
-  <a href="./README_ja.md">日本語</a> ·
-  <a href="./README_ko.md">한국어</a> ·
-  <a href="./README_fa.md">فارسی</a>
+  <a href="./README_zh.md">简体中文</a>
+  ·
+  <a href="../Changelog.md">Changelog</a>
 </p>
-## Предпросмотр
 
-| Тёмная тема                        | Светлая тема                         |
-| ---------------------------------- | ------------------------------------ |
-| ![Тёмная тема](./preview_dark.png) | ![Светлая тема](./preview_light.png) |
-
-## Установка
-
-Пожалуйста, перейдите на страницу релизов, чтобы скачать соответствующий установочный пакет: [Страница релизов](https://github.com/clash-verge-rev/clash-verge-rev/releases)<br>
-Перейти на [Страницу релизов](https://github.com/clash-verge-rev/clash-verge-rev/releases) to download the corresponding installation package<br>
-Поддержка Windows (x64/x86), Linux (x64/arm64) и macOS 10.15+ (intel/apple).
-
-#### Как выбрать дистрибутив?
-
-| Версия                | Характеристики                                                                                          | Ссылка                                                                                 |
-| :-------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------- |
-| Stable                | Официальный релиз, высокая надежность, подходит для повседневного использования.                        | [Release](https://github.com/clash-verge-rev/clash-verge-rev/releases)                 |
-| Alpha(неиспользуемый) | Тестирование процесса публикации.                                                                       | [Alpha](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/alpha)         |
-| AutoBuild             | Версия с постоянным обновлением, подходящая для тестирования и обратной связи. Может содержать дефекты. | [AutoBuild](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/autobuild) |
-
-#### Инструкции по установке и ответы на часто задаваемые вопросы можно найти на [странице документации](https://clash-verge-rev.github.io/)
-
-### TG канал: [@clash_verge_rev](https://t.me/clash_verge_re)
+<p align="center"><sub>Полный английский текст — в корне: <a href="../README.md"><code>README.md</code></a>.</sub></p>
 
 ---
 
-## Продвижение
+## Обзор
 
-#### [Doggygo VPN —— технический VPN-сервис (айрпорт)](https://verge.dginv.click/#/register?code=oaxsAGo6)
+**Sloth Clash** — GUI под **GPL-3.0** вокруг **Mihomo** (Clash Meta). В этом репозитории — оболочка **Wails** (`apps/sloth-clash-desktop`). Слой **системного сервиса / IPC** для Windows вынесен в отдельный проект: [sloth-clash-service-ipc](https://github.com/Nemu-x/sloth-clash-service-ipc) (артефакты релизов подтягивает `pnpm run prebuild`).
 
-- Высокопроизводительный иностранный VPN-сервис (айрпорт) с бесплатным пробным периодом, выгодными тарифами, возможностью разблокировки потокового ТВ и первым в мире поддержкой протокола Hysteria.
-- Зарегистрируйтесь по эксклюзивной ссылке Clash Verge и получите 3 дня бесплатного использования, 1 Гб трафика в день: [регистрация](https://verge.dginv.click/#/register?code=oaxsAGo6)
-- Эксклюзивный промо-код на скидку 20% для Clash Verge: verge20 (только 500 штук)
-- Специальный тарифный план всего за 15,8 юаней в месяц, 160 Гб трафика, скидка 20% при оплате за год
-- Команда за рубежом, без риска побега, до 50% кэшбэка
-- Архитектура с балансировкойнагрузки, высокоскоростная выделенная линия (совместима со старыми клиентами), чрезвычайно низкая задержка, без проблем в часы пик, 4K видео загружается мгновенно
-- Первый в мире VPN-сервис (айрпорт) на **протоколе QUIC**, теперь с более быстрыми протоколами семейства QUIC (лучшее сочетание с клиентом Clash Verge)
-- Разблокировка потоковые сервисы и ChatGPT
-- Официальный сайт: [https://狗狗加速.com](https://verge.dginv.click/#/register?code=oaxsAGo6)
+## Возможности (кратко)
 
-### 🤖 [GPTKefu — AI-платформа умного обслуживания клиентов с глубокой интеграцией Crisp](https://gptkefu.com)
+- Профили, прокси, правила и сценарии merge / скриптов в интерфейсе  
+- Встраивание ядра Mihomo (stable и опционально alpha через prebuild)  
+- Установщик сервиса Windows и раскладка sidecar под упаковку Wails  
+- Схема deep link `slothclash://` (см. `wails.json`)
 
-- 🧠 Глубокое понимание полного контекста диалога + распознавание изображений, автоматически даёт профессиональные и точные ответы — никаких шаблонных ответов.
-- ♾️ **Без ограничения количества ответов**, без беспокойства о квотах — в отличие от других AI-сервисов, берущих плату за каждое сообщение.
-- 💬 Предпродажные консультации, послепродажная поддержка, решение сложных вопросов — легко покрывает все сценарии, подтверждено реальными кейсами.
-- ⚡ Настройка за 3 минуты, без порога входа — мгновенное повышение эффективности обслуживания и удовлетворённости клиентов.
-- 🎁 Бесплатный 14-дневный пробный период премиум-плана — сначала попробуйте, потом платите: 👉 [Начать бесплатно](https://gptkefu.com)
-- 📢 TG-канал AI-поддержки: [@crisp_ai](https://t.me/crisp_ai)
+## Сборки
 
----
+Релизы приложения: [SlothClash releases](https://github.com/Nemu-x/SlothClash/releases).  
+Бинарники сервиса для сборки: [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases).
 
-## Фичи
+## Сборка локально
 
-- Основан на произвоительном Rust и фреймворке Tauri 2
-- Имеет встроенное ядро [Clash.Meta(mihomo)](https://github.com/MetaCubeX/mihomo) и поддерживает переключение на ядро версии `Alpha`.
-- Чистый и эстетичный пользовательский интерфейс, поддержка настраиваемых цветов темы, значков прокси-группы/системного трея и `CSS Injection`。
-- Управление и расширение конфигурационными файлами (Merge и Script), подсказки по синтаксису конфигурационных файлов.
-- Режим системного прокси и защита, `TUN (Tunneled Network Interface)` режим.
-- Визуальное редактирование узлов и правил
-- Резервное копирование и синхронизация конфигурации WebDAV
+Нужны: **Go 1.23+**, **Node 20+**, **pnpm**, Wails v2.
 
-### FAQ
-
-Смотрите [Страница часто задаваемых вопросов](https://clash-verge-rev.github.io/faq/windows.html)
-
-### Донат
-
-[Поддержите развитие Clash Verge Rev](https://github.com/sponsors/clash-verge-rev)
-
-## Разработка
-
-Дополнительные сведения смотреть в файле [CONTRIBUTING.md](../CONTRIBUTING.md).
-
-Для запуска сервера разработки выполните следующие команды после установки всех необходимых компонентов для **Tauri**:
-
-```shell
-pnpm i
-pnpm run prebuild
-pnpm dev
+```bash
+pnpm install
+pnpm run desktop:resources
+pnpm run wails:dev
 ```
 
-## Вклад
+Каталог `desktop:resources`: `apps/sloth-clash-desktop/build/` (в git не входит). На Windows в цепочку входит **`pnpm run icons:windows`** — обновляет **`build/windows/icon.ico`** из `build/appicon.png`.
 
-Обращения и запросы на PR приветствуются!
+## CI
 
-## Благодарность
+GitHub Actions: `.github/workflows/desktop-artifacts.yml` — матрица по тегу `v*` или ручной запуск.
 
-Clash Verge rev был основан на этих проектах или вдохновлен ими, и так далее:
+## Участие
 
-- [zzzgydi/clash-verge](https://github.com/zzzgydi/clash-verge): Графический интерфейс Clash на основе tauri. Поддерживает Windows, macOS и Linux.
-- [tauri-apps/tauri](https://github.com/tauri-apps/tauri): Создавайте более компактные, быстрые и безопасные настольные приложения с веб-интерфейсом.
-- [Dreamacro/clash](https://github.com/Dreamacro/clash): Правило-ориентированный туннель на Go.
-- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo): Правило-ориентированный туннель на Go.
-- [Fndroid/clash_for_windows_pkg](https://github.com/Fndroid/clash_for_windows_pkg): Графический интерфейс пользователя для Windows/macOS на основе Clash.
-- [vitejs/vite](https://github.com/vitejs/vite): Инструменты нового поколения для фронтенда. Они быстрые!
+См. [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Благодарности
+
+- **База (откуда выросла концепция GUI):** [clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) — Clash Verge Rev (Tauri); в этом репозитории продукт перенесён на **Wails + Go**.
+- **Ядро прокси (Clash Meta):** [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo).
+- **Десктопная оболочка:** [Wails](https://github.com/wailsapp/wails).
+
+Также: [zzzgydi/clash-verge](https://github.com/zzzgydi/clash-verge) (оригинальный Clash Verge) и экосистема Clash.
 
 ## Лицензия
 
-GPL-3.0 License. Подробности смотрите в [Лицензии](../LICENSE).
+[GPL-3.0](../LICENSE)

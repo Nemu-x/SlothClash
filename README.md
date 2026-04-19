@@ -47,3 +47,26 @@ Prerequisites: **Go 1.23+**, **Node 20+**, **pnpm**, Wails v2 (`go run github.co
 pnpm install
 pnpm run desktop:resources   # mihomo sidecar, geo DBs, Sloth service exes, Windows icon → build/
 pnpm run wails:dev           # or: pnpm run wails:build
+```
+
+`desktop:resources` writes under `apps/sloth-clash-desktop/build/` (ignored by git). On Windows, **`pnpm run icons:windows`** is included there and refreshes **`build/windows/icon.ico`** from `build/appicon.png` so installers / shortcuts pick up the right icon.
+
+## CI
+
+GitHub Actions: `.github/workflows/desktop-artifacts.yml` — matrix build on tag `v*` or manual dispatch.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Acknowledgements
+
+- **Basis (upstream GUI this work descends from):** [clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) — Clash Verge Rev (Tauri); Sloth Clash reimplements the product direction with **Wails + Go** in this repo.
+- **Proxy core (Clash Meta):** [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo).
+- **Desktop shell:** [Wails](https://github.com/wailsapp/wails) — Go backend + web frontend in one binary.
+
+Also: [zzzgydi/clash-verge](https://github.com/zzzgydi/clash-verge) (original Clash Verge), and the wider Clash ecosystem.
+
+## License
+
+[GPL-3.0](./LICENSE)

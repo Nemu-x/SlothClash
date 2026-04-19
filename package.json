@@ -18,7 +18,7 @@
     "desktop:build:windows": "node scripts/wails.mjs build -platform windows/amd64 -clean -nsis",
     "desktop:build:darwin:arm64": "node scripts/wails.mjs build -platform darwin/arm64 -clean",
     "desktop:build:darwin:amd64": "node scripts/wails.mjs build -platform darwin/amd64 -clean",
-    "desktop:build:linux:amd64": "node scripts/wails.mjs build -platform linux/amd64 -clean",
+    "desktop:build:linux:amd64": "node scripts/wails.mjs build -platform linux/amd64 -clean -tags webkit2_41",
     "updater": "node scripts/updater.mjs",
     "updater-fixed-webview2": "node scripts/updater-fixed-webview2.mjs",
     "fix-alpha-version": "node scripts/fix-alpha_version.mjs",

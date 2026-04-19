@@ -1,9 +1,0 @@
-{
-  "page": {
-    "title": "ログ"
-  },
-  "actions": {
-    "showDescending": "Newest first",
-    "showAscending": "Oldest first"
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "page": {
-    "title": "Логи"
-  },
-  "actions": {
-    "showDescending": "Сначала новые",
-    "showAscending": "Сначала старые"
-  }
-}

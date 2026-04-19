@@ -1,5 +1,8 @@
 /**
  * Build multi-size Windows icon.ico from build/appicon.png (Wails reads build/windows/icon.ico).
+ * Used for: window title bar / .exe syso resources / NSIS installer header icon (MUI_ICON).
+ * macOS .icns and Linux icons are produced by Wails from the same build/appicon.png at package time.
+ * Tray: see scripts/sync-desktop-packaging.mjs (copies appicon → trayicons/sloth.png for future TrayMenu).
  */
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'

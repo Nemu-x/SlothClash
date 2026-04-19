@@ -1,3 +1,7 @@
-build/bin
+build/
+trayicons/
+SlothClashDesktop.exe
+*.exe~
 node_modules
 frontend/dist
+frontend/node_modules

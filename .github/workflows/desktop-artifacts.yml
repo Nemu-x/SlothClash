@@ -1,4 +1,6 @@
-# Builds Sloth Clash desktop for Windows / macOS (Intel + Apple) / Linux and uploads artifacts.
+# Builds Sloth Clash desktop (Wails + Go + React) for Windows / macOS / Linux.
+# Service binaries for `pnpm run prebuild` / `prepare:wails` come from:
+# https://github.com/Nemu-x/sloth-clash-service-ipc/releases (per-target tags, e.g. x86_64-pc-windows-msvc).
 # Run manually (workflow_dispatch) or push a version tag (e.g. v0.1.0-alpha.1).
 
 name: Desktop artifacts
@@ -38,15 +40,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Icons + sidecars
-        run: |
-          pnpm run icons:windows
-          pnpm run prebuild
-          pnpm run prepare:wails
+      - name: Install NSIS (Windows installer)
+        run: choco install nsis -y
 
-      - name: Wails build (windows/amd64)
-        working-directory: apps/sloth-clash-desktop
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform windows/amd64 -clean
+      - name: Desktop resources + icons + NSIS template
+        run: pnpm run desktop:resources
+
+      - name: Wails build (windows/amd64 + NSIS)
+        run: pnpm run desktop:build:windows
 
       - uses: actions/upload-artifact@v4
         with:
@@ -74,14 +75,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Sidecars (skip Windows-only resources where applicable)
-        run: |
-          pnpm run prebuild
-          pnpm run prepare:wails
+      - name: Desktop resources
+        run: pnpm run desktop:resources
 
       - name: Wails build (darwin/arm64)
-        working-directory: apps/sloth-clash-desktop
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/arm64 -clean
+        run: pnpm run desktop:build:darwin:arm64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -109,14 +107,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Sidecars
-        run: |
-          pnpm run prebuild
-          pnpm run prepare:wails
+      - name: Desktop resources
+        run: pnpm run desktop:resources
 
       - name: Wails build (darwin/amd64)
-        working-directory: apps/sloth-clash-desktop
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/amd64 -clean
+        run: pnpm run desktop:build:darwin:amd64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -150,14 +145,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Sidecars
-        run: |
-          pnpm run prebuild
-          pnpm run prepare:wails
+      - name: Desktop resources
+        run: pnpm run desktop:resources
 
       - name: Wails build (linux/amd64)
-        working-directory: apps/sloth-clash-desktop
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform linux/amd64 -clean
+        run: pnpm run desktop:build:linux:amd64
 
       - uses: actions/upload-artifact@v4
         with:

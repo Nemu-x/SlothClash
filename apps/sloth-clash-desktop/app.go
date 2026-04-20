@@ -1278,8 +1278,11 @@ func installServiceElevatedWindows(installPath, workDir string) ([]byte, error) 
 }
 
 func installServiceElevatedDarwin(installPath, workDir string) ([]byte, error) {
+	_ = os.Chmod(installPath, 0o755)
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "'\\''") }
-	shellCmd := fmt.Sprintf("cd '%s' && '%s'", esc(workDir), esc(installPath))
+	// Some installer builds explicitly require launching through sudo/pkexec.
+	// We use sudo under AppleScript elevation to satisfy that check reliably.
+	shellCmd := fmt.Sprintf("cd '%s' && /usr/bin/sudo '%s'", esc(workDir), esc(installPath))
 	appleScript := fmt.Sprintf("do shell script %q with administrator privileges", shellCmd)
 	cmd := exec.Command("osascript", "-e", appleScript)
 	return cmd.CombinedOutput()

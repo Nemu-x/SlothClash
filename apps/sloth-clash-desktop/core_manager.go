@@ -381,7 +381,6 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		return err
 	}
 	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController)
-	ensureGlobalProxyGroup(m)
 	mergeBundledGeoIfMissing(m, dataDir)
 
 	out, err := yaml.Marshal(m)
@@ -407,7 +406,6 @@ func writeRuntimeConfigIfNeeded(a *App, dataDir string, profile Profile, ctrlPor
 				return err
 			}
 			overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withEC)
-			ensureGlobalProxyGroup(m)
 			out, err := yaml.Marshal(m)
 			if err != nil {
 				return err

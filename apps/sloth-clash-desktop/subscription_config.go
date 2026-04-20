@@ -303,7 +303,6 @@ func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, r
 	}
 
 	overlaySlothRuntimeOnMap(doc, mixedPort, ctrlPort, secret, traffic, withExternalController)
-	ensureGlobalProxyGroup(doc)
 	if err := validateRulePoliciesExist(doc); err != nil {
 		return false, err
 	}

@@ -1027,7 +1027,9 @@ func (a *App) RefreshProxies() (AppState, error) {
 	return a.state, nil
 }
 
-// ReadServiceLatestLog returns a tail of logs/service_latest.log for the active profile.
+// ReadServiceLatestLog returns a tail of runtime logs for the active profile.
+// Windows service mode writes logs/service_latest.log, while direct core mode (macOS/Linux)
+// primarily writes core.log.
 func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 	if maxBytes <= 0 {
 		maxBytes = 120_000
@@ -1046,13 +1048,28 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 	if err != nil {
 		return ServiceLogPeek{LastError: err.Error()}
 	}
-	p := filepath.Join(root, "runtime", pid, "logs", "service_latest.log")
-	st, err := os.Stat(p)
-	if err != nil {
-		return ServiceLogPeek{Path: p, LastError: err.Error()}
+	runtimeDir := filepath.Join(root, "runtime", pid)
+	candidates := []string{
+		filepath.Join(runtimeDir, "logs", "service_latest.log"),
+		filepath.Join(runtimeDir, "core.log"),
+		filepath.Join(runtimeDir, "logs", "service.log"),
 	}
-	if st.IsDir() {
-		return ServiceLogPeek{Path: p, LastError: "log path is a directory"}
+	var p string
+	var st os.FileInfo
+	for _, cand := range candidates {
+		info, serr := os.Stat(cand)
+		if serr != nil || info.IsDir() {
+			continue
+		}
+		p = cand
+		st = info
+		break
+	}
+	if p == "" {
+		return ServiceLogPeek{
+			Path:      candidates[0],
+			LastError: "no runtime log file found (tried service_latest.log/core.log/service.log)",
+		}
 	}
 	f, err := os.Open(p)
 	if err != nil {

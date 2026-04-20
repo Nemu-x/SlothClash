@@ -87,15 +87,18 @@ jobs:
       - name: Wails build (darwin/arm64)
         run: pnpm run desktop:build:darwin:arm64
 
-      - name: Pack macOS arm64 artifact (preserve executable bits)
+      - name: Package DMG (darwin/arm64)
+        run: pnpm run desktop:package:dmg
+
+      - name: Pack macOS arm64 artifact
         run: |
           mkdir -p dist
-          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-darwin-arm64-${GITHUB_REF_NAME}.tar.gz" .
+          cp apps/sloth-clash-desktop/build/bin/*.dmg dist/ || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-darwin-arm64
-          path: dist/sloth-clash-darwin-arm64-${{ github.ref_name }}.tar.gz
+          path: dist/*.dmg
 
   linux-amd64:
     runs-on: ubuntu-24.04
@@ -161,3 +164,4 @@ jobs:
           files: |
             dist/**/*.zip
             dist/**/*.tar.gz
+            dist/**/*.dmg

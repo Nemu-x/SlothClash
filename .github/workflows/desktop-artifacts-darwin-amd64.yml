@@ -1,13 +1,10 @@
-# macOS Intel (darwin/amd64) — separate workflow so tag releases are not blocked by macos-13 queue.
-# Pushes the same tag: softprops/action-gh-release adds this zip to the existing Release.
+# macOS Intel (darwin/amd64) is kept as manual-only fallback because macos-13 queues are unreliable.
+# It does not run on tag push and does not block standard releases.
 
 name: Desktop artifacts (macOS Intel)
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: read
@@ -71,4 +68,5 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false
+          overwrite_files: true
           files: dist/**/*.tar.gz

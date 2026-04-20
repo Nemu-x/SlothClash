@@ -1,7 +1,7 @@
 # Builds Sloth Clash desktop for Windows, macOS Apple Silicon, and Linux.
 # macOS Intel (darwin/amd64) is in desktop-artifacts-darwin-amd64.yml (slow GitHub queue).
 # Service binaries: https://github.com/Nemu-x/sloth-clash-service-ipc/releases
-# Run: workflow_dispatch or push tag v* — both workflows attach assets to the same Release.
+# Run: workflow_dispatch or push tag v* for the primary release artifacts.
 
 name: Desktop artifacts
 
@@ -157,6 +157,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          overwrite_files: true
           files: |
             dist/**/*.zip
             dist/**/*.tar.gz

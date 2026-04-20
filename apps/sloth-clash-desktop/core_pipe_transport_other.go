@@ -2,9 +2,21 @@
 
 package main
 
-import "net/http"
+import (
+	"context"
+	"net"
+	"net/http"
+)
 
 func coreTransportForListen(listen string) http.RoundTripper {
-	_ = listen
-	return nil
+	if !isUnixSocketEndpoint(listen) {
+		return nil
+	}
+	return &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", listen)
+		},
+		DisableKeepAlives: true,
+	}
 }

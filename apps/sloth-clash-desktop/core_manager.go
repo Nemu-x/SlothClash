@@ -67,6 +67,11 @@ func isWinPipeEndpoint(addr string) bool {
 	return strings.EqualFold(s[:len(winPipePathPrefix)], winPipePathPrefix)
 }
 
+func isUnixSocketEndpoint(addr string) bool {
+	s := strings.TrimSpace(addr)
+	return strings.HasPrefix(s, "/")
+}
+
 // effectiveCoreEndpointLocked returns the mihomo API address (TCP host:port or \\.\pipe\...).
 // Caller must hold a.mu (Lock or RLock). Prefer coreListen; fall back to published Core.ControllerAddr.
 func (a *App) effectiveCoreEndpointLocked() string {
@@ -76,7 +81,27 @@ func (a *App) effectiveCoreEndpointLocked() string {
 	return strings.TrimSpace(a.state.Core.ControllerAddr)
 }
 
-func slothMihomoPipeName(profileID string) string {
+func slothMihomoIPCPath(profileID string) string {
+	if runtime.GOOS != "windows" {
+		var b strings.Builder
+		b.WriteString("/tmp/slothclash/sloth-mihomo-")
+		for _, r := range profileID {
+			switch {
+			case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_':
+				b.WriteRune(r)
+			default:
+				b.WriteByte('-')
+			}
+		}
+		s := b.String()
+		if s == "/tmp/slothclash/sloth-mihomo-" {
+			return "/tmp/slothclash/sloth-mihomo-default.sock"
+		}
+		if !strings.HasSuffix(s, ".sock") {
+			s += ".sock"
+		}
+		return s
+	}
 	var b strings.Builder
 	b.WriteString(`\\.\pipe\sloth-mihomo-`)
 	for _, r := range profileID {
@@ -432,7 +457,7 @@ func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string
 		return nil, errors.New("core not configured")
 	}
 	var u string
-	if isWinPipeEndpoint(listen) {
+	if isWinPipeEndpoint(listen) || isUnixSocketEndpoint(listen) {
 		u = "http://mihomo" + path
 	} else {
 		h := strings.TrimSpace(listen)
@@ -443,8 +468,8 @@ func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string
 	if err != nil {
 		return nil, err
 	}
-	// mihomo external API on Windows named pipe is started with an empty controller secret (see MetaCubeX/mihomo hub/route/server.go startPipe).
-	if secret != "" && !isWinPipeEndpoint(listen) {
+	// mihomo external API on local socket/pipe endpoints starts without bearer auth.
+	if secret != "" && !isWinPipeEndpoint(listen) && !isUnixSocketEndpoint(listen) {
 		req.Header.Set("Authorization", "Bearer "+secret)
 	}
 	if body != nil {
@@ -602,8 +627,8 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 		traffic = "proxy"
 	}
 
-	useWindowsServiceCore := runtime.GOOS == "windows" && a.state.Service.Installed
-	if useWindowsServiceCore {
+	useServiceCore := (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && a.state.Service.Installed
+	if useServiceCore {
 		if err := writeRuntimeConfigIfNeeded(a, dataDir, profile, 0, mixedPort, secret, traffic, false); err != nil {
 			a.mu.Unlock()
 			return err
@@ -623,7 +648,10 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 			a.mu.Unlock()
 			return err
 		}
-		pipeName := slothMihomoPipeName(profile.ID)
+		pipeName := slothMihomoIPCPath(profile.ID)
+		if isUnixSocketEndpoint(pipeName) {
+			_ = os.Remove(pipeName)
+		}
 		a.mu.Unlock()
 
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
@@ -680,7 +708,7 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 		a.mu.Lock()
 		a.stopCoreLocked()
 		a.mu.Unlock()
-		return errors.New("core did not become ready in time (check Sloth Windows service logs and SlothClash/runtime/<profile-id>/ under your config directory)")
+		return errors.New("core did not become ready in time (check Sloth service logs and SlothClash/runtime/<profile-id>/ under your config directory)")
 	}
 
 	ctrlPort, err := pickFreePort()

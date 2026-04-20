@@ -3799,23 +3799,36 @@ function App() {
                   className="btn primary"
                   onClick={() => {
                     if (!profileRulesModal) return
-                    let body = rulesMergeDraft
-                    if (rulesUiMode === 'visual') {
-                      body = applyRulesBucketsToMerge(rulesMergeDraft, {
-                        prepend: ruleRows,
-                        append: ruleAppendRows,
-                        delete: [],
-                      })
-                    } else {
-                      const buckets =
-                        rulesBucketsFromAdvancedYaml(rulesAdvancedDraft)
-                      body = applyRulesBucketsToMerge(rulesMergeDraft, buckets)
-                    }
-                    void run(() =>
-                      SetProfileRulesTemplate(profileRulesModal.id, body),
-                    )
-                    setProfileRulesModal(null)
-                    setTunBanner('Rules saved into merge template.')
+                    void (async () => {
+                      const body =
+                        rulesUiMode === 'visual'
+                          ? applyRulesBucketsToMerge(rulesMergeDraft, {
+                              prepend: ruleRows,
+                              append: ruleAppendRows,
+                              delete: [],
+                            })
+                          : (() => {
+                              const buckets =
+                                rulesBucketsFromAdvancedYaml(rulesAdvancedDraft)
+                              return applyRulesBucketsToMerge(
+                                rulesMergeDraft,
+                                buckets,
+                              )
+                            })()
+                      setError('')
+                      try {
+                        await SetProfileRulesTemplate(
+                          profileRulesModal.id,
+                          body,
+                        )
+                        await refresh()
+                        setProfileRulesModal(null)
+                        setTunBanner('Rules saved into merge template.')
+                      } catch (e: any) {
+                        setError(String(e))
+                        await refresh()
+                      }
+                    })()
                   }}
                 >
                   Save

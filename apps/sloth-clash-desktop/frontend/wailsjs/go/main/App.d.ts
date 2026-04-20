@@ -27,6 +27,8 @@ export function GetPreferredLanguage(): Promise<string>
 
 export function GetProfilePaths(arg1: string): Promise<main.ProfilePaths>
 
+export function GetTrayAvailability(): Promise<boolean>
+
 export function GetTunStatus(): Promise<main.ServiceState>
 
 export function GetUpdateState(): Promise<main.UpdateState>
@@ -39,6 +41,8 @@ export function ImportProfileFromURL(
 export function InstallService(): Promise<main.TunSetupResult>
 
 export function ListProfiles(): Promise<Array<main.Profile>>
+
+export function MarkQuitIntent(): Promise<void>
 
 export function OnSecondInstance(
   arg1: options.SecondInstanceData,
@@ -64,6 +68,8 @@ export function RenameProfile(
 ): Promise<main.AppState>
 
 export function SelectProxyGroup(arg1: string): Promise<main.AppState>
+
+export function SetCloseToTrayPreference(arg1: boolean): Promise<main.AppState>
 
 export function SetMode(arg1: string): Promise<main.AppState>
 

@@ -22,6 +22,17 @@
     #121110 100%
   );
   color: #f2efe8;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.shell input,
+.shell textarea,
+.shell select,
+.shell [contenteditable="true"],
+.shell .allowSelect {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .shell.navCollapsed {

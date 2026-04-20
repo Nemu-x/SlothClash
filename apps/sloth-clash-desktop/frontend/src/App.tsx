@@ -24,6 +24,7 @@ import {
   EnsureTunReady,
   FetchRulesOverview,
   GetAppState,
+  GetTrayAvailability,
   GetProfilePaths,
   GetPreferredLanguage,
   GetTunStatus,
@@ -40,6 +41,7 @@ import {
   SetProfileMergeTemplate,
   SetProfileProxyTemplate,
   SetProfileRulesTemplate,
+  SetCloseToTrayPreference,
   SetMode,
   SetProfileAutoUpdate,
   SetProxyNode,
@@ -152,12 +154,14 @@ function extractNodeFlagIso(nodeName: string): string {
 function nodeDisplayName(nodeName: string): string {
   const s = String(nodeName ?? '').trim()
   if (!s) return '—'
-  // Some providers prefix names like "ES es <name>" — collapse duplicated ISO tokens.
-  const dedup = s.replace(/^([A-Za-z]{2})\s+\1\s+/i, '')
-  if (dedup !== s) return dedup
-  const m = /^([A-Za-z]{2})\s+(.+)$/.exec(s)
-  if (!m) return s
-  return m[2]
+  // Normalize noisy provider prefixes: repeated flag emojis / ISO tokens.
+  let out = s
+  out = out.replace(/^(?:[\u{1F1E6}-\u{1F1FF}]{2}\s*)+/gu, '')
+  out = out.replace(/^(?:[A-Za-z]{2}\s+){1,4}/, '')
+  // Some providers add duplicate ISO pair like "ES es Name".
+  out = out.replace(/^([A-Za-z]{2})\s+\1\s+/i, '')
+  out = out.trim()
+  return out || s
 }
 
 function isoToFlagEmoji(iso2: string): string {
@@ -195,7 +199,9 @@ function FlagMark({
           onError={() => setImgVisible(false)}
         />
       ) : null}
-      {emoji ? <span className="proxyFlagEmoji">{emoji}</span> : null}
+      {!imgVisible && emoji ? (
+        <span className="proxyFlagEmoji">{emoji}</span>
+      ) : null}
       {!imgVisible && !emoji ? (
         <span className="proxyFlagIso">{iso}</span>
       ) : null}
@@ -491,6 +497,7 @@ function App() {
     loadCompactSettings(),
   )
   const [settingsBusy, setSettingsBusy] = useState(false)
+  const [trayAvailable, setTrayAvailable] = useState(false)
   const [settingsResetModal, setSettingsResetModal] = useState<
     'keep_profiles' | 'with_profiles' | null
   >(null)
@@ -630,7 +637,9 @@ function App() {
   useEffect(() => {
     if (!connectBusy) return
     const st = state?.connection?.status
-    if (st === 'connected' || st === 'error' || st === 'disconnected') {
+    // Do not clear on transient "disconnected" during async connect bootstrap.
+    // It causes visual bounce: idle -> connecting -> idle -> connected.
+    if (st === 'connected' || st === 'error') {
       clearConnectBusySmooth()
     }
   }, [state?.connection?.status, connectBusy, clearConnectBusySmooth])
@@ -791,6 +800,37 @@ function App() {
   useEffect(() => {
     localStorage.setItem(LS_SETTINGS, JSON.stringify(settings))
   }, [settings])
+
+  useEffect(() => {
+    let cancelled = false
+    let ticks = 0
+    const refreshTray = async () => {
+      try {
+        const ok = await GetTrayAvailability()
+        if (!cancelled) setTrayAvailable(Boolean(ok))
+      } catch {
+        if (!cancelled) setTrayAvailable(false)
+      }
+    }
+    void (async () => {
+      await refreshTray()
+    })()
+    const id = window.setInterval(() => {
+      ticks += 1
+      void refreshTray()
+      if (ticks >= 20) window.clearInterval(id)
+    }, 500)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
+
+  useEffect(() => {
+    void SetCloseToTrayPreference(
+      Boolean(settings.closeToTray && trayAvailable),
+    )
+  }, [settings.closeToTray, trayAvailable])
 
   useEffect(() => {
     if (!profileMenu) return
@@ -1452,7 +1492,11 @@ function App() {
             aria-label="Close"
             onClick={() => {
               if (settings.closeToTray) {
-                void WindowHide()
+                if (trayAvailable) {
+                  void WindowHide()
+                  return
+                }
+                void WindowMinimise()
                 return
               }
               void Quit()
@@ -2695,7 +2739,9 @@ function App() {
                   <button
                     type="button"
                     className={`trafficKnob ${settings.closeToTray ? 'on' : ''}`}
+                    disabled={!trayAvailable}
                     onClick={() =>
+                      trayAvailable &&
                       setSetting('closeToTray', !settings.closeToTray)
                     }
                   >

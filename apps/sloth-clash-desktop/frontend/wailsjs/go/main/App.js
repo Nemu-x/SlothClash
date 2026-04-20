@@ -50,6 +50,10 @@ export function GetProfilePaths(arg1) {
   return window['go']['main']['App']['GetProfilePaths'](arg1)
 }
 
+export function GetTrayAvailability() {
+  return window['go']['main']['App']['GetTrayAvailability']()
+}
+
 export function GetTunStatus() {
   return window['go']['main']['App']['GetTunStatus']()
 }
@@ -68,6 +72,10 @@ export function InstallService() {
 
 export function ListProfiles() {
   return window['go']['main']['App']['ListProfiles']()
+}
+
+export function MarkQuitIntent() {
+  return window['go']['main']['App']['MarkQuitIntent']()
 }
 
 export function OnSecondInstance(arg1) {
@@ -104,6 +112,10 @@ export function RenameProfile(arg1, arg2) {
 
 export function SelectProxyGroup(arg1) {
   return window['go']['main']['App']['SelectProxyGroup'](arg1)
+}
+
+export function SetCloseToTrayPreference(arg1) {
+  return window['go']['main']['App']['SetCloseToTrayPreference'](arg1)
 }
 
 export function SetMode(arg1) {

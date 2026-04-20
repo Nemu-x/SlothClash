@@ -273,8 +273,12 @@ func tunBlockForTraffic(traffic string) string {
   enable: true
   stack: system
   auto-route: true
+  auto-redir: true
   auto-detect-interface: true
   strict-route: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53
 `
 	}
 }
@@ -627,6 +631,13 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			return err
 		}
+		// Best effort: stop any previous core instance before starting a new one.
+		// Without this, switching/reconnecting in TUN mode can leave a stale TUN instance
+		// and mihomo then reports "Cannot create a file when that file already exists."
+		stopCtx, stopCancel := context.WithTimeout(parent, 8*time.Second)
+		_ = ipcSlothStopCore(stopCtx)
+		stopCancel()
+		time.Sleep(320 * time.Millisecond)
 		startCtx, startCancel := context.WithTimeout(parent, 55*time.Second)
 		errStart := ipcSlothStartClash(startCtx, slothIPCStartParams{
 			CorePath:     binAbs,

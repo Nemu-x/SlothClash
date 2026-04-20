@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -95,7 +96,7 @@ func queryWindowsServiceStatus(name string) (installed bool, running bool, lastE
 	if runtime.GOOS != "windows" {
 		return false, false, ""
 	}
-	cmd := exec.Command("sc", "query", name)
+	cmd := exec.Command("sc.exe", "query", name)
 	if attr := hideWindowSysProcAttr(); attr != nil {
 		cmd.SysProcAttr = attr
 	}
@@ -108,21 +109,69 @@ func queryWindowsServiceStatus(name string) (installed bool, running bool, lastE
 		}
 		return false, false, text
 	}
+	// Parse numeric STATE code to avoid locale-dependent "RUNNING" text parsing.
+	// Example line: "STATE              : 4  RUNNING"
+	re := regexp.MustCompile(`(?mi)^\s*STATE\s*:\s*([0-9]+)\b`)
+	m := re.FindStringSubmatch(text)
+	if len(m) >= 2 {
+		n, convErr := strconv.Atoi(strings.TrimSpace(m[1]))
+		if convErr == nil {
+			return true, n == 4, ""
+		}
+	}
+	// Fallback for unusual outputs.
 	upper := strings.ToUpper(text)
 	return true, strings.Contains(upper, "RUNNING"), ""
 }
 
 func (a *App) refreshServiceStatus() {
-	if runtime.GOOS != "windows" {
+	var installed, running bool
+	var lastErr string
+	switch runtime.GOOS {
+	case "windows":
+		installed, running, lastErr = queryWindowsServiceStatus("sloth_clash_service")
+	case "darwin":
+		installed, running, lastErr = queryDarwinServiceStatus()
+	default:
 		return
 	}
-	installed, running, lastErr := queryWindowsServiceStatus("sloth_clash_service")
 	a.mu.Lock()
 	a.state.Service.Installed = installed
 	a.state.Service.Running = running
 	a.state.Service.LastError = strings.TrimSpace(lastErr)
 	a.state.UpdatedAt = time.Now().Unix()
 	a.mu.Unlock()
+}
+
+func queryDarwinServiceStatus() (installed bool, running bool, lastErr string) {
+	plist := "/Library/LaunchDaemons/dev.slothclash.desktop.ipc.service.plist"
+	bundleBin := "/Library/PrivilegedHelperTools/dev.slothclash.desktop.ipc.service.bundle/Contents/MacOS/sloth-clash-service"
+	if _, err := os.Stat(plist); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, false, ""
+		}
+		return false, false, err.Error()
+	}
+	if _, err := os.Stat(bundleBin); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, false, ""
+		}
+		return false, false, err.Error()
+	}
+	installed = true
+	cmd := exec.Command("launchctl", "print", "system/dev.slothclash.desktop.ipc.service")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		s := strings.ToLower(string(out))
+		running = strings.Contains(s, "state = running") || strings.Contains(s, "\"state\" => \"running\"")
+		return installed, running, ""
+	}
+	txt := strings.TrimSpace(string(out))
+	lt := strings.ToLower(txt)
+	if strings.Contains(lt, "could not find service") || strings.Contains(lt, "unknown service") {
+		return installed, false, ""
+	}
+	return installed, false, txt
 }
 
 // OnSecondInstance is wired from main.go when SingleInstanceLock fires (e.g. slothclash:// opened while running).
@@ -194,6 +243,15 @@ func (a *App) GetAppState() AppState {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.state
+}
+
+// GetPreferredLanguage returns installer/system preferred UI language for first-run.
+func (a *App) GetPreferredLanguage() string {
+	lang := strings.TrimSpace(detectPreferredLanguage())
+	if lang == "ru" || lang == "zh" || lang == "en" {
+		return lang
+	}
+	return ""
 }
 
 func (a *App) Connect() (AppState, error) {
@@ -864,6 +922,8 @@ func (a *App) InstallService() (TunSetupResult, error) {
 			wailsrt.WindowShow(a.ctx)
 			wailsrt.WindowUnminimise(a.ctx)
 		}
+	} else if runtime.GOOS == "darwin" {
+		out, runErr = installServiceElevatedDarwin(installPath, tmpDir)
 	} else {
 		cmd := exec.Command(installPath)
 		cmd.Dir = tmpDir
@@ -887,7 +947,7 @@ func (a *App) InstallService() (TunSetupResult, error) {
 		}, nil
 	}
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		a.refreshServiceStatus()
 	} else {
 		a.mu.Lock()
@@ -1214,6 +1274,14 @@ func installServiceElevatedWindows(installPath, workDir string) ([]byte, error) 
 		esc(workDir),
 	)
 	cmd := exec.Command(psExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	return cmd.CombinedOutput()
+}
+
+func installServiceElevatedDarwin(installPath, workDir string) ([]byte, error) {
+	esc := func(s string) string { return strings.ReplaceAll(s, "'", "'\\''") }
+	shellCmd := fmt.Sprintf("cd '%s' && '%s'", esc(workDir), esc(installPath))
+	appleScript := fmt.Sprintf("do shell script %q with administrator privileges", shellCmd)
+	cmd := exec.Command("osascript", "-e", appleScript)
 	return cmd.CombinedOutput()
 }
 

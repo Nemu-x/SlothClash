@@ -39,7 +39,9 @@ func main() {
 				app.OnSecondInstance(data)
 			},
 		},
-		OnStartup: app.startup,
+		OnStartup:     app.startup,
+		OnShutdown:    app.shutdown,
+		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,
 		},

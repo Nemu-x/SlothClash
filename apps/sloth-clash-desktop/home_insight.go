@@ -19,6 +19,11 @@ import (
 
 // RefreshHomeInsight measures node latency (mihomo API), exit IP via mixed-port proxy, and optionally direct WAN IP.
 func (a *App) RefreshHomeInsight() (AppState, error) {
+	if !a.insightRefreshRunning.CompareAndSwap(false, true) {
+		return a.GetAppState(), nil
+	}
+	defer a.insightRefreshRunning.Store(false)
+
 	a.mu.RLock()
 	st := a.state.Connection.Status
 	mode := strings.TrimSpace(a.state.Mode.Current)
@@ -47,7 +52,9 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 16*time.Second)
 		ms, err := measureNodeLatencyMs(ctx, listen, secret, delayName)
 		if err != nil {
-			ins.LatencyError = trimErr(err.Error())
+			if !isIgnorableLatencyError(err) {
+				ins.LatencyError = trimErr(err.Error())
+			}
 		} else if ms > 0 {
 			ins.NodeLatencyMs = ms
 		}
@@ -113,6 +120,23 @@ func trimErr(s string) string {
 		return s[:220] + "…"
 	}
 	return s
+}
+
+func isIgnorableLatencyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(strings.TrimSpace(err.Error()))
+	if strings.Contains(s, "exit status 4") {
+		return true
+	}
+	if strings.Contains(s, "parameters were not valid") {
+		return true
+	}
+	if strings.Contains(s, "unsupported") && strings.Contains(s, "delay") {
+		return true
+	}
+	return false
 }
 
 func resolveInsightDelayName(groups []ProxyGroup, activeGroup string) string {

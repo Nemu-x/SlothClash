@@ -21,6 +21,14 @@ import (
 const (
 	githubOwner = "Nemu-x"
 	githubRepo  = "SlothClash"
+
+	githubAPIHTTPTimeout   = 45 * time.Second
+	updateDownloadTimeout = 60 * time.Minute
+)
+
+var (
+	githubAPIHTTPClient       = &http.Client{Timeout: githubAPIHTTPTimeout}
+	updateDownloadHTTPClient = &http.Client{Timeout: updateDownloadTimeout}
 )
 
 type githubRelease struct {
@@ -101,7 +109,7 @@ func fetchLatestGitHubRelease() (tag, htmlURL, assetName, assetURL string, err e
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
 		return "", "", "", "", err
 	}
@@ -213,7 +221,7 @@ func (a *App) ApplyUpdate() error {
 		return err
 	}
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := updateDownloadHTTPClient.Do(req)
 	if err != nil {
 		out.Close()
 		return err

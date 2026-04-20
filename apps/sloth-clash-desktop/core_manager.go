@@ -24,6 +24,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// errConnectAborted is returned when connect context is cancelled or a newer connect/disconnect superseded this attempt.
+var errConnectAborted = errors.New("connect aborted")
+
 func slothDataRoot() (string, error) {
 	d, err := os.UserConfigDir()
 	if err != nil {
@@ -526,7 +529,7 @@ func (a *App) coreFetchVersion(ctx context.Context) (string, error) {
 }
 
 func (a *App) stopCoreLocked() {
-	a.clearWindowsSystemProxyLocked()
+	a.clearSystemProxyLocked()
 	a.restoreTakenOverTunServicesLocked()
 	a.coreStopIntentional = true
 	if a.coreCancel != nil {
@@ -584,7 +587,8 @@ func fetchVersionAt(listen, secret string) (string, error) {
 }
 
 // startEmbeddedCore starts mihomo for the given profile. Must not be called with a.mu held.
-func (a *App) startEmbeddedCore(profile Profile) error {
+// gen must match a.connectGen for the in-flight Connect job so we can exit early on supersede or app shutdown.
+func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 	if strings.TrimSpace(profile.URL) == "" {
 		return errors.New("active profile has no subscription URL")
 	}
@@ -708,6 +712,20 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 
 		deadline := time.Now().Add(45 * time.Second)
 		for time.Now().Before(deadline) {
+			select {
+			case <-parent.Done():
+				a.mu.Lock()
+				a.stopCoreLocked()
+				a.mu.Unlock()
+				return errConnectAborted
+			default:
+			}
+			if a.connectGen.Load() != gen {
+				a.mu.Lock()
+				a.stopCoreLocked()
+				a.mu.Unlock()
+				return errConnectAborted
+			}
 			v, verr := fetchVersionAt(listenCopy, secretCopy)
 			if verr == nil && v != "" {
 				a.mu.Lock()
@@ -717,7 +735,14 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 				a.mu.Unlock()
 				return nil
 			}
-			time.Sleep(400 * time.Millisecond)
+			select {
+			case <-parent.Done():
+				a.mu.Lock()
+				a.stopCoreLocked()
+				a.mu.Unlock()
+				return errConnectAborted
+			case <-time.After(400 * time.Millisecond):
+			}
 		}
 
 		a.mu.Lock()
@@ -778,21 +803,43 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 		waitErr := waitCmd.Wait()
 		_ = lf.Close()
 		a.mu.Lock()
-		defer a.mu.Unlock()
 		if a.coreStopIntentional {
+			a.mu.Unlock()
 			return
 		}
+		notify := false
 		if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
 			a.state.Core.Running = false
 			a.state.Connection.Status = "error"
 			a.state.Connection.LastError = "core exited: " + waitErr.Error()
 			a.state.Core.LastError = waitErr.Error()
+			notify = true
 		}
 		a.state.UpdatedAt = time.Now().Unix()
+		a.mu.Unlock()
+		if notify {
+			a.emitAppStateChanged()
+		}
 	}()
 
 	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case <-parent.Done():
+			cancel()
+			a.mu.Lock()
+			a.stopCoreLocked()
+			a.mu.Unlock()
+			return errConnectAborted
+		default:
+		}
+		if a.connectGen.Load() != gen {
+			cancel()
+			a.mu.Lock()
+			a.stopCoreLocked()
+			a.mu.Unlock()
+			return errConnectAborted
+		}
 		v, verr := fetchVersionAt(listenCopy, secretCopy)
 		if verr == nil && v != "" {
 			a.mu.Lock()
@@ -802,9 +849,18 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 			a.mu.Unlock()
 			return nil
 		}
-		time.Sleep(400 * time.Millisecond)
+		select {
+		case <-parent.Done():
+			cancel()
+			a.mu.Lock()
+			a.stopCoreLocked()
+			a.mu.Unlock()
+			return errConnectAborted
+		case <-time.After(400 * time.Millisecond):
+		}
 	}
 
+	cancel()
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.mu.Unlock()

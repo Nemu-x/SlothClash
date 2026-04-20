@@ -38,8 +38,15 @@ type App struct {
 	coreCancel          context.CancelFunc
 	coreStopIntentional bool
 	systemProxyLeased   bool // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
+	systemProxySnapshot map[string]SystemProxyServiceSnapshot
 	tunTakenOver        []tunServiceTakeover
 	connectGen          atomic.Uint64 // bumped when starting async connect or on Disconnect; invalidates in-flight worker
+	closeToTray         bool
+	quitRequested       bool
+
+	emitStateMu           sync.Mutex
+	emitStateTimer        *time.Timer
+	insightRefreshRunning atomic.Bool
 }
 
 // NewApp creates a new App application struct
@@ -70,6 +77,7 @@ func NewApp(bundle embed.FS) *App {
 			Channel:        "stable",
 			CurrentVersion: AppVersion,
 		},
+		closeToTray: true,
 	}
 }
 
@@ -77,8 +85,12 @@ func NewApp(bundle embed.FS) *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	installDockReopenHook()
 	a.loadProfilesFromDisk()
 	a.refreshServiceStatus()
+	if trayRuntimeEnabled() {
+		startAppTray(a)
+	}
 	go a.startProfileAutoUpdateLoop(ctx)
 	go a.updateCheckLoop(ctx)
 	a.emitAppStateChanged()
@@ -90,6 +102,75 @@ func (a *App) startup(ctx context.Context) {
 			a.tryInstallConfigFromArgs(args)
 		}()
 	}
+}
+
+func (a *App) shutdown(ctx context.Context) {
+	_ = ctx
+	a.emitStateMu.Lock()
+	if a.emitStateTimer != nil {
+		a.emitStateTimer.Stop()
+		a.emitStateTimer = nil
+	}
+	a.emitStateMu.Unlock()
+	// Do not tear down the macOS menu bar tray here. Wails may invoke shutdown during
+	// lifecycle transitions that are not a full process exit; removing the status item
+	// makes the tray "flicker" away while the app is still running.
+	a.connectGen.Add(1)
+	a.mu.Lock()
+	a.stopCoreLocked()
+	a.mu.Unlock()
+}
+
+func trayEnabled() bool {
+	if v := strings.TrimSpace(strings.ToLower(os.Getenv("SLOTH_DISABLE_TRAY"))); v == "1" || v == "true" || v == "yes" {
+		return false
+	}
+	if v := strings.TrimSpace(strings.ToLower(os.Getenv("SLOTH_ENABLE_EXPERIMENTAL_TRAY"))); v != "" {
+		return v == "1" || v == "true" || v == "yes"
+	}
+	// Default on for macOS when backend exists.
+	return runtime.GOOS == "darwin"
+}
+
+func trayRuntimeEnabled() bool {
+	return trayEnabled() && trayBackendAvailable()
+}
+
+func (a *App) GetTrayAvailability() bool {
+	return trayRuntimeEnabled() && trayIsReady()
+}
+
+func (a *App) SetCloseToTrayPreference(enabled bool) AppState {
+	a.mu.Lock()
+	a.closeToTray = enabled
+	a.state.UpdatedAt = time.Now().Unix()
+	out := a.state
+	a.mu.Unlock()
+	return out
+}
+
+func (a *App) MarkQuitIntent() {
+	a.mu.Lock()
+	a.quitRequested = true
+	a.mu.Unlock()
+}
+
+func (a *App) beforeClose(ctx context.Context) (prevent bool) {
+	if !trayRuntimeEnabled() || !trayIsReady() {
+		return false
+	}
+	a.mu.Lock()
+	closeToTray := a.closeToTray
+	quitRequested := a.quitRequested
+	if quitRequested {
+		a.quitRequested = false
+	}
+	a.mu.Unlock()
+	if quitRequested || !closeToTray {
+		return false
+	}
+	go wailsrt.WindowHide(ctx)
+	return true
 }
 
 func queryWindowsServiceStatus(name string) (installed bool, running bool, lastErr string) {
@@ -235,8 +316,21 @@ func (a *App) emitAppStateChanged() {
 	if a.ctx == nil {
 		return
 	}
-	// Non-blocking for the caller; Wails delivers to the webview.
-	go wailsrt.EventsEmit(a.ctx, "app:state")
+	ctx := a.ctx
+	a.emitStateMu.Lock()
+	if a.emitStateTimer != nil {
+		a.emitStateTimer.Stop()
+	}
+	a.emitStateTimer = time.AfterFunc(48*time.Millisecond, func() {
+		a.emitStateMu.Lock()
+		a.emitStateTimer = nil
+		a.emitStateMu.Unlock()
+		if ctx == nil {
+			return
+		}
+		go wailsrt.EventsEmit(ctx, "app:state")
+	})
+	a.emitStateMu.Unlock()
 }
 
 func (a *App) GetAppState() AppState {
@@ -299,7 +393,7 @@ func (a *App) Connect() (AppState, error) {
 }
 
 func (a *App) runConnectJob(active Profile, gen uint64) {
-	if err := a.startEmbeddedCore(active); err != nil {
+	if err := a.startEmbeddedCore(active, gen); err != nil {
 		a.finishConnectJobFailed(gen, err)
 		return
 	}
@@ -321,6 +415,9 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 }
 
 func (a *App) finishConnectJobFailed(gen uint64, err error) {
+	if errors.Is(err, errConnectAborted) {
+		return
+	}
 	var notify bool
 	a.mu.Lock()
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connecting" {
@@ -353,15 +450,20 @@ func (a *App) finishConnectJobOK(gen uint64) {
 	}
 }
 
-// finishPostConnectWarmupFailed runs after we already marked "connected" but proxy/mode/system-proxy setup failed.
+// finishPostConnectWarmupFailed runs after we already marked "connected" but non-critical
+// warmup steps (mode/proxy sync/system proxy) failed. Keep session alive and surface warning.
 func (a *App) finishPostConnectWarmupFailed(gen uint64, err error) {
 	var notify bool
 	a.mu.Lock()
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connected" {
-		a.stopCoreLocked()
-		a.state.Connection.Status = "error"
-		a.state.Connection.LastError = err.Error()
-		a.state.Core.LastError = err.Error()
+		msg := strings.TrimSpace(err.Error())
+		if msg != "" && !isIgnorableWarmupWarning(msg) {
+			if strings.TrimSpace(a.state.Connection.LastWarning) == "" {
+				a.state.Connection.LastWarning = "Post-connect warmup issue: " + msg
+			} else {
+				a.state.Connection.LastWarning += " | Post-connect warmup issue: " + msg
+			}
+		}
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
 	}
@@ -369,6 +471,31 @@ func (a *App) finishPostConnectWarmupFailed(gen uint64, err error) {
 	if notify {
 		a.emitAppStateChanged()
 	}
+}
+
+func appendConnectionWarningLocked(current string, next string) string {
+	msg := strings.TrimSpace(next)
+	if msg == "" || isIgnorableWarmupWarning(msg) {
+		return current
+	}
+	if strings.TrimSpace(current) == "" {
+		return msg
+	}
+	return strings.TrimSpace(current) + " | " + msg
+}
+
+func isIgnorableWarmupWarning(msg string) bool {
+	s := strings.ToLower(strings.TrimSpace(msg))
+	if s == "" {
+		return true
+	}
+	if strings.Contains(s, "exit status 4") {
+		return true
+	}
+	if strings.Contains(s, "parameters were not valid") {
+		return true
+	}
+	return false
 }
 
 func formatTunTakeoverWarning(err error) string {
@@ -419,10 +546,19 @@ func (a *App) connectAfterCoreStarts() error {
 
 	// /proxies is often empty right after the core starts (providers still loading). Retry briefly
 	// so Active group / node are not blank until unrelated UI (e.g. warnings) triggers another tick.
+	// Do not fail whole connect flow on transient /proxies errors (some providers temporarily return
+	// backend-specific errors like "exit status 4" during warmup).
+	var proxiesWarmupErr error
 	for attempt := 0; ; attempt++ {
 		if err := a.pullProxiesIntoState(); err != nil {
-			return err
+			proxiesWarmupErr = err
+			if attempt >= 15 {
+				break
+			}
+			time.Sleep(350 * time.Millisecond)
+			continue
 		}
+		proxiesWarmupErr = nil
 		a.mu.RLock()
 		n := len(a.state.Proxy.Groups)
 		a.mu.RUnlock()
@@ -430,6 +566,12 @@ func (a *App) connectAfterCoreStarts() error {
 			break
 		}
 		time.Sleep(350 * time.Millisecond)
+	}
+	if proxiesWarmupErr != nil {
+		a.mu.Lock()
+		msg := "Proxy groups are still warming up: " + strings.TrimSpace(proxiesWarmupErr.Error())
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, msg)
+		a.mu.Unlock()
 	}
 
 	a.mu.Lock()
@@ -441,10 +583,18 @@ func (a *App) connectAfterCoreStarts() error {
 	a.emitAppStateChanged()
 
 	if err := applyCoreModeHTTPWithGlobal(context.Background(), listen, secret, mode, activeGroup); err != nil {
-		return err
+		a.mu.Lock()
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(
+			a.state.Connection.LastWarning,
+			"Could not apply core mode immediately: "+strings.TrimSpace(err.Error()),
+		)
+		a.mu.Unlock()
 	}
 	if err := a.pullProxiesIntoState(); err != nil {
-		return err
+		a.mu.Lock()
+		msg := "Could not refresh proxy groups after mode apply: " + strings.TrimSpace(err.Error())
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, msg)
+		a.mu.Unlock()
 	}
 	a.mu.Lock()
 	if mode == "global" {
@@ -457,11 +607,24 @@ func (a *App) connectAfterCoreStarts() error {
 	// Second pull carries updated `now` selections — push before system-proxy (can be slow).
 	a.emitAppStateChanged()
 
-	if err := a.clearWindowsSystemProxyFromSnapshot(); err != nil {
-		return err
+	if err := a.clearSystemProxyFromSnapshot(); err != nil {
+		a.mu.Lock()
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(
+			a.state.Connection.LastWarning,
+			"Could not clear system proxy snapshot: "+strings.TrimSpace(err.Error()),
+		)
+		a.mu.Unlock()
 	}
 
-	return a.applyWindowsSystemProxyFromSnapshot()
+	if err := a.applySystemProxyFromSnapshot(); err != nil {
+		a.mu.Lock()
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(
+			a.state.Connection.LastWarning,
+			"Could not apply system proxy snapshot: "+strings.TrimSpace(err.Error()),
+		)
+		a.mu.Unlock()
+	}
+	return nil
 }
 
 func (a *App) Disconnect() AppState {
@@ -539,14 +702,14 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 	// When reconnecting the core for a traffic-mode change, still clear OS proxy
 	// before tear-down (otherwise proxy→TUN could leave HKCU proxy stuck and block).
 	if needsCoreRestart && prev == "proxy" {
-		a.clearWindowsSystemProxyLocked()
+		a.clearSystemProxyLocked()
 	}
 	if connected && !needsCoreRestart {
 		if prev == "proxy" && mode == "tun" {
-			a.clearWindowsSystemProxyLocked()
+			a.clearSystemProxyLocked()
 		}
 		if mode == "proxy" {
-			_ = a.applyWindowsSystemProxyIfNeededLocked()
+			_ = a.applySystemProxyIfNeededLocked()
 		}
 	}
 	a.state.UpdatedAt = time.Now().Unix()
@@ -607,13 +770,13 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	defer a.mu.Unlock()
 
 	p := Profile{
-		ID:          "profile-" + time.Now().Format("20060102150405"),
-		Name:        finalName,
-		Type:        "subscription",
-		URL:         norm,
-		SubscriptionInfo: strings.TrimSpace(peek.SubscriptionInfo),
-		LastUpdated: time.Now().Unix(),
-		AutoUpdateEnabled: true,
+		ID:                        "profile-" + time.Now().Format("20060102150405"),
+		Name:                      finalName,
+		Type:                      "subscription",
+		URL:                       norm,
+		SubscriptionInfo:          strings.TrimSpace(peek.SubscriptionInfo),
+		LastUpdated:               time.Now().Unix(),
+		AutoUpdateEnabled:         true,
 		AutoUpdateIntervalMinutes: defaultProfileAutoUpdateMinutes,
 	}
 	a.profiles = append(a.profiles, p)
@@ -1133,7 +1296,6 @@ func (a *App) GetUpdateState() UpdateState {
 	defer a.mu.RUnlock()
 	return a.update
 }
-
 
 func (a *App) SetUpdateChannel(channel string) (UpdateState, error) {
 	a.mu.Lock()

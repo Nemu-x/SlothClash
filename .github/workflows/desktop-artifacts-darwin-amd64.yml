@@ -43,10 +43,15 @@ jobs:
       - name: Wails build (darwin/amd64)
         run: pnpm run desktop:build:darwin:amd64
 
+      - name: Pack macOS Intel artifact (preserve executable bits)
+        run: |
+          mkdir -p dist
+          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-darwin-amd64-${GITHUB_REF_NAME}.tar.gz" .
+
       - uses: actions/upload-artifact@v4
         with:
-          name: sloth-clash-darwin-amd64
-          path: apps/sloth-clash-desktop/build/bin/
+          name: release-darwin-amd64
+          path: dist/sloth-clash-darwin-amd64-${{ github.ref_name }}.tar.gz
 
   release-intel:
     if: startsWith(github.ref, 'refs/tags/')
@@ -58,19 +63,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: sloth-clash-darwin-amd64
-          path: artifacts/sloth-clash-darwin-amd64
-
-      - name: Pack artifact for GitHub Release
-        run: |
-          mkdir -p dist
-          d="artifacts/sloth-clash-darwin-amd64"
-          (cd "$d" && zip -r "../../dist/sloth-clash-darwin-amd64-${GITHUB_REF_NAME}.zip" .)
-          ls -la dist
+          name: release-darwin-amd64
+          path: dist
 
       - uses: softprops/action-gh-release@v2
         with:
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: false
-          files: dist/*.zip
+          files: dist/**/*.tar.gz

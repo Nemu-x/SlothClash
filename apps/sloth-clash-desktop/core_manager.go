@@ -117,7 +117,12 @@ func mihomoSidecarSearchDirs() []string {
 	}
 
 	if exe, err := os.Executable(); err == nil {
-		add(filepath.Dir(exe))
+		exeDir := filepath.Dir(exe)
+		add(exeDir)
+		add(filepath.Join(exeDir, "sidecar"))
+		add(filepath.Join(exeDir, "build", "sidecar"))
+		add(filepath.Join(filepath.Dir(exeDir), "sidecar"))
+		add(filepath.Join(filepath.Dir(exeDir), "build", "sidecar"))
 	}
 	if v := strings.TrimSpace(os.Getenv("SLOTH_CLASH_DESKTOP_ROOT")); v != "" {
 		add(filepath.Join(v, "build", "sidecar"))
@@ -150,6 +155,8 @@ func (a *App) resolveMihomoBinary() (string, error) {
 	var patterns []string
 	for _, dir := range mihomoSidecarSearchDirs() {
 		patterns = append(patterns,
+			filepath.Join(dir, "verge-mihomo*.exe"),
+			filepath.Join(dir, "verge-mihomo*"),
 			filepath.Join(dir, "sloth-mihomo*.exe"),
 			filepath.Join(dir, "sloth-mihomo*"),
 		)

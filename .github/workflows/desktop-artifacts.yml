@@ -48,10 +48,16 @@ jobs:
       - name: Wails build (windows/amd64 + NSIS)
         run: pnpm run desktop:build:windows
 
+      - name: Pack Windows artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "apps/sloth-clash-desktop/build/bin/*" -DestinationPath "dist/sloth-clash-windows-amd64-${{ github.ref_name }}.zip" -Force
+
       - uses: actions/upload-artifact@v4
         with:
-          name: sloth-clash-windows-amd64
-          path: apps/sloth-clash-desktop/build/bin/
+          name: release-windows-amd64
+          path: dist/sloth-clash-windows-amd64-${{ github.ref_name }}.zip
 
   darwin-arm64:
     runs-on: macos-14
@@ -79,10 +85,15 @@ jobs:
       - name: Wails build (darwin/arm64)
         run: pnpm run desktop:build:darwin:arm64
 
+      - name: Pack macOS arm64 artifact (preserve executable bits)
+        run: |
+          mkdir -p dist
+          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-darwin-arm64-${GITHUB_REF_NAME}.tar.gz" .
+
       - uses: actions/upload-artifact@v4
         with:
-          name: sloth-clash-darwin-arm64
-          path: apps/sloth-clash-desktop/build/bin/
+          name: release-darwin-arm64
+          path: dist/sloth-clash-darwin-arm64-${{ github.ref_name }}.tar.gz
 
   linux-amd64:
     runs-on: ubuntu-24.04
@@ -115,10 +126,15 @@ jobs:
       - name: Wails build (linux/amd64)
         run: pnpm run desktop:build:linux:amd64
 
+      - name: Pack Linux artifact (preserve executable bits)
+        run: |
+          mkdir -p dist
+          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-linux-amd64-${GITHUB_REF_NAME}.tar.gz" .
+
       - uses: actions/upload-artifact@v4
         with:
-          name: sloth-clash-linux-amd64
-          path: apps/sloth-clash-desktop/build/bin/
+          name: release-linux-amd64
+          path: dist/sloth-clash-linux-amd64-${{ github.ref_name }}.tar.gz
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -132,20 +148,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-
-      - name: Pack artifacts for GitHub Release
-        run: |
-          mkdir -p dist
-          for d in artifacts/sloth-clash-*; do
-            name=$(basename "$d")
-            (cd "$d" && zip -r "../../dist/${name}-${GITHUB_REF_NAME}.zip" .)
-          done
-          ls -la dist
+          path: dist
 
       - uses: softprops/action-gh-release@v2
         with:
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
-          files: dist/*.zip
+          files: |
+            dist/**/*.zip
+            dist/**/*.tar.gz

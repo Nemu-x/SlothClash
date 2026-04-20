@@ -786,7 +786,20 @@ func (a *App) InstallService() (TunSetupResult, error) {
 		return TunSetupResult{}, err
 	}
 
-	if err := extractEmbeddedDir(a.bundle, "build/resources", tmpDir); err != nil {
+	extracted := false
+	if err := extractEmbeddedDir(a.bundle, "build/resources", tmpDir); err == nil {
+		extracted = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		_ = os.RemoveAll(tmpDir)
+		return TunSetupResult{}, err
+	}
+	if err := extractEmbeddedDir(a.bundle, "build/sidecar", tmpDir); err == nil {
+		extracted = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		_ = os.RemoveAll(tmpDir)
+		return TunSetupResult{}, err
+	}
+	if !extracted {
 		_ = os.RemoveAll(tmpDir)
 		return TunSetupResult{
 			Success:       false,

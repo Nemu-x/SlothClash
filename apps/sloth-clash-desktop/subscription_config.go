@@ -17,8 +17,9 @@ import (
 
 const tunDefaultDNSYAML = `dns:
   enable: true
-  listen: 0.0.0.0:1053
+  listen: 127.0.0.1:0
   ipv6: true
+  respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   use-hosts: true
@@ -129,6 +130,52 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	}
 }
 
+func ensureRealtimeRoutingDefaults(m map[string]any) {
+	if _, ok := m["find-process-mode"]; !ok {
+		m["find-process-mode"] = "strict"
+	}
+	rawSniffer, ok := m["sniffer"]
+	if !ok || rawSniffer == nil {
+		m["sniffer"] = map[string]any{
+			"enable":        true,
+			"parse-pure-ip": true,
+			"sniff": map[string]any{
+				"TLS":  map[string]any{"ports": []any{"443", "8443"}},
+				"HTTP": map[string]any{"ports": []any{"80", "8080-8880"}, "override-destination": true},
+				"QUIC": map[string]any{"ports": []any{"443", "8443"}},
+			},
+		}
+		return
+	}
+	sm, ok := rawSniffer.(map[string]any)
+	if !ok {
+		return
+	}
+	if _, ok := sm["enable"]; !ok {
+		sm["enable"] = true
+	}
+	if _, ok := sm["parse-pure-ip"]; !ok {
+		sm["parse-pure-ip"] = true
+	}
+	raw, ok := sm["sniff"]
+	if !ok {
+		sm["sniff"] = map[string]any{
+			"TLS":  map[string]any{"ports": []any{"443", "8443"}},
+			"HTTP": map[string]any{"ports": []any{"80", "8080-8880"}, "override-destination": true},
+			"QUIC": map[string]any{"ports": []any{"443", "8443"}},
+		}
+	} else if sniffMap, ok := raw.(map[string]any); ok {
+		if httpRaw, ok := sniffMap["HTTP"].(map[string]any); ok {
+			if _, has := httpRaw["override-destination"]; !has {
+				httpRaw["override-destination"] = true
+			}
+			sniffMap["HTTP"] = httpRaw
+		}
+		sm["sniff"] = sniffMap
+	}
+	m["sniffer"] = sm
+}
+
 func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool) {
 	m["mixed-port"] = mixedPort
 	m["socks-port"] = 0
@@ -148,6 +195,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	} else {
 		mergeTunFromYAMLString(m, tunBlockForTraffic("proxy"))
 	}
+	ensureRealtimeRoutingDefaults(m)
 }
 
 // ensureGlobalProxyGroup prepends a GLOBAL selector when missing so PATCH mode global +
@@ -249,6 +297,39 @@ func validateRulePoliciesExist(m map[string]any) error {
 	return nil
 }
 
+// normalizeRulesMatchLast ensures terminal MATCH rules are placed last.
+// If MATCH appears earlier, appended user rules become unreachable.
+func normalizeRulesMatchLast(m map[string]any) {
+	rules, ok := m["rules"].([]any)
+	if !ok || len(rules) == 0 {
+		return
+	}
+	nonMatch := make([]any, 0, len(rules))
+	match := make([]any, 0, 2)
+	for _, it := range rules {
+		s, ok := it.(string)
+		if !ok {
+			nonMatch = append(nonMatch, it)
+			continue
+		}
+		parts := strings.Split(s, ",")
+		head := ""
+		if len(parts) > 0 {
+			head = strings.ToUpper(strings.TrimSpace(parts[0]))
+		}
+		if head == "MATCH" {
+			match = append(match, it)
+			continue
+		}
+		nonMatch = append(nonMatch, it)
+	}
+	if len(match) == 0 {
+		return
+	}
+	out := append(nonMatch, match...)
+	m["rules"] = out
+}
+
 func mergeBundledGeoIfMissing(m map[string]any, dataDir string) {
 	if _, has := m["geoip"]; has {
 		return
@@ -302,6 +383,7 @@ func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, r
 		return false, err
 	}
 
+	normalizeRulesMatchLast(doc)
 	overlaySlothRuntimeOnMap(doc, mixedPort, ctrlPort, secret, traffic, withExternalController)
 	if err := validateRulePoliciesExist(doc); err != nil {
 		return false, err

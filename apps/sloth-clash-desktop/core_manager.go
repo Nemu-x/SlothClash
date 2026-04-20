@@ -339,8 +339,9 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		// Without DNS, TUN + strict-route often yields “connected” apps but no working resolution / routing.
 		cfg.WriteString(`dns:
   enable: true
-  listen: 0.0.0.0:1053
+  listen: 127.0.0.1:0
   ipv6: true
+  respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   use-hosts: true
@@ -405,6 +406,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	if err := applyProfileMergeTemplate(m, rulesTemplate); err != nil {
 		return err
 	}
+	normalizeRulesMatchLast(m)
 	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController)
 	mergeBundledGeoIfMissing(m, dataDir)
 
@@ -627,7 +629,20 @@ func (a *App) startEmbeddedCore(profile Profile) error {
 		traffic = "proxy"
 	}
 
-	useServiceCore := (runtime.GOOS == "windows" || runtime.GOOS == "darwin") && a.state.Service.Installed
+	useServiceCore := runtime.GOOS == "windows" && a.state.Service.Installed
+	if runtime.GOOS == "darwin" && a.state.Service.Installed {
+		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
+			if traffic == "tun" {
+				a.mu.Unlock()
+				return fmt.Errorf("darwin service IPC unavailable for TUN mode: %w", err)
+			}
+			// Safe fallback for proxy mode: keep app usable even if privileged helper is temporarily unreachable.
+			a.state.Connection.LastWarning = "Sloth service IPC unreachable, falling back to user-process core for Proxy mode: " + err.Error()
+			useServiceCore = false
+		} else {
+			useServiceCore = true
+		}
+	}
 	if useServiceCore {
 		if err := writeRuntimeConfigIfNeeded(a, dataDir, profile, 0, mixedPort, secret, traffic, false); err != nil {
 			a.mu.Unlock()

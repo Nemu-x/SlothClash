@@ -2894,7 +2894,15 @@ function App() {
                           void (async () => {
                             setError('')
                             try {
+                              const ok = window.confirm(
+                                'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
+                              )
+                              if (!ok) return
                               await ApplyUpdate()
+                              // Give installer process a moment to initialize before we exit.
+                              setTimeout(() => {
+                                void Quit()
+                              }, 350)
                             } catch (e: any) {
                               setError(String(e))
                             }

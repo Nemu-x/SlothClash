@@ -25,6 +25,7 @@ import {
   FetchRulesOverview,
   GetAppState,
   GetProfilePaths,
+  GetPreferredLanguage,
   GetTunStatus,
   GetUpdateState,
   ImportProfileFromURL,
@@ -711,6 +712,26 @@ function App() {
   }, [theme])
 
   useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const hasStored = Boolean(localStorage.getItem(LS_LANG))
+        if (hasStored) return
+        const preferred = await GetPreferredLanguage()
+        if (cancelled) return
+        if (preferred === 'ru' || preferred === 'zh' || preferred === 'en') {
+          setLang(preferred)
+        }
+      } catch {
+        // ignore and keep system detector fallback
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem(LS_LANG, lang)
     void i18n.changeLanguage(lang)
   }, [lang])
@@ -919,6 +940,9 @@ function App() {
 
   const clearTempUiState = () => {
     localStorage.removeItem(LS_SPOTLIGHT)
+    setSpotlightStep(0)
+    setSpotlightOpen(true)
+    setScreen('home')
     setTunBanner('Temporary UI/cache state cleared.')
   }
 
@@ -1269,7 +1293,7 @@ function App() {
     }
     if (!hasActiveProfile) {
       openImportModal('connect')
-      setError('Choose a profile under Profiles, or import a new one.')
+      setError(t('ui.errors.chooseProfileOrImport'))
       return
     }
     setError('')
@@ -1303,19 +1327,19 @@ function App() {
 
   const importModalTitle = () => {
     if (importModalReason === 'connect') {
-      return 'Connect needs a profile'
+      return t('ui.import.connectNeedsProfile')
     }
     if (importModalReason === 'beacon') {
-      return 'Add your first subscription'
+      return t('ui.import.addFirstSubscription')
     }
-    return 'Import subscription'
+    return t('ui.import.importSubscription')
   }
 
   const importModalBlurb = () => {
     if (importModalReason === 'connect') {
-      return 'Import a subscription or open Profiles to pick one. Name can stay empty — we read Profile-Title when possible.'
+      return t('ui.import.connectBlurb')
     }
-    return 'Paste your provider link. Leave the name empty to use the server Profile-Title.'
+    return t('ui.import.defaultBlurb')
   }
 
   return (
@@ -1429,9 +1453,9 @@ function App() {
             ) : null}
             <header className="homeHeader">
               <div>
-                <p className="eyebrow">Active profile</p>
+                <p className="eyebrow">{t('ui.home.activeProfile')}</p>
                 <div className="homeTitleWithAlert">
-                  <h2>{activeProfile?.name ?? 'No profile yet'}</h2>
+                  <h2>{activeProfile?.name ?? t('ui.home.noProfileYet')}</h2>
                   {homeAlertTooltip ? (
                     <span
                       className="homeAlertBadge"
@@ -1445,8 +1469,8 @@ function App() {
                 </div>
                 <p className="muted">
                   {activeProfile?.type === 'subscription'
-                    ? 'Subscription'
-                    : 'Local'}
+                    ? t('ui.common.subscription')
+                    : t('ui.common.local')}
                 </p>
               </div>
               <div className="homeHeaderActions">
@@ -1456,7 +1480,7 @@ function App() {
                     className="pulseBeacon"
                     onClick={() => openImportModal('beacon')}
                   >
-                    Add subscription
+                    {t('ui.home.addSubscription')}
                   </button>
                 ) : (
                   <button
@@ -1464,7 +1488,7 @@ function App() {
                     className="btn subtle"
                     onClick={() => openImportModal('manual')}
                   >
-                    + Add subscription
+                    {t('ui.home.addSubscriptionShort')}
                   </button>
                 )}
               </div>
@@ -1473,7 +1497,9 @@ function App() {
             <div className="connectArea">
               <div className="connectRow">
                 <div className="connectSide connectSideLeft" data-tour="mode">
-                  <span className="sideLabel sideLabelCentered">Mode</span>
+                  <span className="sideLabel sideLabelCentered">
+                    {t('ui.home.mode')}
+                  </span>
                   <div
                     className="segmentInset segmentInset3"
                     role="group"
@@ -1499,10 +1525,10 @@ function App() {
                         type="button"
                         title={
                           m === 'rule'
-                            ? 'Rule — policy routing'
+                            ? t('ui.home.ruleTitle')
                             : m === 'global'
-                              ? 'Global — main outbound'
-                              : 'Direct — no proxy'
+                              ? t('ui.home.globalTitle')
+                              : t('ui.home.directTitle')
                         }
                         className={
                           displayMode === m
@@ -1525,10 +1551,10 @@ function App() {
                         }}
                       >
                         {m === 'rule'
-                          ? 'Rule'
+                          ? t('ui.common.rule')
                           : m === 'global'
-                            ? 'Global'
-                            : 'Direct'}
+                            ? t('ui.common.global')
+                            : t('ui.common.direct')}
                       </button>
                     ))}
                   </div>
@@ -1543,16 +1569,16 @@ function App() {
                     onClick={connectAction}
                   >
                     {state?.connection?.status === 'connected'
-                      ? 'Disconnect'
+                      ? t('ui.home.disconnect')
                       : connectBusy
                         ? '…'
-                        : 'Connect'}
+                        : t('ui.home.connect')}
                   </button>
                   <div className="statusLine statusLineSolo protectedLine">
                     {connectionLabel === 'Protected' ? (
                       <span className="protectedBadge">
                         <span className="protectedDot" aria-hidden />
-                        <span>Protected</span>
+                        <span>{t('ui.home.protected')}</span>
                       </span>
                     ) : (
                       <span className="pill">{connectionLabel}</span>
@@ -1563,7 +1589,9 @@ function App() {
                   className="connectSide connectSideRight"
                   data-tour="traffic"
                 >
-                  <span className="sideLabel sideLabelCentered">Traffic</span>
+                  <span className="sideLabel sideLabelCentered">
+                    {t('ui.home.traffic')}
+                  </span>
                   <div
                     className="segmentInset segmentInset2"
                     role="group"
@@ -1588,7 +1616,7 @@ function App() {
                       }
                       onClick={() => switchTraffic('proxy')}
                     >
-                      Proxy
+                      {t('ui.common.proxy')}
                     </button>
                     <button
                       type="button"
@@ -1610,7 +1638,7 @@ function App() {
             <div className="homeStatusGrid">
               <div className="statusCard statusCardCompact">
                 <div className="statusRow" data-tour="service">
-                  <span>Service</span>
+                  <span>{t('ui.home.service')}</span>
                   <div className="statusRowValue">
                     {!service?.installed ? (
                       <button
@@ -1618,7 +1646,7 @@ function App() {
                         className="btn btnCompact"
                         onClick={() => void installService()}
                       >
-                        Install service
+                        {t('settings.installService')}
                       </button>
                     ) : null}
                     <span
@@ -1627,22 +1655,28 @@ function App() {
                           ? 'statusDot statusDotOk'
                           : 'statusDot statusDotBad'
                       }
-                      title={service?.installed ? 'Installed' : 'Not installed'}
+                      title={
+                        service?.installed
+                          ? t('ui.home.installed')
+                          : t('ui.home.notInstalled')
+                      }
                       aria-label={
-                        service?.installed ? 'Installed' : 'Not installed'
+                        service?.installed
+                          ? t('ui.home.installed')
+                          : t('ui.home.notInstalled')
                       }
                       role="img"
                     />
                   </div>
                 </div>
                 <div className="statusRow">
-                  <span>Active group</span>
+                  <span>{t('ui.home.activeGroup')}</span>
                   <strong>
                     {String(state?.proxy?.activeGroup ?? '').trim() || '—'}
                   </strong>
                 </div>
                 <div className="statusRow statusRowNode">
-                  <span>Pick group</span>
+                  <span>{t('ui.home.pickGroup')}</span>
                   <div className="statusRowValue statusRowNodeValue">
                     {state?.connection?.status === 'connected' ? (
                       <div className="statusNodePick">
@@ -1675,7 +1709,7 @@ function App() {
                   </div>
                 </div>
                 <div className="statusRow statusRowNode">
-                  <span>Active node</span>
+                  <span>{t('ui.home.activeNode')}</span>
                   <div className="statusRowValue statusRowNodeValue">
                     {nodePickerGroup &&
                     state?.connection?.status === 'connected' ? (
@@ -1846,12 +1880,8 @@ function App() {
 
         {screen === 'proxies' ? (
           <div className="panel proxiesPanel">
-            <h2>Proxies</h2>
-            <p className="muted">
-              Selectors and url-test groups from the running Sloth core. Connect
-              on Home first, then refresh if the list is empty while the
-              subscription loads.
-            </p>
+            <h2>{t('ui.proxies.title')}</h2>
+            <p className="muted">{t('ui.proxies.lead')}</p>
             <div className="row">
               <button
                 type="button"
@@ -1859,7 +1889,7 @@ function App() {
                 disabled={state?.connection?.status !== 'connected'}
                 onClick={() => run(() => RefreshProxies())}
               >
-                Refresh groups
+                {t('ui.proxies.refreshGroups')}
               </button>
               <button
                 type="button"
@@ -1867,7 +1897,7 @@ function App() {
                 disabled={state?.connection?.status !== 'connected'}
                 onClick={() => run(() => AutoSelectProxyGroup())}
               >
-                Auto-pick safe group
+                {t('ui.proxies.autoPick')}
               </button>
             </div>
             <div className="proxyTopSwitches">
@@ -1899,7 +1929,7 @@ function App() {
                   }
                   onClick={() => run(() => SetMode('rule'))}
                 >
-                  Rule
+                  {t('ui.common.rule')}
                 </button>
                 <button
                   type="button"
@@ -1910,7 +1940,7 @@ function App() {
                   }
                   onClick={() => run(() => SetMode('global'))}
                 >
-                  Global
+                  {t('ui.common.global')}
                 </button>
                 <button
                   type="button"
@@ -1921,12 +1951,12 @@ function App() {
                   }
                   onClick={() => run(() => SetMode('direct'))}
                 >
-                  Direct
+                  {t('ui.common.direct')}
                 </button>
               </div>
             </div>
             <div className="segment modern policyBlock">
-              <span className="segLabel">Focus group (UI)</span>
+              <span className="segLabel">{t('ui.proxies.focusGroup')}</span>
               <select
                 className="selectModern"
                 value={state?.proxy?.activeGroup ?? ''}
@@ -1955,8 +1985,8 @@ function App() {
               {(state?.proxy?.groups ?? []).length === 0 ? (
                 <p className="muted">
                   {state?.connection?.status === 'connected'
-                    ? 'No groups yet — wait for the subscription health check, then Refresh.'
-                    : 'Connect on Home to start the embedded core.'}
+                    ? t('ui.proxies.noGroups')
+                    : t('ui.proxies.connectFirst')}
                 </p>
               ) : (
                 (state?.proxy?.groups ?? []).map((g: any) => (
@@ -2072,11 +2102,8 @@ function App() {
         {screen === 'profiles' ? (
           <div className="panel">
             <div className="profilesHeader">
-              <h2 className="profilesPageTitle">Profiles</h2>
-              <p className="muted profilesLead">
-                Right-click a profile for extend, merge, rules, and more. Import
-                below or use the shortcut on Home when you have none.
-              </p>
+              <h2 className="profilesPageTitle">{t('ui.profiles.title')}</h2>
+              <p className="muted profilesLead">{t('ui.profiles.lead')}</p>
             </div>
             <div className="profilesToolbar">
               <button
@@ -2084,7 +2111,7 @@ function App() {
                 className="btn primary"
                 onClick={() => openImportModal('manual')}
               >
-                Import subscription…
+                {t('ui.profiles.importSubscription')}
               </button>
             </div>
             <div className="profileList">
@@ -2133,8 +2160,8 @@ function App() {
                         <button
                           type="button"
                           className={`profileRefreshIcon${profileRefreshBusyId === p.id ? ' isBusy' : ''}`}
-                          aria-label="Refresh subscription"
-                          title="Refresh subscription"
+                          aria-label={t('ui.profiles.refreshSubscription')}
+                          title={t('ui.profiles.refreshSubscription')}
                           disabled={
                             !String(p.url ?? '').trim() ||
                             profileRefreshBusyId === p.id
@@ -2187,7 +2214,10 @@ function App() {
                           className="profileHost"
                           title={p.url ? String(p.url) : undefined}
                         >
-                          {host || (p.url ? 'Subscription' : 'Local / no URL')}
+                          {host ||
+                            (p.url
+                              ? t('ui.common.subscription')
+                              : t('ui.profiles.localNoUrl'))}
                         </span>
                         {ago ? (
                           <span className="profileUpdated">{ago}</span>
@@ -2204,9 +2234,13 @@ function App() {
                       <div className="profileCardFoot">
                         <span className="profileTypeChip">{p.type}</span>
                         {active ? (
-                          <span className="profileBadge">Active</span>
+                          <span className="profileBadge">
+                            {t('ui.profiles.active')}
+                          </span>
                         ) : (
-                          <span className="profileClickHint">Activate</span>
+                          <span className="profileClickHint">
+                            {t('ui.profiles.activate')}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -2220,18 +2254,18 @@ function App() {
 
         {screen === 'rules' ? (
           <div className="panel">
-            <h2>Rules</h2>
+            <h2>{t('ui.rules.title')}</h2>
             <p className="muted">
-              Snapshot from the running Sloth core. Connect on Home first, or
-              set <code className="code">SLOTH_CLASH_CONTROLLER</code> for an
-              external mihomo.
+              {t('ui.rules.leadPrefix')}{' '}
+              <code className="code">SLOTH_CLASH_CONTROLLER</code>{' '}
+              {t('ui.rules.leadSuffix')}
             </p>
 
             <div className="homeCard">
               <div className="homeCardHead">
                 <div>
-                  <p className="eyebrow">Rules &amp; rule providers</p>
-                  <h3 className="homeCardTitle">Live API</h3>
+                  <p className="eyebrow">{t('ui.rules.liveEyebrow')}</p>
+                  <h3 className="homeCardTitle">{t('ui.rules.liveTitle')}</h3>
                 </div>
                 <button
                   type="button"
@@ -2239,7 +2273,7 @@ function App() {
                   disabled={rulesBusy}
                   onClick={() => refreshRules()}
                 >
-                  {rulesBusy ? 'Refreshing…' : 'Refresh'}
+                  {rulesBusy ? t('ui.rules.refreshing') : t('ui.rules.refresh')}
                 </button>
               </div>
               {rulesOverview?.lastError ? (
@@ -2247,7 +2281,7 @@ function App() {
               ) : null}
               {rulesOverview?.reachable ? (
                 <p className="muted small tight">
-                  Reachable: {rulesOverview.controller}
+                  {t('ui.rules.reachable')}: {rulesOverview.controller}
                 </p>
               ) : null}
               {rulesRows.length > 0 ? (
@@ -2257,14 +2291,14 @@ function App() {
                       className="input rulesFilterSearch"
                       value={ruleSearch}
                       onChange={(e) => setRuleSearch(e.target.value)}
-                      placeholder="Search rule / match / policy"
+                      placeholder={t('ui.rules.searchPlaceholder')}
                     />
                     <select
                       className="selectModern rulesFilterSelect"
                       value={ruleTypeFilter}
                       onChange={(e) => setRuleTypeFilter(e.target.value)}
                     >
-                      <option value="all">All types</option>
+                      <option value="all">{t('ui.rules.allTypes')}</option>
                       {ruleTypeFilterOptions.map((t) => (
                         <option key={t} value={t}>
                           {t}
@@ -2276,7 +2310,7 @@ function App() {
                       value={rulePolicyFilter}
                       onChange={(e) => setRulePolicyFilter(e.target.value)}
                     >
-                      <option value="all">All policies</option>
+                      <option value="all">{t('ui.rules.allPolicies')}</option>
                       {rulePolicyFilterOptions.map((p) => (
                         <option key={p} value={p}>
                           {p}
@@ -2286,7 +2320,8 @@ function App() {
                   </div>
                   <div className="rulesSummaryRow">
                     <span className="rulesSummaryChip">
-                      Total: {filteredRulesRows.length}/{rulesRows.length}
+                      {t('ui.rules.total')}: {filteredRulesRows.length}/
+                      {rulesRows.length}
                     </span>
                     {rulesTypeTop.map(([t, c]) => (
                       <span key={t} className="rulesSummaryChip">
@@ -2299,9 +2334,9 @@ function App() {
                       <thead>
                         <tr>
                           <th>#</th>
-                          <th>Type</th>
-                          <th>Match</th>
-                          <th>Policy</th>
+                          <th>{t('ui.rules.type')}</th>
+                          <th>{t('ui.rules.match')}</th>
+                          <th>{t('ui.rules.policy')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2326,14 +2361,11 @@ function App() {
                   </div>
                 </>
               ) : (
-                <p className="muted small tight">
-                  No parsed rules yet. Connect first, then press Refresh.
-                </p>
+                <p className="muted small tight">{t('ui.rules.noParsed')}</p>
               )}
               {rulesOverview?.ruleProvidersBody ? (
                 <p className="muted small tight">
-                  Rule providers snapshot is available from controller and used
-                  for diagnostics.
+                  {t('ui.rules.providersHint')}
                 </p>
               ) : null}
             </div>
@@ -2344,39 +2376,39 @@ function App() {
         {screen === 'advanced' ? (
           <div className="panel advancedPanel">
             <h2>{t('advanced.title')}</h2>
-            <p className="muted">
-              Diagnostics and maintenance tools for runtime support.
-            </p>
+            <p className="muted">{t('ui.advanced.lead')}</p>
 
             <div className="advancedGrid">
               <div className="homeCard">
-                <h3 className="homeCardTitle">Diagnostics</h3>
+                <h3 className="homeCardTitle">
+                  {t('ui.advanced.diagnostics')}
+                </h3>
                 <div className="statusRow">
                   <span>{t('advanced.connection')}</span>
                   <strong>{String(state?.connection?.status ?? '—')}</strong>
                 </div>
                 <div className="statusRow">
-                  <span>Core version</span>
+                  <span>{t('ui.advanced.coreVersion')}</span>
                   <strong>{String(state?.core?.version ?? '—')}</strong>
                 </div>
                 <div className="statusRow">
-                  <span>Controller</span>
+                  <span>{t('ui.advanced.controller')}</span>
                   <strong className="monoTight">
                     {String(state?.core?.controllerAddr ?? '—')}
                   </strong>
                 </div>
                 <div className="statusRow">
-                  <span>Mixed port</span>
+                  <span>{t('ui.advanced.mixedPort')}</span>
                   <strong>{state?.core?.mixedPort || '—'}</strong>
                 </div>
                 <div className="statusRow">
-                  <span>Runtime dir</span>
+                  <span>{t('ui.advanced.runtimeDir')}</span>
                   <strong className="monoTight">
                     {String(profilePaths?.dataDir ?? '—')}
                   </strong>
                 </div>
                 <div className="statusRow">
-                  <span>Config file</span>
+                  <span>{t('ui.advanced.configFile')}</span>
                   <strong className="monoTight">
                     {String(profilePaths?.configPath ?? '—')}
                   </strong>
@@ -2384,10 +2416,11 @@ function App() {
               </div>
 
               <div className="homeCard">
-                <h3 className="homeCardTitle">Connectivity tools</h3>
+                <h3 className="homeCardTitle">
+                  {t('ui.advanced.connectivityTools')}
+                </h3>
                 <p className="muted small">
-                  Best-effort probe via webview fetch (no-cors), useful for
-                  quick checks.
+                  {t('ui.advanced.connectivityLead')}
                 </p>
                 <div className="row">
                   <button

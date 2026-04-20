@@ -392,6 +392,13 @@
   overflow-y: auto;
 }
 
+.content > .home,
+.content > .panel {
+  margin-left: auto;
+  margin-right: auto;
+  width: min(100%, 1100px);
+}
+
 /* Chromium/WebView2: overlay scrollbars don't steal the right inner edge from the window resize hit-area */
 @supports (overflow: overlay) {
   .content {

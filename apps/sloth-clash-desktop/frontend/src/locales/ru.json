@@ -58,6 +58,94 @@
     "serviceTitle": "Сервис Windows (TUN)",
     "serviceBody": "Для режима TUN один раз нажмите «Установить сервис». Если кнопки нет — сервис уже установлен."
   },
+  "ui": {
+    "common": {
+      "local": "Локальный",
+      "subscription": "Подписка",
+      "rule": "Rule",
+      "global": "Global",
+      "direct": "Direct",
+      "proxy": "Прокси"
+    },
+    "errors": {
+      "chooseProfileOrImport": "Выберите профиль в разделе «Профили» или импортируйте новый."
+    },
+    "import": {
+      "connectNeedsProfile": "Для подключения нужен профиль",
+      "addFirstSubscription": "Добавьте первую подписку",
+      "importSubscription": "Импорт подписки",
+      "connectBlurb": "Импортируйте подписку или откройте «Профили» и выберите существующую. Имя можно оставить пустым - по возможности используем Profile-Title.",
+      "defaultBlurb": "Вставьте ссылку провайдера. Оставьте имя пустым, чтобы использовать серверный Profile-Title."
+    },
+    "home": {
+      "activeProfile": "Активный профиль",
+      "noProfileYet": "Профиль еще не добавлен",
+      "addSubscription": "Добавить подписку",
+      "addSubscriptionShort": "+ Добавить подписку",
+      "mode": "Режим",
+      "ruleTitle": "Rule - маршрутизация по правилам",
+      "globalTitle": "Global - основной выход",
+      "directTitle": "Direct - без прокси",
+      "connect": "Подключить",
+      "disconnect": "Отключить",
+      "protected": "Защищено",
+      "traffic": "Трафик",
+      "service": "Сервис",
+      "installed": "Установлен",
+      "notInstalled": "Не установлен",
+      "activeGroup": "Активная группа",
+      "pickGroup": "Выбор группы",
+      "activeNode": "Активный узел"
+    },
+    "profiles": {
+      "title": "Профили",
+      "lead": "Правый клик по профилю: расширение, merge, правила и другое. Импортируйте ниже или используйте кнопку на Главной, если профилей еще нет.",
+      "importSubscription": "Импорт подписки...",
+      "refreshSubscription": "Обновить подписку",
+      "localNoUrl": "Локальный / без URL",
+      "active": "Активен",
+      "activate": "Активировать"
+    },
+    "proxies": {
+      "title": "Прокси",
+      "lead": "Селекторы и url-test группы из запущенного ядра Sloth. Сначала подключитесь на Главной, затем нажмите обновление, если список пока пустой.",
+      "refreshGroups": "Обновить группы",
+      "autoPick": "Автовыбор безопасной группы",
+      "focusGroup": "Фокус-группа (UI)",
+      "noGroups": "Групп пока нет - дождитесь проверки подписки и нажмите «Обновить».",
+      "connectFirst": "Подключитесь на Главной, чтобы запустить встроенное ядро."
+    },
+    "rules": {
+      "title": "Правила",
+      "leadPrefix": "Снимок из запущенного ядра Sloth. Сначала подключитесь на Главной, либо задайте",
+      "leadSuffix": "для внешнего mihomo.",
+      "liveEyebrow": "Правила и rule providers",
+      "liveTitle": "Live API",
+      "refreshing": "Обновление...",
+      "refresh": "Обновить",
+      "reachable": "Доступен",
+      "searchPlaceholder": "Поиск по правилу / match / policy",
+      "allTypes": "Все типы",
+      "allPolicies": "Все политики",
+      "total": "Всего",
+      "type": "Тип",
+      "match": "Match",
+      "policy": "Policy",
+      "noParsed": "Правила еще не распарсены. Сначала подключитесь, затем нажмите «Обновить».",
+      "providersHint": "Снимок rule providers доступен из controller и используется для диагностики."
+    },
+    "advanced": {
+      "lead": "Диагностика и сервисные инструменты для поддержки рантайма.",
+      "diagnostics": "Диагностика",
+      "coreVersion": "Версия ядра",
+      "controller": "Контроллер",
+      "mixedPort": "Mixed порт",
+      "runtimeDir": "Runtime директория",
+      "configFile": "Файл конфигурации",
+      "connectivityTools": "Инструменты проверки соединения",
+      "connectivityLead": "Пробный запрос через webview fetch (no-cors), полезно для быстрых проверок."
+    }
+  },
   "common": {
     "on": "Вкл",
     "off": "Выкл",

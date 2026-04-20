@@ -23,6 +23,8 @@ export function FetchRulesOverview(): Promise<main.RulesOverview>
 
 export function GetAppState(): Promise<main.AppState>
 
+export function GetPreferredLanguage(): Promise<string>
+
 export function GetProfilePaths(arg1: string): Promise<main.ProfilePaths>
 
 export function GetTunStatus(): Promise<main.ServiceState>

@@ -33,13 +33,19 @@ function detectSystemUiLang(): 'en' | 'ru' | 'zh' {
 }
 
 export function readStoredLang(): 'en' | 'ru' | 'zh' {
+  const systemLang = detectSystemUiLang()
   try {
     const v = localStorage.getItem(LS_LANG)
-    if (v === 'ru' || v === 'zh' || v === 'en') return v
+    if (v === 'ru' || v === 'zh' || v === 'en') {
+      // Migration guard: many users had stale "en" persisted before we improved language detection.
+      // If system UI is ru/zh, prefer system language unless user explicitly switches again.
+      if (v === 'en' && systemLang !== 'en') return systemLang
+      return v
+    }
   } catch {
     /* no localStorage */
   }
-  return detectSystemUiLang()
+  return systemLang
 }
 
 function langBase(code: string): string {

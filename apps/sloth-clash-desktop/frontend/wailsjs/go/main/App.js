@@ -42,6 +42,10 @@ export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
 }
 
+export function GetPreferredLanguage() {
+  return window['go']['main']['App']['GetPreferredLanguage']()
+}
+
 export function GetProfilePaths(arg1) {
   return window['go']['main']['App']['GetProfilePaths'](arg1)
 }

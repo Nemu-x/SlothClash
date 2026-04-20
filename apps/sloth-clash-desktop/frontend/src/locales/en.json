@@ -58,6 +58,94 @@
     "serviceTitle": "Windows service (TUN)",
     "serviceBody": "For TUN mode, install the service once. If the button is missing, the service is already installed."
   },
+  "ui": {
+    "common": {
+      "local": "Local",
+      "subscription": "Subscription",
+      "rule": "Rule",
+      "global": "Global",
+      "direct": "Direct",
+      "proxy": "Proxy"
+    },
+    "errors": {
+      "chooseProfileOrImport": "Choose a profile under Profiles, or import a new one."
+    },
+    "import": {
+      "connectNeedsProfile": "Connect needs a profile",
+      "addFirstSubscription": "Add your first subscription",
+      "importSubscription": "Import subscription",
+      "connectBlurb": "Import a subscription or open Profiles to pick one. Name can stay empty - we read Profile-Title when possible.",
+      "defaultBlurb": "Paste your provider link. Leave the name empty to use the server Profile-Title."
+    },
+    "home": {
+      "activeProfile": "Active profile",
+      "noProfileYet": "No profile yet",
+      "addSubscription": "Add subscription",
+      "addSubscriptionShort": "+ Add subscription",
+      "mode": "Mode",
+      "ruleTitle": "Rule - policy routing",
+      "globalTitle": "Global - main outbound",
+      "directTitle": "Direct - no proxy",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "protected": "Protected",
+      "traffic": "Traffic",
+      "service": "Service",
+      "installed": "Installed",
+      "notInstalled": "Not installed",
+      "activeGroup": "Active group",
+      "pickGroup": "Pick group",
+      "activeNode": "Active node"
+    },
+    "profiles": {
+      "title": "Profiles",
+      "lead": "Right-click a profile for extend, merge, rules, and more. Import below or use the shortcut on Home when you have none.",
+      "importSubscription": "Import subscription...",
+      "refreshSubscription": "Refresh subscription",
+      "localNoUrl": "Local / no URL",
+      "active": "Active",
+      "activate": "Activate"
+    },
+    "proxies": {
+      "title": "Proxies",
+      "lead": "Selectors and url-test groups from the running Sloth core. Connect on Home first, then refresh if the list is empty while the subscription loads.",
+      "refreshGroups": "Refresh groups",
+      "autoPick": "Auto-pick safe group",
+      "focusGroup": "Focus group (UI)",
+      "noGroups": "No groups yet - wait for the subscription health check, then Refresh.",
+      "connectFirst": "Connect on Home to start the embedded core."
+    },
+    "rules": {
+      "title": "Rules",
+      "leadPrefix": "Snapshot from the running Sloth core. Connect on Home first, or set",
+      "leadSuffix": "for an external mihomo.",
+      "liveEyebrow": "Rules & rule providers",
+      "liveTitle": "Live API",
+      "refreshing": "Refreshing...",
+      "refresh": "Refresh",
+      "reachable": "Reachable",
+      "searchPlaceholder": "Search rule / match / policy",
+      "allTypes": "All types",
+      "allPolicies": "All policies",
+      "total": "Total",
+      "type": "Type",
+      "match": "Match",
+      "policy": "Policy",
+      "noParsed": "No parsed rules yet. Connect first, then press Refresh.",
+      "providersHint": "Rule providers snapshot is available from controller and used for diagnostics."
+    },
+    "advanced": {
+      "lead": "Diagnostics and maintenance tools for runtime support.",
+      "diagnostics": "Diagnostics",
+      "coreVersion": "Core version",
+      "controller": "Controller",
+      "mixedPort": "Mixed port",
+      "runtimeDir": "Runtime dir",
+      "configFile": "Config file",
+      "connectivityTools": "Connectivity tools",
+      "connectivityLead": "Best-effort probe via webview fetch (no-cors), useful for quick checks."
+    }
+  },
   "common": {
     "on": "On",
     "off": "Off",

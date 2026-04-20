@@ -58,6 +58,94 @@
     "serviceTitle": "Windows 服务（TUN）",
     "serviceBody": "使用 TUN 时请先安装服务。若按钮不显示，说明服务已安装。"
   },
+  "ui": {
+    "common": {
+      "local": "本地",
+      "subscription": "订阅",
+      "rule": "规则",
+      "global": "全局",
+      "direct": "直连",
+      "proxy": "代理"
+    },
+    "errors": {
+      "chooseProfileOrImport": "请先在“配置”中选择一个配置，或导入新配置。"
+    },
+    "import": {
+      "connectNeedsProfile": "连接前需要先选择配置",
+      "addFirstSubscription": "添加你的第一个订阅",
+      "importSubscription": "导入订阅",
+      "connectBlurb": "导入订阅，或打开“配置”页选择一个配置。名称可留空 - 可用时将读取 Profile-Title。",
+      "defaultBlurb": "粘贴提供商链接。名称留空时将使用服务端 Profile-Title。"
+    },
+    "home": {
+      "activeProfile": "当前配置",
+      "noProfileYet": "还没有配置",
+      "addSubscription": "添加订阅",
+      "addSubscriptionShort": "+ 添加订阅",
+      "mode": "模式",
+      "ruleTitle": "规则 - 按策略路由",
+      "globalTitle": "全局 - 主出口",
+      "directTitle": "直连 - 不走代理",
+      "connect": "连接",
+      "disconnect": "断开",
+      "protected": "已保护",
+      "traffic": "流量",
+      "service": "服务",
+      "installed": "已安装",
+      "notInstalled": "未安装",
+      "activeGroup": "当前分组",
+      "pickGroup": "选择分组",
+      "activeNode": "当前节点"
+    },
+    "profiles": {
+      "title": "配置",
+      "lead": "右键配置可进行扩展、合并、规则等操作。可在下方导入，或在首页无配置时使用快捷入口。",
+      "importSubscription": "导入订阅...",
+      "refreshSubscription": "刷新订阅",
+      "localNoUrl": "本地 / 无 URL",
+      "active": "当前使用",
+      "activate": "设为当前"
+    },
+    "proxies": {
+      "title": "代理",
+      "lead": "显示运行中 Sloth 内核的选择器与 url-test 分组。先在首页连接，若订阅加载期间列表为空可稍后刷新。",
+      "refreshGroups": "刷新分组",
+      "autoPick": "自动选择安全分组",
+      "focusGroup": "焦点分组（UI）",
+      "noGroups": "暂时没有分组 - 请等待订阅健康检查后再刷新。",
+      "connectFirst": "请先在首页连接以启动内置内核。"
+    },
+    "rules": {
+      "title": "规则",
+      "leadPrefix": "来自运行中 Sloth 内核的快照。请先在首页连接，或设置",
+      "leadSuffix": "以接入外部 mihomo。",
+      "liveEyebrow": "规则与规则提供者",
+      "liveTitle": "实时 API",
+      "refreshing": "刷新中...",
+      "refresh": "刷新",
+      "reachable": "可达",
+      "searchPlaceholder": "搜索规则 / 匹配 / 策略",
+      "allTypes": "全部类型",
+      "allPolicies": "全部策略",
+      "total": "总计",
+      "type": "类型",
+      "match": "匹配",
+      "policy": "策略",
+      "noParsed": "尚未解析到规则。请先连接，然后点击刷新。",
+      "providersHint": "控制器可提供规则提供者快照，用于诊断。"
+    },
+    "advanced": {
+      "lead": "用于运行时支持的诊断与维护工具。",
+      "diagnostics": "诊断",
+      "coreVersion": "内核版本",
+      "controller": "控制器",
+      "mixedPort": "混合端口",
+      "runtimeDir": "运行目录",
+      "configFile": "配置文件",
+      "connectivityTools": "连通性工具",
+      "connectivityLead": "通过 webview fetch (no-cors) 进行尽力探测，适合快速检查。"
+    }
+  },
   "common": {
     "on": "开",
     "off": "关",

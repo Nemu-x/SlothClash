@@ -302,9 +302,24 @@ export function applyRulesBucketsToMerge(
   buckets: RuleBuckets,
 ): string {
   const doc = parseMergeDoc(raw)
-  if (!doc.prepend || typeof doc.prepend !== 'object') doc.prepend = {}
-  if (!doc.append || typeof doc.append !== 'object') doc.append = {}
-  if (!doc.delete || typeof doc.delete !== 'object') doc.delete = {}
+  if (
+    !doc.prepend ||
+    typeof doc.prepend !== 'object' ||
+    Array.isArray(doc.prepend)
+  )
+    doc.prepend = {}
+  if (
+    !doc.append ||
+    typeof doc.append !== 'object' ||
+    Array.isArray(doc.append)
+  )
+    doc.append = {}
+  if (
+    !doc.delete ||
+    typeof doc.delete !== 'object' ||
+    Array.isArray(doc.delete)
+  )
+    doc.delete = {}
   ;(doc.prepend as Record<string, unknown>).rules =
     buckets.prepend.map(rowToRuleLine)
   ;(doc.append as Record<string, unknown>).rules =

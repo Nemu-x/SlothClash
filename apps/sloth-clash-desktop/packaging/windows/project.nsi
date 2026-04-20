@@ -69,6 +69,26 @@ Section "${INFO_PRODUCTNAME}" SecApp
 
     !insertmacro wails.webview2runtime
 
+    MessageBox MB_ICONEXCLAMATION|MB_YESNO "${INFO_PRODUCTNAME} update may require closing running app instances. Installer can do it automatically now. Continue?" IDYES +2 IDNO 0
+    Abort
+    nsExec::ExecToLog 'taskkill /F /IM "Sloth Clash.exe"'
+    nsExec::ExecToLog 'taskkill /F /IM "${PRODUCT_EXECUTABLE}"'
+    nsExec::ExecToLog 'taskkill /F /IM "SlothClashDesktop.exe"'
+    nsExec::ExecToLog 'taskkill /F /IM "sloth-clash-desktop.exe"'
+    Sleep 1000
+    nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq Sloth Clash.exe" | find /I "Sloth Clash.exe"'
+    Pop $0
+    Pop $1
+    StrCmp $0 "0" 0 +3
+    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running (Sloth Clash.exe). Please close it and run installer again."
+    Abort
+    nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq ${PRODUCT_EXECUTABLE}" | find /I "${PRODUCT_EXECUTABLE}"'
+    Pop $0
+    Pop $1
+    StrCmp $0 "0" 0 +3
+    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running (${PRODUCT_EXECUTABLE}). Please close it and run installer again."
+    Abort
+
     SetOutPath $INSTDIR
 
     !insertmacro wails.files

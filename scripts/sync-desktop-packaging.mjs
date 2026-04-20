@@ -44,7 +44,10 @@ function main() {
     process.exit(1)
   }
   fs.mkdirSync(path.dirname(destNsi), { recursive: true })
-  fs.copyFileSync(srcNsi, destNsi)
+  // NSIS + non-ASCII strings (RU/ZH): write BOM to avoid mojibake on some setups.
+  const nsiText = fs.readFileSync(srcNsi, 'utf8')
+  const bom = '\uFEFF'
+  fs.writeFileSync(destNsi, `${bom}${nsiText}`, 'utf8')
   console.log(
     '[sync-desktop-packaging] copied project.nsi →',
     path.relative(repoRoot, destNsi),

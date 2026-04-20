@@ -30,7 +30,7 @@ Sloth Clash is a **GPL-3.0** GUI around **Mihomo** (Clash Meta). This repository
 ## Features (high level)
 
 - Profiles, proxies, rules, and merge / script-style config workflows in the UI  
-- Mihomo core integration (stable + optional alpha channel via prebuild)  
+- Mihomo core integration (stable channel via prebuild)  
 - Windows service installer bundle + sidecar layout compatible with Wails packaging  
 - Deep link scheme `slothclash://` (see `wails.json`)
 

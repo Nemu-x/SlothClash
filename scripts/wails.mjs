@@ -140,16 +140,68 @@ if (goExe !== 'go') {
   console.log(`[wails] using Go: ${goExe}`)
 }
 
-const child = spawn(
-  goExe,
-  ['run', 'github.com/wailsapp/wails/v2/cmd/wails@latest', ...commandArgs],
-  {
-    cwd: appDir,
-    stdio: 'inherit',
-    shell: false,
-    env: spawnEnvForWails(),
-  },
-)
+function resolveWailsExe(goBin) {
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  try {
+    const gobin = execFileSync(goExe, ['env', 'GOBIN'], {
+      encoding: 'utf8',
+    }).trim()
+    if (gobin) {
+      const p = path.join(gobin, `wails${ext}`)
+      if (fs.existsSync(p)) return p
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const gopath = execFileSync(goExe, ['env', 'GOPATH'], {
+      encoding: 'utf8',
+    }).trim()
+    if (gopath) {
+      const p = path.join(gopath, 'bin', `wails${ext}`)
+      if (fs.existsSync(p)) return p
+    }
+  } catch {
+    /* ignore */
+  }
+  if (goBin) {
+    const p = path.join(goBin, `wails${ext}`)
+    if (fs.existsSync(p)) return p
+  }
+  return ''
+}
+
+const envForWails = spawnEnvForWails()
+const goBinForTools =
+  goExe !== 'go' && fs.existsSync(goExe) ? path.dirname(goExe) : ''
+let wailsExe = resolveWailsExe(goBinForTools)
+if (!wailsExe) {
+  console.log('[wails] installing wails CLI via go install ...')
+  execFileSync(
+    goExe,
+    ['install', 'github.com/wailsapp/wails/v2/cmd/wails@latest'],
+    {
+      cwd: appDir,
+      stdio: 'inherit',
+      env: envForWails,
+    },
+  )
+  wailsExe = resolveWailsExe(goBinForTools)
+}
+
+if (!wailsExe) {
+  console.error(
+    '[wails] could not resolve wails executable after install; check GOBIN/GOPATH and Go setup.',
+  )
+  process.exit(1)
+}
+
+const child = spawn(wailsExe, commandArgs, {
+  cwd: appDir,
+  stdio: 'inherit',
+  shell: false,
+  env: envForWails,
+})
 
 child.on('exit', (code) => {
   process.exit(code ?? 1)

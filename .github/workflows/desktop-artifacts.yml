@@ -52,12 +52,14 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path "apps/sloth-clash-desktop/build/bin/*" -DestinationPath "dist/sloth-clash-windows-amd64-${{ github.ref_name }}.zip" -Force
+          $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
+          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip" -Force
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-amd64
-          path: dist/sloth-clash-windows-amd64-${{ github.ref_name }}.zip
+          path: dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip
 
   darwin-arm64:
     runs-on: macos-14

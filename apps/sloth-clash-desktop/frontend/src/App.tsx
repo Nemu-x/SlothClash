@@ -52,6 +52,7 @@ import {
   BrowserOpenURL,
   EventsOn,
   Quit,
+  WindowHide,
   WindowMinimise,
   WindowToggleMaximise,
 } from '../wailsjs/runtime/runtime'
@@ -150,6 +151,9 @@ function extractNodeFlagIso(nodeName: string): string {
 function nodeDisplayName(nodeName: string): string {
   const s = String(nodeName ?? '').trim()
   if (!s) return '—'
+  // Some providers prefix names like "ES es <name>" — collapse duplicated ISO tokens.
+  const dedup = s.replace(/^([A-Za-z]{2})\s+\1\s+/i, '')
+  if (dedup !== s) return dedup
   const m = /^([A-Za-z]{2})\s+(.+)$/.exec(s)
   if (!m) return s
   return m[2]
@@ -1369,7 +1373,13 @@ function App() {
             className="winBtnIcon winClose"
             title="Close"
             aria-label="Close"
-            onClick={() => Quit()}
+            onClick={() => {
+              if (settings.closeToTray) {
+                void WindowHide()
+                return
+              }
+              void Quit()
+            }}
           >
             <svg className="winIcon" viewBox="0 0 12 12" aria-hidden>
               <path d="M3 3l6 6M9 3L3 9" />

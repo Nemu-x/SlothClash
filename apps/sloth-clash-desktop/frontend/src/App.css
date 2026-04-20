@@ -424,6 +424,8 @@
 
 .home {
   max-width: 960px;
+  margin: 0 auto;
+  width: min(100%, 960px);
 }
 
 .homeLinkToast {

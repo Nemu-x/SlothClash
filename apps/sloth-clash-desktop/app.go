@@ -77,6 +77,7 @@ func NewApp(bundle embed.FS) *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadProfilesFromDisk()
+	a.refreshServiceStatus()
 	go a.startProfileAutoUpdateLoop(ctx)
 	go a.updateCheckLoop(ctx)
 	a.emitAppStateChanged()
@@ -88,6 +89,36 @@ func (a *App) startup(ctx context.Context) {
 			a.tryInstallConfigFromArgs(args)
 		}()
 	}
+}
+
+func queryWindowsServiceStatus(name string) (installed bool, running bool, lastErr string) {
+	if runtime.GOOS != "windows" {
+		return false, false, ""
+	}
+	out, err := exec.Command("sc", "query", name).CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		lt := strings.ToLower(text)
+		if strings.Contains(lt, "does not exist") || strings.Contains(lt, "1060") {
+			return false, false, ""
+		}
+		return false, false, text
+	}
+	upper := strings.ToUpper(text)
+	return true, strings.Contains(upper, "RUNNING"), ""
+}
+
+func (a *App) refreshServiceStatus() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	installed, running, lastErr := queryWindowsServiceStatus("sloth_clash_service")
+	a.mu.Lock()
+	a.state.Service.Installed = installed
+	a.state.Service.Running = running
+	a.state.Service.LastError = strings.TrimSpace(lastErr)
+	a.state.UpdatedAt = time.Now().Unix()
+	a.mu.Unlock()
 }
 
 // OnSecondInstance is wired from main.go when SingleInstanceLock fires (e.g. slothclash:// opened while running).
@@ -821,7 +852,14 @@ func (a *App) InstallService() (TunSetupResult, error) {
 	var out []byte
 	var runErr error
 	if runtime.GOOS == "windows" {
+		if a.ctx != nil {
+			wailsrt.WindowMinimise(a.ctx)
+		}
 		out, runErr = installServiceElevatedWindows(installPath, tmpDir)
+		if a.ctx != nil {
+			wailsrt.WindowShow(a.ctx)
+			wailsrt.WindowUnminimise(a.ctx)
+		}
 	} else {
 		cmd := exec.Command(installPath)
 		cmd.Dir = tmpDir
@@ -845,12 +883,16 @@ func (a *App) InstallService() (TunSetupResult, error) {
 		}, nil
 	}
 
-	a.mu.Lock()
-	a.state.Service.Installed = true
-	a.state.Service.Running = true
-	a.state.Service.LastError = ""
-	a.state.UpdatedAt = time.Now().Unix()
-	a.mu.Unlock()
+	if runtime.GOOS == "windows" {
+		a.refreshServiceStatus()
+	} else {
+		a.mu.Lock()
+		a.state.Service.Installed = true
+		a.state.Service.Running = true
+		a.state.Service.LastError = ""
+		a.state.UpdatedAt = time.Now().Unix()
+		a.mu.Unlock()
+	}
 
 	_ = os.RemoveAll(tmpDir)
 	msg := "Service installed. If you also use another Clash client, stop its Windows service while using Sloth TUN to avoid conflicts."
@@ -1023,6 +1065,7 @@ func (a *App) SetUpdateChannel(channel string) (UpdateState, error) {
 }
 
 func (a *App) GetTunStatus() ServiceState {
+	a.refreshServiceStatus()
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.state.Service

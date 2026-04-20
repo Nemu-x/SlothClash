@@ -525,12 +525,46 @@ function App() {
   const [ruleSearch, setRuleSearch] = useState('')
   const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
   const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const refreshQueuedRef = useRef(false)
+  const stateEventTimerRef = useRef<number | null>(null)
+  const connectBusySinceRef = useRef<number | null>(null)
+  const clearConnectBusySmooth = useCallback(() => {
+    const since = connectBusySinceRef.current
+    const minMs = 360
+    if (since === null) {
+      setConnectBusy(false)
+      return
+    }
+    const elapsed = performance.now() - since
+    if (elapsed >= minMs) {
+      setConnectBusy(false)
+      return
+    }
+    window.setTimeout(() => setConnectBusy(false), Math.max(0, minMs - elapsed))
+  }, [])
 
   const refresh = useCallback(async () => {
-    const current = await GetAppState()
-    const tunStatus = await GetTunStatus()
-    setState(current)
-    setService(tunStatus)
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true
+      return refreshInFlightRef.current
+    }
+    const run = async () => {
+      do {
+        refreshQueuedRef.current = false
+        const [current, tunStatus] = await Promise.all([
+          GetAppState(),
+          GetTunStatus(),
+        ])
+        setState(current)
+        setService(tunStatus)
+      } while (refreshQueuedRef.current)
+    }
+    const p = run().finally(() => {
+      refreshInFlightRef.current = null
+    })
+    refreshInFlightRef.current = p
+    return p
   }, [])
 
   useEffect(() => {
@@ -543,9 +577,19 @@ function App() {
 
   useEffect(() => {
     const off = EventsOn('app:state', () => {
-      void refresh()
+      if (stateEventTimerRef.current !== null) return
+      stateEventTimerRef.current = window.setTimeout(() => {
+        stateEventTimerRef.current = null
+        void refresh()
+      }, 120)
     })
-    return () => off()
+    return () => {
+      off()
+      if (stateEventTimerRef.current !== null) {
+        window.clearTimeout(stateEventTimerRef.current)
+        stateEventTimerRef.current = null
+      }
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -587,9 +631,9 @@ function App() {
     if (!connectBusy) return
     const st = state?.connection?.status
     if (st === 'connected' || st === 'error' || st === 'disconnected') {
-      setConnectBusy(false)
+      clearConnectBusySmooth()
     }
-  }, [state?.connection?.status, connectBusy])
+  }, [state?.connection?.status, connectBusy, clearConnectBusySmooth])
 
   useEffect(() => {
     if (state?.connection?.status !== 'connected') {
@@ -629,16 +673,18 @@ function App() {
     void (async () => {
       setError('')
       try {
-        await RefreshProxies()
+        const next = await RefreshProxies()
+        if (!cancelled && next) {
+          setState(next as main.AppState)
+        }
       } catch (e: any) {
         if (!cancelled) setError(String(e))
       }
-      if (!cancelled) await refresh()
     })()
     return () => {
       cancelled = true
     }
-  }, [screen, state?.connection?.status, refresh])
+  }, [screen, state?.connection?.status])
 
   // Same as Proxies: Home reads proxy state — refresh when opening Home while connected
   // so Active group / node match the core without visiting Proxies first.
@@ -648,16 +694,18 @@ function App() {
     let cancelled = false
     void (async () => {
       try {
-        await RefreshProxies()
+        const next = await RefreshProxies()
+        if (!cancelled && next) {
+          setState(next as main.AppState)
+        }
       } catch {
         /* non-fatal */
       }
-      if (!cancelled) await refresh()
     })()
     return () => {
       cancelled = true
     }
-  }, [screen, state?.connection?.status, refresh])
+  }, [screen, state?.connection?.status])
 
   useEffect(() => {
     if (screen !== 'home') return
@@ -665,27 +713,31 @@ function App() {
     let cancelled = false
     void (async () => {
       try {
-        await RefreshHomeInsight()
+        const next = await RefreshHomeInsight()
+        if (!cancelled && next) {
+          setState(next as main.AppState)
+        }
       } catch {
         /* non-fatal */
       }
-      if (!cancelled) await refresh()
     })()
     const id = setInterval(() => {
       void (async () => {
         try {
-          await RefreshHomeInsight()
+          const next = await RefreshHomeInsight()
+          if (!cancelled && next) {
+            setState(next as main.AppState)
+          }
         } catch {
           /* */
         }
-        await refresh()
       })()
     }, 45000)
     return () => {
       cancelled = true
       clearInterval(id)
     }
-  }, [screen, state?.connection?.status, state?.mode?.current, refresh])
+  }, [screen, state?.connection?.status, state?.mode?.current])
 
   useEffect(() => {
     if (screen !== 'settings') return
@@ -1297,12 +1349,13 @@ function App() {
       return
     }
     setError('')
+    connectBusySinceRef.current = performance.now()
     setConnectBusy(true)
     try {
       await Connect()
     } catch (e: any) {
       setError(String(e))
-      setConnectBusy(false)
+      clearConnectBusySmooth()
     }
     await refresh()
   }

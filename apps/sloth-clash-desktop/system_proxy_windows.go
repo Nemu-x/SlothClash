@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func (a *App) applyWindowsSystemProxyIfNeededLocked() error {
+func (a *App) applySystemProxyIfNeededLocked() error {
 	if a.state.Traffic != "proxy" {
 		return nil
 	}
@@ -24,9 +24,9 @@ func (a *App) applyWindowsSystemProxyIfNeededLocked() error {
 	return nil
 }
 
-// applyWindowsSystemProxyFromSnapshot applies HKCU proxy when Traffic is proxy, without holding a.mu
+// applySystemProxyFromSnapshot applies HKCU proxy when Traffic is proxy, without holding a.mu
 // during registry I/O (caller may use this after connect pipeline).
-func (a *App) applyWindowsSystemProxyFromSnapshot() error {
+func (a *App) applySystemProxyFromSnapshot() error {
 	a.mu.RLock()
 	traffic := a.state.Traffic
 	mixed := a.state.Core.MixedPort
@@ -44,8 +44,8 @@ func (a *App) applyWindowsSystemProxyFromSnapshot() error {
 	return nil
 }
 
-// clearWindowsSystemProxyFromSnapshot clears stale localhost system proxy for non-proxy traffic.
-func (a *App) clearWindowsSystemProxyFromSnapshot() error {
+// clearSystemProxyFromSnapshot clears stale localhost system proxy for non-proxy traffic.
+func (a *App) clearSystemProxyFromSnapshot() error {
 	a.mu.RLock()
 	traffic := a.state.Traffic
 	a.mu.RUnlock()
@@ -53,12 +53,12 @@ func (a *App) clearWindowsSystemProxyFromSnapshot() error {
 		return nil
 	}
 	a.mu.Lock()
-	a.clearWindowsSystemProxyLocked()
+	a.clearSystemProxyLocked()
 	a.mu.Unlock()
 	return nil
 }
 
-func (a *App) clearWindowsSystemProxyLocked() {
+func (a *App) clearSystemProxyLocked() {
 	if a.systemProxyLeased {
 		_ = setWindowsUserProxy("", false)
 		a.systemProxyLeased = false

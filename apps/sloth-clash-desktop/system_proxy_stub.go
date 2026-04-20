@@ -2,18 +2,18 @@
 
 package main
 
-func (a *App) applyWindowsSystemProxyIfNeededLocked() error {
+func (a *App) applySystemProxyIfNeededLocked() error {
 	return nil
 }
 
-func (a *App) applyWindowsSystemProxyFromSnapshot() error {
+func (a *App) applySystemProxyFromSnapshot() error {
 	return nil
 }
 
-func (a *App) clearWindowsSystemProxyFromSnapshot() error {
+func (a *App) clearSystemProxyFromSnapshot() error {
 	return nil
 }
 
-func (a *App) clearWindowsSystemProxyLocked() {
+func (a *App) clearSystemProxyLocked() {
 	a.systemProxyLeased = false
 }

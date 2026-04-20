@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -175,7 +176,58 @@ func (a *App) resolveMihomoBinary() (string, error) {
 			}
 		}
 	}
+	if p, err := a.extractBundledMihomoBinary(); err == nil && strings.TrimSpace(p) != "" {
+		return p, nil
+	}
 	return "", errors.New("mihomo binary not found — run `pnpm run prebuild` from repo root; run `wails dev` from apps/sloth-clash-desktop; or set SLOTH_MIHOMO_PATH / SLOTH_CLASH_DESKTOP_ROOT (absolute path to that app folder)")
+}
+
+func (a *App) extractBundledMihomoBinary() (string, error) {
+	root, err := slothDataRoot()
+	if err != nil {
+		return "", err
+	}
+	sidecarDir := filepath.Join(root, "runtime", "_sidecar")
+	if err := os.MkdirAll(sidecarDir, 0o755); err != nil {
+		return "", err
+	}
+
+	patterns := []string{
+		"build/sidecar/sloth-mihomo*",
+		"build/sidecar/verge-mihomo*",
+	}
+	for _, preferNoAlpha := range []bool{true, false} {
+		for _, pat := range patterns {
+			matches, _ := fs.Glob(a.bundle, pat)
+			sort.Strings(matches)
+			for _, m := range matches {
+				base := strings.ToLower(filepath.Base(m))
+				if preferNoAlpha && strings.Contains(base, "alpha") {
+					continue
+				}
+				info, statErr := fs.Stat(a.bundle, m)
+				if statErr != nil || info.IsDir() {
+					continue
+				}
+				dst := filepath.Join(sidecarDir, filepath.Base(m))
+				if st, err := os.Stat(dst); err == nil && !st.IsDir() && st.Size() > 0 {
+					return dst, nil
+				}
+				data, readErr := a.bundle.ReadFile(m)
+				if readErr != nil || len(data) == 0 {
+					continue
+				}
+				if writeErr := os.WriteFile(dst, data, 0o755); writeErr != nil {
+					continue
+				}
+				if runtime.GOOS != "windows" {
+					_ = os.Chmod(dst, 0o755)
+				}
+				return dst, nil
+			}
+		}
+	}
+	return "", errors.New("embedded mihomo not found in build/sidecar")
 }
 
 func (a *App) ensureGeoInDataDir(dataDir string) error {

@@ -13,6 +13,7 @@ import (
 var assets embed.FS
 
 //go:embed all:build/resources
+//go:embed all:build/sidecar
 var bundledResources embed.FS
 
 func main() {

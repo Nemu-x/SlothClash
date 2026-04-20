@@ -1,7 +1,7 @@
-# Builds Sloth Clash desktop (Wails + Go + React) for Windows / macOS / Linux.
-# Service binaries for `pnpm run prebuild` / `prepare:wails` come from:
-# https://github.com/Nemu-x/sloth-clash-service-ipc/releases (per-target tags, e.g. x86_64-pc-windows-msvc).
-# Run manually (workflow_dispatch) or push a version tag (e.g. v0.1.0).
+# Builds Sloth Clash desktop for Windows, macOS Apple Silicon, and Linux.
+# macOS Intel (darwin/amd64) is in desktop-artifacts-darwin-amd64.yml (slow GitHub queue).
+# Service binaries: https://github.com/Nemu-x/sloth-clash-service-ipc/releases
+# Run: workflow_dispatch or push tag v* — both workflows attach assets to the same Release.
 
 name: Desktop artifacts
 
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-artifacts-${{ github.ref }}
+  group: desktop-artifacts-main-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +34,6 @@ jobs:
         with:
           node-version: '20'
 
-      # Version comes from package.json "packageManager" (do not set version: here — conflicts).
       - uses: pnpm/action-setup@v4
 
       - name: Install dependencies
@@ -85,37 +84,6 @@ jobs:
           name: sloth-clash-darwin-arm64
           path: apps/sloth-clash-desktop/build/bin/
 
-  darwin-amd64:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.x'
-          cache: true
-          cache-dependency-path: apps/sloth-clash-desktop/go.sum
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - uses: pnpm/action-setup@v4
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Desktop resources
-        run: pnpm run desktop:resources
-
-      - name: Wails build (darwin/amd64)
-        run: pnpm run desktop:build:darwin:amd64
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sloth-clash-darwin-amd64
-          path: apps/sloth-clash-desktop/build/bin/
-
   linux-amd64:
     runs-on: ubuntu-24.04
     steps:
@@ -133,7 +101,6 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      # Ubuntu 24.04 ships WebKitGTK 4.1 only; Wails defaults to 4.0 — use -tags webkit2_41 (see desktop:build:linux:amd64).
       - name: Linux GUI deps (GTK + WebKit2GTK 4.1)
         run: |
           sudo apt-get update
@@ -158,7 +125,6 @@ jobs:
     needs:
       - windows-amd64
       - darwin-arm64
-      - darwin-amd64
       - linux-amd64
     runs-on: ubuntu-latest
     permissions:

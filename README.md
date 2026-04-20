@@ -53,7 +53,7 @@ pnpm run wails:dev           # or: pnpm run wails:build
 
 ## CI
 
-GitHub Actions: `.github/workflows/desktop-artifacts.yml` — matrix build on tag `v*` or manual dispatch.
+GitHub Actions: `.github/workflows/desktop-artifacts.yml` (Windows, Linux, macOS arm64 + Release) and `.github/workflows/desktop-artifacts-darwin-amd64.yml` (macOS Intel — same tag, adds zip to the same Release).
 
 ## Contributing
 

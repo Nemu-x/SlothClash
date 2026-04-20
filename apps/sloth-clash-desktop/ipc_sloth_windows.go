@@ -75,13 +75,21 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 
 	qctx, qcancel := context.WithTimeout(ctx, 8*time.Second)
 	defer qcancel()
-	out, qerr := exec.CommandContext(qctx, "sc", "query", slothWindowsSCMService).CombinedOutput()
+	qcmd := exec.CommandContext(qctx, "sc", "query", slothWindowsSCMService)
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		qcmd.SysProcAttr = attr
+	}
+	out, qerr := qcmd.CombinedOutput()
 	if qerr != nil {
 		return fmt.Errorf("Sloth IPC service pipe not reachable (%v); is `%s` installed and running? (sc query: %w)\n%s", err, slothWindowsSCMService, qerr, strings.TrimSpace(string(out)))
 	}
 	lower := strings.ToLower(string(out))
 	if !strings.Contains(lower, "running") {
-		_, _ = exec.CommandContext(qctx, "net", "start", slothWindowsSCMService).CombinedOutput()
+		ncmd := exec.CommandContext(qctx, "net", "start", slothWindowsSCMService)
+		if attr := hideWindowSysProcAttr(); attr != nil {
+			ncmd.SysProcAttr = attr
+		}
+		_, _ = ncmd.CombinedOutput()
 	}
 
 	rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)

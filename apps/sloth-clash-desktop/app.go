@@ -95,7 +95,11 @@ func queryWindowsServiceStatus(name string) (installed bool, running bool, lastE
 	if runtime.GOOS != "windows" {
 		return false, false, ""
 	}
-	out, err := exec.Command("sc", "query", name).CombinedOutput()
+	cmd := exec.Command("sc", "query", name)
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
+	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
 		lt := strings.ToLower(text)

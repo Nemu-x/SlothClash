@@ -1,3 +1,4 @@
+import { load as parseYaml } from 'js-yaml'
 import {
   useCallback,
   useEffect,
@@ -125,7 +126,9 @@ function isUnsafeGroupName(name: string) {
 }
 
 function extractNodeFlagIso(nodeName: string): string {
-  const s = String(nodeName ?? '').trim()
+  const s = String(nodeName ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
   if (!s) return ''
   // Support real flag emoji in name (regional indicator pair), e.g. "🇪🇸 Node".
   const chars = [...s]
@@ -141,12 +144,15 @@ function extractNodeFlagIso(nodeName: string): string {
   }
   // Common pattern: "ES Node", but also support any standalone 2-letter token.
   const m0 = /^([A-Za-z]{2})\b/.exec(s)
-  if (m0) return m0[1].toUpperCase()
+  if (m0) {
+    const up = m0[1].toUpperCase()
+    return up === 'UK' ? 'GB' : up
+  }
   const skip = new Set(['WS', 'GR', 'TCP', 'UDP', 'UP', 'IP'])
   const all = s.match(/\b([A-Za-z]{2})\b/g) ?? []
   for (const t of all) {
     const up = t.toUpperCase()
-    if (!skip.has(up)) return up
+    if (!skip.has(up)) return up === 'UK' ? 'GB' : up
   }
   return ''
 }
@@ -230,6 +236,15 @@ function selectedNodeEmoji(value: unknown): string {
   return isoToFlagEmoji(extractNodeFlagIso(String(value ?? '')))
 }
 
+function nodeOptionLabel(nodeName: string): string {
+  const raw = String(nodeName ?? '').trim()
+  if (!raw) return '—'
+  const iso = extractNodeFlagIso(raw)
+  const emoji = isoToFlagEmoji(iso)
+  const name = nodeDisplayName(raw)
+  return emoji ? `${emoji} ${name}` : raw
+}
+
 /** mihomo /traffic reports speeds in kbps */
 function formatSpeedKbps(kbps: number | undefined): string {
   if (kbps == null || kbps < 0) return '—'
@@ -262,6 +277,26 @@ function profileSubscriptionHost(url: string): string {
     return u.hostname || ''
   } catch {
     return ''
+  }
+}
+
+function yamlValidationError(
+  text: string,
+  requireMapping = true,
+): string | null {
+  const src = String(text ?? '').trim()
+  if (!src) return null
+  try {
+    const parsed = parseYaml(src)
+    if (
+      requireMapping &&
+      (parsed == null || Array.isArray(parsed) || typeof parsed !== 'object')
+    ) {
+      return 'YAML must be a mapping object at top-level.'
+    }
+    return null
+  } catch (e: any) {
+    return String(e?.message || e || 'Invalid YAML')
   }
 }
 
@@ -430,11 +465,17 @@ function App() {
     name: string
   } | null>(null)
   const [mergeTemplateDraft, setMergeTemplateDraft] = useState('')
+  const [mergeTemplateYamlErr, setMergeTemplateYamlErr] = useState<
+    string | null
+  >(null)
   const [profileFileModal, setProfileFileModal] = useState<{
     id: string
     name: string
   } | null>(null)
   const [profileFileText, setProfileFileText] = useState('')
+  const [profileFileYamlErr, setProfileFileYamlErr] = useState<string | null>(
+    null,
+  )
   const [profileFilePath, setProfileFilePath] = useState('')
   const [profileFileLoadErr, setProfileFileLoadErr] = useState('')
   const [profileProxyModal, setProfileProxyModal] = useState<{
@@ -448,6 +489,9 @@ function App() {
   const [proxyAdvancedDraft, setProxyAdvancedDraft] = useState(
     'prepend: []\nappend: []\ndelete: []\n',
   )
+  const [proxyAdvancedYamlErr, setProxyAdvancedYamlErr] = useState<
+    string | null
+  >(null)
   const [proxyRows, setProxyRows] = useState<ProxyGroupRow[]>([])
   const [proxyAppendRows, setProxyAppendRows] = useState<ProxyGroupRow[]>([])
   const [proxyTarget, setProxyTarget] = useState<'prepend' | 'append'>(
@@ -474,6 +518,9 @@ function App() {
   const [rulesAdvancedDraft, setRulesAdvancedDraft] = useState(
     'prepend: []\nappend: []\ndelete: []\n',
   )
+  const [rulesAdvancedYamlErr, setRulesAdvancedYamlErr] = useState<
+    string | null
+  >(null)
   const [ruleRows, setRuleRows] = useState<RuleRow[]>([])
   const [ruleAppendRows, setRuleAppendRows] = useState<RuleRow[]>([])
   const [ruleTarget, setRuleTarget] = useState<'prepend' | 'append'>('prepend')
@@ -559,12 +606,12 @@ function App() {
     const run = async () => {
       do {
         refreshQueuedRef.current = false
-        const [current, tunStatus] = await Promise.all([
-          GetAppState(),
-          GetTunStatus(),
-        ])
+        const current = await GetAppState()
         setState(current)
-        setService(tunStatus)
+        // Do not block visual state updates on Windows service polling (`sc query`).
+        void GetTunStatus()
+          .then(setService)
+          .catch(() => {})
       } while (refreshQueuedRef.current)
     }
     const p = run().finally(() => {
@@ -577,6 +624,22 @@ function App() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    setMergeTemplateYamlErr(yamlValidationError(mergeTemplateDraft, true))
+  }, [mergeTemplateDraft])
+
+  useEffect(() => {
+    setProfileFileYamlErr(yamlValidationError(profileFileText, true))
+  }, [profileFileText])
+
+  useEffect(() => {
+    setProxyAdvancedYamlErr(yamlValidationError(proxyAdvancedDraft, true))
+  }, [proxyAdvancedDraft])
+
+  useEffect(() => {
+    setRulesAdvancedYamlErr(yamlValidationError(rulesAdvancedDraft, true))
+  }, [rulesAdvancedDraft])
 
   useEffect(() => {
     void GetUpdateState().then(setUpdateSnap)
@@ -648,7 +711,10 @@ function App() {
     if (state?.connection?.status !== 'connected') {
       setOptimisticMode(null)
       setOptimisticTraffic(null)
+      return
     }
+    // Prevent stale fatal messages from previous failed attempts lingering after recovery.
+    setError('')
   }, [state?.connection?.status])
 
   // If /proxies was still warming up, or groups loaded before activeGroup — nudge briefly.
@@ -907,16 +973,26 @@ function App() {
     let cancelled = false
     void (async () => {
       setProfileFileLoadErr('')
-      const peek = await ReadProfileConfig(profileFileModal.id)
-      if (cancelled) return
-      setProfileFilePath(peek.path ?? '')
-      if (peek.lastError) {
-        setProfileFileLoadErr(peek.lastError)
+      setProfileFilePath('')
+      setProfileFileText('')
+      try {
+        const peek = await ReadProfileConfig(profileFileModal.id)
+        if (cancelled) return
+        setProfileFilePath(peek.path ?? '')
+        if (peek.lastError) {
+          setProfileFileLoadErr(peek.lastError)
+          setProfileFileText(
+            `# config.yaml not found yet (${peek.lastError}).\n# Connect once to generate, then open again — or paste a full profile below.\n`,
+          )
+        } else {
+          setProfileFileText(peek.body ?? '')
+        }
+      } catch (e: any) {
+        if (cancelled) return
+        setProfileFileLoadErr(String(e))
         setProfileFileText(
-          `# config.yaml not found yet (${peek.lastError}).\n# Connect once to generate, then open again — or paste a full profile below.\n`,
+          '# Could not load current config.yaml. Paste YAML below to overwrite.\n',
         )
-      } else {
-        setProfileFileText(peek.body ?? '')
       }
     })()
     return () => {
@@ -1832,7 +1908,7 @@ function App() {
                         >
                           {(nodePickerGroup.proxies ?? []).map((p: string) => (
                             <option key={p} value={p}>
-                              {p}
+                              {nodeOptionLabel(p)}
                             </option>
                           ))}
                         </select>
@@ -3063,10 +3139,6 @@ function App() {
               </div>
             </div>
             {tunBanner ? <p className="banner">{tunBanner}</p> : null}
-            {state?.connection?.status === 'connected' &&
-            state?.connection?.lastWarning ? (
-              <p className="banner">{String(state.connection.lastWarning)}</p>
-            ) : null}
             {error ? <p className="error">{error}</p> : null}
           </div>
         ) : null}
@@ -3180,6 +3252,11 @@ function App() {
                 value={mergeTemplateDraft}
                 onChange={(e) => setMergeTemplateDraft(e.target.value)}
               />
+              {mergeTemplateYamlErr ? (
+                <span className="muted small" style={{ color: '#ff6b6b' }}>
+                  YAML error: {mergeTemplateYamlErr}
+                </span>
+              ) : null}
             </label>
             <div className="modalFooter">
               <button
@@ -3200,18 +3277,24 @@ function App() {
                 <button
                   type="button"
                   className="btn primary"
-                  onClick={() => {
+                  disabled={Boolean(mergeTemplateYamlErr)}
+                  onClick={async () => {
                     if (!profileMergeModal) return
-                    void run(() =>
-                      SetProfileMergeTemplate(
+                    if (mergeTemplateYamlErr) return
+                    setError('')
+                    try {
+                      await SetProfileMergeTemplate(
                         profileMergeModal.id,
                         mergeTemplateDraft,
-                      ),
-                    )
-                    setProfileMergeModal(null)
-                    setTunBanner(
-                      'Merge template saved. Reconnect if you are already connected.',
-                    )
+                      )
+                      setProfileMergeModal(null)
+                      setTunBanner(
+                        'Merge template saved. Reconnect if you are already connected.',
+                      )
+                    } catch (e: any) {
+                      setError(String(e))
+                    }
+                    await refresh()
                   }}
                 >
                   Save
@@ -3259,6 +3342,11 @@ function App() {
                 value={profileFileText}
                 onChange={(e) => setProfileFileText(e.target.value)}
               />
+              {profileFileYamlErr ? (
+                <span className="muted small" style={{ color: '#ff6b6b' }}>
+                  YAML error: {profileFileYamlErr}
+                </span>
+              ) : null}
             </label>
             <div className="modalFooter">
               <button
@@ -3285,15 +3373,24 @@ function App() {
                 <button
                   type="button"
                   className="btn primary"
-                  onClick={() => {
+                  disabled={Boolean(profileFileYamlErr)}
+                  onClick={async () => {
                     if (!profileFileModal) return
-                    void run(() =>
-                      WriteProfileConfig(profileFileModal.id, profileFileText),
-                    )
-                    setProfileFileModal(null)
-                    setTunBanner(
-                      'Config saved. Sloth reapplies ports and secret on connect.',
-                    )
+                    if (profileFileYamlErr) return
+                    setError('')
+                    try {
+                      await WriteProfileConfig(
+                        profileFileModal.id,
+                        profileFileText,
+                      )
+                      setProfileFileModal(null)
+                      setTunBanner(
+                        'Config saved. Sloth reapplies ports and secret on connect.',
+                      )
+                    } catch (e: any) {
+                      setError(String(e))
+                    }
+                    await refresh()
                   }}
                 >
                   Save
@@ -3327,6 +3424,12 @@ function App() {
                   type="button"
                   className={`btn vergeToggle ${proxyUiMode === 'visual' ? 'primary' : 'ghost'}`}
                   onClick={() => {
+                    if (proxyUiMode === 'advanced' && proxyAdvancedYamlErr) {
+                      setError(
+                        'Fix proxy advanced YAML before switching to Visual mode.',
+                      )
+                      return
+                    }
                     setProxyUiMode('visual')
                     const b = proxyBucketsFromAdvancedYaml(proxyAdvancedDraft)
                     setProxyRows(b.prepend)
@@ -3503,6 +3606,14 @@ function App() {
                       value={proxyAdvancedDraft}
                       onChange={(e) => setProxyAdvancedDraft(e.target.value)}
                     />
+                    {proxyAdvancedYamlErr ? (
+                      <span
+                        className="muted small"
+                        style={{ color: '#ff6b6b' }}
+                      >
+                        YAML error: {proxyAdvancedYamlErr}
+                      </span>
+                    ) : null}
                   </label>
                 )}
               </div>
@@ -3611,25 +3722,37 @@ function App() {
                 <button
                   type="button"
                   className="btn primary"
-                  onClick={() => {
+                  disabled={
+                    proxyUiMode === 'advanced' && Boolean(proxyAdvancedYamlErr)
+                  }
+                  onClick={async () => {
                     if (!profileProxyModal) return
-                    let body = proxyMergeDraft
-                    if (proxyUiMode === 'visual') {
-                      body = applyProxyBucketsToMerge(proxyMergeDraft, {
-                        prepend: proxyRows,
-                        append: proxyAppendRows,
-                        delete: [],
-                      })
-                    } else {
-                      const buckets =
-                        proxyBucketsFromAdvancedYaml(proxyAdvancedDraft)
-                      body = applyProxyBucketsToMerge(proxyMergeDraft, buckets)
+                    const body =
+                      proxyUiMode === 'visual'
+                        ? applyProxyBucketsToMerge(proxyMergeDraft, {
+                            prepend: proxyRows,
+                            append: proxyAppendRows,
+                            delete: [],
+                          })
+                        : (() => {
+                            if (proxyAdvancedYamlErr) return null
+                            const buckets =
+                              proxyBucketsFromAdvancedYaml(proxyAdvancedDraft)
+                            return applyProxyBucketsToMerge(
+                              proxyMergeDraft,
+                              buckets,
+                            )
+                          })()
+                    if (body == null) return
+                    setError('')
+                    try {
+                      await SetProfileProxyTemplate(profileProxyModal.id, body)
+                      setProfileProxyModal(null)
+                      setTunBanner('Proxy groups saved into merge template.')
+                    } catch (e: any) {
+                      setError(String(e))
                     }
-                    void run(() =>
-                      SetProfileProxyTemplate(profileProxyModal.id, body),
-                    )
-                    setProfileProxyModal(null)
-                    setTunBanner('Proxy groups saved into merge template.')
+                    await refresh()
                   }}
                 >
                   Save
@@ -3792,6 +3915,14 @@ function App() {
                       value={rulesAdvancedDraft}
                       onChange={(e) => setRulesAdvancedDraft(e.target.value)}
                     />
+                    {rulesAdvancedYamlErr ? (
+                      <span
+                        className="muted small"
+                        style={{ color: '#ff6b6b' }}
+                      >
+                        YAML error: {rulesAdvancedYamlErr}
+                      </span>
+                    ) : null}
                   </label>
                 )}
               </div>
@@ -3896,8 +4027,13 @@ function App() {
                 <button
                   type="button"
                   className="btn primary"
+                  disabled={
+                    rulesUiMode === 'advanced' && Boolean(rulesAdvancedYamlErr)
+                  }
                   onClick={() => {
                     if (!profileRulesModal) return
+                    if (rulesUiMode === 'advanced' && rulesAdvancedYamlErr)
+                      return
                     void (async () => {
                       const body =
                         rulesUiMode === 'visual'

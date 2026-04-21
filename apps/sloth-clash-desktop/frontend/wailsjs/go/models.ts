@@ -51,6 +51,7 @@ export namespace main {
   }
   export class CoreState {
     running: boolean
+    lifecycle?: string
     version?: string
     controllerAddr?: string
     mixedPort?: number
@@ -63,6 +64,7 @@ export namespace main {
     constructor(source: any = {}) {
       if ('string' === typeof source) source = JSON.parse(source)
       this.running = source['running']
+      this.lifecycle = source['lifecycle']
       this.version = source['version']
       this.controllerAddr = source['controllerAddr']
       this.mixedPort = source['mixedPort']
@@ -219,6 +221,7 @@ export namespace main {
   }
   export class ConnectionState {
     status: string
+    health?: string
     lastError?: string
     lastWarning?: string
     since?: number
@@ -230,6 +233,7 @@ export namespace main {
     constructor(source: any = {}) {
       if ('string' === typeof source) source = JSON.parse(source)
       this.status = source['status']
+      this.health = source['health']
       this.lastError = source['lastError']
       this.lastWarning = source['lastWarning']
       this.since = source['since']

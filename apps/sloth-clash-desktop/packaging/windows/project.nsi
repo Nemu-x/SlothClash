@@ -43,6 +43,8 @@ ManifestDPIAware true
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_COMPONENTS
 !insertmacro MUI_UNPAGE_INSTFILES
 
 !insertmacro MUI_LANGUAGE "English"
@@ -52,6 +54,12 @@ ManifestDPIAware true
 LangString SL_DESKTOP_SHORTCUT ${LANG_ENGLISH} "Desktop shortcut"
 LangString SL_DESKTOP_SHORTCUT ${LANG_RUSSIAN} "Ярлык на рабочем столе"
 LangString SL_DESKTOP_SHORTCUT ${LANG_SIMPCHINESE} "桌面快捷方式"
+LangString SL_UNINSTALL_CORE ${LANG_ENGLISH} "Remove application files"
+LangString SL_UNINSTALL_CORE ${LANG_RUSSIAN} "Удалить файлы приложения"
+LangString SL_UNINSTALL_CORE ${LANG_SIMPCHINESE} "删除应用程序文件"
+LangString SL_UNINSTALL_DATA ${LANG_ENGLISH} "Remove user data (profiles, runtime, logs)"
+LangString SL_UNINSTALL_DATA ${LANG_RUSSIAN} "Удалить пользовательские данные (профили, runtime, логи)"
+LangString SL_UNINSTALL_DATA ${LANG_SIMPCHINESE} "删除用户数据（配置、运行时、日志）"
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe"
@@ -71,23 +79,31 @@ Section "${INFO_PRODUCTNAME}" SecApp
 
     MessageBox MB_ICONEXCLAMATION|MB_YESNO "${INFO_PRODUCTNAME} update may require closing running app instances. Installer can do it automatically now. Continue?" IDYES +2 IDNO 0
     Abort
-    nsExec::ExecToLog 'taskkill /F /IM "Sloth Clash.exe"'
-    nsExec::ExecToLog 'taskkill /F /IM "${PRODUCT_EXECUTABLE}"'
-    nsExec::ExecToLog 'taskkill /F /IM "SlothClashDesktop.exe"'
-    nsExec::ExecToLog 'taskkill /F /IM "sloth-clash-desktop.exe"'
-    Sleep 1000
+    ; Graceful-ish close handling: Windows may keep the exe locked briefly even after taskkill.
+    StrCpy $2 0
+  KillAndWaitLoop:
+    nsExec::ExecToLog 'taskkill /F /T /IM "Sloth Clash.exe"'
+    nsExec::ExecToLog 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
+    nsExec::ExecToLog 'taskkill /F /T /IM "SlothClashDesktop.exe"'
+    nsExec::ExecToLog 'taskkill /F /T /IM "sloth-clash-desktop.exe"'
+    Sleep 650
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq Sloth Clash.exe" | find /I "Sloth Clash.exe"'
     Pop $0
     Pop $1
-    StrCmp $0 "0" 0 +3
-    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running (Sloth Clash.exe). Please close it and run installer again."
-    Abort
+    StrCmp $0 "0" ProcessStillRunning 0
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq ${PRODUCT_EXECUTABLE}" | find /I "${PRODUCT_EXECUTABLE}"'
     Pop $0
     Pop $1
-    StrCmp $0 "0" 0 +3
-    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running (${PRODUCT_EXECUTABLE}). Please close it and run installer again."
+    StrCmp $0 "0" ProcessStillRunning 0
+    Goto ProcessesClosed
+  ProcessStillRunning:
+    IntOp $2 $2 + 1
+    IntCmp $2 12 0 KillAndWaitLoop 0
+    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running. Please close it and click Retry in the previous installer prompt."
     Abort
+  ProcessesClosed:
+    ; Give AV/indexers a brief window to release the executable handle.
+    Sleep 900
 
     SetOutPath $INSTDIR
 
@@ -106,10 +122,9 @@ Section /o "$(SL_DESKTOP_SHORTCUT)" SecDesktop
     CreateShortcut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 SectionEnd
 
-Section "uninstall"
+Section "un.$(SL_UNINSTALL_CORE)" SecUnApp
+    SectionIn RO
     !insertmacro wails.setShellContext
-
-    RMDir /r "$AppData\${PRODUCT_EXECUTABLE}"
 
     RMDir /r $INSTDIR
 
@@ -120,4 +135,9 @@ Section "uninstall"
     !insertmacro wails.unassociateCustomProtocols
 
     !insertmacro wails.deleteUninstaller
+SectionEnd
+
+Section /o "un.$(SL_UNINSTALL_DATA)" SecUnData
+    RMDir /r "$APPDATA\SlothClash"
+    RMDir /r "$LOCALAPPDATA\SlothClash"
 SectionEnd

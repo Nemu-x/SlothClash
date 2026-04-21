@@ -2,6 +2,9 @@ node_modules
 .pnpm-store
 .DS_Store
 dist
+!apps/sloth-clash-desktop/frontend/dist/
+apps/sloth-clash-desktop/frontend/dist/*
+!apps/sloth-clash-desktop/frontend/dist/.gitkeep
 dist-ssr
 *.local
 update.json

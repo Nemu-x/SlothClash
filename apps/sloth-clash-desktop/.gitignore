@@ -12,4 +12,7 @@ SlothClashDesktop.exe
 *.exe~
 node_modules
 frontend/dist
+!frontend/dist/
+frontend/dist/*
+!frontend/dist/.gitkeep
 frontend/node_modules

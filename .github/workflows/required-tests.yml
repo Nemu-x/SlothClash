@@ -1,0 +1,53 @@
+name: Required tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  required-tests:
+    name: required-tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run required PR test gate
+        run: pnpm run test:required
+
+      - name: PR guidance on failure
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Required tests failed"
+            echo ""
+            echo "Please fix locally before updating the PR:"
+            echo ""
+            echo "\`pnpm install --frozen-lockfile\`"
+            echo "\`pnpm run test:required\`"
+            echo ""
+            echo "If this fails only on one OS, include OS-specific fix notes in the PR."
+          } >> "$GITHUB_STEP_SUMMARY"
+

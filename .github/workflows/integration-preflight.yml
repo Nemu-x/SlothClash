@@ -1,0 +1,137 @@
+name: Integration preflight (real mihomo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mihomo_version:
+        description: Stable mihomo release tag (for example v1.19.3). Optional when direct URLs are provided.
+        required: false
+        type: string
+      mihomo_url_windows:
+        description: Direct download URL to Windows mihomo archive (.zip/.tar.gz)
+        required: false
+        type: string
+      mihomo_url_macos:
+        description: Direct download URL to macOS mihomo archive (.zip/.tar.gz)
+        required: false
+        type: string
+      mihomo_url_linux:
+        description: Direct download URL to Linux mihomo archive (.zip/.tar.gz)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  integration-preflight:
+    name: integration-preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            url_input: ${{ inputs.mihomo_url_linux }}
+            url_var: ${{ vars.MIHOMO_URL_LINUX }}
+            default_asset: mihomo-linux-amd64-v2
+          - os: windows-latest
+            url_input: ${{ inputs.mihomo_url_windows }}
+            url_var: ${{ vars.MIHOMO_URL_WINDOWS }}
+            default_asset: mihomo-windows-amd64-v2
+          - os: macos-14
+            url_input: ${{ inputs.mihomo_url_macos }}
+            url_var: ${{ vars.MIHOMO_URL_MACOS }}
+            default_asset: mihomo-darwin-arm64-go122
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
+
+      - name: Resolve stable mihomo URL
+        id: resolve_url
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${{ matrix.url_input }}"
+          if [ -z "$url" ]; then
+            url="${{ matrix.url_var }}"
+          fi
+          if [ -n "$url" ]; then
+            echo "download_url=$url" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          version="${{ inputs.mihomo_version }}"
+          if [ -z "$version" ]; then
+            echo "Missing URL and mihomo_version for ${{ matrix.os }}."
+            echo "Provide direct URL input/repo variable or set mihomo_version."
+            exit 1
+          fi
+          asset="${{ matrix.default_asset }}"
+          ext="gz"
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            ext="zip"
+          fi
+          resolved="https://github.com/MetaCubeX/mihomo/releases/download/${version}/${asset}-${version}.${ext}"
+          echo "download_url=$resolved" >> "$GITHUB_OUTPUT"
+
+      - name: Download and unpack mihomo (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "${{ steps.resolve_url.outputs.download_url }}"
+          $work = Join-Path $env:RUNNER_TEMP "mihomo"
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $archive = Join-Path $work "mihomo-archive"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $extract = Join-Path $work "extract"
+          New-Item -ItemType Directory -Path $extract -Force | Out-Null
+          if ($url.ToLower().EndsWith(".zip")) {
+            Expand-Archive -Path $archive -DestinationPath $extract -Force
+          } else {
+            tar -xf $archive -C $extract
+          }
+          $bin = Get-ChildItem -Path $extract -Recurse -File |
+            Where-Object { $_.Name -ieq "mihomo.exe" -or $_.Name -ieq "clash-meta.exe" -or $_.Name -ieq "clash.exe" } |
+            Select-Object -First 1
+          if (-not $bin) {
+            throw "mihomo executable not found after extracting archive"
+          }
+          "SLOTH_MIHOMO_BIN=$($bin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download and unpack mihomo (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${{ steps.resolve_url.outputs.download_url }}"
+          work="$RUNNER_TEMP/mihomo"
+          mkdir -p "$work/extract"
+          archive="$work/mihomo-archive"
+          curl -L --fail "$url" -o "$archive"
+          if [[ "$url" == *.zip ]]; then
+            unzip -q "$archive" -d "$work/extract"
+          else
+            tar -xf "$archive" -C "$work/extract"
+          fi
+          bin="$(rg --files "$work/extract" | rg '/(mihomo|clash-meta|clash)$' | head -n 1 || true)"
+          if [ -z "$bin" ]; then
+            echo "mihomo executable not found after extracting archive"
+            exit 1
+          fi
+          chmod +x "$bin" || true
+          echo "SLOTH_MIHOMO_BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: Run real-core preflight integration
+        working-directory: apps/sloth-clash-desktop
+        shell: bash
+        run: |
+          go test -count=1 -v -run TestIntegrationPreflightWithRealCoreBinary ./...
+          go test -count=1 -v -run TestRuntimeSmoke ./...
+          go test -count=1 -v -run TestE2ERuntime ./...

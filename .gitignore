@@ -20,3 +20,11 @@ CLAUDE.md
 
 # Wails / desktop build outputs (binaries, sidecars)
 apps/sloth-clash-desktop/build/
+!apps/sloth-clash-desktop/build/
+apps/sloth-clash-desktop/build/*
+!apps/sloth-clash-desktop/build/resources/
+apps/sloth-clash-desktop/build/resources/*
+!apps/sloth-clash-desktop/build/resources/.gitkeep
+!apps/sloth-clash-desktop/build/sidecar/
+apps/sloth-clash-desktop/build/sidecar/*
+!apps/sloth-clash-desktop/build/sidecar/.gitkeep

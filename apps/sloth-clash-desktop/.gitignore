@@ -1,4 +1,12 @@
 build/
+!build/
+build/*
+!build/resources/
+build/resources/*
+!build/resources/.gitkeep
+!build/sidecar/
+build/sidecar/*
+!build/sidecar/.gitkeep
 trayicons/
 SlothClashDesktop.exe
 *.exe~

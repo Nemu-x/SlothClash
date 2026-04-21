@@ -1,4 +1,4 @@
-//go:build darwin && cgo && slothtray
+//go:build darwin && cgo && !slothtray
 
 #import <Cocoa/Cocoa.h>
 

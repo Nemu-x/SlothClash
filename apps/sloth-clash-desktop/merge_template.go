@@ -9,7 +9,7 @@ import (
 
 // applyProfileMergeTemplate applies a Clash Verge–style enhancement YAML on top of doc.
 // Supported:
-//   - Top-level scalar/map keys (except prepend/append/delete) shallow-merge into doc.
+//   - Top-level scalar/map keys (except prepend/append/delete) deep-merge into doc.
 //   - prepend / append: rules, proxy-groups ([]), proxy-providers, rule-providers (maps).
 //   - delete: rules ([]string exact lines), proxy-groups ([] names), proxy-providers, rule-providers ([] names).
 func applyProfileMergeTemplate(doc map[string]any, template string) error {
@@ -34,6 +34,13 @@ func applyProfileMergeTemplate(doc map[string]any, template string) error {
 		if reserved[k] {
 			continue
 		}
+		if srcMap, ok := v.(map[string]any); ok {
+			if dstMap, ok := doc[k].(map[string]any); ok {
+				deepMergeMap(dstMap, srcMap)
+				doc[k] = dstMap
+				continue
+			}
+		}
 		doc[k] = v
 	}
 
@@ -56,6 +63,19 @@ func applyProfileMergeTemplate(doc map[string]any, template string) error {
 		deleteMapKeys(doc, "rule-providers", del["rule-providers"])
 	}
 	return nil
+}
+
+func deepMergeMap(dst, src map[string]any) {
+	for k, v := range src {
+		if srcChild, ok := v.(map[string]any); ok {
+			if dstChild, ok := dst[k].(map[string]any); ok {
+				deepMergeMap(dstChild, srcChild)
+				dst[k] = dstChild
+				continue
+			}
+		}
+		dst[k] = v
+	}
 }
 
 func mergeListPrepend(doc map[string]any, key string, patch any) {

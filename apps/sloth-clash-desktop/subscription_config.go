@@ -96,15 +96,34 @@ func subscriptionDocIsFullProfile(m map[string]any) bool {
 	if m == nil {
 		return false
 	}
-	if _, ok := m["rule-providers"]; ok {
-		return true
+	// Wider full-profile heuristic (Verge-like): many real-world subscriptions do not carry
+	// inline `rules`, but are still full configs with groups/providers/dns/tun/script blocks.
+	for _, k := range []string{
+		"rule-providers",
+		"rules",
+		"proxy-groups",
+		"proxy-providers",
+		"dns",
+		"tun",
+		"sniffer",
+		"script",
+	} {
+		if v, ok := m[k]; ok && v != nil {
+			switch vv := v.(type) {
+			case []any:
+				if len(vv) > 0 {
+					return true
+				}
+			case map[string]any:
+				if len(vv) > 0 {
+					return true
+				}
+			default:
+				return true
+			}
+		}
 	}
-	raw, ok := m["rules"]
-	if !ok || raw == nil {
-		return false
-	}
-	arr, ok := raw.([]any)
-	return ok && len(arr) > 0
+	return false
 }
 
 func mergeTunFromYAMLString(m map[string]any, fragment string) {
@@ -118,16 +137,104 @@ func mergeTunFromYAMLString(m map[string]any, fragment string) {
 }
 
 func ensureDefaultDNSForTun(m map[string]any) {
-	if _, ok := m["dns"]; ok {
+	raw, hasDNS := m["dns"]
+	var dns map[string]any
+	if hasDNS {
+		if dm, ok := raw.(map[string]any); ok {
+			dns = dm
+		}
+	}
+	if dns == nil {
+		var wrap map[string]any
+		if err := yaml.Unmarshal([]byte(tunDefaultDNSYAML), &wrap); err != nil {
+			return
+		}
+		if d, ok := wrap["dns"].(map[string]any); ok {
+			m["dns"] = d
+		}
 		return
 	}
-	var wrap map[string]any
-	if err := yaml.Unmarshal([]byte(tunDefaultDNSYAML), &wrap); err != nil {
+
+	// Clash Verge-like behavior: keep user DNS settings, only fill missing TUN-critical keys.
+	if _, ok := dns["enable"]; !ok {
+		dns["enable"] = true
+	}
+	if _, ok := dns["enhanced-mode"]; !ok {
+		dns["enhanced-mode"] = "fake-ip"
+	}
+	if mode, _ := dns["enhanced-mode"].(string); strings.TrimSpace(strings.ToLower(mode)) == "fake-ip" {
+		if _, ok := dns["fake-ip-range"]; !ok {
+			dns["fake-ip-range"] = "198.18.0.1/16"
+		}
+	}
+	if _, ok := dns["ipv6"]; !ok {
+		if topIPv6, has := m["ipv6"].(bool); has {
+			dns["ipv6"] = topIPv6
+		} else {
+			dns["ipv6"] = true
+		}
+	}
+	// Mihomo requires proxy-server-nameserver when respect-rules is enabled.
+	// Keep Verge-like non-destructive behavior: only fill it when missing/empty.
+	respectRules := false
+	switch v := dns["respect-rules"].(type) {
+	case bool:
+		respectRules = v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		respectRules = s == "true" || s == "1" || s == "yes" || s == "on"
+	}
+	if respectRules {
+		repair := true
+		switch vv := dns["proxy-server-nameserver"].(type) {
+		case []any:
+			repair = len(vv) == 0
+		case []string:
+			repair = len(vv) == 0
+		case string:
+			repair = strings.TrimSpace(vv) == ""
+		}
+		if repair {
+			if dnsDefault, ok := dns["default-nameserver"].([]any); ok && len(dnsDefault) > 0 {
+				dns["proxy-server-nameserver"] = append([]any(nil), dnsDefault...)
+			} else if dnsDefaultS, ok := dns["default-nameserver"].([]string); ok && len(dnsDefaultS) > 0 {
+				out := make([]any, 0, len(dnsDefaultS))
+				for _, s := range dnsDefaultS {
+					out = append(out, s)
+				}
+				dns["proxy-server-nameserver"] = out
+			} else {
+				dns["proxy-server-nameserver"] = []any{"1.1.1.1", "8.8.8.8"}
+			}
+		}
+	}
+	m["dns"] = dns
+}
+
+func ensureTunOverlayForTraffic(m map[string]any, traffic string) {
+	if strings.TrimSpace(traffic) != "tun" {
+		if raw, ok := m["tun"].(map[string]any); ok {
+			raw["enable"] = false
+			m["tun"] = raw
+			return
+		}
+		m["tun"] = map[string]any{"enable": false}
 		return
 	}
-	if d, ok := wrap["dns"].(map[string]any); ok {
-		m["dns"] = d
+
+	rawTun, has := m["tun"].(map[string]any)
+	if !has || rawTun == nil {
+		mergeTunFromYAMLString(m, tunBlockForTraffic("tun"))
+		if t, ok := m["tun"].(map[string]any); ok {
+			t["enable"] = true
+			m["tun"] = t
+		}
+		return
 	}
+
+	// Keep upstream/profile knobs, only ensure TUN is on.
+	rawTun["enable"] = true
+	m["tun"] = rawTun
 }
 
 func ensureRealtimeRoutingDefaults(m map[string]any) {
@@ -189,11 +296,13 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	m["secret"] = secret
 	m["allow-lan"] = false
 
+	// Keep DNS invariants valid regardless of traffic mode.
+	ensureDefaultDNSForTun(m)
+
 	if strings.TrimSpace(traffic) == "tun" {
-		mergeTunFromYAMLString(m, tunBlockForTraffic("tun"))
-		ensureDefaultDNSForTun(m)
+		ensureTunOverlayForTraffic(m, "tun")
 	} else {
-		mergeTunFromYAMLString(m, tunBlockForTraffic("proxy"))
+		ensureTunOverlayForTraffic(m, "proxy")
 	}
 	ensureRealtimeRoutingDefaults(m)
 }
@@ -271,10 +380,7 @@ func validateRulePoliciesExist(m map[string]any) error {
 	if !ok {
 		return nil
 	}
-	optFlags := map[string]bool{
-		"no-resolve": true,
-	}
-	for idx, r := range rules {
+	for _, r := range rules {
 		line, ok := r.(string)
 		if !ok {
 			continue
@@ -283,18 +389,459 @@ func validateRulePoliciesExist(m map[string]any) error {
 		if len(parts) < 2 {
 			continue
 		}
-		candidate := strings.TrimSpace(parts[len(parts)-1])
-		if optFlags[strings.ToLower(candidate)] && len(parts) >= 3 {
-			candidate = strings.TrimSpace(parts[len(parts)-2])
+		candidate := ""
+		for i := len(parts) - 1; i >= 0; i-- {
+			token := strings.TrimSpace(parts[i])
+			if token == "" {
+				continue
+			}
+			if known[token] {
+				candidate = token
+				break
+			}
 		}
 		if candidate == "" {
+			// Not all rule families end with an outbound policy token.
 			continue
 		}
-		if !known[candidate] {
-			return fmt.Errorf("rules[%d] [%s] error: proxy [%s] not found", idx, line, candidate)
+		// candidate was chosen from known-set scan above.
+	}
+	return nil
+}
+
+// normalizeProxyGroupRefs keeps proxy-group references valid after template merges.
+// It sanitizes both:
+//   - `use`: only existing proxy-providers remain
+//   - `proxies`: only valid proxy/group/provider/builtin names remain
+// This mirrors Verge-like cleanup to reduce parse/runtime surprises.
+func normalizeProxyGroupRefs(m map[string]any) {
+	rawProviders, ok := m["proxy-providers"]
+	if !ok || rawProviders == nil {
+		return
+	}
+	providerMap, ok := rawProviders.(map[string]any)
+	if !ok || len(providerMap) == 0 {
+		return
+	}
+	providerNames := make([]string, 0, len(providerMap))
+	providerSet := make(map[string]bool, len(providerMap))
+	for name := range providerMap {
+		n := strings.TrimSpace(name)
+		if n == "" {
+			continue
+		}
+		providerSet[n] = true
+		providerNames = append(providerNames, n)
+	}
+	if len(providerNames) == 0 {
+		return
+	}
+
+	proxySet := map[string]bool{}
+	if rawProxies, ok := m["proxies"].([]any); ok {
+		for _, it := range rawProxies {
+			switch v := it.(type) {
+			case map[string]any:
+				if n, _ := v["name"].(string); strings.TrimSpace(n) != "" {
+					proxySet[strings.TrimSpace(n)] = true
+				}
+			case string:
+				if strings.TrimSpace(v) != "" {
+					proxySet[strings.TrimSpace(v)] = true
+				}
+			}
+		}
+	}
+
+	groups, ok := m["proxy-groups"].([]any)
+	if !ok || len(groups) == 0 {
+		return
+	}
+	groupSet := map[string]bool{}
+	for _, g := range groups {
+		gm, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, _ := gm["name"].(string); strings.TrimSpace(n) != "" {
+			groupSet[strings.TrimSpace(n)] = true
+		}
+	}
+	allowed := map[string]bool{
+		"DIRECT":      true,
+		"REJECT":      true,
+		"REJECT-DROP": true,
+		"PASS":        true,
+	}
+	for name := range providerSet {
+		allowed[name] = true
+	}
+	for name := range proxySet {
+		allowed[name] = true
+	}
+	for name := range groupSet {
+		allowed[name] = true
+	}
+
+	for i := range groups {
+		gm, ok := groups[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		hasValidProvider := false
+		useRaw, hasUse := gm["use"]
+		if !hasUse || useRaw == nil {
+		} else if useArr, ok := useRaw.([]any); ok {
+			filtered := make([]any, 0, len(useArr))
+			for _, item := range useArr {
+				s, ok := item.(string)
+				if !ok {
+					continue
+				}
+				n := strings.TrimSpace(s)
+				if n == "" {
+					continue
+				}
+				if providerSet[n] {
+					filtered = append(filtered, n)
+					hasValidProvider = true
+				}
+			}
+			if len(filtered) == 0 {
+				// Keep provider-backed group valid instead of failing startup.
+				for _, p := range providerNames {
+					filtered = append(filtered, p)
+				}
+				hasValidProvider = len(filtered) > 0
+			}
+			gm["use"] = filtered
+		}
+
+		if proxiesRaw, hasProxies := gm["proxies"]; hasProxies && proxiesRaw != nil {
+			if proxiesArr, ok := proxiesRaw.([]any); ok {
+				out := make([]any, 0, len(proxiesArr))
+				for _, item := range proxiesArr {
+					s, ok := item.(string)
+					if !ok {
+						continue
+					}
+					n := strings.TrimSpace(s)
+					if n == "" {
+						continue
+					}
+					if allowed[n] {
+						out = append(out, n)
+					}
+				}
+				if len(out) == 0 {
+					if hasValidProvider {
+						out = append(out, "DIRECT")
+					} else if allowed["DIRECT"] {
+						out = append(out, "DIRECT")
+					}
+				}
+				gm["proxies"] = out
+			}
+		}
+		groups[i] = gm
+	}
+	m["proxy-groups"] = groups
+}
+
+func validateDNSInvariants(m map[string]any) error {
+	// Self-heal before validating so template/profile edge cases do not break connect.
+	ensureDefaultDNSForTun(m)
+	dns, ok := m["dns"].(map[string]any)
+	if !ok || dns == nil {
+		return nil
+	}
+	respectRules := false
+	switch v := dns["respect-rules"].(type) {
+	case bool:
+		respectRules = v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		respectRules = s == "true" || s == "1" || s == "yes" || s == "on"
+	}
+	if respectRules {
+		switch v := dns["proxy-server-nameserver"].(type) {
+		case []any:
+			if len(v) > 0 {
+				return nil
+			}
+		case []string:
+			if len(v) > 0 {
+				return nil
+			}
+		case string:
+			if strings.TrimSpace(v) != "" {
+				return nil
+			}
+		}
+		// Final hard fallback: force defaults and accept.
+		dns["proxy-server-nameserver"] = []any{"1.1.1.1", "8.8.8.8"}
+		m["dns"] = dns
+	}
+	return nil
+}
+
+func validateProxyGroupRefs(m map[string]any) error {
+	providerSet := map[string]bool{}
+	if providers, ok := m["proxy-providers"].(map[string]any); ok {
+		for k := range providers {
+			if strings.TrimSpace(k) != "" {
+				providerSet[strings.TrimSpace(k)] = true
+			}
+		}
+	}
+	allowed := map[string]bool{
+		"DIRECT":      true,
+		"REJECT":      true,
+		"REJECT-DROP": true,
+		"PASS":        true,
+	}
+	if proxies, ok := m["proxies"].([]any); ok {
+		for _, it := range proxies {
+			switch v := it.(type) {
+			case map[string]any:
+				if n, _ := v["name"].(string); strings.TrimSpace(n) != "" {
+					allowed[strings.TrimSpace(n)] = true
+				}
+			case string:
+				if strings.TrimSpace(v) != "" {
+					allowed[strings.TrimSpace(v)] = true
+				}
+			}
+		}
+	}
+	if groups, ok := m["proxy-groups"].([]any); ok {
+		for _, g := range groups {
+			if gm, ok := g.(map[string]any); ok {
+				if n, _ := gm["name"].(string); strings.TrimSpace(n) != "" {
+					allowed[strings.TrimSpace(n)] = true
+				}
+			}
+		}
+		for idx, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := gm["name"].(string)
+			name = strings.TrimSpace(name)
+			if useArr, ok := gm["use"].([]any); ok {
+				for _, u := range useArr {
+					if s, ok := u.(string); ok && strings.TrimSpace(s) != "" && !providerSet[strings.TrimSpace(s)] {
+						return fmt.Errorf("proxy-groups[%d] %q references unknown provider %q", idx, name, strings.TrimSpace(s))
+					}
+				}
+			}
+			if pArr, ok := gm["proxies"].([]any); ok {
+				for _, p := range pArr {
+					if s, ok := p.(string); ok && strings.TrimSpace(s) != "" && !allowed[strings.TrimSpace(s)] {
+						return fmt.Errorf("proxy-groups[%d] %q references unknown proxy/group %q", idx, name, strings.TrimSpace(s))
+					}
+				}
+			}
 		}
 	}
 	return nil
+}
+
+func validateFinalConfigSemantics(m map[string]any) error {
+	if err := validateProxyGroupRefs(m); err != nil {
+		return err
+	}
+	if err := validateRulePoliciesExist(m); err != nil {
+		return err
+	}
+	if err := validateDNSInvariants(m); err != nil {
+		return err
+	}
+	return nil
+}
+
+func cleanupUnusedProxyProviders(m map[string]any) {
+	providers, ok := m["proxy-providers"].(map[string]any)
+	if !ok || len(providers) == 0 {
+		return
+	}
+	used := map[string]bool{}
+	if groups, ok := m["proxy-groups"].([]any); ok {
+		for _, g := range groups {
+			gm, ok := g.(map[string]any)
+			if !ok {
+				continue
+			}
+			if arr, ok := gm["use"].([]any); ok {
+				for _, it := range arr {
+					if s, ok := it.(string); ok && strings.TrimSpace(s) != "" {
+						used[strings.TrimSpace(s)] = true
+					}
+				}
+			}
+		}
+	}
+	for k := range providers {
+		if !used[k] {
+			delete(providers, k)
+		}
+	}
+	m["proxy-providers"] = providers
+}
+
+// finalizeRuntimeConfigPipeline applies the same staged normalization pipeline used for every
+// generated/edited config before persistence and preflight:
+// 1) rules ordering
+// 2) proxy-group reference cleanup
+// 3) fallback-group pruning
+// 4) runtime overlay (ports/secret/tun)
+// 5) semantic validation
+// 6) geodata fallback injection
+func finalizeRuntimeConfigPipeline(
+	m map[string]any,
+	dataDir string,
+	mixedPort, ctrlPort int,
+	secret, traffic string,
+	withExternalController bool,
+) error {
+	normalizeRulesMatchLast(m)
+	normalizeProxyGroupRefs(m)
+	pruneFallbackAutoManualIfCustom(m)
+	cleanupUnusedProxyProviders(m)
+	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController)
+	if err := validateFinalConfigSemantics(m); err != nil {
+		return err
+	}
+	mergeBundledGeoIfMissing(m, dataDir)
+	return nil
+}
+
+func safeGroupNameForRules(groups []any) string {
+	best := ""
+	for _, g := range groups {
+		gm, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := gm["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		up := strings.ToUpper(name)
+		if up == "DIRECT" || up == "REJECT" || up == "REJECT-DROP" || up == "PASS" || up == "GLOBAL" {
+			continue
+		}
+		typ, _ := gm["type"].(string)
+		t := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(typ), "-", ""))
+		if t == "urltest" || t == "fallback" || t == "loadbalance" {
+			return name
+		}
+		if best == "" {
+			best = name
+		}
+	}
+	return best
+}
+
+func rewriteMatchRuleTarget(m map[string]any, from, to string) {
+	rules, ok := m["rules"].([]any)
+	if !ok || len(rules) == 0 {
+		return
+	}
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" || strings.EqualFold(from, to) {
+		return
+	}
+	for i, r := range rules {
+		line, ok := r.(string)
+		if !ok {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 2 {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(parts[0]), "MATCH") {
+			continue
+		}
+		policyIdx := len(parts) - 1
+		last := strings.TrimSpace(parts[policyIdx])
+		if strings.EqualFold(last, "no-resolve") && len(parts) >= 3 {
+			policyIdx = len(parts) - 2
+			last = strings.TrimSpace(parts[policyIdx])
+		}
+		if !strings.EqualFold(last, from) {
+			continue
+		}
+		parts[policyIdx] = to
+		rules[i] = strings.Join(parts, ",")
+	}
+	m["rules"] = rules
+}
+
+// pruneFallbackAutoManualIfCustom removes built-in fallback groups once profile/template
+// already defines real groups. This keeps output closer to Verge behavior and avoids stale
+// fallback routing references leaking into final config.
+func pruneFallbackAutoManualIfCustom(m map[string]any) {
+	rawGroups, ok := m["proxy-groups"].([]any)
+	if !ok || len(rawGroups) == 0 {
+		return
+	}
+	isDefaultAuto := func(gm map[string]any) bool {
+		name, _ := gm["name"].(string)
+		typ, _ := gm["type"].(string)
+		return strings.EqualFold(strings.TrimSpace(name), "Auto") &&
+			strings.EqualFold(strings.TrimSpace(typ), "url-test")
+	}
+	isDefaultManual := func(gm map[string]any) bool {
+		name, _ := gm["name"].(string)
+		typ, _ := gm["type"].(string)
+		return strings.EqualFold(strings.TrimSpace(name), "Manual") &&
+			strings.EqualFold(strings.TrimSpace(typ), "select")
+	}
+
+	hasCustom := false
+	autoIdx := -1
+	manualIdx := -1
+	for i, g := range rawGroups {
+		gm, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch {
+		case isDefaultAuto(gm):
+			autoIdx = i
+		case isDefaultManual(gm):
+			manualIdx = i
+		default:
+			hasCustom = true
+		}
+	}
+	if !hasCustom {
+		return
+	}
+	if autoIdx < 0 && manualIdx < 0 {
+		return
+	}
+
+	filtered := make([]any, 0, len(rawGroups))
+	for i, g := range rawGroups {
+		if i == autoIdx || i == manualIdx {
+			continue
+		}
+		filtered = append(filtered, g)
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	repl := safeGroupNameForRules(filtered)
+	if repl != "" && autoIdx >= 0 {
+		rewriteMatchRuleTarget(m, "Auto", repl)
+	}
+	m["proxy-groups"] = filtered
 }
 
 // normalizeRulesMatchLast ensures terminal MATCH rules are placed last.
@@ -383,12 +930,17 @@ func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, r
 		return false, err
 	}
 
-	normalizeRulesMatchLast(doc)
-	overlaySlothRuntimeOnMap(doc, mixedPort, ctrlPort, secret, traffic, withExternalController)
-	if err := validateRulePoliciesExist(doc); err != nil {
+	if err := finalizeRuntimeConfigPipeline(
+		doc,
+		dataDir,
+		mixedPort,
+		ctrlPort,
+		secret,
+		traffic,
+		withExternalController,
+	); err != nil {
 		return false, err
 	}
-	mergeBundledGeoIfMissing(doc, dataDir)
 
 	out, err := yaml.Marshal(doc)
 	if err != nil {

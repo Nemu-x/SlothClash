@@ -31,6 +31,7 @@ type HomeInsight struct {
 
 type ConnectionState struct {
 	Status      string `json:"status"`
+	Health      string `json:"health,omitempty"` // ready|degraded while connected
 	LastError   string `json:"lastError,omitempty"`
 	LastWarning string `json:"lastWarning,omitempty"` // non-fatal; e.g. TUN takeover skipped
 	Since       int64  `json:"since,omitempty"`
@@ -95,6 +96,7 @@ type ServiceState struct {
 
 type CoreState struct {
 	Running        bool   `json:"running"`
+	Lifecycle      string `json:"lifecycle,omitempty"` // starting|running|stopping|stopped|degraded
 	Version        string `json:"version,omitempty"`
 	ControllerAddr string `json:"controllerAddr,omitempty"`
 	MixedPort      int    `json:"mixedPort,omitempty"`

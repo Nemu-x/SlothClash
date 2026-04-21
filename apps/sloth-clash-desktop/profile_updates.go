@@ -66,7 +66,6 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 		if a.profiles[i].AutoUpdateIntervalMinutes <= 0 {
 			a.profiles[i].AutoUpdateIntervalMinutes = defaultProfileAutoUpdateMinutes
 		}
-		a.profiles[i].AutoUpdateEnabled = true
 		a.profiles[i].LastUpdated = now
 		activeAndConnected =
 			a.state.Connection.Status == "connected" &&

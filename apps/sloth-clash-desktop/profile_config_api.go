@@ -104,8 +104,31 @@ func (a *App) WriteProfileConfig(profileID string, content string) (AppState, er
 }
 
 func (a *App) reconnectActiveProfile() {
-	time.Sleep(150 * time.Millisecond)
-	a.Disconnect()
-	time.Sleep(300 * time.Millisecond)
-	_, _ = a.Connect()
+	// Coalesce bursts of reconnect triggers (profile edit, traffic switch, auto-update).
+	if !a.reconnectInFlight.CompareAndSwap(false, true) {
+		a.reconnectQueued.Store(true)
+		return
+	}
+	go func() {
+		defer a.reconnectInFlight.Store(false)
+		for {
+			a.reconnectQueued.Store(false)
+			time.Sleep(150 * time.Millisecond)
+			a.Disconnect()
+			genAfterDisconnect := a.connectGen.Load()
+			time.Sleep(300 * time.Millisecond)
+			// If connect generation changed after we disconnected, a newer explicit user action
+			// happened (most often manual disconnect). Do not auto-reconnect that cycle.
+			if a.connectGen.Load() != genAfterDisconnect {
+				if !a.reconnectQueued.Load() {
+					return
+				}
+				continue
+			}
+			_, _ = a.Connect()
+			if !a.reconnectQueued.Load() {
+				return
+			}
+		}
+	}()
 }

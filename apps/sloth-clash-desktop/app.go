@@ -23,6 +23,8 @@ import (
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+const coreModeApplyTimeout = 12 * time.Second
+
 // App struct
 type App struct {
 	ctx                 context.Context
@@ -37,10 +39,13 @@ type App struct {
 	coreCmd             *exec.Cmd
 	coreCancel          context.CancelFunc
 	coreStopIntentional bool
+	coreProcToken       uint64
 	systemProxyLeased   bool // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
 	systemProxySnapshot map[string]SystemProxyServiceSnapshot
 	tunTakenOver        []tunServiceTakeover
 	connectGen          atomic.Uint64 // bumped when starting async connect or on Disconnect; invalidates in-flight worker
+	reconnectInFlight   atomic.Bool
+	reconnectQueued     atomic.Bool
 	closeToTray         bool
 	quitRequested       bool
 
@@ -55,7 +60,7 @@ func NewApp(bundle embed.FS) *App {
 	return &App{
 		bundle: bundle,
 		state: AppState{
-			Connection: ConnectionState{Status: "disconnected"},
+			Connection: ConnectionState{Status: "disconnected", Health: ""},
 			Mode:       ModeState{Current: "rule", LastNonDirectMode: "rule"},
 			Traffic:    "proxy",
 			Profile: ProfileState{
@@ -64,7 +69,8 @@ func NewApp(bundle embed.FS) *App {
 			Proxy:   ProxyState{Groups: []ProxyGroup{}},
 			Service: ServiceState{},
 			Core: CoreState{
-				Version: "stopped",
+				Version:   "stopped",
+				Lifecycle: "stopped",
 			},
 			Insight: HomeInsight{},
 			UI: UIState{
@@ -381,6 +387,7 @@ func (a *App) Connect() (AppState, error) {
 		return a.GetAppState(), nil
 	}
 	a.state.Connection.Status = "connecting"
+	a.state.Connection.Health = ""
 	a.state.Connection.LastError = ""
 	a.state.Connection.LastWarning = ""
 	a.state.UpdatedAt = time.Now().Unix()
@@ -406,7 +413,10 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 	if a.connectGen.Load() != gen {
 		return
 	}
-	if err := a.connectAfterCoreStarts(); err != nil {
+	if err := a.connectAfterCoreStarts(gen); err != nil {
+		if errors.Is(err, errConnectAborted) {
+			return
+		}
 		a.finishPostConnectWarmupFailed(gen, err)
 		return
 	}
@@ -423,8 +433,10 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connecting" {
 		a.stopCoreLocked()
 		a.state.Connection.Status = "error"
+		a.state.Connection.Health = ""
 		a.state.Connection.LastError = err.Error()
 		a.state.Core.LastError = err.Error()
+		a.state.Core.Lifecycle = "degraded"
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
 	}
@@ -439,6 +451,7 @@ func (a *App) finishConnectJobOK(gen uint64) {
 	a.mu.Lock()
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connecting" {
 		a.state.Connection.Status = "connected"
+		a.markConnectionReadyLocked()
 		a.state.Connection.Since = time.Now().Unix()
 		a.state.Connection.LastError = ""
 		a.state.UpdatedAt = time.Now().Unix()
@@ -458,11 +471,7 @@ func (a *App) finishPostConnectWarmupFailed(gen uint64, err error) {
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connected" {
 		msg := strings.TrimSpace(err.Error())
 		if msg != "" && !isIgnorableWarmupWarning(msg) {
-			if strings.TrimSpace(a.state.Connection.LastWarning) == "" {
-				a.state.Connection.LastWarning = "Post-connect warmup issue: " + msg
-			} else {
-				a.state.Connection.LastWarning += " | Post-connect warmup issue: " + msg
-			}
+			a.markConnectionDegradedLocked("Post-connect warmup issue: " + msg)
 		}
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
@@ -482,6 +491,22 @@ func appendConnectionWarningLocked(current string, next string) string {
 		return msg
 	}
 	return strings.TrimSpace(current) + " | " + msg
+}
+
+func (a *App) markConnectionReadyLocked() {
+	a.state.Connection.Health = "ready"
+	a.state.Core.Lifecycle = "running"
+}
+
+func (a *App) markConnectionDegradedLocked(reason string) {
+	if strings.TrimSpace(reason) != "" {
+		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, reason)
+	}
+	if strings.TrimSpace(a.state.Connection.LastWarning) == "" {
+		return
+	}
+	a.state.Connection.Health = "degraded"
+	a.state.Core.Lifecycle = "degraded"
 }
 
 func isIgnorableWarmupWarning(msg string) bool {
@@ -508,7 +533,10 @@ func formatTunTakeoverWarning(err error) string {
 
 // connectAfterCoreStarts runs pull-proxies, mode API, and system-proxy steps without holding a.mu
 // during network I/O (avoids deadlocking GetAppState / Wails bridge).
-func (a *App) connectAfterCoreStarts() error {
+func (a *App) connectAfterCoreStarts(gen uint64) error {
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
+	}
 	var listen, secret, mode, traffic string
 	a.mu.Lock()
 	listen = a.effectiveCoreEndpointLocked()
@@ -523,14 +551,20 @@ func (a *App) connectAfterCoreStarts() error {
 		mode = "rule"
 	}
 	a.mu.Unlock()
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
+	}
 
 	if traffic == "tun" {
 		stopped, err := takeoverConflictingTunServices()
+		if a.connectGen.Load() != gen {
+			return errConnectAborted
+		}
 		a.mu.Lock()
 		if err != nil {
 			// Do not tear down the session: stopping another vendor's service often needs admin
 			// rights; users can still use proxy path or stop Verge's service manually.
-			a.state.Connection.LastWarning = formatTunTakeoverWarning(err)
+			a.markConnectionDegradedLocked(formatTunTakeoverWarning(err))
 		} else {
 			a.state.Connection.LastWarning = ""
 			if len(stopped) > 0 {
@@ -550,27 +584,36 @@ func (a *App) connectAfterCoreStarts() error {
 	// backend-specific errors like "exit status 4" during warmup).
 	var proxiesWarmupErr error
 	for attempt := 0; ; attempt++ {
+		if a.connectGen.Load() != gen {
+			return errConnectAborted
+		}
 		if err := a.pullProxiesIntoState(); err != nil {
 			proxiesWarmupErr = err
-			if attempt >= 15 {
+			if attempt >= 5 {
 				break
 			}
-			time.Sleep(350 * time.Millisecond)
+			time.Sleep(220 * time.Millisecond)
 			continue
+		}
+		if a.connectGen.Load() != gen {
+			return errConnectAborted
 		}
 		proxiesWarmupErr = nil
 		a.mu.RLock()
 		n := len(a.state.Proxy.Groups)
 		a.mu.RUnlock()
-		if n > 0 || attempt >= 15 {
+		if n > 0 || attempt >= 5 {
 			break
 		}
-		time.Sleep(350 * time.Millisecond)
+		time.Sleep(220 * time.Millisecond)
+	}
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
 	}
 	if proxiesWarmupErr != nil {
 		a.mu.Lock()
 		msg := "Proxy groups are still warming up: " + strings.TrimSpace(proxiesWarmupErr.Error())
-		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, msg)
+		a.markConnectionDegradedLocked(msg)
 		a.mu.Unlock()
 	}
 
@@ -581,19 +624,25 @@ func (a *App) connectAfterCoreStarts() error {
 	a.mu.Unlock()
 	// Push proxies + active group before mode/system-proxy steps (can be slow); fixes empty Home until warmup ends.
 	a.emitAppStateChanged()
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
+	}
 
-	if err := applyCoreModeHTTPWithGlobal(context.Background(), listen, secret, mode, activeGroup); err != nil {
+	modeCtx, modeCancel := context.WithTimeout(context.Background(), coreModeApplyTimeout)
+	errMode := applyCoreModeHTTPWithGlobal(modeCtx, listen, secret, mode, activeGroup)
+	modeCancel()
+	if errMode != nil {
 		a.mu.Lock()
-		a.state.Connection.LastWarning = appendConnectionWarningLocked(
-			a.state.Connection.LastWarning,
-			"Could not apply core mode immediately: "+strings.TrimSpace(err.Error()),
-		)
+		a.markConnectionDegradedLocked("Could not apply core mode immediately: " + strings.TrimSpace(errMode.Error()))
 		a.mu.Unlock()
+	}
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
 	}
 	if err := a.pullProxiesIntoState(); err != nil {
 		a.mu.Lock()
 		msg := "Could not refresh proxy groups after mode apply: " + strings.TrimSpace(err.Error())
-		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, msg)
+		a.markConnectionDegradedLocked(msg)
 		a.mu.Unlock()
 	}
 	a.mu.Lock()
@@ -606,22 +655,22 @@ func (a *App) connectAfterCoreStarts() error {
 	a.mu.Unlock()
 	// Second pull carries updated `now` selections — push before system-proxy (can be slow).
 	a.emitAppStateChanged()
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
+	}
 
 	if err := a.clearSystemProxyFromSnapshot(); err != nil {
 		a.mu.Lock()
-		a.state.Connection.LastWarning = appendConnectionWarningLocked(
-			a.state.Connection.LastWarning,
-			"Could not clear system proxy snapshot: "+strings.TrimSpace(err.Error()),
-		)
+		a.markConnectionDegradedLocked("Could not clear system proxy snapshot: " + strings.TrimSpace(err.Error()))
 		a.mu.Unlock()
+	}
+	if a.connectGen.Load() != gen {
+		return errConnectAborted
 	}
 
 	if err := a.applySystemProxyFromSnapshot(); err != nil {
 		a.mu.Lock()
-		a.state.Connection.LastWarning = appendConnectionWarningLocked(
-			a.state.Connection.LastWarning,
-			"Could not apply system proxy snapshot: "+strings.TrimSpace(err.Error()),
-		)
+		a.markConnectionDegradedLocked("Could not apply system proxy snapshot: " + strings.TrimSpace(err.Error()))
 		a.mu.Unlock()
 	}
 	return nil
@@ -632,6 +681,7 @@ func (a *App) Disconnect() AppState {
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.state.Connection.Status = "disconnected"
+	a.state.Connection.Health = ""
 	a.state.Connection.Since = 0
 	a.state.Connection.LastError = ""
 	a.state.Connection.LastWarning = ""
@@ -656,7 +706,10 @@ func (a *App) SetMode(mode string) (AppState, error) {
 	a.mu.Unlock()
 
 	if connected && listen != "" {
-		if err := applyCoreModeHTTPWithGlobal(context.Background(), listen, secret, mode, activeGroup); err != nil {
+		modeCtx, modeCancel := context.WithTimeout(context.Background(), coreModeApplyTimeout)
+		err := applyCoreModeHTTPWithGlobal(modeCtx, listen, secret, mode, activeGroup)
+		modeCancel()
+		if err != nil {
 			return a.GetAppState(), err
 		}
 		if err := a.pullProxiesIntoState(); err != nil {
@@ -717,10 +770,7 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 
 	if needsCoreRestart {
 		// Disconnect may block on Windows IPC stop; run off the Wails bridge thread.
-		go func() {
-			a.Disconnect()
-			_, _ = a.Connect()
-		}()
+		go a.reconnectActiveProfile()
 		return a.GetAppState(), nil
 	}
 	return a.GetAppState(), nil

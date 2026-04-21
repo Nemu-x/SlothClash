@@ -130,7 +130,7 @@ func setServiceStartType(name, startArg string) error {
 }
 
 func stopServiceRobust(name string, prevStartFromQC string) error {
-	const stopWait = 45 * time.Second
+	const stopWait = 12 * time.Second
 	// Give watchdogs less chance to immediately restart while we tear TUN down.
 	prevStart := strings.ToUpper(strings.TrimSpace(prevStartFromQC))
 	if prevStart == "" {
@@ -142,7 +142,7 @@ func stopServiceRobust(name string, prevStartFromQC string) error {
 		_ = setServiceStartType(name, "demand")
 	}
 
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
 			time.Sleep(900 * time.Millisecond)
 		}

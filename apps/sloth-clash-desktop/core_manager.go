@@ -409,9 +409,17 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	if err := applyProfileMergeTemplate(m, rulesTemplate); err != nil {
 		return err
 	}
-	normalizeRulesMatchLast(m)
-	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController)
-	mergeBundledGeoIfMissing(m, dataDir)
+	if err := finalizeRuntimeConfigPipeline(
+		m,
+		dataDir,
+		mixedPort,
+		ctrlPort,
+		secret,
+		traffic,
+		withExternalController,
+	); err != nil {
+		return err
+	}
 
 	out, err := yaml.Marshal(m)
 	if err != nil {
@@ -423,7 +431,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 
 // writeRuntimeConfigIfNeeded uses a hand-edited config.yaml as base when SkipAutoConfig is set,
 // but always reapplies Sloth runtime overlay (ports, secret, tun) for a working connect.
-func writeRuntimeConfigIfNeeded(a *App, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool) error {
+func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool) error {
 	if profile.SkipAutoConfig {
 		cfgPath := filepath.Join(dataDir, "config.yaml")
 		if st, err := os.Stat(cfgPath); err == nil && st.Size() > 0 {
@@ -435,15 +443,28 @@ func writeRuntimeConfigIfNeeded(a *App, dataDir string, profile Profile, ctrlPor
 			if err := yaml.Unmarshal(b, &m); err != nil {
 				return err
 			}
-			overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withEC)
+			if err := finalizeRuntimeConfigPipeline(
+				m,
+				dataDir,
+				mixedPort,
+				ctrlPort,
+				secret,
+				traffic,
+				withEC,
+			); err != nil {
+				return err
+			}
 			out, err := yaml.Marshal(m)
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(cfgPath, out, 0o644)
+			if err := os.WriteFile(cfgPath, out, 0o644); err != nil {
+				return err
+			}
+			return runConfigPreflight(binPath, dataDir)
 		}
 	}
-	return a.writeRuntimeConfig(
+	if err := a.writeRuntimeConfig(
 		dataDir,
 		profile.URL,
 		profile.MergeTemplate,
@@ -454,7 +475,118 @@ func writeRuntimeConfigIfNeeded(a *App, dataDir string, profile Profile, ctrlPor
 		secret,
 		traffic,
 		withEC,
-	)
+	); err != nil {
+		return err
+	}
+	return runConfigPreflight(binPath, dataDir)
+}
+
+func runConfigPreflight(binPath, dataDir string) error {
+	binPath = strings.TrimSpace(binPath)
+	if binPath == "" {
+		return nil
+	}
+	cfgPath := filepath.Join(dataDir, "config.yaml")
+	if st, err := os.Stat(cfgPath); err != nil || st.Size() == 0 {
+		return nil
+	}
+	// Last-mile hardening: normalize DNS invariants in the written file before preflight.
+	// This guards against edge cases from user-edited YAML / merge templates.
+	if err := repairRuntimeConfigDNS(cfgPath); err != nil {
+		return fmt.Errorf("configuration preflight failed: cannot normalize dns invariants: %w", err)
+	}
+
+	// Clash/Mihomo supports `-t` test mode; use it before actual launch so users see
+	// parse errors immediately instead of waiting for a failed start.
+	argVariants := [][]string{
+		{"-d", dataDir, "-t"},
+		{"-t", "-d", dataDir},
+	}
+	sawUnsupportedFlag := false
+	for _, args := range argVariants {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		cmd := exec.CommandContext(ctx, binPath, args...)
+		cmd.Dir = dataDir
+		if attr := hideWindowSysProcAttr(); attr != nil {
+			cmd.SysProcAttr = attr
+		}
+		out, err := cmd.CombinedOutput()
+		cancel()
+		text := strings.TrimSpace(string(out))
+		if err == nil {
+			return nil
+		}
+		lower := strings.ToLower(text + "\n" + err.Error())
+		if strings.Contains(lower, "unknown flag") ||
+			strings.Contains(lower, "flag provided but not defined") ||
+			strings.Contains(lower, "unknown shorthand flag") {
+			sawUnsupportedFlag = true
+			continue
+		}
+		if idx := strings.Index(strings.ToLower(text), "parse config error:"); idx >= 0 {
+			msg := strings.TrimSpace(text[idx:])
+			return fmt.Errorf("configuration preflight failed: %s", msg)
+		}
+		if text == "" {
+			text = err.Error()
+		}
+		return fmt.Errorf("configuration preflight failed: %s", strings.TrimSpace(text))
+	}
+	if sawUnsupportedFlag {
+		// Older binaries may not support test mode; run a short startup probe to still
+		// catch fatal parse errors before regular launch.
+		return runConfigStartupProbe(binPath, dataDir)
+	}
+	return nil
+}
+
+func runConfigStartupProbe(binPath, dataDir string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath, "-d", dataDir)
+	cmd.Dir = dataDir
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	lower := strings.ToLower(text)
+	if idx := strings.Index(lower, "parse config error:"); idx >= 0 {
+		return fmt.Errorf("configuration preflight failed: %s", strings.TrimSpace(text[idx:]))
+	}
+	if err != nil {
+		// deadline exceeded without parse error usually means the core started; accept.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil
+		}
+		if text == "" {
+			text = err.Error()
+		}
+		if strings.Contains(strings.ToLower(text), "parse config error") {
+			return fmt.Errorf("configuration preflight failed: %s", text)
+		}
+	}
+	return nil
+}
+
+func repairRuntimeConfigDNS(cfgPath string) error {
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	ensureDefaultDNSForTun(m)
+	out, err := yaml.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, out, 0o644)
 }
 
 func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string, body io.Reader) (*http.Response, error) {
@@ -532,6 +664,8 @@ func (a *App) stopCoreLocked() {
 	a.clearSystemProxyLocked()
 	a.restoreTakenOverTunServicesLocked()
 	a.coreStopIntentional = true
+	a.coreProcToken++
+	a.state.Core.Lifecycle = "stopping"
 	if a.coreCancel != nil {
 		a.coreCancel()
 	}
@@ -551,6 +685,7 @@ func (a *App) stopCoreLocked() {
 	a.coreSecret = ""
 	a.coreListen = ""
 	a.state.Core.Running = false
+	a.state.Core.Lifecycle = "stopped"
 	a.state.Core.Version = ""
 	a.state.Core.ControllerAddr = ""
 	a.state.Core.MixedPort = 0
@@ -593,27 +728,34 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		return errors.New("active profile has no subscription URL")
 	}
 
+	var traffic string
+	var serviceInstalled bool
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.coreStopIntentional = false
+	traffic = strings.TrimSpace(a.state.Traffic)
+	if traffic != "tun" && traffic != "proxy" {
+		traffic = "proxy"
+	}
+	serviceInstalled = a.state.Service.Installed
+	// pre-clear previous non-fatal banner on new connect attempt
+	a.state.Connection.LastWarning = ""
+	a.state.Core.Lifecycle = "starting"
+	a.mu.Unlock()
 
 	bin, err := a.resolveMihomoBinary()
 	if err != nil {
-		a.mu.Unlock()
 		return err
 	}
 	root, err := slothDataRoot()
 	if err != nil {
-		a.mu.Unlock()
 		return err
 	}
 	dataDir := filepath.Join(root, "runtime", profile.ID)
 	if err := os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755); err != nil {
-		a.mu.Unlock()
 		return err
 	}
 	if err := a.ensureGeoInDataDir(dataDir); err != nil {
-		a.mu.Unlock()
 		return err
 	}
 
@@ -624,37 +766,31 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 
 	mixedPort, err := pickFreePort()
 	if err != nil {
-		a.mu.Unlock()
 		return err
 	}
 	secret := randomSecret()
-	traffic := strings.TrimSpace(a.state.Traffic)
-	if traffic != "tun" && traffic != "proxy" {
-		traffic = "proxy"
-	}
 
-	useServiceCore := runtime.GOOS == "windows" && a.state.Service.Installed
-	if runtime.GOOS == "darwin" && a.state.Service.Installed {
+	useServiceCore := runtime.GOOS == "windows" && serviceInstalled
+	if runtime.GOOS == "darwin" && serviceInstalled {
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			if traffic == "tun" {
-				a.mu.Unlock()
 				return fmt.Errorf("darwin service IPC unavailable for TUN mode: %w", err)
 			}
 			// Safe fallback for proxy mode: keep app usable even if privileged helper is temporarily unreachable.
+			a.mu.Lock()
 			a.state.Connection.LastWarning = "Sloth service IPC unreachable, falling back to user-process core for Proxy mode: " + err.Error()
+			a.mu.Unlock()
 			useServiceCore = false
 		} else {
 			useServiceCore = true
 		}
 	}
 	if useServiceCore {
-		if err := writeRuntimeConfigIfNeeded(a, dataDir, profile, 0, mixedPort, secret, traffic, false); err != nil {
-			a.mu.Unlock()
+		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, 0, mixedPort, secret, traffic, false); err != nil {
 			return err
 		}
 		dataDirAbs, errAbs := filepath.Abs(dataDir)
 		if errAbs != nil {
-			a.mu.Unlock()
 			return errAbs
 		}
 		cfgAbs := filepath.Join(dataDirAbs, "config.yaml")
@@ -664,14 +800,12 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		}
 		logDir := filepath.Join(dataDirAbs, "logs")
 		if err := os.MkdirAll(logDir, 0o755); err != nil {
-			a.mu.Unlock()
 			return err
 		}
 		pipeName := slothMihomoIPCPath(profile.ID)
 		if isUnixSocketEndpoint(pipeName) {
 			_ = os.Remove(pipeName)
 		}
-		a.mu.Unlock()
 
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			return err
@@ -679,10 +813,10 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		// Best effort: stop any previous core instance before starting a new one.
 		// Without this, switching/reconnecting in TUN mode can leave a stale TUN instance
 		// and mihomo then reports "Cannot create a file when that file already exists."
-		stopCtx, stopCancel := context.WithTimeout(parent, 8*time.Second)
+		stopCtx, stopCancel := context.WithTimeout(parent, 2500*time.Millisecond)
 		_ = ipcSlothStopCore(stopCtx)
 		stopCancel()
-		time.Sleep(320 * time.Millisecond)
+		time.Sleep(120 * time.Millisecond)
 		startCtx, startCancel := context.WithTimeout(parent, 55*time.Second)
 		errStart := ipcSlothStartClash(startCtx, slothIPCStartParams{
 			CorePath:     binAbs,
@@ -705,6 +839,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		a.state.Core.ControllerAddr = pipeName
 		a.state.Core.MixedPort = mixedPort
 		a.state.Core.Running = true
+		a.state.Core.Lifecycle = "running"
 		a.state.Core.LastError = ""
 		listenCopy := pipeName
 		secretCopy := secret
@@ -731,6 +866,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 				a.mu.Lock()
 				a.state.Core.Version = v
 				a.state.Core.LastError = ""
+				a.state.Core.Lifecycle = "running"
 				a.state.UpdatedAt = time.Now().Unix()
 				a.mu.Unlock()
 				return nil
@@ -753,11 +889,9 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 
 	ctrlPort, err := pickFreePort()
 	if err != nil {
-		a.mu.Unlock()
 		return err
 	}
-	if err := writeRuntimeConfigIfNeeded(a, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true); err != nil {
-		a.mu.Unlock()
+	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true); err != nil {
 		return err
 	}
 
@@ -771,7 +905,6 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		cancel()
-		a.mu.Unlock()
 		return err
 	}
 	cmd.Stdout = lf
@@ -780,29 +913,36 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 	if err := cmd.Start(); err != nil {
 		cancel()
 		_ = lf.Close()
-		a.mu.Unlock()
 		return err
 	}
 
+	a.mu.Lock()
 	a.coreOverPipe = false
 	a.coreCmd = cmd
 	a.coreCancel = cancel
+	a.coreProcToken++
 	a.coreSecret = secret
 	a.coreListen = fmt.Sprintf("127.0.0.1:%d", ctrlPort)
 	a.state.Core.ControllerAddr = a.coreListen
 	a.state.Core.MixedPort = mixedPort
 	a.state.Core.Running = true
+	a.state.Core.Lifecycle = "running"
 	a.state.Core.LastError = ""
 
 	listenCopy := a.coreListen
 	secretCopy := a.coreSecret
 	waitCmd := cmd
+	waitToken := a.coreProcToken
 	a.mu.Unlock()
 
 	go func() {
 		waitErr := waitCmd.Wait()
 		_ = lf.Close()
 		a.mu.Lock()
+		if waitToken != a.coreProcToken || a.coreCmd != waitCmd {
+			a.mu.Unlock()
+			return
+		}
 		if a.coreStopIntentional {
 			a.mu.Unlock()
 			return
@@ -810,7 +950,9 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		notify := false
 		if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
 			a.state.Core.Running = false
+			a.state.Core.Lifecycle = "degraded"
 			a.state.Connection.Status = "error"
+			a.state.Connection.Health = ""
 			a.state.Connection.LastError = "core exited: " + waitErr.Error()
 			a.state.Core.LastError = waitErr.Error()
 			notify = true

@@ -1,0 +1,89 @@
+mode: rule
+port: 7890
+proxies:
+  - client-fingerprint: chrome
+    flow: xtls-rprx-vision
+    name: Sample Node A [VLESS - tcp]
+    network: tcp
+    port: 8443
+    reality-opts:
+      public-key: pubkey
+      short-id: a1b2c3d4e5f60718
+    server: 1.1.1.1
+    servername: www.apple.com
+    tcp-opts:
+      ip-version: dual
+    tls: true
+    type: vless
+    udp: true
+    uuid: 00000000-0000-0000-0000-000000000000
+  - client-fingerprint: chrome
+    grpc-opts:
+      grpc-service-name: xyz
+      ip-version: dual
+    name: Sample Node B [VLESS - grpc]
+    network: grpc
+    port: 2053
+    reality-opts:
+      public-key: pubkey
+      short-id: 19f8e7d6c5b4a321
+    server: 1.1.1.2
+    servername: apple.com
+    tls: true
+    type: vless
+    udp: true
+    uuid: 00000000-0000-0000-0000-000000000000
+  - client-fingerprint: chrome
+    name: Sample Node C [VLESS - xhttp]
+    network: xhttp
+    port: 843
+    reality-opts:
+      public-key: pubkey
+      short-id: 0f1e2d3c4b5a6978
+    server: 1.1.1.3
+    servername: www.apple.com
+    tls: true
+    type: vless
+    udp: true
+    uuid: 00000000-0000-0000-0000-000000000000
+    xhttp-opts:
+      mode: auto
+      path: /
+proxy-groups:
+  - name: AUTO
+    type: url-test
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+      - Sample Node A [VLESS - tcp]
+      - Sample Node B [VLESS - grpc]
+      - Sample Node C [VLESS - xhttp]
+geodata-mode: true
+geox-url:
+  geoip: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+  geosite: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+rule-providers:
+  Sample-WL:
+    type: http
+    behavior: classical
+    url: https://example.com/rules/sample-wl.yaml
+    path: ./ruleset/sample-wl.yaml
+    interval: 3600
+  Sample-TG:
+    type: http
+    behavior: classical
+    url: https://example.com/rules/sample-tg.yaml
+    path: ./ruleset/sample-tg.yaml
+    interval: 3600
+rules:
+  - GEOSITE,tracker,REJECT
+  - GEOSITE,discord,AUTO
+  - GEOSITE,google,AUTO
+  - GEOSITE,openai,AUTO
+  - GEOSITE,anthropic,AUTO
+  - GEOSITE,huggingface,AUTO
+  - GEOSITE,instagram,AUTO
+  - GEOSITE,facebook,AUTO
+  - RULE-SET,Sample-TG,AUTO
+  - RULE-SET,Sample-WL,AUTO
+  - MATCH,DIRECT

@@ -1,0 +1,41 @@
+mode: rule
+geodata-mode: true
+
+proxy-providers:
+  p1:
+    type: http
+    url: https://example.com/sub1.yaml
+    interval: 3600
+    path: ./providers/p1.yaml
+  p2:
+    type: http
+    url: https://example.com/sub2.yaml
+    interval: 3600
+    path: ./providers/p2.yaml
+
+rule-providers:
+  private:
+    type: http
+    behavior: classical
+    url: https://example.com/private.yaml
+    path: ./ruleset/private.yaml
+    interval: 3600
+
+proxy-groups:
+  - name: MainGroup
+    type: url-test
+    use: [p1, p2]
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+  - name: FallbackGroup
+    type: fallback
+    use: [p1, p2]
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+  - name: Final
+    type: select
+    proxies: [MainGroup, FallbackGroup, DIRECT]
+
+rules:
+  - RULE-SET,private,DIRECT
+  - MATCH,Final

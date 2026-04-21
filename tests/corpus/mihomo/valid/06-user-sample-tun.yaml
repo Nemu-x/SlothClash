@@ -1,0 +1,109 @@
+mode: rule
+mixed-port: 7890
+ipv6: true
+tun:
+  enable: true
+  stack: mixed
+  dns-hijack:
+    - any:53
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+dns:
+  enable: true
+  listen: :1053
+  ipv6: true
+  nameserver:
+    - https://1.1.1.1/dns-query#MAIN
+    - https://8.8.8.8/dns-query#MAIN
+    - https://9.9.9.9/dns-query#MAIN
+  proxy-server-nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+    - 9.9.9.9
+sniffer:
+  enable: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports:
+        - 80
+        - 8080-8880
+    TLS:
+      ports:
+        - 443
+        - 8443
+    QUIC:
+      ports:
+        - 443
+        - 8443
+proxies:
+  - client-fingerprint: chrome
+    name: Region A [vless - xhttp reality]
+    network: xhttp
+    port: 443
+    reality-opts:
+      public-key: pubkey
+      short-id: 7c6b5a493827160f
+      support-x25519mlkem768: false
+    server: r2.domain.com
+    servername: r2.domain.com
+    tls: true
+    type: vless
+    udp: true
+    uuid: 00000000-0000-0000-0000-000000000000
+    xhttp-opts:
+      mode: auto
+      path: /
+  - name: Region B [vless - xhttp]
+    network: xhttp
+    port: 443
+    server: igma.domain.com
+    servername: igma.domain.com
+    tls: true
+    type: vless
+    udp: true
+    uuid: 00000000-0000-0000-0000-000000000001
+    xhttp-opts:
+      host: igma.domain.com
+      mode: auto
+      path: /vless-xhttp
+proxy-groups:
+  - name: MAIN
+    type: select
+    proxies:
+      - LATENCY
+      - Region A [vless - xhttp reality]
+      - Region B [vless - xhttp]
+  - name: LATENCY
+    type: url-test
+    proxies:
+      - Region A [vless - xhttp reality]
+      - Region B [vless - xhttp]
+geodata-mode: true
+geox-url:
+  geoip: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+  geosite: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+rule-providers:
+  Sample-WL:
+    type: http
+    behavior: classical
+    url: https://example.com/rules/sample-wl.yaml
+    path: ./ruleset/sample-wl.yaml
+    interval: 3600
+  Sample-TG:
+    type: http
+    behavior: classical
+    url: https://example.com/rules/sample-tg.yaml
+    path: ./ruleset/sample-tg.yaml
+    interval: 3600
+rules:
+  - GEOSITE,tracker,REJECT
+  - GEOSITE,discord,LATENCY
+  - GEOSITE,google,LATENCY
+  - GEOSITE,openai,LATENCY
+  - GEOSITE,anthropic,LATENCY
+  - GEOSITE,huggingface,LATENCY
+  - RULE-SET,Sample-TG,LATENCY
+  - RULE-SET,Sample-WL,LATENCY
+  - MATCH,DIRECT

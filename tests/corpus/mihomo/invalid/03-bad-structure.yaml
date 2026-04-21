@@ -1,0 +1,6 @@
+proxy-groups:
+  - name: Main
+    type: select
+    proxies: [DIRECT
+rules:
+  - MATCH,Main

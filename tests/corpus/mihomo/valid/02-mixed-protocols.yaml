@@ -1,0 +1,46 @@
+mixed-port: 7891
+mode: rule
+
+proxies:
+  - name: "vless-ws"
+    type: vless
+    server: example.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    tls: true
+    network: ws
+    ws-opts:
+      path: /ws
+  - name: "tuic-node"
+    type: tuic
+    server: tuic.example.com
+    port: 443
+    uuid: 22222222-2222-2222-2222-222222222222
+    password: abcdef
+    alpn: [h3]
+  - name: "hysteria2-node"
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: 123456
+  - name: "wg-node"
+    type: wireguard
+    server: wg.example.com
+    port: 443
+    ip: 10.14.0.2
+    private-key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=
+    public-key: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy=
+
+proxy-groups:
+  - name: Latency
+    type: url-test
+    proxies: [vless-ws, tuic-node, hysteria2-node, wg-node]
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+  - name: Main
+    type: select
+    proxies: [Latency, DIRECT]
+
+rules:
+  - DOMAIN-SUFFIX,openai.com,Main
+  - MATCH,Main

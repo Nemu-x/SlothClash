@@ -1,0 +1,39 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: true
+
+dns:
+  enable: true
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - tls://8.8.8.8:853
+  respect-rules: true
+
+tun:
+  enable: true
+  stack: system
+  auto-route: true
+  auto-redir: true
+  strict-route: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53
+
+proxy-groups:
+  - name: Main
+    type: select
+    proxies:
+      - DIRECT
+      - REJECT
+
+rules:
+  - GEOIP,private,DIRECT,no-resolve
+  - MATCH,Main

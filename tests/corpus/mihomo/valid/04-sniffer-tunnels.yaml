@@ -1,0 +1,30 @@
+mixed-port: 7892
+mode: rule
+allow-lan: false
+
+sniffer:
+  enable: true
+  parse-pure-ip: true
+  sniff:
+    TLS:
+      ports: ["443", "8443"]
+    HTTP:
+      ports: ["80", "8080-8880"]
+      override-destination: true
+    QUIC:
+      ports: ["443", "8443"]
+
+tunnels:
+  - network: tcp
+    address: 127.0.0.1:7001
+    target: 10.0.0.2:22
+    proxy: DIRECT
+
+proxy-groups:
+  - name: Main
+    type: select
+    proxies: [DIRECT, REJECT]
+
+rules:
+  - PROCESS-NAME,ssh.exe,DIRECT
+  - MATCH,Main

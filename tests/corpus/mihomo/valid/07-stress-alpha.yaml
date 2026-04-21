@@ -1,0 +1,188 @@
+# mihomo-style stress corpus (anonymized)
+mixed-port: 7890
+port: 7891
+socks-port: 7892
+allow-lan: true
+bind-address: "*"
+mode: rule
+log-level: debug
+ipv6: true
+find-process-mode: strict
+external-controller: 127.0.0.1:9090
+secret: "parser-secret"
+unified-delay: true
+tcp-concurrent: true
+global-client-fingerprint: chrome
+geodata-mode: true
+
+dns:
+  enable: true
+  ipv6: true
+  listen: 0.0.0.0:1053
+  use-hosts: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver: [223.5.5.5, 1.1.1.1]
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query
+    - tls://8.8.8.8:853
+  proxy-server-nameserver:
+    - https://1.1.1.1/dns-query
+  fallback:
+    - https://9.9.9.9/dns-query
+  fallback-filter:
+    geoip: true
+    geoip-code: AE
+
+tun:
+  enable: true
+  stack: mixed
+  dns-hijack: [any:53]
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+
+sniffer:
+  enable: true
+  parse-pure-ip: true
+  force-dns-mapping: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+
+proxies:
+  - name: vmess-ws
+    type: vmess
+    server: vmess-ws.example.test
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: ws.example.test
+    network: ws
+    ws-opts:
+      path: /vmess-ws
+      headers: { Host: ws.example.test }
+  - name: vless-vision-reality
+    type: vless
+    server: vision.example.test
+    port: 443
+    uuid: 22222222-2222-2222-2222-222222222222
+    flow: xtls-rprx-vision
+    tls: true
+    servername: cdn.example.test
+    reality-opts:
+      public-key: reality-public-key
+      short-id: "0123456789abcdef"
+    network: tcp
+  - name: vless-grpc
+    type: vless
+    server: vless-grpc.example.test
+    port: 443
+    uuid: 33333333-3333-3333-3333-333333333333
+    tls: true
+    servername: vgrpc.example.test
+    network: grpc
+    grpc-opts:
+      grpc-service-name: VLessService
+  - name: vless-xhttp
+    type: vless
+    server: xhttp.example.test
+    port: 443
+    uuid: 44444444-4444-4444-4444-444444444444
+    tls: true
+    servername: xhttp.example.test
+    network: xhttp
+    xhttp-opts:
+      path: /
+      host: xhttp.example.test
+      mode: stream-up
+  - name: trojan-tcp
+    type: trojan
+    server: trojan.example.test
+    port: 443
+    password: yourpsk
+    sni: trojan.example.test
+    network: tcp
+  - name: mieru-tcp
+    type: mieru
+    server: mieru.example.test
+    port: 2999
+    transport: TCP
+    username: user
+    password: password
+  - name: hysteria2-main
+    type: hysteria2
+    server: hy2.example.test
+    port: 443
+    password: yourpassword
+    sni: hy2.example.test
+  - name: tuic-v5-main
+    type: tuic
+    server: tuic.example.test
+    port: 10443
+    uuid: 55555555-5555-5555-5555-555555555555
+    password: PASSWORD_1
+    alpn: [h3]
+  - name: anytls-main
+    type: anytls
+    server: 1.2.3.4
+    port: 443
+    password: "<password>"
+    sni: example.com
+
+proxy-groups:
+  - name: parser-test
+    type: select
+    proxies:
+      - auto-test
+      - failover
+      - balance
+      - vmess-ws
+      - vless-vision-reality
+      - vless-grpc
+      - vless-xhttp
+      - trojan-tcp
+      - mieru-tcp
+      - hysteria2-main
+      - tuic-v5-main
+      - anytls-main
+      - DIRECT
+  - name: auto-test
+    type: url-test
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+      - vmess-ws
+      - vless-vision-reality
+      - vless-grpc
+      - vless-xhttp
+      - trojan-tcp
+      - hysteria2-main
+      - tuic-v5-main
+  - name: failover
+    type: fallback
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    proxies: [vmess-ws, vless-grpc, anytls-main]
+  - name: balance
+    type: load-balance
+    strategy: consistent-hashing
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    proxies: [vless-xhttp, trojan-tcp, mieru-tcp]
+
+rules:
+  - DOMAIN-SUFFIX,example.com,parser-test
+  - DOMAIN-SUFFIX,example.org,auto-test
+  - DOMAIN-KEYWORD,github,failover
+  - DOMAIN-KEYWORD,google,balance
+  - GEOIP,private,DIRECT,no-resolve
+  - MATCH,parser-test

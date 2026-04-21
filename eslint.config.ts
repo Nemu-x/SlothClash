@@ -64,6 +64,7 @@ export default defineConfig([
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     ignores: [
       'scripts/**/*.mjs',
+      'tests/required/**/*.mjs',
       'vite.config.mts',
       'apps/sloth-clash-desktop/frontend/vite.config.ts',
     ],
@@ -88,7 +89,7 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['src/polyfills/*.js'],
+          allowDefaultProject: ['src/polyfills/*.js', 'tests/required/*.mjs'],
           noWarnOnMultipleProjects: true,
         },
       },
@@ -200,6 +201,17 @@ export default defineConfig([
   },
   {
     files: ['scripts/**/*.mjs'],
+    extends: [eslintJS.configs.recommended],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+  },
+  {
+    files: ['tests/required/**/*.mjs'],
     extends: [eslintJS.configs.recommended],
     languageOptions: {
       globals: globals.node,

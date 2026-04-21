@@ -1,0 +1,7 @@
+mixed-port: 7890
+proxy-groups:
+  - name: Main
+    type: select
+    proxies: [DIRECT, REJECT
+rules:
+  - MATCH,Main

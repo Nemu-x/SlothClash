@@ -41,8 +41,7 @@
     "updateAvailable": "有可用更新：{{version}}",
     "upToDate": "已是最新版本。",
     "downloadInstaller": "下载并安装更新",
-    "openReleasePage": "打开发布页",
-    "updateHint": "Windows 安装程序会在原目录上覆盖升级，无需先卸载。"
+    "openReleasePage": "打开发布页"
   },
   "tour": {
     "back": "上一步",
@@ -95,7 +94,9 @@
       "notInstalled": "未安装",
       "activeGroup": "当前分组",
       "pickGroup": "选择分组",
-      "activeNode": "当前节点"
+      "activeNode": "当前节点",
+      "updateAvailable": "有可用更新",
+      "updateAvailableVersion": "有可用更新：{{version}}"
     },
     "profiles": {
       "title": "配置",

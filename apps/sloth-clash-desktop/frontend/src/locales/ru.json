@@ -41,8 +41,7 @@
     "updateAvailable": "Доступно обновление: {{version}}",
     "upToDate": "Установлена последняя версия.",
     "downloadInstaller": "Скачать и установить",
-    "openReleasePage": "Страница релиза",
-    "updateHint": "Установщик Windows обновляет приложение поверх, без ручного удаления."
+    "openReleasePage": "Страница релиза"
   },
   "tour": {
     "back": "Назад",
@@ -95,7 +94,9 @@
       "notInstalled": "Не установлен",
       "activeGroup": "Активная группа",
       "pickGroup": "Выбор группы",
-      "activeNode": "Активный узел"
+      "activeNode": "Активный узел",
+      "updateAvailable": "Доступно обновление",
+      "updateAvailableVersion": "Доступно обновление: {{version}}"
     },
     "profiles": {
       "title": "Профили",

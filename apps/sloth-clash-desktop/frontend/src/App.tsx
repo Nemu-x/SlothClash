@@ -1268,6 +1268,26 @@ function App() {
     return parts.join('\n\n')
   }, [tunBanner, state?.connection?.status, state?.connection?.lastWarning])
 
+  const homeUpdateTooltip = useMemo(() => {
+    if (!updateSnap?.hasUpdate) return ''
+    const version = String(updateSnap?.latestVersion ?? '').trim()
+    return version
+      ? t('ui.home.updateAvailableVersion', { version })
+      : t('ui.home.updateAvailable')
+  }, [t, updateSnap?.hasUpdate, updateSnap?.latestVersion])
+
+  const handleOpenUpdate = useCallback(async () => {
+    const assetURL = String(updateSnap?.assetDownloadUrl ?? '').trim()
+    const releaseURL = String(updateSnap?.releaseUrl ?? '').trim()
+    const target = assetURL || releaseURL
+    if (!target) return
+    try {
+      await BrowserOpenURL(target)
+    } catch (e: any) {
+      setError(String(e))
+    }
+  }, [updateSnap?.assetDownloadUrl, updateSnap?.releaseUrl])
+
   const loadServiceLog = useCallback(async () => {
     try {
       const peek = await ReadServiceLatestLog(200_000)
@@ -1629,6 +1649,17 @@ function App() {
                 <p className="eyebrow">{t('ui.home.activeProfile')}</p>
                 <div className="homeTitleWithAlert">
                   <h2>{activeProfile?.name ?? t('ui.home.noProfileYet')}</h2>
+                  {updateSnap?.hasUpdate ? (
+                    <button
+                      type="button"
+                      className="homeUpdateBadge"
+                      title={homeUpdateTooltip}
+                      aria-label={homeUpdateTooltip}
+                      onClick={() => void handleOpenUpdate()}
+                    >
+                      <span aria-hidden>⭳</span>
+                    </button>
+                  ) : null}
                   {homeAlertTooltip ? (
                     <span
                       className="homeAlertBadge"
@@ -3057,7 +3088,6 @@ function App() {
                       {String(updateSnap.lastError)}
                     </p>
                   ) : null}
-                  <p className="muted small">{t('settings.updateHint')}</p>
                   <div className="row settingsInfoDevBtnRow">
                     <button
                       type="button"

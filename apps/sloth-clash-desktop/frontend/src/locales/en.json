@@ -41,8 +41,7 @@
     "updateAvailable": "Update available: {{version}}",
     "upToDate": "You are on the latest release.",
     "downloadInstaller": "Download & install update",
-    "openReleasePage": "Open release page",
-    "updateHint": "The Windows installer upgrades in place over the same folder."
+    "openReleasePage": "Open release page"
   },
   "tour": {
     "back": "Back",
@@ -95,7 +94,9 @@
       "notInstalled": "Not installed",
       "activeGroup": "Active group",
       "pickGroup": "Pick group",
-      "activeNode": "Active node"
+      "activeNode": "Active node",
+      "updateAvailable": "Update available",
+      "updateAvailableVersion": "Update available: {{version}}"
     },
     "profiles": {
       "title": "Profiles",

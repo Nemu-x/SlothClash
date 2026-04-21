@@ -506,8 +506,47 @@
   box-shadow: 0 2px 10px rgba(201, 168, 108, 0.35);
 }
 
+.homeUpdateBadge {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  color: #eaf7ef;
+  background: linear-gradient(145deg, #3ccf8e, #2ea976);
+  border: 1px solid rgba(61, 207, 142, 0.6);
+  box-shadow: 0 2px 10px rgba(46, 169, 118, 0.35);
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+
+.homeUpdateBadge:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.homeUpdateBadge:active {
+  transform: translateY(0);
+}
+
+.homeUpdateBadge:focus-visible {
+  outline: 2px solid rgba(61, 207, 142, 0.75);
+  outline-offset: 2px;
+}
+
 .shell[data-theme="light"] .homeAlertBadge {
   color: #2a2215;
+}
+
+.shell[data-theme="light"] .homeUpdateBadge {
+  color: #10472f;
 }
 
 .homeHeader h2 {

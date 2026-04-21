@@ -1,4 +1,4 @@
-import YAML from 'yaml'
+import { dump as dumpYaml, load as loadYaml } from 'js-yaml'
 
 export const DEFAULT_MERGE_TEMPLATE =
   '# Profile Enhancement Merge Template for SlothClash\n'
@@ -38,7 +38,7 @@ export function rulesTemplateFromProfile(
 
 export function parseMergeDoc(raw: string): Record<string, unknown> {
   try {
-    const o = YAML.parse(raw) as Record<string, unknown>
+    const o = loadYaml(raw) as Record<string, unknown>
     return o && typeof o === 'object' ? o : {}
   } catch {
     return {}
@@ -46,7 +46,7 @@ export function parseMergeDoc(raw: string): Record<string, unknown> {
 }
 
 export function stringifyMerge(doc: Record<string, unknown>): string {
-  return YAML.stringify(doc, { lineWidth: 120, indent: 2 })
+  return dumpYaml(doc, { lineWidth: 120, indent: 2 })
 }
 
 export type ProxyGroupRow = {
@@ -147,7 +147,7 @@ export function proxyBucketsFromMerge(raw: string): ProxyBuckets {
 }
 
 export function proxyBucketsToAdvancedYaml(b: ProxyBuckets): string {
-  return YAML.stringify(
+  return dumpYaml(
     {
       prepend: b.prepend.map(rowToProxyGroupObj),
       append: b.append.map(rowToProxyGroupObj),
@@ -159,7 +159,7 @@ export function proxyBucketsToAdvancedYaml(b: ProxyBuckets): string {
 
 export function proxyBucketsFromAdvancedYaml(raw: string): ProxyBuckets {
   try {
-    const doc = (YAML.parse(raw) ?? {}) as Record<string, unknown>
+    const doc = (loadYaml(raw) ?? {}) as Record<string, unknown>
     const fromObjKey = (obj: unknown, key: string): unknown => {
       if (!obj || typeof obj !== 'object') return undefined
       return (obj as Record<string, unknown>)[key]
@@ -272,7 +272,7 @@ export function rulesBucketsFromMerge(raw: string): RuleBuckets {
 }
 
 export function rulesBucketsToAdvancedYaml(b: RuleBuckets): string {
-  return YAML.stringify(
+  return dumpYaml(
     {
       prepend: b.prepend.map(rowToRuleLine),
       append: b.append.map(rowToRuleLine),
@@ -284,7 +284,7 @@ export function rulesBucketsToAdvancedYaml(b: RuleBuckets): string {
 
 export function rulesBucketsFromAdvancedYaml(raw: string): RuleBuckets {
   try {
-    const doc = (YAML.parse(raw) ?? {}) as Record<string, unknown>
+    const doc = (loadYaml(raw) ?? {}) as Record<string, unknown>
     return {
       prepend: ruleRowsFromAny(doc.prepend),
       append: ruleRowsFromAny(doc.append),

@@ -1,3 +1,5 @@
+//go:build darwin && cgo && slothtray
+
 #import <Cocoa/Cocoa.h>
 
 extern void slothTrayOnShow(void);

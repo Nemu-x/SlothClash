@@ -39,9 +39,61 @@ func (a *App) ReadProfileConfig(profileID string) ProfileConfigPeek {
 	}
 	b, err := os.ReadFile(p)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if genErr := a.ensureProfileConfigSnapshot(profileID); genErr == nil {
+				if b2, err2 := os.ReadFile(p); err2 == nil {
+					return ProfileConfigPeek{Path: p, Body: string(b2)}
+				}
+			}
+		}
 		return ProfileConfigPeek{Path: p, LastError: err.Error()}
 	}
 	return ProfileConfigPeek{Path: p, Body: string(b)}
+}
+
+func (a *App) ensureProfileConfigSnapshot(profileID string) error {
+	a.mu.RLock()
+	var target Profile
+	found := false
+	for _, p := range a.profiles {
+		if p.ID == profileID {
+			target = p
+			found = true
+			break
+		}
+	}
+	traffic := strings.TrimSpace(a.state.Traffic)
+	secret := strings.TrimSpace(a.coreSecret)
+	a.mu.RUnlock()
+	if !found {
+		return errors.New("profile not found")
+	}
+	if strings.TrimSpace(target.URL) == "" {
+		return errors.New("profile has no subscription url")
+	}
+	if traffic != "proxy" && traffic != "tun" {
+		traffic = "tun"
+	}
+	if secret == "" {
+		secret = "secret"
+	}
+	root, err := slothDataRoot()
+	if err != nil {
+		return err
+	}
+	dataDir := filepath.Join(root, "runtime", profileID)
+	return a.writeRuntimeConfig(
+		dataDir,
+		target.URL,
+		target.MergeTemplate,
+		target.ProxyTemplate,
+		target.RulesTemplate,
+		0,
+		7890,
+		secret,
+		traffic,
+		false,
+	)
 }
 
 // WriteProfileConfig replaces config.yaml for a profile (must be valid YAML mapping).

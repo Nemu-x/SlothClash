@@ -9,11 +9,80 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+func decodeUnicodeEscapes(s string) string {
+	if strings.IndexByte(s, '\\') < 0 {
+		return s
+	}
+	r := []rune(s)
+	out := make([]rune, 0, len(r))
+	for i := 0; i < len(r); i++ {
+		if r[i] != '\\' || i+1 >= len(r) {
+			out = append(out, r[i])
+			continue
+		}
+		switch r[i+1] {
+		case 'U':
+			if i+9 < len(r) {
+				hex := string(r[i+2 : i+10])
+				cp, err := strconv.ParseUint(hex, 16, 32)
+				if err == nil && cp <= 0x10FFFF {
+					out = append(out, rune(cp))
+					i += 9
+					continue
+				}
+			}
+		case 'u':
+			if i+5 < len(r) {
+				hex := string(r[i+2 : i+6])
+				cp, err := strconv.ParseUint(hex, 16, 32)
+				if err == nil && cp <= 0x10FFFF {
+					out = append(out, rune(cp))
+					i += 5
+					continue
+				}
+			}
+		}
+		out = append(out, r[i])
+	}
+	return string(out)
+}
+
+func normalizeEscapedUnicodeStrings(v any) any {
+	switch t := v.(type) {
+	case string:
+		return decodeUnicodeEscapes(t)
+	case []any:
+		out := make([]any, len(t))
+		for i := range t {
+			out[i] = normalizeEscapedUnicodeStrings(t[i])
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, vv := range t {
+			out[k] = normalizeEscapedUnicodeStrings(vv)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func marshalRuntimeYAML(v any) ([]byte, error) {
+	b, err := yaml.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	// yaml.v3 escapes many non-ASCII runes as \UXXXXXXXX; decode for user-facing config readability.
+	return []byte(decodeUnicodeEscapes(string(b))), nil
+}
 
 const tunDefaultDNSYAML = `dns:
   enable: true
@@ -380,33 +449,88 @@ func validateRulePoliciesExist(m map[string]any) error {
 	if !ok {
 		return nil
 	}
-	for _, r := range rules {
+	for idx, r := range rules {
 		line, ok := r.(string)
 		if !ok {
 			continue
 		}
-		parts := strings.Split(line, ",")
-		if len(parts) < 2 {
+		policy := extractRulePolicyToken(line)
+		if policy == "" {
 			continue
 		}
-		candidate := ""
-		for i := len(parts) - 1; i >= 0; i-- {
-			token := strings.TrimSpace(parts[i])
-			if token == "" {
-				continue
-			}
-			if known[token] {
-				candidate = token
-				break
-			}
+		if !known[policy] {
+			return fmt.Errorf(
+				"rules[%d] references unknown policy %q in rule %q",
+				idx,
+				policy,
+				strings.TrimSpace(line),
+			)
 		}
-		if candidate == "" {
-			// Not all rule families end with an outbound policy token.
-			continue
-		}
-		// candidate was chosen from known-set scan above.
 	}
 	return nil
+}
+
+func splitRuleCSV(rule string) []string {
+	s := strings.TrimSpace(rule)
+	if s == "" {
+		return nil
+	}
+	out := make([]string, 0, 8)
+	var b strings.Builder
+	depth := 0
+	for _, ch := range s {
+		switch ch {
+		case '(':
+			depth++
+			b.WriteRune(ch)
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			b.WriteRune(ch)
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.TrimSpace(b.String()))
+				b.Reset()
+				continue
+			}
+			b.WriteRune(ch)
+		default:
+			b.WriteRune(ch)
+		}
+	}
+	if b.Len() > 0 {
+		out = append(out, strings.TrimSpace(b.String()))
+	}
+	return out
+}
+
+func isRuleOptionToken(token string) bool {
+	t := strings.ToLower(strings.TrimSpace(token))
+	return t == "no-resolve" || strings.HasPrefix(t, "src=") || strings.HasPrefix(t, "dst=")
+}
+
+func extractRulePolicyToken(rule string) string {
+	parts := splitRuleCSV(rule)
+	if len(parts) < 2 {
+		return ""
+	}
+	// Skip rule type + payload; last non-option token is expected outbound policy.
+	for i := len(parts) - 1; i >= 2; i-- {
+		token := strings.TrimSpace(parts[i])
+		if token == "" || isRuleOptionToken(token) {
+			continue
+		}
+		return token
+	}
+	// MATCH,DIRECT-like rules have no payload section.
+	if len(parts) == 2 {
+		head := strings.ToUpper(strings.TrimSpace(parts[0]))
+		if head == "MATCH" || head == "FINAL" {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
 }
 
 // normalizeProxyGroupRefs keeps proxy-group references valid after template merges.
@@ -705,6 +829,14 @@ func finalizeRuntimeConfigPipeline(
 	secret, traffic string,
 	withExternalController bool,
 ) error {
+	if fixed, ok := normalizeEscapedUnicodeStrings(m).(map[string]any); ok {
+		for k := range m {
+			delete(m, k)
+		}
+		for k, v := range fixed {
+			m[k] = v
+		}
+	}
 	normalizeRulesMatchLast(m)
 	normalizeProxyGroupRefs(m)
 	pruneFallbackAutoManualIfCustom(m)
@@ -942,7 +1074,7 @@ func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, r
 		return false, err
 	}
 
-	out, err := yaml.Marshal(doc)
+	out, err := marshalRuntimeYAML(doc)
 	if err != nil {
 		return false, err
 	}

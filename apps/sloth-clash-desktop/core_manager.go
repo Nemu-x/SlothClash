@@ -421,7 +421,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		return err
 	}
 
-	out, err := yaml.Marshal(m)
+	out, err := marshalRuntimeYAML(m)
 	if err != nil {
 		return err
 	}
@@ -454,7 +454,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 			); err != nil {
 				return err
 			}
-			out, err := yaml.Marshal(m)
+			out, err := marshalRuntimeYAML(m)
 			if err != nil {
 				return err
 			}
@@ -582,7 +582,7 @@ func repairRuntimeConfigDNS(cfgPath string) error {
 		return nil
 	}
 	ensureDefaultDNSForTun(m)
-	out, err := yaml.Marshal(m)
+	out, err := marshalRuntimeYAML(m)
 	if err != nil {
 		return err
 	}

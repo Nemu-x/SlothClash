@@ -94,3 +94,51 @@ rules:
 	}
 }
 
+func TestSmokeTryWriteMergedFullProfileDecodesUnicodeEscapes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`
+proxies:
+  - "\U0001F996 Dinosaur (AK_am_ls) [VLESS - tcp]"
+proxy-groups:
+  - name: MainGroup
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,MainGroup
+`))
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	ok, err := tryWriteMergedFullProfile(
+		tmp,
+		srv.URL,
+		"",
+		"",
+		"",
+		9090,
+		7890,
+		"secret",
+		"tun",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected full-profile path to be used")
+	}
+	b, err := os.ReadFile(filepath.Join(tmp, "config.yaml"))
+	if err != nil {
+		t.Fatalf("cannot read generated config.yaml: %v", err)
+	}
+	text := string(b)
+	if strings.Contains(text, `\U0001F996`) {
+		t.Fatalf("expected unicode escapes to be decoded in final config, got: %s", text)
+	}
+	if !strings.Contains(text, "🦖 Dinosaur") {
+		t.Fatalf("expected emoji in final config, got: %s", text)
+	}
+}
+

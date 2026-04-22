@@ -752,6 +752,10 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 	connected := a.state.Connection.Status == "connected"
 	needsCoreRestart := connected && prev != mode
 	a.state.Traffic = mode
+	if err := a.persistProfilesLocked(); err != nil {
+		a.mu.Unlock()
+		return a.GetAppState(), err
+	}
 	// When reconnecting the core for a traffic-mode change, still clear OS proxy
 	// before tear-down (otherwise proxy→TUN could leave HKCU proxy stuck and block).
 	if needsCoreRestart && prev == "proxy" {
@@ -782,6 +786,7 @@ func (a *App) EnsureTunReady() TunSetupResult {
 	if a.state.Service.Installed {
 		a.state.Traffic = "tun"
 		a.state.UpdatedAt = time.Now().Unix()
+		_ = a.persistProfilesLocked()
 		return TunSetupResult{Success: true, Message: "TUN enabled", InstallAction: false}
 	}
 	return TunSetupResult{
@@ -808,12 +813,20 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 		return a.GetAppState(), err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 26*time.Second)
-	defer cancel()
-
-	finalName, peek, err := resolveSubscriptionName(ctx, name, norm)
-	if err != nil {
-		return a.GetAppState(), err
+	finalName := strings.TrimSpace(name)
+	subInfo := ""
+	if finalName == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		if resolved, peek, err := resolveSubscriptionName(ctx, "", norm); err == nil {
+			if strings.TrimSpace(resolved) != "" {
+				finalName = strings.TrimSpace(resolved)
+			}
+			subInfo = strings.TrimSpace(peek.SubscriptionInfo)
+		}
+		if finalName == "" {
+			finalName = "Subscription"
+		}
 	}
 
 	a.mu.Lock()
@@ -824,7 +837,7 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 		Name:                      finalName,
 		Type:                      "subscription",
 		URL:                       norm,
-		SubscriptionInfo:          strings.TrimSpace(peek.SubscriptionInfo),
+		SubscriptionInfo:          subInfo,
 		LastUpdated:               time.Now().Unix(),
 		AutoUpdateEnabled:         true,
 		AutoUpdateIntervalMinutes: defaultProfileAutoUpdateMinutes,

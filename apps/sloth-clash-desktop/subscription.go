@@ -188,8 +188,6 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 		"SlothClash/1.0 (compatible; mihomo-like-client)",
 	}
 
-	host := hostFromSubscriptionURL(norm)
-	var successes []SubscriptionPeek
 	var bestErr SubscriptionPeek
 	var lastErr error
 
@@ -202,49 +200,22 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 			}
 			continue
 		}
-		successes = append(successes, out)
+		// Fast path: first successful probe is usually enough and avoids N sequential HTTP probes.
+		return out, nil
 	}
-
-	if len(successes) == 0 {
-		if bestErr.HTTPStatus != 0 {
-			if bestErr.HTTPStatus < 200 || bestErr.HTTPStatus >= 300 {
-				if lastErr != nil {
-					return bestErr, lastErr
-				}
-				return bestErr, errors.New(bestErr.LastError)
+	if bestErr.HTTPStatus != 0 {
+		if bestErr.HTTPStatus < 200 || bestErr.HTTPStatus >= 300 {
+			if lastErr != nil {
+				return bestErr, lastErr
 			}
-			return bestErr, nil
+			return bestErr, errors.New(bestErr.LastError)
 		}
-		if lastErr != nil {
-			return bestErr, lastErr
-		}
-		return bestErr, errors.New("subscription probe failed")
+		return bestErr, nil
 	}
-
-	scorePeek := func(p SubscriptionPeek) int {
-		score := 0
-		if strings.TrimSpace(p.SubscriptionInfo) != "" {
-			score += 4
-		}
-		if strings.TrimSpace(p.SuggestedName) != "" && p.SuggestedName != host {
-			score += 2
-		}
-		if p.HTTPStatus >= 200 && p.HTTPStatus < 300 {
-			score += 1
-		}
-		return score
+	if lastErr != nil {
+		return bestErr, lastErr
 	}
-
-	picked := successes[0]
-	bestScore := scorePeek(picked)
-	for i := 1; i < len(successes); i++ {
-		s := successes[i]
-		if sc := scorePeek(s); sc > bestScore {
-			bestScore = sc
-			picked = s
-		}
-	}
-	return picked, nil
+	return bestErr, errors.New("subscription probe failed")
 }
 
 func normalizeSubscriptionURL(raw string) (string, error) {

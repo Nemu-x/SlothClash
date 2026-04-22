@@ -12,6 +12,7 @@ const slothProfilesFile = "profiles.json"
 type profilesPersisted struct {
 	ActiveProfileID string    `json:"activeProfileId"`
 	Profiles        []Profile `json:"profiles"`
+	Traffic         string    `json:"traffic,omitempty"`
 }
 
 func profilesStorePath() (string, error) {
@@ -44,6 +45,12 @@ func (a *App) loadProfilesFromDisk() {
 	if disk.ActiveProfileID != "" {
 		a.state.Profile.ActiveProfileID = disk.ActiveProfileID
 	}
+	switch strings.ToLower(strings.TrimSpace(disk.Traffic)) {
+	case "tun":
+		a.state.Traffic = "tun"
+	case "proxy":
+		a.state.Traffic = "proxy"
+	}
 }
 
 // persistProfilesLocked writes profiles.json. Caller must hold a.mu (write lock).
@@ -62,6 +69,7 @@ func (a *App) persistProfilesLocked() error {
 	disk := profilesPersisted{
 		ActiveProfileID: a.state.Profile.ActiveProfileID,
 		Profiles:        a.profiles,
+		Traffic:         a.state.Traffic,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

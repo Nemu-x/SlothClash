@@ -32,7 +32,6 @@ import {
   GetUpdateState,
   ImportProfileFromURL,
   InstallService,
-  PeekSubscriptionFromURL,
   ReadProfileConfig,
   ReadServiceLatestLog,
   RefreshProfileSubscription,
@@ -78,6 +77,7 @@ import {
   type ProxyGroupRow,
   type RuleRow,
 } from './mergeTemplate'
+import { MonacoYamlEditor } from './MonacoYamlEditor'
 import {
   IconAdvanced,
   IconChevronNav,
@@ -125,8 +125,33 @@ function isUnsafeGroupName(name: string) {
   return u === 'DIRECT' || u === 'REJECT'
 }
 
+function decodeUnicodeEscapes(input: string): string {
+  let s = String(input ?? '')
+  // Python-style escapes often found in subscriptions: \U0001F1EA\U0001F1F8
+  s = s.replace(/\\U([0-9A-Fa-f]{8})/g, (_m, hex) => {
+    const cp = Number.parseInt(hex, 16)
+    if (!Number.isFinite(cp) || cp < 0 || cp > 0x10ffff) return _m
+    try {
+      return String.fromCodePoint(cp)
+    } catch {
+      return _m
+    }
+  })
+  // Standard JSON-style escapes: \uXXXX
+  s = s.replace(/\\u([0-9A-Fa-f]{4})/g, (_m, hex) => {
+    const cp = Number.parseInt(hex, 16)
+    if (!Number.isFinite(cp) || cp < 0 || cp > 0x10ffff) return _m
+    try {
+      return String.fromCodePoint(cp)
+    } catch {
+      return _m
+    }
+  })
+  return s
+}
+
 function extractNodeFlagIso(nodeName: string): string {
-  const s = String(nodeName ?? '')
+  const s = decodeUnicodeEscapes(String(nodeName ?? ''))
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .trim()
   if (!s) return ''
@@ -158,7 +183,7 @@ function extractNodeFlagIso(nodeName: string): string {
 }
 
 function nodeDisplayName(nodeName: string): string {
-  const s = String(nodeName ?? '').trim()
+  const s = decodeUnicodeEscapes(String(nodeName ?? '')).trim()
   if (!s) return '—'
   // Normalize noisy provider prefixes: repeated flag emojis / ISO tokens.
   let out = s
@@ -216,7 +241,7 @@ function FlagMark({
 }
 
 function nodeFeatureTags(nodeName: string): string[] {
-  const s = String(nodeName ?? '').toLowerCase()
+  const s = decodeUnicodeEscapes(String(nodeName ?? '')).toLowerCase()
   const out: string[] = []
   if (s.includes('vless')) out.push('VLESS')
   if (s.includes('vmess')) out.push('VMESS')
@@ -233,11 +258,13 @@ function nodeFeatureTags(nodeName: string): string[] {
 }
 
 function selectedNodeEmoji(value: unknown): string {
-  return isoToFlagEmoji(extractNodeFlagIso(String(value ?? '')))
+  return isoToFlagEmoji(
+    extractNodeFlagIso(decodeUnicodeEscapes(String(value ?? ''))),
+  )
 }
 
 function nodeOptionLabel(nodeName: string): string {
-  const raw = String(nodeName ?? '').trim()
+  const raw = decodeUnicodeEscapes(String(nodeName ?? '')).trim()
   if (!raw) return '—'
   const iso = extractNodeFlagIso(raw)
   const emoji = isoToFlagEmoji(iso)
@@ -286,6 +313,13 @@ function yamlValidationError(
 ): string | null {
   const src = String(text ?? '').trim()
   if (!src) return null
+  if (requireMapping) {
+    const noComments = src
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+    if (noComments.length === 0) return null
+  }
   try {
     const parsed = parseYaml(src)
     if (
@@ -298,6 +332,24 @@ function yamlValidationError(
   } catch (e: any) {
     return String(e?.message || e || 'Invalid YAML')
   }
+}
+
+function friendlyErrorMessage(raw: string): string {
+  const msg = String(raw ?? '').trim()
+  if (!msg) return ''
+  if (msg.includes('unknown policy')) {
+    return `${msg}. Hint: use existing proxy group name or DIRECT/REJECT.`
+  }
+  if (msg.includes('unknown provider')) {
+    return `${msg}. Hint: check proxy-providers names in merge template.`
+  }
+  if (msg.includes('unknown proxy/group')) {
+    return `${msg}. Hint: check proxy-groups -> proxies/use targets.`
+  }
+  if (msg.includes('configuration preflight failed')) {
+    return `${msg}. Hint: open profile config and verify rules and proxy-groups references.`
+  }
+  return msg
 }
 
 /** `used / total` from Subscription-Userinfo (total missing ⇒ `0 B`). */
@@ -536,6 +588,12 @@ function App() {
   const [profileEditUrl, setProfileEditUrl] = useState('')
   const [profileEditAutoEnabled, setProfileEditAutoEnabled] = useState(true)
   const [profileEditAutoInterval, setProfileEditAutoInterval] = useState('360')
+  const isAnyEditorModalOpen = Boolean(
+    profileMergeModal ||
+      profileFileModal ||
+      profileProxyModal ||
+      profileRulesModal,
+  )
   const [deleteProfileModal, setDeleteProfileModal] = useState<{
     id: string
     name: string
@@ -647,6 +705,7 @@ function App() {
 
   useEffect(() => {
     const off = EventsOn('app:state', () => {
+      if (isAnyEditorModalOpen) return
       if (stateEventTimerRef.current !== null) return
       stateEventTimerRef.current = window.setTimeout(() => {
         stateEventTimerRef.current = null
@@ -660,7 +719,7 @@ function App() {
         stateEventTimerRef.current = null
       }
     }
-  }, [refresh])
+  }, [refresh, isAnyEditorModalOpen])
 
   useEffect(() => {
     const off = EventsOn('app:update', () => {
@@ -719,6 +778,7 @@ function App() {
 
   // If /proxies was still warming up, or groups loaded before activeGroup — nudge briefly.
   useEffect(() => {
+    if (isAnyEditorModalOpen) return
     if (state?.connection?.status !== 'connected') return
     const hasGroups = (state?.proxy?.groups?.length ?? 0) > 0
     const ag = String(state?.proxy?.activeGroup ?? '').trim()
@@ -731,6 +791,7 @@ function App() {
     }, 350)
     return () => clearInterval(id)
   }, [
+    isAnyEditorModalOpen,
     state?.connection?.status,
     state?.proxy?.groups?.length,
     state?.proxy?.activeGroup,
@@ -742,6 +803,7 @@ function App() {
   }, [navCollapsed])
 
   useEffect(() => {
+    if (isAnyEditorModalOpen) return
     if (screen !== 'proxies') return
     if (state?.connection?.status !== 'connected') return
     let cancelled = false
@@ -759,11 +821,12 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [screen, state?.connection?.status])
+  }, [screen, state?.connection?.status, isAnyEditorModalOpen])
 
   // Same as Proxies: Home reads proxy state — refresh when opening Home while connected
   // so Active group / node match the core without visiting Proxies first.
   useEffect(() => {
+    if (isAnyEditorModalOpen) return
     if (screen !== 'home') return
     if (state?.connection?.status !== 'connected') return
     let cancelled = false
@@ -780,9 +843,10 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [screen, state?.connection?.status])
+  }, [screen, state?.connection?.status, isAnyEditorModalOpen])
 
   useEffect(() => {
+    if (isAnyEditorModalOpen) return
     if (screen !== 'home') return
     if (state?.connection?.status !== 'connected') return
     let cancelled = false
@@ -812,7 +876,12 @@ function App() {
       cancelled = true
       clearInterval(id)
     }
-  }, [screen, state?.connection?.status, state?.mode?.current])
+  }, [
+    screen,
+    state?.connection?.status,
+    state?.mode?.current,
+    isAnyEditorModalOpen,
+  ])
 
   useEffect(() => {
     if (screen !== 'settings') return
@@ -1423,11 +1492,7 @@ function App() {
     setError('')
     setImportBusy(true)
     try {
-      let name = importName.trim()
-      if (!name && importUrl.trim()) {
-        const peek = await PeekSubscriptionFromURL(importUrl.trim())
-        if (peek.suggestedName) name = peek.suggestedName
-      }
+      const name = importName.trim()
       await ImportProfileFromURL(name, importUrl.trim())
       await refresh()
       dismissSpotlight()
@@ -2299,7 +2364,9 @@ function App() {
                 ))
               )}
             </div>
-            {error ? <p className="error">{error}</p> : null}
+            {error ? (
+              <p className="error">{friendlyErrorMessage(error)}</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -2452,7 +2519,9 @@ function App() {
                 )
               })}
             </div>
-            {error ? <p className="error">{error}</p> : null}
+            {error ? (
+              <p className="error">{friendlyErrorMessage(error)}</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -2573,7 +2642,9 @@ function App() {
                 </p>
               ) : null}
             </div>
-            {error ? <p className="error">{error}</p> : null}
+            {error ? (
+              <p className="error">{friendlyErrorMessage(error)}</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -2748,7 +2819,9 @@ function App() {
                 </button>
               </div>
             </div>
-            {error ? <p className="error">{error}</p> : null}
+            {error ? (
+              <p className="error">{friendlyErrorMessage(error)}</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -3169,7 +3242,9 @@ function App() {
               </div>
             </div>
             {tunBanner ? <p className="banner">{tunBanner}</p> : null}
-            {error ? <p className="error">{error}</p> : null}
+            {error ? (
+              <p className="error">{friendlyErrorMessage(error)}</p>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -3252,7 +3327,7 @@ function App() {
           onClick={() => setProfileMergeModal(null)}
         >
           <div
-            className="modalCard modalCardWide yamlModalCard vergeModal"
+            className="modalCard modalCardWide yamlModalCard modalCardFullscreen vergeModal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="mergeTplTitle"
@@ -3276,11 +3351,11 @@ function App() {
                 {profileMergeModal.name}{' '}
                 <span className="optional">· merge YAML</span>
               </span>
-              <textarea
-                className="input modalTextarea"
-                spellCheck={false}
+              <MonacoYamlEditor
+                className="modalMonacoWrap"
                 value={mergeTemplateDraft}
-                onChange={(e) => setMergeTemplateDraft(e.target.value)}
+                onChange={setMergeTemplateDraft}
+                height="48vh"
               />
               {mergeTemplateYamlErr ? (
                 <span className="muted small" style={{ color: '#ff6b6b' }}>
@@ -3343,7 +3418,7 @@ function App() {
           onClick={() => setProfileFileModal(null)}
         >
           <div
-            className="modalCard modalCardWide yamlModalCard vergeModal"
+            className="modalCard modalCardWide yamlModalCard modalCardFullscreen vergeModal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="editFileTitle"
@@ -3366,11 +3441,11 @@ function App() {
                 {profileFileModal.name}{' '}
                 <span className="optional">· loaded config.yaml</span>
               </span>
-              <textarea
-                className="input modalTextarea"
-                spellCheck={false}
+              <MonacoYamlEditor
+                className="modalMonacoWrap"
                 value={profileFileText}
-                onChange={(e) => setProfileFileText(e.target.value)}
+                onChange={setProfileFileText}
+                height="50vh"
               />
               {profileFileYamlErr ? (
                 <span className="muted small" style={{ color: '#ff6b6b' }}>
@@ -3439,7 +3514,9 @@ function App() {
           onClick={() => setProfileProxyModal(null)}
         >
           <div
-            className="modalCard modalCardWide yamlModalCard vergeModal"
+            className={`modalCard modalCardWide yamlModalCard vergeModal ${
+              proxyUiMode === 'advanced' ? 'modalCardFullscreen' : ''
+            }`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="pgTitle"
@@ -3477,7 +3554,11 @@ function App() {
                 </button>
               </div>
             </div>
-            <div className="vergeSplit">
+            <div
+              className={`vergeSplit ${
+                proxyUiMode === 'advanced' ? 'vergeSplitAdvanced' : ''
+              }`}
+            >
               <div className="vergePane">
                 {proxyUiMode === 'visual' ? (
                   <>
@@ -3630,11 +3711,11 @@ function App() {
                 ) : (
                   <label className="field modalField">
                     <span className="fieldLab">Advanced YAML</span>
-                    <textarea
-                      className="input modalTextarea vergePaneYaml"
-                      spellCheck={false}
+                    <MonacoYamlEditor
+                      className="vergePaneYaml modalMonacoWrap"
                       value={proxyAdvancedDraft}
-                      onChange={(e) => setProxyAdvancedDraft(e.target.value)}
+                      onChange={setProxyAdvancedDraft}
+                      height="52vh"
                     />
                     {proxyAdvancedYamlErr ? (
                       <span
@@ -3647,98 +3728,106 @@ function App() {
                   </label>
                 )}
               </div>
-              <div className="vergePane vergePaneList">
-                <p className="eyebrow">prepend.proxy-groups</p>
-                <div className="vergeScrollList">
-                  {proxyRows.length === 0 ? (
-                    <p className="muted small">No groups yet.</p>
-                  ) : (
-                    proxyRows.map((r) => (
-                      <div key={r.id} className="vergeCard">
-                        <div>
-                          <div className="vergeCardTitle">{r.name}</div>
-                          <div className="muted small">{r.type}</div>
-                          <div className="muted small vergeCardSub">
-                            use: {r.use || '—'}
+              {proxyUiMode === 'visual' ? (
+                <div className="vergePane vergePaneList">
+                  <p className="eyebrow">prepend.proxy-groups</p>
+                  <div className="vergeScrollList">
+                    {proxyRows.length === 0 ? (
+                      <p className="muted small">No groups yet.</p>
+                    ) : (
+                      proxyRows.map((r) => (
+                        <div key={r.id} className="vergeCard">
+                          <div>
+                            <div className="vergeCardTitle">{r.name}</div>
+                            <div className="muted small">{r.type}</div>
+                            <div className="muted small vergeCardSub">
+                              use: {r.use || '—'}
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            className="btn ghost vergeTrash"
+                            aria-label="Remove"
+                            onClick={() => {
+                              const next = proxyRows.filter(
+                                (x) => x.id !== r.id,
+                              )
+                              setProxyRows(next)
+                              const merged = applyProxyBucketsToMerge(
+                                proxyMergeDraft,
+                                {
+                                  prepend: next,
+                                  append: proxyAppendRows,
+                                  delete: [],
+                                },
+                              )
+                              setProxyMergeDraft(merged)
+                              setProxyAdvancedDraft(
+                                proxyBucketsToAdvancedYaml({
+                                  prepend: next,
+                                  append: proxyAppendRows,
+                                  delete: [],
+                                }),
+                              )
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label="Remove"
-                          onClick={() => {
-                            const next = proxyRows.filter((x) => x.id !== r.id)
-                            setProxyRows(next)
-                            const merged = applyProxyBucketsToMerge(
-                              proxyMergeDraft,
-                              {
-                                prepend: next,
-                                append: proxyAppendRows,
-                                delete: [],
-                              },
-                            )
-                            setProxyMergeDraft(merged)
-                            setProxyAdvancedDraft(
-                              proxyBucketsToAdvancedYaml({
-                                prepend: next,
-                                append: proxyAppendRows,
-                                delete: [],
-                              }),
-                            )
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <p className="eyebrow" style={{ marginTop: 10 }}>
-                  append.proxy-groups
-                </p>
-                <div className="vergeScrollList">
-                  {proxyAppendRows.length === 0 ? (
-                    <p className="muted small">No append groups.</p>
-                  ) : (
-                    proxyAppendRows.map((r) => (
-                      <div key={r.id} className="vergeCard">
-                        <div>
-                          <div className="vergeCardTitle">{r.name}</div>
-                          <div className="muted small">{r.type}</div>
-                          <div className="muted small vergeCardSub">
-                            use: {r.use || '—'}
+                      ))
+                    )}
+                  </div>
+                  <p className="eyebrow" style={{ marginTop: 10 }}>
+                    append.proxy-groups
+                  </p>
+                  <div className="vergeScrollList">
+                    {proxyAppendRows.length === 0 ? (
+                      <p className="muted small">No append groups.</p>
+                    ) : (
+                      proxyAppendRows.map((r) => (
+                        <div key={r.id} className="vergeCard">
+                          <div>
+                            <div className="vergeCardTitle">{r.name}</div>
+                            <div className="muted small">{r.type}</div>
+                            <div className="muted small vergeCardSub">
+                              use: {r.use || '—'}
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            className="btn ghost vergeTrash"
+                            aria-label="Remove"
+                            onClick={() => {
+                              const next = proxyAppendRows.filter(
+                                (x) => x.id !== r.id,
+                              )
+                              setProxyAppendRows(next)
+                              const merged = applyProxyBucketsToMerge(
+                                proxyMergeDraft,
+                                {
+                                  prepend: proxyRows,
+                                  append: next,
+                                  delete: [],
+                                },
+                              )
+                              setProxyMergeDraft(merged)
+                              setProxyAdvancedDraft(
+                                proxyBucketsToAdvancedYaml({
+                                  prepend: proxyRows,
+                                  append: next,
+                                  delete: [],
+                                }),
+                              )
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label="Remove"
-                          onClick={() => {
-                            const next = proxyAppendRows.filter(
-                              (x) => x.id !== r.id,
-                            )
-                            setProxyAppendRows(next)
-                            const merged = applyProxyBucketsToMerge(
-                              proxyMergeDraft,
-                              { prepend: proxyRows, append: next, delete: [] },
-                            )
-                            setProxyMergeDraft(merged)
-                            setProxyAdvancedDraft(
-                              proxyBucketsToAdvancedYaml({
-                                prepend: proxyRows,
-                                append: next,
-                                delete: [],
-                              }),
-                            )
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
             <div className="modalFooter">
               <button
@@ -3801,7 +3890,9 @@ function App() {
           onClick={() => setProfileRulesModal(null)}
         >
           <div
-            className="modalCard modalCardWide yamlModalCard vergeModal"
+            className={`modalCard modalCardWide yamlModalCard vergeModal ${
+              rulesUiMode === 'advanced' ? 'modalCardFullscreen' : ''
+            }`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="rulesEdTitle"
@@ -3816,8 +3907,17 @@ function App() {
                   type="button"
                   className={`btn vergeToggle ${rulesUiMode === 'visual' ? 'primary' : 'ghost'}`}
                   onClick={() => {
+                    if (rulesUiMode === 'advanced' && rulesAdvancedYamlErr) {
+                      setError(
+                        'Fix rules advanced YAML before switching to Visual mode.',
+                      )
+                      return
+                    }
                     setRulesUiMode('visual')
-                    const buckets = rulesBucketsFromMerge(rulesMergeDraft)
+                    const buckets =
+                      rulesUiMode === 'advanced'
+                        ? rulesBucketsFromAdvancedYaml(rulesAdvancedDraft)
+                        : rulesBucketsFromMerge(rulesMergeDraft)
                     setRuleRows(buckets.prepend)
                     setRuleAppendRows(buckets.append)
                   }}
@@ -3833,7 +3933,11 @@ function App() {
                 </button>
               </div>
             </div>
-            <div className="vergeSplit">
+            <div
+              className={`vergeSplit ${
+                rulesUiMode === 'advanced' ? 'vergeSplitAdvanced' : ''
+              }`}
+            >
               <div className="vergePane">
                 {rulesUiMode === 'visual' ? (
                   <>
@@ -3939,11 +4043,11 @@ function App() {
                 ) : (
                   <label className="field modalField">
                     <span className="fieldLab">Advanced YAML</span>
-                    <textarea
-                      className="input modalTextarea vergePaneYaml"
-                      spellCheck={false}
+                    <MonacoYamlEditor
+                      className="vergePaneYaml modalMonacoWrap"
                       value={rulesAdvancedDraft}
-                      onChange={(e) => setRulesAdvancedDraft(e.target.value)}
+                      onChange={setRulesAdvancedDraft}
+                      height="52vh"
                     />
                     {rulesAdvancedYamlErr ? (
                       <span
@@ -3956,94 +4060,96 @@ function App() {
                   </label>
                 )}
               </div>
-              <div className="vergePane vergePaneList">
-                <p className="eyebrow">prepend.rules</p>
-                <div className="vergeScrollList">
-                  {ruleRows.length === 0 ? (
-                    <p className="muted small">No custom prepend rules.</p>
-                  ) : (
-                    ruleRows.map((r) => (
-                      <div key={r.id} className="vergeCard">
-                        <div>
-                          <div className="vergeCardTitle">{r.ruleType}</div>
-                          <div className="muted small">{r.content}</div>
-                          <div className="muted small">→ {r.policy}</div>
+              {rulesUiMode === 'visual' ? (
+                <div className="vergePane vergePaneList">
+                  <p className="eyebrow">prepend.rules</p>
+                  <div className="vergeScrollList">
+                    {ruleRows.length === 0 ? (
+                      <p className="muted small">No custom prepend rules.</p>
+                    ) : (
+                      ruleRows.map((r) => (
+                        <div key={r.id} className="vergeCard">
+                          <div>
+                            <div className="vergeCardTitle">{r.ruleType}</div>
+                            <div className="muted small">{r.content}</div>
+                            <div className="muted small">→ {r.policy}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn ghost vergeTrash"
+                            aria-label="Remove"
+                            onClick={() => {
+                              const next = ruleRows.filter((x) => x.id !== r.id)
+                              setRuleRows(next)
+                              setRulesMergeDraft((prev) =>
+                                applyRulesBucketsToMerge(prev, {
+                                  prepend: next,
+                                  append: ruleAppendRows,
+                                  delete: [],
+                                }),
+                              )
+                              setRulesAdvancedDraft(
+                                rulesBucketsToAdvancedYaml({
+                                  prepend: next,
+                                  append: ruleAppendRows,
+                                  delete: [],
+                                }),
+                              )
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label="Remove"
-                          onClick={() => {
-                            const next = ruleRows.filter((x) => x.id !== r.id)
-                            setRuleRows(next)
-                            setRulesMergeDraft((prev) =>
-                              applyRulesBucketsToMerge(prev, {
-                                prepend: next,
-                                append: ruleAppendRows,
-                                delete: [],
-                              }),
-                            )
-                            setRulesAdvancedDraft(
-                              rulesBucketsToAdvancedYaml({
-                                prepend: next,
-                                append: ruleAppendRows,
-                                delete: [],
-                              }),
-                            )
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <p className="eyebrow" style={{ marginTop: 10 }}>
-                  append.rules
-                </p>
-                <div className="vergeScrollList">
-                  {ruleAppendRows.length === 0 ? (
-                    <p className="muted small">No custom append rules.</p>
-                  ) : (
-                    ruleAppendRows.map((r) => (
-                      <div key={r.id} className="vergeCard">
-                        <div>
-                          <div className="vergeCardTitle">{r.ruleType}</div>
-                          <div className="muted small">{r.content}</div>
-                          <div className="muted small">→ {r.policy}</div>
+                      ))
+                    )}
+                  </div>
+                  <p className="eyebrow" style={{ marginTop: 10 }}>
+                    append.rules
+                  </p>
+                  <div className="vergeScrollList">
+                    {ruleAppendRows.length === 0 ? (
+                      <p className="muted small">No custom append rules.</p>
+                    ) : (
+                      ruleAppendRows.map((r) => (
+                        <div key={r.id} className="vergeCard">
+                          <div>
+                            <div className="vergeCardTitle">{r.ruleType}</div>
+                            <div className="muted small">{r.content}</div>
+                            <div className="muted small">→ {r.policy}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn ghost vergeTrash"
+                            aria-label="Remove"
+                            onClick={() => {
+                              const next = ruleAppendRows.filter(
+                                (x) => x.id !== r.id,
+                              )
+                              setRuleAppendRows(next)
+                              setRulesMergeDraft((prev) =>
+                                applyRulesBucketsToMerge(prev, {
+                                  prepend: ruleRows,
+                                  append: next,
+                                  delete: [],
+                                }),
+                              )
+                              setRulesAdvancedDraft(
+                                rulesBucketsToAdvancedYaml({
+                                  prepend: ruleRows,
+                                  append: next,
+                                  delete: [],
+                                }),
+                              )
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label="Remove"
-                          onClick={() => {
-                            const next = ruleAppendRows.filter(
-                              (x) => x.id !== r.id,
-                            )
-                            setRuleAppendRows(next)
-                            setRulesMergeDraft((prev) =>
-                              applyRulesBucketsToMerge(prev, {
-                                prepend: ruleRows,
-                                append: next,
-                                delete: [],
-                              }),
-                            )
-                            setRulesAdvancedDraft(
-                              rulesBucketsToAdvancedYaml({
-                                prepend: ruleRows,
-                                append: next,
-                                delete: [],
-                              }),
-                            )
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
             <div className="modalFooter">
               <button

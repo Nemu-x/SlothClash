@@ -1152,7 +1152,7 @@
 }
 
 .homeStatusGrid .statusRowNode .selectModern.selectInline.selectCompact {
-  padding: 2px 8px 2px 6px;
+  padding: 2px 28px 2px 6px;
   font-size: 11px;
   line-height: 1.2;
   min-height: 26px;
@@ -2034,8 +2034,17 @@
   border: 1px solid var(--hairline-strong);
   background: rgba(12, 11, 10, 0.75);
   color: #f2efe8;
-  padding: 10px 12px;
+  padding: 10px 34px 10px 12px;
   font-size: 14px;
+  font-family:
+    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    sans-serif;
+}
+
+.selectModern option {
+  font-family:
+    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    sans-serif;
 }
 
 .modalOverlay {
@@ -2068,6 +2077,13 @@
   max-height: min(90vh, 720px);
   display: flex;
   flex-direction: column;
+}
+
+.modalCardFullscreen {
+  width: min(96vw, 1400px);
+  max-height: 96vh;
+  min-height: 88vh;
+  overflow: auto;
 }
 
 .yamlModalBlurb {
@@ -2159,6 +2175,35 @@
   max-height: 320px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.modalMonacoWrap {
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.modalMonacoWrap .monaco-editor,
+.modalMonacoWrap .overflow-guard {
+  border-radius: 12px;
+}
+
+/* Monaco uses div/contenteditable internals (not plain textarea); allow selection/focus in shell. */
+.monacoEditorHost,
+.monacoEditorHost * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.vergeSplitAdvanced {
+  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 1fr);
+}
+
+@media (max-width: 1100px) {
+  .vergeSplitAdvanced {
+    grid-template-columns: 1fr;
+  }
 }
 
 .vergeCard {

@@ -226,12 +226,46 @@ export type RuleRow = {
   ruleType: string
   content: string
   policy: string
+  options?: string[]
 }
 
 export type RuleBuckets = {
   prepend: RuleRow[]
   append: RuleRow[]
   delete: string[]
+}
+
+function splitRuleCSV(rule: string): string[] {
+  const src = String(rule ?? '').trim()
+  if (!src) return []
+  const out: string[] = []
+  let depth = 0
+  let cur = ''
+  for (const ch of src) {
+    if (ch === '(') {
+      depth++
+      cur += ch
+      continue
+    }
+    if (ch === ')') {
+      if (depth > 0) depth--
+      cur += ch
+      continue
+    }
+    if (ch === ',' && depth === 0) {
+      out.push(cur.trim())
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  if (cur.trim()) out.push(cur.trim())
+  return out
+}
+
+function isRuleOptionToken(token: string): boolean {
+  const t = token.trim().toLowerCase()
+  return t === 'no-resolve' || t.startsWith('src=') || t.startsWith('dst=')
 }
 
 function ruleRowsFromAny(raw: unknown): RuleRow[] {
@@ -242,19 +276,46 @@ function ruleRowsFromAny(raw: unknown): RuleRow[] {
     if (typeof line !== 'string') continue
     const s = line.trim()
     if (!s) continue
-    const parts = s.split(',').map((x) => x.trim())
+    const parts = splitRuleCSV(s)
+    const type = parts[0] ?? 'DOMAIN-SUFFIX'
+    let policy = 'DIRECT'
+    const options: string[] = []
+    let policyIdx = -1
+    for (let i = parts.length - 1; i >= 2; i--) {
+      const tok = parts[i] ?? ''
+      if (!tok) continue
+      if (isRuleOptionToken(tok)) {
+        options.unshift(tok)
+        continue
+      }
+      policy = tok
+      policyIdx = i
+      break
+    }
+    if (parts.length === 2) {
+      policy = parts[1] ?? 'DIRECT'
+      policyIdx = 1
+    }
+    const contentEnd = policyIdx > 1 ? policyIdx : parts.length
+    const content =
+      contentEnd > 1 ? parts.slice(1, contentEnd).join(',') : (parts[1] ?? '')
     out.push({
       id: `r-${out.length}-${s.slice(0, 24)}`,
-      ruleType: parts[0] ?? 'DOMAIN-SUFFIX',
-      content: parts[1] ?? '',
-      policy: parts[2] ?? 'DIRECT',
+      ruleType: type,
+      content,
+      policy,
+      options,
     })
   }
   return out
 }
 
 function rowToRuleLine(r: RuleRow): string {
-  return `${r.ruleType.trim()},${r.content.trim()},${r.policy.trim()}`
+  const head = `${r.ruleType.trim()},${r.content.trim()},${r.policy.trim()}`
+  const options = Array.isArray(r.options)
+    ? r.options.map((x) => String(x).trim()).filter(Boolean)
+    : []
+  return options.length ? `${head},${options.join(',')}` : head
 }
 
 export function rulesBucketsFromMerge(raw: string): RuleBuckets {

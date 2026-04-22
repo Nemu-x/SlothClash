@@ -82,10 +82,13 @@ Section "${INFO_PRODUCTNAME}" SecApp
     ; Graceful-ish close handling: Windows may keep the exe locked briefly even after taskkill.
     StrCpy $2 0
   KillAndWaitLoop:
-    nsExec::ExecToLog 'taskkill /F /T /IM "Sloth Clash.exe"'
-    nsExec::ExecToLog 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
-    nsExec::ExecToLog 'taskkill /F /T /IM "SlothClashDesktop.exe"'
-    nsExec::ExecToLog 'taskkill /F /T /IM "sloth-clash-desktop.exe"'
+    nsExec::ExecToStack 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
+    Pop $0
+    Pop $1
+    StrCmp $0 "0" +2 0
+      DetailPrint 'Closed process: ${PRODUCT_EXECUTABLE}'
+    StrCmp $0 "128" +2 0
+      DetailPrint 'Process not found to close: ${PRODUCT_EXECUTABLE}'
     Sleep 650
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq Sloth Clash.exe" | find /I "Sloth Clash.exe"'
     Pop $0

@@ -28,6 +28,8 @@ ManifestDPIAware true
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
+!define MUI_FINISHPAGE_RUN_TEXT "$(SL_LAUNCH_APP)"
 !define MUI_ABORTWARNING
 
 # Remember installer language; LangDLL picks a sensible default from the OS UI language.
@@ -60,6 +62,9 @@ LangString SL_UNINSTALL_CORE ${LANG_SIMPCHINESE} "删除应用程序文件"
 LangString SL_UNINSTALL_DATA ${LANG_ENGLISH} "Remove user data (profiles, runtime, logs)"
 LangString SL_UNINSTALL_DATA ${LANG_RUSSIAN} "Удалить пользовательские данные (профили, runtime, логи)"
 LangString SL_UNINSTALL_DATA ${LANG_SIMPCHINESE} "删除用户数据（配置、运行时、日志）"
+LangString SL_LAUNCH_APP ${LANG_ENGLISH} "Launch SlothClash"
+LangString SL_LAUNCH_APP ${LANG_RUSSIAN} "Запустить SlothClash"
+LangString SL_LAUNCH_APP ${LANG_SIMPCHINESE} "启动 SlothClash"
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe"
@@ -86,9 +91,9 @@ Section "${INFO_PRODUCTNAME}" SecApp
     Pop $0
     Pop $1
     StrCmp $0 "0" +2 0
-      DetailPrint 'Closed process: ${PRODUCT_EXECUTABLE}'
+      DetailPrint 'Process found - closing the app'
     StrCmp $0 "128" +2 0
-      DetailPrint 'Process not found to close: ${PRODUCT_EXECUTABLE}'
+      DetailPrint 'Process not found'
     Sleep 650
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq Sloth Clash.exe" | find /I "Sloth Clash.exe"'
     Pop $0

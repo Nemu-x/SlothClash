@@ -1,4 +1,5 @@
 import Editor from '@monaco-editor/react'
+import type { ComponentType } from 'react'
 
 type MonacoYamlEditorProps = {
   value: string
@@ -13,14 +14,15 @@ export function MonacoYamlEditor({
   className,
   height = '46vh',
 }: MonacoYamlEditorProps) {
+  const MonacoEditor = Editor as unknown as ComponentType<any>
   const wrapClass = `${className ? `${className} ` : ''}allowSelect monacoEditorHost`
   return (
     <div className={wrapClass}>
-      <Editor
+      <MonacoEditor
         defaultLanguage="yaml"
         language="yaml"
         value={value}
-        onChange={(next) => onChange(String(next ?? ''))}
+        onChange={(next: string | undefined) => onChange(String(next ?? ''))}
         options={{
           minimap: { enabled: false },
           fontSize: 13,
@@ -33,7 +35,7 @@ export function MonacoYamlEditor({
           renderWhitespace: 'selection',
           mouseStyle: 'text',
         }}
-        onMount={(editor, monaco) => {
+        onMount={(editor: any, monaco: any) => {
           const dom = editor.getDomNode()
           if (dom) {
             const ensureFocus = () => {

@@ -1,3 +1,31 @@
+## Sloth Clash desktop `0.2.1` — 2026-04-22
+
+### English
+
+- Fixed process-close handling in the Windows installer (target executable + neutral "not found" log wording).
+- Added Monaco editor for advanced YAML editing (merge/config/rules/proxy groups), with improved clipboard/focus behavior.
+- Improved subscription import/connect responsiveness by reducing blocking probe steps and avoiding extra warmup contention.
+- Added stronger config pipeline validation and normalization (`rules -> policy` checks, escaped Unicode normalization for readable emojis).
+- Persisted traffic mode (`proxy` / `tun`) across restarts.
+
+### Русский
+
+- Исправлена обработка закрытия процессов в Windows-инсталляторе (целевой exe + нейтральные сообщения "process not found").
+- Добавлен Monaco для advanced YAML-редактирования (merge/config/rules/proxy groups), улучшено поведение буфера обмена и фокуса.
+- Ускорены импорт подписки и первичное подключение за счет уменьшения блокирующих probe-шагов и лишних фоновых прогревов.
+- Усилена валидация и нормализация config-pipeline (`rules -> policy`, нормализация escaped Unicode для читаемых emoji).
+- Добавлено сохранение traffic mode (`proxy` / `tun`) между перезапусками.
+
+### 中文
+
+- 修复 Windows 安装器的进程关闭逻辑（目标可执行文件 + 中性“未找到进程”日志文案）。
+- 为高级 YAML 编辑（merge/config/rules/proxy groups）接入 Monaco，并改进剪贴板与焦点行为。
+- 通过减少阻塞式探测与不必要预热竞争，提升订阅导入与首次连接响应速度。
+- 加强配置管线校验与规范化（`rules -> policy` 校验、escaped Unicode 规范化以显示可读 emoji）。
+- 持久化 `traffic mode`（`proxy` / `tun`），重启后保持上次状态。
+
+---
+
 ## Sloth Clash desktop `0.1.0` — 2026-04-19
 
 ### English

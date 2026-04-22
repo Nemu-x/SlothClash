@@ -10,9 +10,11 @@ import (
 const slothProfilesFile = "profiles.json"
 
 type profilesPersisted struct {
-	ActiveProfileID string    `json:"activeProfileId"`
-	Profiles        []Profile `json:"profiles"`
-	Traffic         string    `json:"traffic,omitempty"`
+	ActiveProfileID   string    `json:"activeProfileId"`
+	Profiles          []Profile `json:"profiles"`
+	Traffic           string    `json:"traffic,omitempty"`
+	Mode              string    `json:"mode,omitempty"`
+	LastNonDirectMode string    `json:"lastNonDirectMode,omitempty"`
 }
 
 func profilesStorePath() (string, error) {
@@ -51,6 +53,17 @@ func (a *App) loadProfilesFromDisk() {
 	case "proxy":
 		a.state.Traffic = "proxy"
 	}
+	switch strings.ToLower(strings.TrimSpace(disk.Mode)) {
+	case "rule", "global", "direct":
+		a.state.Mode.Current = strings.ToLower(strings.TrimSpace(disk.Mode))
+	}
+	switch strings.ToLower(strings.TrimSpace(disk.LastNonDirectMode)) {
+	case "rule", "global":
+		a.state.Mode.LastNonDirectMode = strings.ToLower(strings.TrimSpace(disk.LastNonDirectMode))
+	}
+	if a.state.Mode.Current == "direct" && strings.TrimSpace(a.state.Mode.LastNonDirectMode) == "" {
+		a.state.Mode.LastNonDirectMode = "rule"
+	}
 }
 
 // persistProfilesLocked writes profiles.json. Caller must hold a.mu (write lock).
@@ -67,9 +80,11 @@ func (a *App) persistProfilesLocked() error {
 		return err
 	}
 	disk := profilesPersisted{
-		ActiveProfileID: a.state.Profile.ActiveProfileID,
-		Profiles:        a.profiles,
-		Traffic:         a.state.Traffic,
+		ActiveProfileID:   a.state.Profile.ActiveProfileID,
+		Profiles:          a.profiles,
+		Traffic:           a.state.Traffic,
+		Mode:              a.state.Mode.Current,
+		LastNonDirectMode: a.state.Mode.LastNonDirectMode,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

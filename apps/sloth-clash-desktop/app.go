@@ -91,6 +91,7 @@ func NewApp(bundle embed.FS) *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	registerDarwinLifecycleApp(a)
 	installDockReopenHook()
 	a.loadProfilesFromDisk()
 	a.refreshServiceStatus()
@@ -112,6 +113,7 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) shutdown(ctx context.Context) {
 	_ = ctx
+	unregisterDarwinLifecycleApp(a)
 	a.emitStateMu.Lock()
 	if a.emitStateTimer != nil {
 		a.emitStateTimer.Stop()
@@ -735,6 +737,9 @@ func (a *App) SetMode(mode string) (AppState, error) {
 		}
 	}
 	a.state.UpdatedAt = time.Now().Unix()
+	if err := a.persistProfilesLocked(); err != nil {
+		return a.state, err
+	}
 	return a.state, nil
 }
 

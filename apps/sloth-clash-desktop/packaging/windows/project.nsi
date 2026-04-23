@@ -30,6 +30,8 @@ ManifestDPIAware true
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
 !define MUI_FINISHPAGE_RUN_TEXT "$(SL_LAUNCH_APP)"
+!define MUI_FINISHPAGE_RUN_NOTCHECKED
+!define MUI_FINISHPAGE_RUN_FUNCTION LaunchAppAsShellUser
 !define MUI_ABORTWARNING
 
 # Remember installer language; LangDLL picks a sensible default from the OS UI language.
@@ -72,12 +74,20 @@ InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
 ShowInstDetails show
 
 Function .onInit
+  SetShellVarContext current
   !insertmacro MUI_LANGDLL_DISPLAY
   !insertmacro wails.checkArchitecture
 FunctionEnd
 
+Function LaunchAppAsShellUser
+  ; Start via Explorer so first launch uses the interactive shell user context
+  ; instead of the elevated installer token account.
+  Exec '"$WINDIR\explorer.exe" "$INSTDIR\${PRODUCT_EXECUTABLE}"'
+FunctionEnd
+
 Section "${INFO_PRODUCTNAME}" SecApp
     SectionIn RO
+    SetShellVarContext current
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
@@ -132,6 +142,7 @@ SectionEnd
 
 Section "un.$(SL_UNINSTALL_CORE)" SecUnApp
     SectionIn RO
+    SetShellVarContext current
     !insertmacro wails.setShellContext
 
     RMDir /r $INSTDIR

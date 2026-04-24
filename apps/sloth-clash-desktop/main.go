@@ -23,8 +23,10 @@ func main() {
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:            "Sloth Clash",
-		Width:            1024,
-		Height:           768,
+		Width:            1200,
+		Height:           820,
+		MinWidth:         960,
+		MinHeight:        640,
 		Frameless:        true,
 		BackgroundColour: &options.RGBA{R: 18, G: 17, B: 16, A: 1},
 		AssetServer: &assetserver.Options{

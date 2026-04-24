@@ -37,6 +37,9 @@ jobs:
       - name: Desktop resources
         run: pnpm run desktop:resources
 
+      - name: Verify macOS tray mono icon (go:embed)
+        run: test -f apps/sloth-clash-desktop/trayicons/mono.png
+
       - name: Wails build (darwin/amd64)
         run: pnpm run desktop:build:darwin:amd64
 

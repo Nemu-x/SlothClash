@@ -12,6 +12,8 @@ import (
 )
 
 //go:embed build/windows/icon.ico
+// Multi-size .ico from build/appicon.png (see scripts/generate-windows-icon.mjs, pnpm icons:windows).
+// trayicons/sloth.png is for macOS / future Wails TrayMenu, not read here.
 var windowsTrayIcon []byte
 
 var (

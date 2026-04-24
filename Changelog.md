@@ -1,4 +1,4 @@
-## Sloth Clash desktop `0.3.0` — 2026-04-22
+## Sloth Clash desktop `0.3.0` — 2026-04-25
 
 ### English
 
@@ -30,6 +30,7 @@
 - Settings page layout tightened: the Info / updates card now sits inside the two-column `settingsGridCompact` next to Data & Diagnostics instead of spanning a full third row underneath it, so the panel fits without scrolling at 1200×820.
 - Diagnostics tail reader now falls back to the newest rotated `service_*.log` when `service_latest.log` is missing (flexi_logger leaves only timestamped files if the core is killed mid-rotation), so Export Diagnostics Bundle stops returning "no runtime log file found" for sessions where rotation happened. The `ipc start finished` debug log entry also records the exact `logDir` the privileged service was told to write to — so the next "service logs missing" report is diagnosable from a single debug file.
 - Added support for parsing `mieru://` and `mierus://` subscription URIs (protocol: https://github.com/enfein/mieru). The parser covers the full Mihomo `mieru` proxy field surface — `server`, `port` (+ `port-range`), `username`, `password`, `transport`, `udp`, `handshake-mode`, `multiplexing` — so pasting a `mieru` link into the Proxies import dialog produces a working proxy entry without manual YAML editing.
+- macOS: native menu bar tray with embedded `trayicons/mono.png`, CGO defaults for Wails builds, Dock **Quit** parity when close-to-tray is enabled, richer tray menu (navigation + modes + traffic), and CI asserts `mono.png` before packaging. Windows release workflow asserts `build/windows/icon.ico` and synced `trayicons/sloth.png` after `desktop:resources`.
 
 ### Русский
 
@@ -61,6 +62,7 @@
 - Компоновка экрана Settings поджата: карточка Info / updates теперь встроена внутрь двухколоночного `settingsGridCompact` рядом с Data & Diagnostics, а не занимает целую отдельную третью строку под ним, — панель помещается без скролла на 1200×820.
 - Чтение хвоста логов теперь откатывается к самому свежему ротированному `service_*.log` если `service_latest.log` отсутствует (flexi_logger оставляет только timestamped-файлы, если ядро убили посреди ротации), так что Export Diagnostics Bundle перестаёт возвращать "no runtime log file found" для сессий, в которых ротация произошла. В debug-лог на старте ядра теперь пишется точный `logDir`, переданный привилегированному сервису, — при очередной жалобе "сервисных логов нет" это видно в debug-файле.
 - Добавлен парсинг ссылок `mieru://` и `mierus://` (протокол: https://github.com/enfein/mieru). Парсер покрывает весь набор полей `mieru`-прокси Mihomo — `server`, `port` (+ `port-range`), `username`, `password`, `transport`, `udp`, `handshake-mode`, `multiplexing`, — так что вставка `mieru`-ссылки в диалог импорта Proxies даёт рабочую запись прокси без ручной правки YAML.
+- macOS: нативный трей в строке меню с вшитым `trayicons/mono.png`, дефолтный CGO для сборок Wails, корректный **Quit** из Dock при режиме «закрыть в трей», расширенное меню трея (навигация + режимы + трафик), в CI проверяется наличие `mono.png` перед упаковкой. В Windows workflow после `desktop:resources` проверяются `build/windows/icon.ico` и синхронизированный `trayicons/sloth.png`.
 
 ### 中文
 
@@ -92,6 +94,7 @@
 - Settings 页布局收紧：Info / 更新卡片现在嵌入到两列的 `settingsGridCompact` 中，与 Data & Diagnostics 并列，而不是在其下方独占整整第三行 —— 在 1200×820 下无需滚动即可完整显示。
 - 日志尾部读取现在会在 `service_latest.log` 缺失时回退到最新的已轮转 `service_*.log`（如果核心在轮转中被杀，flexi_logger 只会留下时间戳文件），因此经历过轮转的会话不会再让 Export Diagnostics Bundle 只返回 "no runtime log file found"。核心启动时的 debug 日志现在也会记录传给特权服务的实际 `logDir` —— 下次再有"服务日志缺失"的反馈，从单个 debug 文件即可定位。
 - 新增对 `mieru://` 与 `mierus://` 订阅 URI 的解析（协议：https://github.com/enfein/mieru）。解析器覆盖 Mihomo `mieru` 代理的完整字段面 —— `server`、`port`（含 `port-range`）、`username`、`password`、`transport`、`udp`、`handshake-mode`、`multiplexing`，因此把 `mieru` 链接粘贴到 Proxies 导入框就能直接生成可用的代理条目，无需手动改 YAML。
+- macOS：原生菜单栏托盘，嵌入 `trayicons/mono.png`；Wails 构建默认启用 CGO；关闭到托盘时 Dock **退出**行为一致；托盘菜单扩展（导航 / 模式 / 流量）；CI 在打包前检查 `mono.png`。Windows 发布流程在 `desktop:resources` 后校验 `build/windows/icon.ico` 与同步的 `trayicons/sloth.png`。
 
 ---
 

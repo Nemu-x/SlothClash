@@ -6,6 +6,7 @@ package main
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
 
+void SlothTrayRegisterMonoPNG(const unsigned char *p, int n);
 void SlothTrayStart(void);
 void SlothTrayStop(void);
 void slothTrayDispatch(int op);
@@ -16,8 +17,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
+	"unsafe"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -52,6 +55,15 @@ func startAppTray(a *App) {
 		wailsrt.LogInfo(a.ctx, "[tray] start requested")
 	}
 	writeTrayLog("[tray] start requested")
+	if len(darwinTrayMonoPNG) > 0 {
+		C.SlothTrayRegisterMonoPNG(
+			(*C.uchar)(unsafe.Pointer(&darwinTrayMonoPNG[0])),
+			C.int(len(darwinTrayMonoPNG)),
+		)
+		runtime.KeepAlive(darwinTrayMonoPNG)
+	} else {
+		writeTrayLog("[tray] warn: trayicons/mono.png missing at compile time (embed empty)")
+	}
 	C.SlothTrayStart()
 }
 

@@ -34,14 +34,34 @@ extern void slothTrayDispatch(int op);
 - (void)onTrafficTun:(id)sender { (void)sender; slothTrayDispatch(21); }
 @end
 
+static NSData *gMonoPNG = nil;
 static NSStatusItem *gStatusItem = nil;
 static SlothTrayHandler *gHandler = nil;
 static NSMenu *gMenu = nil;
 static BOOL gTrayWanted = NO;
 static NSUInteger gTrayGeneration = 0;
 
-/// Prefer bundled tray icon (sync-desktop-packaging mirrors appicon → trayicons/sloth.png).
+void SlothTrayRegisterMonoPNG(const unsigned char *bytes, int length) {
+    if (gMonoPNG != nil) {
+        [gMonoPNG release];
+        gMonoPNG = nil;
+    }
+    if (bytes == NULL || length <= 0) {
+        return;
+    }
+    gMonoPNG = [[NSData dataWithBytes:bytes length:(NSUInteger)length] retain];
+}
+
+/// Prefer compile-embedded mono.png; then bundle trayicons (Wails); then app icon / SF Symbols.
 static NSImage *SlothTrayTemplateImage(void) {
+    if (gMonoPNG != nil && [gMonoPNG length] > 0) {
+        NSImage *img = [[NSImage alloc] initWithData:gMonoPNG];
+        if (img != nil && img.valid) {
+            [img setTemplate:YES];
+            return img;
+        }
+    }
+
     NSBundle *bundle = [NSBundle mainBundle];
     NSString *slothPng = [bundle pathForResource:@"sloth" ofType:@"png" inDirectory:@"trayicons"];
     if (slothPng != nil) {
@@ -102,19 +122,49 @@ static NSImage *SlothTrayTemplateImage(void) {
     return nil;
 }
 
+/// Embedded mono.png often has generous transparent margins; scale its max side larger so the
+/// subject reads closer to other menu bar icons. Other sources stay closer to system norms.
+static NSSize SlothTrayNormalisedIconSize(NSImage *icon, BOOL embeddedMono) {
+    NSStatusBar *bar = [NSStatusBar systemStatusBar];
+    CGFloat target = (bar != nil && bar.thickness > 1.0) ? (bar.thickness - 2.0) : 22.0;
+
+    if (embeddedMono) {
+        if (target < 30.0) {
+            target = 30.0;
+        }
+        if (target > 34.0) {
+            target = 34.0;
+        }
+    } else {
+        if (target < 18.0) {
+            target = 18.0;
+        }
+        if (target > 24.0) {
+            target = 24.0;
+        }
+    }
+
+    NSSize s = icon.size;
+    if (s.width < 1.0 || s.height < 1.0) {
+        return NSMakeSize(target, target);
+    }
+    CGFloat m = MAX(s.width, s.height);
+    CGFloat scale = target / m;
+    return NSMakeSize(round(s.width * scale), round(s.height * scale));
+}
+
 static void SlothTrayCreateOnMain(NSUInteger generation) {
     @autoreleasepool {
         if (!gTrayWanted || generation != gTrayGeneration) return;
         if (gStatusItem != nil) return;
         gHandler = [[SlothTrayHandler new] retain];
-        gStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
+        BOOL useEmbeddedMono = (gMonoPNG != nil && [gMonoPNG length] > 0);
+        // Variable length gives room for a larger template icon (mono art with padding).
+        gStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
 
         NSImage *icon = SlothTrayTemplateImage();
         if (icon != nil) {
-            NSSize s = icon.size;
-            if (s.width <= 1 || s.height <= 1 || s.width > 22 || s.height > 22) {
-                s = NSMakeSize(18, 18);
-            }
+            NSSize s = SlothTrayNormalisedIconSize(icon, useEmbeddedMono);
             [icon setSize:s];
             [icon setTemplate:YES];
             gStatusItem.button.image = icon;
@@ -231,6 +281,10 @@ void SlothTrayStop(void) {
         gMenu = nil;
         [gHandler release];
         gHandler = nil;
+        if (gMonoPNG != nil) {
+            [gMonoPNG release];
+            gMonoPNG = nil;
+        }
         slothTrayOnStopped();
     };
     if ([NSThread isMainThread]) {

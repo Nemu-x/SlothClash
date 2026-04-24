@@ -45,6 +45,21 @@ jobs:
       - name: Desktop resources + icons + NSIS template
         run: pnpm run desktop:resources
 
+      - name: Verify Windows tray icon (go:embed build/windows/icon.ico)
+        shell: pwsh
+        run: |
+          $ico = "apps/sloth-clash-desktop/build/windows/icon.ico"
+          if (-not (Test-Path $ico)) {
+            throw "Missing $ico — ensure copy:desktop-appicon + icons:windows ran (desktop:resources)."
+          }
+          if ((Get-Item $ico).Length -lt 64) {
+            throw "$ico exists but is suspiciously small."
+          }
+          $sloth = "apps/sloth-clash-desktop/trayicons/sloth.png"
+          if (-not (Test-Path $sloth)) {
+            throw "Missing $sloth — sync-desktop-packaging should copy appicon after prebuild."
+          }
+
       - name: Wails build (windows/amd64 + NSIS)
         run: pnpm run desktop:build:windows
 
@@ -83,6 +98,9 @@ jobs:
 
       - name: Desktop resources
         run: pnpm run desktop:resources
+
+      - name: Verify macOS tray mono icon (go:embed)
+        run: test -f apps/sloth-clash-desktop/trayicons/mono.png
 
       - name: Wails build (darwin/arm64)
         run: pnpm run desktop:build:darwin:arm64

@@ -4,7 +4,8 @@
  *
  * - NSIS: multilingual project.nsi for Windows installer strings + language picker.
  * - trayicons: Wails reads tray bitmaps from `<app>/trayicons/*.png` at build time when you use TrayMenu.
- *   We mirror build/appicon.png → trayicons/sloth.png so a future tray menu can use Image: "sloth".
+ *   We mirror build/appicon.png → trayicons/sloth.png (gitignored). The native macOS tray embeds
+ *   tracked trayicons/mono.png via go:embed (see darwin_tray_mono_embed.go).
  */
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'

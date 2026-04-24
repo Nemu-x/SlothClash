@@ -40,6 +40,12 @@ type App struct {
 	coreCancel          context.CancelFunc
 	coreStopIntentional bool
 	coreProcToken       uint64
+	// coreActiveProfileID is the profile the running core was started for.
+	// In the reload model (v0.3+) Mihomo keeps running across Connect/Disconnect;
+	// we only tear it down when the profile itself changes (ActivateProfile with a
+	// different ID) or on app shutdown.
+	coreActiveProfileID string
+	coreLifecycleMu     sync.Mutex // serializes ensureCoreForProfile across concurrent callers
 	systemProxyLeased   bool // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
 	systemProxySnapshot map[string]SystemProxyServiceSnapshot
 	tunTakenOver        []tunServiceTakeover
@@ -93,6 +99,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	registerDarwinLifecycleApp(a)
 	installDockReopenHook()
+	loadDesktopPrefs()
 	a.loadProfilesFromDisk()
 	a.refreshServiceStatus()
 	if trayRuntimeEnabled() {
@@ -101,6 +108,12 @@ func (a *App) startup(ctx context.Context) {
 	go a.startProfileAutoUpdateLoop(ctx)
 	go a.updateCheckLoop(ctx)
 	a.emitAppStateChanged()
+	// Warm the core in the background for the active profile (cold start with
+	// tun.enable: false) so the first Connect only has to push a single
+	// PUT /configs?force=true reload with the desired TUN state instead of
+	// paying the 2-5s cold-start cost of spawning Mihomo. Failures here are
+	// non-fatal — Connect will retry the full ensureCoreForProfile path.
+	go a.bootActiveProfileCoreInBackground()
 	// Deep link may arrive before the webview attaches EventsOn — short delay on cold start only.
 	args := os.Args[1:]
 	if len(args) > 0 && findSlothclashInstallConfigURL(args) != "" {
@@ -108,6 +121,44 @@ func (a *App) startup(ctx context.Context) {
 			time.Sleep(450 * time.Millisecond)
 			a.tryInstallConfigFromArgs(args)
 		}()
+	}
+}
+
+// bootActiveProfileCoreInBackground starts Mihomo for the currently active
+// profile if one is present. Any error is logged to the debug channel but not
+// surfaced to the UI — the user still sees "disconnected" and the core will
+// be started on demand when they click Connect.
+func (a *App) bootActiveProfileCoreInBackground() {
+	a.mu.RLock()
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	var profile Profile
+	found := false
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			profile = p
+			found = true
+			break
+		}
+	}
+	a.mu.RUnlock()
+	if !found {
+		return
+	}
+	// Boot cores with TUN disabled — the user has not clicked Connect yet.
+	// Connect() will bring TUN up via applyRuntimeConfig+PUT /configs force-reload
+	// (matches clash-verge-rev's init path: start_core with current verge state,
+	// then toggle_tun_mode goes through update_config → reload_config).
+	if err := a.ensureCoreForProfile(profile, 0, false); err != nil {
+		debugLog(
+			"startup",
+			"H1",
+			"app.go:bootActiveProfileCoreInBackground",
+			"background core boot failed (not fatal; Connect will retry)",
+			map[string]any{
+				"profileId": profile.ID,
+				"error":     err.Error(),
+			},
+		)
 	}
 }
 
@@ -124,6 +175,23 @@ func (a *App) shutdown(ctx context.Context) {
 	// lifecycle transitions that are not a full process exit; removing the status item
 	// makes the tray "flicker" away while the app is still running.
 	a.connectGen.Add(1)
+
+	// Before we tear down Mihomo, ask it to disable TUN via PATCH /configs.
+	// Without this step the process is killed while TUN is still bound, which
+	// on macOS can leave the utun adapter in an "on" zombie state that the UI
+	// cannot reliably clean up next launch. On Windows the same PATCH lets
+	// wintun unwind cleanly instead of relying on abrupt process teardown.
+	a.mu.RLock()
+	listen := a.effectiveCoreEndpointLocked()
+	secret := a.coreSecret
+	shouldDrainTun := a.state.Connection.Status == "connected" && strings.TrimSpace(a.state.Traffic) == "tun"
+	a.mu.RUnlock()
+	if shouldDrainTun && strings.TrimSpace(listen) != "" {
+		dctx, dcancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = coreSetTunEnabledAt(dctx, listen, secret, false)
+		dcancel()
+	}
+
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.mu.Unlock()
@@ -136,8 +204,11 @@ func trayEnabled() bool {
 	if v := strings.TrimSpace(strings.ToLower(os.Getenv("SLOTH_ENABLE_EXPERIMENTAL_TRAY"))); v != "" {
 		return v == "1" || v == "true" || v == "yes"
 	}
-	// Default on for macOS when backend exists.
-	return runtime.GOOS == "darwin"
+	// Enabled by default on platforms where we ship a native tray backend
+	// (Windows via getlantern/systray + bundled .ico, macOS when built with
+	// the `slothtray` tag). The stub platforms return false from
+	// trayBackendAvailable().
+	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
 func trayRuntimeEnabled() bool {
@@ -155,6 +226,36 @@ func (a *App) SetCloseToTrayPreference(enabled bool) AppState {
 	out := a.state
 	a.mu.Unlock()
 	return out
+}
+
+// SetLaunchOnStartupPreference registers (or clears) the current binary in
+// the platform autostart store. On Windows this writes to
+// HKCU\Software\Microsoft\Windows\CurrentVersion\Run; on other platforms
+// the call returns an informative error. The toggle is persisted by the
+// OS itself, so the app does not need to mirror state on disk.
+func (a *App) SetLaunchOnStartupPreference(enabled bool) error {
+	return setLaunchOnStartup(enabled)
+}
+
+// GetLaunchOnStartupPreference reflects what the OS autostart store has
+// registered for the current executable. Returns false if the entry is
+// missing, points at a different binary, or the store is unreadable.
+func (a *App) GetLaunchOnStartupPreference() bool {
+	v, _ := getLaunchOnStartup()
+	return v
+}
+
+// StartedMinimized reports whether the current process was launched with
+// the --minimized flag (e.g. from the autostart Run key entry). The
+// frontend uses this to hide the window immediately on first render so
+// the user does not see a brief flash before settings are applied.
+func (a *App) StartedMinimized() bool {
+	for _, arg := range os.Args[1:] {
+		if strings.EqualFold(strings.TrimSpace(arg), "--minimized") {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) MarkQuitIntent() {
@@ -394,6 +495,18 @@ func (a *App) Connect() (AppState, error) {
 	a.state.Connection.LastWarning = ""
 	a.state.UpdatedAt = time.Now().Unix()
 	gen := a.connectGen.Add(1)
+	// #region agent log
+	debugLog(
+		"gen-"+strconv.FormatUint(gen, 10),
+		"H1",
+		"app.go:396",
+		"connect requested",
+		map[string]any{
+			"profileId": active.ID,
+			"status":    a.state.Connection.Status,
+		},
+	)
+	// #endregion
 	a.mu.Unlock()
 
 	go a.runConnectJob(active, gen)
@@ -402,15 +515,47 @@ func (a *App) Connect() (AppState, error) {
 }
 
 func (a *App) runConnectJob(active Profile, gen uint64) {
-	if err := a.startEmbeddedCore(active, gen); err != nil {
+	// Reload-model Connect (aligned with clash-verge-rev CoreManager::init +
+	// update_config):
+	//   1. Compute effective TUN intent from user state. This is the single
+	//      source of truth inlined into YAML tun.enable, so the running core
+	//      sees a stable value on every subsequent hot reload.
+	//   2. Ensure a Mihomo is running for this profile. If a cold start is
+	//      needed, startEmbeddedCore writes YAML with enableTun baked in so
+	//      the process comes up in the final state without a follow-up PATCH.
+	//   3. If the core was already up, applyRuntimeConfig regenerates YAML
+	//      and pushes PUT /configs?force=true — wintun is not torn down when
+	//      the intent was already matching.
+	a.mu.RLock()
+	traffic := strings.TrimSpace(a.state.Traffic)
+	a.mu.RUnlock()
+	if traffic != "proxy" && traffic != "tun" {
+		traffic = "tun"
+	}
+	enableTun := traffic == "tun"
+
+	if err := a.ensureCoreForProfile(active, gen, enableTun); err != nil {
 		a.finishConnectJobFailed(gen, err)
 		return
 	}
 	if a.connectGen.Load() != gen {
 		return
 	}
-	// Verge-style: treat "core is listening" as connected immediately. Pulling /proxies can block
-	// for a long time while providers fetch; do not keep the UI stuck in "connecting".
+
+	// If the core was reused (same profile already running), ensureCoreForProfile
+	// did nothing. Push the current YAML to Mihomo via PUT /configs?force=true so
+	// the running process picks up any pending template / subscription changes
+	// and the user's connect intent in a single atomic reload.
+	if err := a.applyRuntimeConfig(active, traffic, enableTun); err != nil {
+		a.finishConnectJobFailed(gen, fmt.Errorf("apply runtime config: %w", err))
+		return
+	}
+	if a.connectGen.Load() != gen {
+		return
+	}
+
+	// Treat "core is listening with the desired intent applied" as connected
+	// immediately; /proxies warmup runs in the background below.
 	a.finishConnectJobOK(gen)
 	if a.connectGen.Load() != gen {
 		return
@@ -433,12 +578,14 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 	var notify bool
 	a.mu.Lock()
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connecting" {
-		a.stopCoreLocked()
+		// In the reload model we no longer tear down the core on connect
+		// failure: if ensureCoreForProfile itself failed, startEmbeddedCore
+		// already cleaned up internally; if the applyRuntimeConfig step
+		// (PUT /configs?force=true) failed, the core is still healthy and
+		// a retry should succeed without paying another cold-start.
 		a.state.Connection.Status = "error"
 		a.state.Connection.Health = ""
 		a.state.Connection.LastError = err.Error()
-		a.state.Core.LastError = err.Error()
-		a.state.Core.Lifecycle = "degraded"
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
 	}
@@ -620,7 +767,7 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 	}
 
 	a.mu.Lock()
-	_ = a.autoSelectProxyGroupLocked()
+	a.restoreStickyGroupLocked()
 	activeGroup := strings.TrimSpace(a.state.Proxy.ActiveGroup)
 	a.state.UpdatedAt = time.Now().Unix()
 	a.mu.Unlock()
@@ -650,8 +797,8 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 	a.mu.Lock()
 	if mode == "global" {
 		a.state.Proxy.ActiveGroup = "GLOBAL"
-	} else if strings.TrimSpace(a.state.Proxy.ActiveGroup) == "" {
-		_ = a.autoSelectProxyGroupLocked()
+	} else {
+		a.restoreStickyGroupLocked()
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	a.mu.Unlock()
@@ -679,9 +826,27 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 }
 
 func (a *App) Disconnect() AppState {
-	a.connectGen.Add(1)
+	gen := a.connectGen.Add(1)
+	// #region agent log
+	debugLog(
+		"gen-"+strconv.FormatUint(gen, 10),
+		"H1",
+		"app.go:Disconnect",
+		"disconnect requested",
+		map[string]any{
+			"prevStatus": a.state.Connection.Status,
+		},
+	)
+	// #endregion
+	// Reload-model Disconnect (aligned with clash-verge-rev toggle_tun_mode):
+	// do not tear down Mihomo. Transition state to disconnected, clear the OS
+	// system proxy, and regenerate YAML with enableTun=false + PUT /configs
+	// force-reload. The core keeps running so the next Connect is instant and
+	// wintun comes down cleanly (no PATCH / force-kill).
 	a.mu.Lock()
-	a.stopCoreLocked()
+	prevTraffic := strings.TrimSpace(a.state.Traffic)
+	a.clearSystemProxyLocked()
+	a.restoreTakenOverTunServicesLocked()
 	a.state.Connection.Status = "disconnected"
 	a.state.Connection.Health = ""
 	a.state.Connection.Since = 0
@@ -690,8 +855,38 @@ func (a *App) Disconnect() AppState {
 	a.state.Proxy.Groups = []ProxyGroup{}
 	a.state.Insight = HomeInsight{}
 	a.state.UpdatedAt = time.Now().Unix()
+	listen := a.effectiveCoreEndpointLocked()
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	var active Profile
+	activeFound := false
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			active = p
+			activeFound = true
+			break
+		}
+	}
 	a.mu.Unlock()
 	a.emitAppStateChanged()
+
+	if prevTraffic == "tun" && activeFound && strings.TrimSpace(listen) != "" {
+		// Regeneration + PUT runs off the Wails bridge so Disconnect returns
+		// immediately. If the user clicks Connect again before the reload
+		// resolves, runConnectJob will push a fresh YAML with enableTun=true
+		// through the same path; force-reload is idempotent and the final
+		// state is always whichever regeneration arrived last.
+		go func(p Profile, savedTraffic string, disconnectGen uint64) {
+			if err := a.applyRuntimeConfig(p, savedTraffic, false); err != nil {
+				debugLog(
+					"gen-"+strconv.FormatUint(disconnectGen, 10),
+					"H1",
+					"app.go:disconnect-reload",
+					"failed to apply disconnected YAML; next Connect will override",
+					map[string]any{"error": err.Error()},
+				)
+			}
+		}(active, prevTraffic, gen)
+	}
 	return a.GetAppState()
 }
 
@@ -728,13 +923,13 @@ func (a *App) SetMode(mode string) (AppState, error) {
 	if mode == "global" {
 		a.state.Proxy.ActiveGroup = "GLOBAL"
 	} else {
-		// Leaving global mode: UI focus should not stay on "GLOBAL" in rule/direct.
+		// Leaving global mode: UI focus should not stay on "GLOBAL" in
+		// rule/direct. Drop it and let the per-profile sticky pick take
+		// over (no-op if the user never picked a group for this profile).
 		if strings.EqualFold(strings.TrimSpace(a.state.Proxy.ActiveGroup), "GLOBAL") {
 			a.state.Proxy.ActiveGroup = ""
-			_ = a.autoSelectProxyGroupLocked()
-		} else if strings.TrimSpace(a.state.Proxy.ActiveGroup) == "" {
-			_ = a.autoSelectProxyGroupLocked()
 		}
+		a.restoreStickyGroupLocked()
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
@@ -755,32 +950,49 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 	}
 	prev := a.state.Traffic
 	connected := a.state.Connection.Status == "connected"
-	needsCoreRestart := connected && prev != mode
+	needsReload := connected && prev != mode
 	a.state.Traffic = mode
 	if err := a.persistProfilesLocked(); err != nil {
 		a.mu.Unlock()
 		return a.GetAppState(), err
 	}
-	// When reconnecting the core for a traffic-mode change, still clear OS proxy
-	// before tear-down (otherwise proxy→TUN could leave HKCU proxy stuck and block).
-	if needsCoreRestart && prev == "proxy" {
-		a.clearSystemProxyLocked()
-	}
-	if connected && !needsCoreRestart {
-		if prev == "proxy" && mode == "tun" {
+	if needsReload {
+		if mode == "tun" {
+			// Moving proxy → tun: clear OS proxy so DNS hijack routes through TUN.
 			a.clearSystemProxyLocked()
-		}
-		if mode == "proxy" {
+		} else {
+			// Moving tun → proxy: apply OS proxy for direct app traffic.
 			_ = a.applySystemProxyIfNeededLocked()
 		}
 	}
 	a.state.UpdatedAt = time.Now().Unix()
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	var active Profile
+	activeFound := false
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			active = p
+			activeFound = true
+			break
+		}
+	}
+	listen := a.effectiveCoreEndpointLocked()
 	a.mu.Unlock()
 
-	if needsCoreRestart {
-		// Disconnect may block on Windows IPC stop; run off the Wails bridge thread.
-		go a.reconnectActiveProfile()
-		return a.GetAppState(), nil
+	if needsReload && activeFound && strings.TrimSpace(listen) != "" {
+		// Reload-model traffic switch (aligned with clash-verge-rev
+		// toggle_tun_mode → patch_verge → update_config → reload_config):
+		// regenerate YAML with the new enableTun value and push PUT /configs
+		// force-reload. Mihomo brings TUN up or down without restarting; we
+		// never thrash wintun with PATCH flips.
+		enableTun := mode == "tun"
+		if err := a.applyRuntimeConfig(active, mode, enableTun); err != nil {
+			a.mu.Lock()
+			a.markConnectionDegradedLocked("Traffic mode switch failed: " + strings.TrimSpace(err.Error()))
+			a.mu.Unlock()
+			a.emitAppStateChanged()
+			return a.GetAppState(), err
+		}
 	}
 	return a.GetAppState(), nil
 }
@@ -877,7 +1089,19 @@ func (a *App) ActivateProfile(profileID string) (AppState, error) {
 		return a.state, errors.New("profile not found")
 	}
 	connected := a.state.Connection.Status == "connected"
+	profileChanged := a.state.Profile.ActiveProfileID != profileID
 	a.state.Profile.ActiveProfileID = profileID
+	if profileChanged {
+		// ActiveGroup + cached /proxies belong to the previous profile —
+		// drop them so the UI doesn't briefly highlight a group that
+		// doesn't exist in the new subscription. LastGoodGroup is
+		// per-profile; re-hydrate it from the freshly activated profile
+		// so the UI shows the user's sticky pick (or nothing, on a fresh
+		// profile) immediately, before /proxies finishes loading.
+		a.state.Proxy.ActiveGroup = ""
+		a.state.Proxy.Groups = []ProxyGroup{}
+		a.state.Proxy.LastGoodGroup = a.activeProfileLastGoodGroupLocked()
+	}
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
 		a.mu.Unlock()
@@ -919,6 +1143,13 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 		} else {
 			a.state.Profile.ActiveProfileID = ""
 		}
+		// Deleting or rotating the active profile invalidates the
+		// cached /proxies snapshot. Re-hydrate LastGoodGroup from
+		// whatever profile is active now (or blank if we deleted the
+		// last one).
+		a.state.Proxy.ActiveGroup = ""
+		a.state.Proxy.Groups = []ProxyGroup{}
+		a.state.Proxy.LastGoodGroup = a.activeProfileLastGoodGroupLocked()
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	connected := a.state.Connection.Status == "connected"
@@ -1201,6 +1432,32 @@ func (a *App) InstallService() (TunSetupResult, error) {
 	}, nil
 }
 
+// activeProfileIndexLocked returns the index of the currently active
+// profile inside a.profiles, or -1 if no profile is active / found.
+// Caller must hold a.mu.
+func (a *App) activeProfileIndexLocked() int {
+	id := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	if id == "" {
+		return -1
+	}
+	for i := range a.profiles {
+		if a.profiles[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// activeProfileLastGoodGroupLocked returns the per-profile sticky pick.
+// Caller must hold a.mu.
+func (a *App) activeProfileLastGoodGroupLocked() string {
+	idx := a.activeProfileIndexLocked()
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(a.profiles[idx].LastGoodGroup)
+}
+
 func (a *App) SelectProxyGroup(name string) (AppState, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1213,39 +1470,80 @@ func (a *App) SelectProxyGroup(name string) (AppState, error) {
 	}
 	a.state.Proxy.ActiveGroup = name
 	a.state.Proxy.LastGoodGroup = name
+	// Persist the user's explicit pick on the active profile so it
+	// survives reconnects AND app restarts. That's the "today MainGroup,
+	// tomorrow still MainGroup" memory the user asked for. Auto-picked
+	// fallbacks below (anchor / first-safe) never touch this field, so
+	// the stored value always reflects genuine user intent.
+	if idx := a.activeProfileIndexLocked(); idx >= 0 {
+		if strings.TrimSpace(a.profiles[idx].LastGoodGroup) != name {
+			a.profiles[idx].LastGoodGroup = name
+			a.state.Profile.Profiles = a.profiles
+			if err := a.persistProfilesLocked(); err != nil {
+				debugLog(
+					"select-proxy-group",
+					"H5",
+					"app.go:SelectProxyGroup",
+					"failed to persist sticky pick",
+					map[string]any{"error": err.Error(), "group": name},
+				)
+			}
+		}
+	}
 	a.state.UpdatedAt = time.Now().Unix()
 	return a.state, nil
 }
 
-func (a *App) autoSelectProxyGroupLocked() error {
-	if a.state.Proxy.LastGoodGroup != "" {
-		if !isUnsafeGroup(a.state.Proxy.LastGoodGroup) && !strings.EqualFold(a.state.Proxy.LastGoodGroup, "GLOBAL") {
-			a.state.Proxy.ActiveGroup = a.state.Proxy.LastGoodGroup
+// restoreStickyGroupLocked is the full auto-pick story after we removed the
+// old multi-tier picker (anchor / first-safe heuristics were destabilising
+// reconnects and causing the "залипания" the user reported). The logic is
+// deliberately minimal:
+//
+//   - If the active profile has a persisted LastGoodGroup (the user's last
+//     manual SelectProxyGroup click for this profile) AND that group is
+//     still present in the current /proxies snapshot, copy it into
+//     ActiveGroup so the Proxies screen keeps highlighting it across
+//     reconnects, app restarts, traffic-mode flips and mode changes.
+//   - Otherwise, leave ActiveGroup untouched. First-ever connects land on
+//     an empty ActiveGroup (UI shows "—") until the user clicks a group
+//     on the Proxies screen — that click persists onto the profile and
+//     this routine picks it up on every subsequent connect.
+//
+// Built-in policy tokens (GLOBAL / DIRECT / REJECT / PASS) are filtered
+// so we never land Rule mode on a non-pickable outbound even if a stale
+// sticky value somehow names one.
+//
+// This is NOT an automatic group picker. There is no fallback to any
+// "first safe group" or to the terminal MATCH target. That was the
+// piece that kept surprising the user; removing it is the whole point.
+// Caller must hold a.mu.
+func (a *App) restoreStickyGroupLocked() {
+	sticky := a.activeProfileLastGoodGroupLocked()
+	if sticky == "" {
+		return
+	}
+	switch strings.ToUpper(sticky) {
+	case "GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "PASS":
+		return
+	}
+	stickyLower := strings.ToLower(sticky)
+	for _, g := range a.state.Proxy.Groups {
+		if strings.EqualFold(strings.ToLower(strings.TrimSpace(g.Name)), stickyLower) {
+			a.state.Proxy.ActiveGroup = g.Name
 			a.state.UpdatedAt = time.Now().Unix()
-			return nil
+			debugLog(
+				"sticky-restore",
+				"H5",
+				"app.go:restoreStickyGroupLocked",
+				"restored sticky pick",
+				map[string]any{
+					"group":       g.Name,
+					"groupsCount": len(a.state.Proxy.Groups),
+				},
+			)
+			return
 		}
 	}
-	for _, group := range a.state.Proxy.Groups {
-		if !isUnsafeGroup(group.Name) && !strings.EqualFold(group.Name, "GLOBAL") {
-			a.state.Proxy.ActiveGroup = group.Name
-			a.state.Proxy.LastGoodGroup = group.Name
-			a.state.UpdatedAt = time.Now().Unix()
-			return nil
-		}
-	}
-	if len(a.state.Proxy.Groups) == 0 {
-		return errors.New("no proxy groups yet (wait for subscription health check)")
-	}
-	return errors.New("no safe proxy group found")
-}
-
-func (a *App) AutoSelectProxyGroup() (AppState, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if err := a.autoSelectProxyGroupLocked(); err != nil {
-		return a.state, err
-	}
-	return a.state, nil
 }
 
 func (a *App) RefreshProxies() (AppState, error) {
@@ -1275,16 +1573,98 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 	if pid == "" {
 		return ServiceLogPeek{LastError: "no active profile"}
 	}
-	root, err := slothDataRoot()
-	if err != nil {
-		return ServiceLogPeek{LastError: err.Error()}
+	roots := []string{}
+	if root, err := slothDataRoot(); err == nil && strings.TrimSpace(root) != "" {
+		roots = append(roots, root)
 	}
-	runtimeDir := filepath.Join(root, "runtime", pid)
-	candidates := []string{
-		filepath.Join(runtimeDir, "logs", "service_latest.log"),
-		filepath.Join(runtimeDir, "core.log"),
-		filepath.Join(runtimeDir, "logs", "service.log"),
+	// Windows can occasionally run elevated and resolve UserConfigDir under
+	// Administrator, while previously generated runtime data still lives under
+	// the standard user profile. Probe common Windows app-data roots so the
+	// in-app log tail keeps working across privilege flips.
+	if runtime.GOOS == "windows" {
+		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
+			roots = append(roots, filepath.Join(appData, "SlothClash"))
+		}
+		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
+			roots = append(roots, filepath.Join(localAppData, "SlothClash"))
+		}
 	}
+	seenRoots := map[string]bool{}
+	dedupRoots := make([]string, 0, len(roots))
+	for _, r := range roots {
+		if r == "" {
+			continue
+		}
+		key := strings.ToLower(filepath.Clean(r))
+		if seenRoots[key] {
+			continue
+		}
+		seenRoots[key] = true
+		dedupRoots = append(dedupRoots, filepath.Clean(r))
+	}
+	candidates := []string{}
+	for _, root := range dedupRoots {
+		runtimeDir := filepath.Join(root, "runtime", pid)
+		candidates = append(candidates,
+			filepath.Join(runtimeDir, "logs", "service_latest.log"),
+			filepath.Join(runtimeDir, "core.log"),
+			filepath.Join(runtimeDir, "logs", "service.log"),
+		)
+		// flexi_logger rotation sometimes leaves only timestamped files
+		// (service_2026-04-24_23-43-01.log) if the process was killed
+		// between the rename and the re-open of service_latest.log. Fall
+		// back to the newest rotated file so diagnostics bundles still
+		// carry core output instead of just "no runtime log file found".
+		if rotated, _ := filepath.Glob(filepath.Join(runtimeDir, "logs", "service_*.log")); len(rotated) > 0 {
+			newestRotated := ""
+			var newestMod time.Time
+			for _, r := range rotated {
+				if info, err := os.Stat(r); err == nil && !info.IsDir() {
+					if info.ModTime().After(newestMod) {
+						newestMod = info.ModTime()
+						newestRotated = r
+					}
+				}
+			}
+			if newestRotated != "" {
+				candidates = append(candidates, newestRotated)
+			}
+		}
+	}
+	if runtime.GOOS == "windows" {
+		sysDrive := strings.TrimSpace(os.Getenv("SystemDrive"))
+		if sysDrive == "" {
+			sysDrive = "C:"
+		}
+		// Cross-user fallback: if the app is currently elevated under a
+		// different account, the active profile runtime can still exist under
+		// the original desktop user tree.
+		globs := []string{
+			filepath.Join(sysDrive+`\`, "Users", "*", "AppData", "Roaming", "SlothClash", "runtime", pid, "logs", "service_latest.log"),
+			filepath.Join(sysDrive+`\`, "Users", "*", "AppData", "Roaming", "SlothClash", "runtime", pid, "core.log"),
+			filepath.Join(sysDrive+`\`, "Users", "*", "AppData", "Local", "SlothClash", "runtime", pid, "logs", "service_latest.log"),
+			filepath.Join(sysDrive+`\`, "Users", "*", "AppData", "Local", "SlothClash", "runtime", pid, "core.log"),
+		}
+		for _, g := range globs {
+			if matches, err := filepath.Glob(g); err == nil && len(matches) > 0 {
+				candidates = append(candidates, matches...)
+			}
+		}
+	}
+	seenCand := map[string]bool{}
+	dedupCandidates := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if strings.TrimSpace(c) == "" {
+			continue
+		}
+		key := strings.ToLower(filepath.Clean(c))
+		if seenCand[key] {
+			continue
+		}
+		seenCand[key] = true
+		dedupCandidates = append(dedupCandidates, filepath.Clean(c))
+	}
+	candidates = dedupCandidates
 	var p string
 	var st os.FileInfo
 	for _, cand := range candidates {

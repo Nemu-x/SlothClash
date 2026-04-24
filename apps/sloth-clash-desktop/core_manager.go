@@ -278,44 +278,36 @@ func (a *App) ensureGeoInDataDir(dataDir string) error {
 	return nil
 }
 
-func tunBlockForTraffic(traffic string) string {
-	if strings.TrimSpace(traffic) != "tun" {
-		return "tun:\n  enable: false\n"
+// tunBlockForTraffic returns the TUN configuration embedded in generated YAML.
+// The enable argument is inlined verbatim into tun.enable so the YAML always
+// reflects the caller's current intent. Defaults mirror clash-verge-rev's
+// IClashTemp::template() + constants::tun (DEFAULT_STACK=gvisor, DNS_HIJACK=["any:53"],
+// strict-route=false, auto-route=true, auto-detect-interface=true). gvisor is the
+// userspace stack Mihomo defaults to and behaves consistently across Windows/macOS/Linux;
+// it avoids the kernel ring-buffer stalls that `stack: system` on wintun shows under
+// sustained UDP load (e.g. gaming). These are defaults only — if the subscription or
+// user TUN settings provide a value the merger will honour it verbatim.
+func tunBlockForTraffic(enable bool) string {
+	enableStr := "false"
+	if enable {
+		enableStr = "true"
 	}
-	// See https://wiki.metacubex.one/en/config/tun/
-	switch runtime.GOOS {
-	case "windows":
-		return `tun:
-  enable: true
-  stack: system
+	return `tun:
+  enable: ` + enableStr + `
+  stack: gvisor
   auto-route: true
-  auto-redir: true
   auto-detect-interface: true
-  strict-route: true
+  strict-route: false
   dns-hijack:
     - any:53
-    - tcp://any:53
 `
-	default:
-		return `tun:
-  enable: true
-  stack: system
-  auto-route: true
-  auto-redir: true
-  auto-detect-interface: true
-  strict-route: true
-  dns-hijack:
-    - any:53
-    - tcp://any:53
-`
-	}
 }
 
-func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool) error {
+func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
 	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
 
-	if ok, err := tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController); ok {
+	if ok, err := tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun); ok {
 		return nil
 	} else if err != nil {
 		return err
@@ -338,8 +330,10 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	fmt.Fprintf(&cfg, "log-level: info\n")
 	fmt.Fprintf(&cfg, "ipv6: true\n\n")
 
-	if traffic == "tun" {
-		// Without DNS, TUN + strict-route often yields “connected” apps but no working resolution / routing.
+	if enableTun {
+		// Match enhance::tun::use_tun: fake-ip DNS block goes in only when TUN
+		// is actually being brought up. Without it, TUN + strict-route gives
+		// "connected" apps but no working resolution / routing.
 		cfg.WriteString(`dns:
   enable: true
   listen: 127.0.0.1:0
@@ -379,6 +373,14 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	fmt.Fprintf(&cfg, "      url: http://www.gstatic.com/generate_204\n")
 	fmt.Fprintf(&cfg, "      interval: 600\n\n")
 
+	// Bare fallback groups: emit a `select` group (Manual) that lists Auto
+	// first followed by every proxy provider entry. MATCH routes through
+	// Manual so the default selection stays "pick the fastest" (Manual →
+	// Auto → url-test), but users can click an individual node in the
+	// Proxies screen without hitting Mihomo's 400 "cannot change url-test
+	// group selection" error. url-test groups refuse PUT /proxies/{group}
+	// selection, which is why pointing MATCH directly at Auto made manual
+	// node picking look broken in Rule mode.
 	fmt.Fprintf(&cfg, "proxy-groups:\n")
 	fmt.Fprintf(&cfg, "  - name: Auto\n")
 	fmt.Fprintf(&cfg, "    type: url-test\n")
@@ -389,12 +391,14 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	fmt.Fprintf(&cfg, "    tolerance: 50\n")
 	fmt.Fprintf(&cfg, "  - name: Manual\n")
 	fmt.Fprintf(&cfg, "    type: select\n")
+	fmt.Fprintf(&cfg, "    proxies:\n")
+	fmt.Fprintf(&cfg, "      - Auto\n")
 	fmt.Fprintf(&cfg, "    use:\n")
 	fmt.Fprintf(&cfg, "      - sub1\n\n")
 
 	fmt.Fprintf(&cfg, "rules:\n")
-	fmt.Fprintf(&cfg, "  - MATCH,Auto\n\n")
-	cfg.WriteString(tunBlockForTraffic(traffic))
+	fmt.Fprintf(&cfg, "  - MATCH,Manual\n\n")
+	cfg.WriteString(tunBlockForTraffic(enableTun))
 
 	var m map[string]any
 	if err := yaml.Unmarshal([]byte(cfg.String()), &m); err != nil {
@@ -417,6 +421,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		secret,
 		traffic,
 		withExternalController,
+		enableTun,
 	); err != nil {
 		return err
 	}
@@ -431,7 +436,10 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 
 // writeRuntimeConfigIfNeeded uses a hand-edited config.yaml as base when SkipAutoConfig is set,
 // but always reapplies Sloth runtime overlay (ports, secret, tun) for a working connect.
-func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool) error {
+// enableTun controls the single source of truth for tun.enable that ends up in the
+// written YAML — match the user's current intent (connected && traffic=="tun") so
+// that PUT /configs?force=true on subsequent reloads does not thrash the adapter.
+func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool, enableTun bool) error {
 	if profile.SkipAutoConfig {
 		cfgPath := filepath.Join(dataDir, "config.yaml")
 		if st, err := os.Stat(cfgPath); err == nil && st.Size() > 0 {
@@ -451,6 +459,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 				secret,
 				traffic,
 				withEC,
+				enableTun,
 			); err != nil {
 				return err
 			}
@@ -475,6 +484,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 		secret,
 		traffic,
 		withEC,
+		enableTun,
 	); err != nil {
 		return err
 	}
@@ -684,6 +694,7 @@ func (a *App) stopCoreLocked() {
 	a.coreOverPipe = false
 	a.coreSecret = ""
 	a.coreListen = ""
+	a.coreActiveProfileID = ""
 	a.state.Core.Running = false
 	a.state.Core.Lifecycle = "stopped"
 	a.state.Core.Version = ""
@@ -721,16 +732,125 @@ func fetchVersionAt(listen, secret string) (string, error) {
 	return v.Version, nil
 }
 
+// waitForCoreEndpointStop waits until /version at the given endpoint stops responding.
+// This is important on fast disconnect->connect cycles where service stop is asynchronous.
+func waitForCoreEndpointStop(parent context.Context, runID, listen, secret string, timeout time.Duration) error {
+	if strings.TrimSpace(listen) == "" {
+		return nil
+	}
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	sawAlive := false
+	for time.Now().Before(deadline) {
+		select {
+		case <-parent.Done():
+			return parent.Err()
+		default:
+		}
+		_, err := fetchVersionAt(listen, secret)
+		if err != nil {
+			// #region agent log
+			debugLog(
+				runID,
+				"H2",
+				"core_manager.go:760",
+				"waitForCoreEndpointStop observed endpoint stop",
+				map[string]any{
+					"endpoint":  listen,
+					"sawAlive":  sawAlive,
+					"stopError": err.Error(),
+				},
+			)
+			// #endregion
+			return nil
+		}
+		sawAlive = true
+		time.Sleep(90 * time.Millisecond)
+	}
+	// #region agent log
+	debugLog(
+		runID,
+		"H2",
+		"core_manager.go:767",
+		"waitForCoreEndpointStop timeout",
+		map[string]any{
+			"endpoint": listen,
+			"timeout":  timeout.String(),
+		},
+	)
+	// #endregion
+	return fmt.Errorf("old core still responding at %s after %s", listen, timeout.String())
+}
+
+// ensureCoreForProfile guarantees that a Mihomo core is running for the given
+// profile. In the reload model (v0.3+) this is the primary way the core is
+// brought up: the core lives for the lifetime of the active profile and
+// Connect/Disconnect/SetTrafficMode regenerate the runtime YAML with the
+// desired tun.enable state and push it via PUT /configs?force=true without
+// touching the process (mirrors clash-verge-rev's CoreManager::update_config).
+//
+// - If a core is already running for the same profile, returns nil without any
+//   restart.
+// - If a core is running for a different profile, stops it cleanly and starts
+//   a fresh one.
+// - If no core is running, starts one.
+//
+// Must not be called with a.mu held. gen is an optional supersede token; pass
+// 0 when the caller is not part of the connect-job generation machinery (e.g.
+// startup background boot of the active profile).
+// ensureCoreForProfile guarantees a running Mihomo bound to the given profile.
+// If the core is already up for this profile it returns without touching the
+// running process — callers that need to push fresh YAML in that case must go
+// through applyRuntimeConfig (PUT /configs?force=true). If the core is down
+// or bound to a different profile, a new one is spawned with YAML reflecting
+// enableTun so the core comes up already in the desired state.
+func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) error {
+	a.coreLifecycleMu.Lock()
+	defer a.coreLifecycleMu.Unlock()
+
+	a.mu.RLock()
+	running := a.state.Core.Running && strings.TrimSpace(a.coreListen) != ""
+	activeID := strings.TrimSpace(a.coreActiveProfileID)
+	a.mu.RUnlock()
+
+	if running && activeID == strings.TrimSpace(profile.ID) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := a.coreFetchVersion(ctx); err == nil {
+			return nil
+		}
+	}
+
+	// startEmbeddedCore uses connectGen for supersede/abort semantics; gen==0
+	// means "I'm not part of a connect-job generation" (e.g. background boot
+	// on startup). Claim a fresh gen so a concurrent Connect can cleanly
+	// supersede us instead of racing on a zero sentinel.
+	if gen == 0 {
+		gen = a.connectGen.Add(1)
+	}
+	return a.startEmbeddedCore(profile, gen, enableTun)
+}
+
 // startEmbeddedCore starts mihomo for the given profile. Must not be called with a.mu held.
 // gen must match a.connectGen for the in-flight Connect job so we can exit early on supersede or app shutdown.
-func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
+// enableTun goes straight into the generated YAML (tun.enable). Callers compute
+// it from the effective user intent at call time (traffic=="tun" && user wants
+// to be connected) so the core boots in the final state without a follow-up
+// PATCH flip — exactly how clash-verge-rev's start_core works.
+func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) error {
 	if strings.TrimSpace(profile.URL) == "" {
 		return errors.New("active profile has no subscription URL")
 	}
 
 	var traffic string
 	var serviceInstalled bool
+	var prevListen string
+	var prevSecret string
 	a.mu.Lock()
+	prevListen = a.coreListen
+	prevSecret = a.coreSecret
 	a.stopCoreLocked()
 	a.coreStopIntentional = false
 	traffic = strings.TrimSpace(a.state.Traffic)
@@ -769,6 +889,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		return err
 	}
 	secret := randomSecret()
+	runID := "gen-" + strconv.FormatUint(gen, 10)
 
 	useServiceCore := runtime.GOOS == "windows" && serviceInstalled
 	if runtime.GOOS == "darwin" && serviceInstalled {
@@ -786,7 +907,20 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		}
 	}
 	if useServiceCore {
-		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, 0, mixedPort, secret, traffic, false); err != nil {
+		// #region agent log
+		debugLog(
+			runID,
+			"H3",
+			"core_manager.go:850",
+			"service-core path selected",
+			map[string]any{
+				"profileId": profile.ID,
+				"traffic":   traffic,
+				"pipe":      slothMihomoIPCPath(profile.ID),
+			},
+		)
+		// #endregion
+		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, 0, mixedPort, secret, traffic, false, enableTun); err != nil {
 			return err
 		}
 		dataDirAbs, errAbs := filepath.Abs(dataDir)
@@ -810,13 +944,25 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			return err
 		}
-		// Best effort: stop any previous core instance before starting a new one.
-		// Without this, switching/reconnecting in TUN mode can leave a stale TUN instance
-		// and mihomo then reports "Cannot create a file when that file already exists."
-		stopCtx, stopCancel := context.WithTimeout(parent, 2500*time.Millisecond)
-		_ = ipcSlothStopCore(stopCtx)
-		stopCancel()
-		time.Sleep(120 * time.Millisecond)
+		if strings.TrimSpace(prevListen) != "" {
+			waitErr := waitForCoreEndpointStop(parent, runID, prevListen, prevSecret, 8*time.Second)
+			// #region agent log
+			debugLog(
+				runID,
+				"H2",
+				"core_manager.go:903",
+				"restart stop barrier completed",
+				map[string]any{
+					"pipe":    prevListen,
+					"waitErr": errorString(waitErr),
+				},
+			)
+			// #endregion
+			if waitErr != nil {
+				return fmt.Errorf("previous core did not stop cleanly before restart: %w", waitErr)
+			}
+		}
+
 		startCtx, startCancel := context.WithTimeout(parent, 55*time.Second)
 		errStart := ipcSlothStartClash(startCtx, slothIPCStartParams{
 			CorePath:     binAbs,
@@ -826,6 +972,24 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 			LogDirectory: logDir,
 		})
 		startCancel()
+		// #region agent log
+		// Log the exact logDir we asked the privileged service to use so the
+		// next "service logs missing" report is diagnosable: if this path
+		// doesn't match what the user sees on disk, it points to a
+		// service-side writing issue (permissions / different account) vs
+		// a client-side bug.
+		debugLog(
+			runID,
+			"H4",
+			"core_manager.go:934",
+			"ipc start finished",
+			map[string]any{
+				"pipe":     pipeName,
+				"startErr": errorString(errStart),
+				"logDir":   logDir,
+			},
+		)
+		// #endregion
 		if errStart != nil {
 			return errStart
 		}
@@ -867,6 +1031,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 				a.state.Core.Version = v
 				a.state.Core.LastError = ""
 				a.state.Core.Lifecycle = "running"
+				a.coreActiveProfileID = profile.ID
 				a.state.UpdatedAt = time.Now().Unix()
 				a.mu.Unlock()
 				return nil
@@ -891,7 +1056,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 	if err != nil {
 		return err
 	}
-	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true); err != nil {
+	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true, enableTun); err != nil {
 		return err
 	}
 
@@ -987,6 +1152,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64) error {
 			a.mu.Lock()
 			a.state.Core.Version = v
 			a.state.Core.LastError = ""
+			a.coreActiveProfileID = profile.ID
 			a.state.UpdatedAt = time.Now().Unix()
 			a.mu.Unlock()
 			return nil

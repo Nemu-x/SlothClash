@@ -55,6 +55,14 @@ type Profile struct {
 	RulesTemplate  string `json:"rulesTemplate,omitempty"`       // Rules editor YAML (prepend/append/delete)
 	ProxyTemplate  string `json:"proxyTemplate,omitempty"`       // Proxy groups editor YAML (prepend/append/delete)
 	SkipAutoConfig bool   `json:"skipAutoConfig,omitempty"` // after manual config.yaml edit, skip regeneration on connect
+	// LastGoodGroup remembers the user's last manually picked proxy group
+	// for this specific profile. It is the authoritative source for the
+	// auto-select routine: if the same group still exists in /proxies when
+	// the user reconnects (today, tomorrow, after an app restart), we snap
+	// back to it. Only SelectProxyGroup writes to this field — auto-picked
+	// fallbacks (anchor / first-safe) never touch it, so the stored value
+	// always reflects genuine user intent.
+	LastGoodGroup string `json:"lastGoodGroup,omitempty"`
 }
 
 // ProfilePaths exposes on-disk locations for a profile runtime directory.
@@ -70,6 +78,28 @@ type ProfileConfigPeek struct {
 	LastError string `json:"lastError,omitempty"`
 }
 
+// ProfileRulesBaseline is the list of `rules:` produced by the subscription
+// (plus any extend/proxy merge templates) before the rules editor applies
+// its own prepend/append/delete overlay. The UI renders this list read-only
+// so the user can see where a given rule came from and mark subscription
+// rules for deletion without editing them.
+type ProfileRulesBaseline struct {
+	Rules         []string `json:"rules"`
+	IsFullProfile bool     `json:"isFullProfile"`
+	LastError     string   `json:"lastError,omitempty"`
+}
+
+// ProfileProxyGroupsBaseline is the list of `proxy-groups:` produced by the
+// subscription (plus any extend merge template) before the proxy-groups
+// editor applies its own prepend/append/delete overlay. The UI renders this
+// list read-only so the user can see which groups come from the subscription
+// / extended config and mark them for deletion without editing them.
+type ProfileProxyGroupsBaseline struct {
+	Groups        []map[string]any `json:"groups"`
+	IsFullProfile bool             `json:"isFullProfile"`
+	LastError     string           `json:"lastError,omitempty"`
+}
+
 type ProfileState struct {
 	ActiveProfileID string    `json:"activeProfileId,omitempty"`
 	Profiles        []Profile `json:"profiles"`
@@ -83,9 +113,18 @@ type ProxyGroup struct {
 }
 
 type ProxyState struct {
-	Groups        []ProxyGroup `json:"groups"`
-	ActiveGroup   string       `json:"activeGroup,omitempty"`
-	LastGoodGroup string       `json:"lastGoodGroup,omitempty"`
+	Groups []ProxyGroup `json:"groups"`
+	// ActiveGroup is the proxy group the UI currently highlights. It is
+	// set explicitly by `SelectProxyGroup` (user click) and on mode
+	// switches ("GLOBAL" in global mode). On Connect we also run
+	// `restoreStickyGroupLocked` which copies the active profile's
+	// LastGoodGroup into ActiveGroup — that's the only automatic write.
+	// There is no anchor derivation and no first-safe fallback.
+	ActiveGroup string `json:"activeGroup,omitempty"`
+	// LastGoodGroup mirrors the active profile's persisted sticky pick
+	// (see `Profile.LastGoodGroup`) for the frontend. Written by
+	// `SelectProxyGroup`, hydrated on profile load / switch / delete.
+	LastGoodGroup string `json:"lastGoodGroup,omitempty"`
 }
 
 type ServiceState struct {

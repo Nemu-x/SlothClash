@@ -64,6 +64,19 @@ func (a *App) loadProfilesFromDisk() {
 	if a.state.Mode.Current == "direct" && strings.TrimSpace(a.state.Mode.LastNonDirectMode) == "" {
 		a.state.Mode.LastNonDirectMode = "rule"
 	}
+	// Hydrate the active profile's sticky pick into ProxyState so the
+	// UI and the auto-select routine can read it synchronously on next
+	// connect — no waiting for /proxies, no heuristics. This is what
+	// makes "today MainGroup → tomorrow MainGroup" work across restarts.
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	if activeID != "" {
+		for i := range a.profiles {
+			if a.profiles[i].ID == activeID {
+				a.state.Proxy.LastGoodGroup = strings.TrimSpace(a.profiles[i].LastGoodGroup)
+				break
+			}
+		}
+	}
 }
 
 // persistProfilesLocked writes profiles.json. Caller must hold a.mu (write lock).

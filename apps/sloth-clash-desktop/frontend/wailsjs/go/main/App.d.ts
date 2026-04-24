@@ -7,8 +7,6 @@ export function ActivateProfile(arg1: string): Promise<main.AppState>
 
 export function ApplyUpdate(): Promise<void>
 
-export function AutoSelectProxyGroup(): Promise<main.AppState>
-
 export function CheckForUpdates(): Promise<main.UpdateState>
 
 export function Connect(): Promise<main.AppState>
@@ -23,9 +21,21 @@ export function FetchRulesOverview(): Promise<main.RulesOverview>
 
 export function GetAppState(): Promise<main.AppState>
 
+export function GetDesktopPrefs(): Promise<main.DesktopPrefs>
+
+export function GetLaunchOnStartupPreference(): Promise<boolean>
+
 export function GetPreferredLanguage(): Promise<string>
 
 export function GetProfilePaths(arg1: string): Promise<main.ProfilePaths>
+
+export function GetProfileProxyGroupsBaseline(
+  arg1: string,
+): Promise<main.ProfileProxyGroupsBaseline>
+
+export function GetProfileRulesBaseline(
+  arg1: string,
+): Promise<main.ProfileRulesBaseline>
 
 export function GetTrayAvailability(): Promise<boolean>
 
@@ -71,6 +81,8 @@ export function SelectProxyGroup(arg1: string): Promise<main.AppState>
 
 export function SetCloseToTrayPreference(arg1: boolean): Promise<main.AppState>
 
+export function SetLaunchOnStartupPreference(arg1: boolean): Promise<void>
+
 export function SetMode(arg1: string): Promise<main.AppState>
 
 export function SetProfileAutoUpdate(
@@ -98,7 +110,17 @@ export function SetProxyNode(arg1: string, arg2: string): Promise<main.AppState>
 
 export function SetTrafficMode(arg1: string): Promise<main.AppState>
 
+export function SetTrafficSettings(
+  arg1: main.TrafficSettings,
+): Promise<main.DesktopPrefs>
+
+export function SetTunSettings(
+  arg1: main.TunSettings,
+): Promise<main.DesktopPrefs>
+
 export function SetUpdateChannel(arg1: string): Promise<main.UpdateState>
+
+export function StartedMinimized(): Promise<boolean>
 
 export function UpdateProfileInfo(
   arg1: string,

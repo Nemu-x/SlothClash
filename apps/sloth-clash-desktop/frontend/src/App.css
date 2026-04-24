@@ -952,6 +952,22 @@
   background: rgba(90, 184, 120, 0.15);
 }
 
+.proxyNodeCard.proxyNodeDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.proxyNodeCard.proxyNodeDisabled:hover {
+  border-color: var(--hairline);
+}
+
+.proxyAutoGroupHint {
+  grid-column: 1 / -1;
+  margin: 0 0 4px 0;
+  font-size: 11.5px;
+  opacity: 0.8;
+}
+
 .proxyNodeTop {
   display: flex;
   align-items: center;
@@ -2070,7 +2086,7 @@
 }
 
 .modalCardWide {
-  width: min(860px, 100%);
+  width: min(1040px, 100%);
 }
 
 .yamlModalCard {
@@ -2083,6 +2099,12 @@
   width: min(96vw, 1400px);
   max-height: 96vh;
   min-height: 88vh;
+  overflow: auto;
+}
+
+.modalCardVisualTall {
+  max-height: 94vh;
+  min-height: min(84vh, 760px);
   overflow: auto;
 }
 
@@ -2172,9 +2194,24 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
+  max-height: 260px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.vergeCardReadOnly {
+  background: rgba(255, 255, 255, 0.03);
+  border-style: dashed;
+  border-color: var(--hairline);
+}
+
+.vergeCardDeleted {
+  opacity: 0.55;
+}
+
+.vergeCardDeleted .vergeCardTitle,
+.vergeCardDeleted .muted {
+  text-decoration: line-through;
 }
 
 .modalMonacoWrap {
@@ -2467,6 +2504,27 @@
   border: 1px solid var(--hairline);
 }
 
+.rulesTableWrapFull {
+  max-height: min(62vh, 520px);
+}
+
+.rulesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rulesPanelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rulesPanelTitle {
+  margin: 0;
+}
+
 .rulesTable {
   width: 100%;
   border-collapse: collapse;
@@ -2494,7 +2552,7 @@
 }
 
 .rulesPayload {
-  max-width: 280px;
+  max-width: 540px;
   word-break: break-all;
   color: #d4dfee;
 }
@@ -2590,6 +2648,58 @@
   font-size: 11px;
 }
 
+.settingsTunPillRow {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.settingsTunSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 4px 0 8px;
+  font-size: 11px;
+}
+
+.settingsTunSummaryItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsTunSummaryLabel {
+  opacity: 0.7;
+}
+
+.settingsTunSummaryValue {
+  font-weight: 600;
+}
+
+.settingsInlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tunSettingsModal {
+  width: min(560px, 92vw);
+  max-width: 560px;
+}
+
+.tunModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tunModalBody .modalField {
+  margin: 0;
+}
+
 .settingsToggleRow {
   display: flex;
   align-items: center;
@@ -2627,33 +2737,29 @@
 
 .settingsInfoDevCard .settingsInfoDevBtnRow.row {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.settingsInfoDevHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 2px;
+.settingsInfoDevCard .settingsInfoDevBtnRow.row .btn {
+  white-space: nowrap;
 }
 
 .settingsInfoDevTitle {
-  margin-bottom: 0;
+  margin-bottom: 6px;
 }
 
 .settingsInfoDevBody {
   display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .settingsKpiGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px 12px;
-  flex: 1 1 420px;
+  gap: 8px 16px;
   min-width: 0;
 }
 
@@ -2688,9 +2794,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: space-between;
   gap: 6px;
-  flex: 0 0 auto;
 }
 
 .settingsGithubBtn {

@@ -29,9 +29,24 @@
     "smartDns": "Smart DNS fallback",
     "ipv6Dns": "Enable IPv6 DNS",
     "allowLanBinding": "Allow LAN binding",
-    "dnsHint": "UI defaults only — core DNS wiring later.",
+    "dnsHint": "These DNS toggles are now applied to runtime config. \"Default\" means inherit profile/core values.",
     "installService": "Install service",
     "guidedTun": "Guided TUN setup",
+    "tun": {
+      "title": "TUN & traffic tuning",
+      "hint": "These values are layered on top of the active subscription — pick “Default” to inherit the subscription / Mihomo default (same behaviour as Clash Verge Rev). Changes are pushed to the running core via PUT /configs?force=true with no core restart.",
+      "inherit": "Default",
+      "configure": "Configure…",
+      "stackLabel": "TUN stack",
+      "autoRouteLabel": "Auto-route",
+      "autoDetectInterfaceLabel": "Auto-detect interface",
+      "strictRouteLabel": "Strict route",
+      "dnsHijackLabel": "DNS hijack (comma-separated)",
+      "mtuLabel": "MTU",
+      "deviceLabel": "Device name",
+      "snifferLabel": "Sniffer",
+      "findProcessLabel": "find-process-mode"
+    },
     "profilesUpdates": "Profiles & Updates",
     "dataDiag": "Data & Diagnostics",
     "info": "Info",
@@ -51,7 +66,7 @@
     "connectTitle": "Connect",
     "connectBody": "Use this button to start or stop the embedded core. After you import a subscription, Connect turns traffic on according to the mode and traffic switches next to it.",
     "modeTitle": "Routing mode",
-    "modeBody": "Rule uses your rules list. Global sends most traffic through the main proxy group. Direct bypasses the proxy (local only).",
+    "modeBody": "Rule uses your rules list. Global sends most traffic through the main proxy group.",
     "trafficTitle": "Traffic",
     "trafficBody": "Proxy sets the system HTTP/S proxy to Sloth. TUN creates a virtual adapter so all apps are routed — on Windows this usually needs the helper service.",
     "serviceTitle": "Windows service (TUN)",
@@ -112,19 +127,16 @@
       "lead": "Selectors and url-test groups from the running Sloth core. Connect on Home first, then refresh if the list is empty while the subscription loads.",
       "refreshGroups": "Refresh groups",
       "autoPick": "Auto-pick safe group",
+      "showBuiltin": "Show built-in groups (DIRECT/REJECT)",
       "focusGroup": "Focus group (UI)",
+      "autoGroupHint": "This is an auto group (url-test / fallback / load-balance). Mihomo picks the node itself — manual selection is disabled here. Open a select / Manual group to pick a specific node.",
       "noGroups": "No groups yet - wait for the subscription health check, then Refresh.",
       "connectFirst": "Connect on Home to start the embedded core."
     },
     "rules": {
       "title": "Rules",
-      "leadPrefix": "Snapshot from the running Sloth core. Connect on Home first, or set",
-      "leadSuffix": "for an external mihomo.",
-      "liveEyebrow": "Rules & rule providers",
-      "liveTitle": "Live API",
       "refreshing": "Refreshing...",
       "refresh": "Refresh",
-      "reachable": "Reachable",
       "searchPlaceholder": "Search rule / match / policy",
       "allTypes": "All types",
       "allPolicies": "All policies",
@@ -132,8 +144,7 @@
       "type": "Type",
       "match": "Match",
       "policy": "Policy",
-      "noParsed": "No parsed rules yet. Connect first, then press Refresh.",
-      "providersHint": "Rule providers snapshot is available from controller and used for diagnostics."
+      "noParsed": "Connect on Home first, then press Refresh to load rules."
     },
     "advanced": {
       "lead": "Diagnostics and maintenance tools for runtime support.",
@@ -151,6 +162,7 @@
     "on": "On",
     "off": "Off",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "close": "Close"
   }
 }

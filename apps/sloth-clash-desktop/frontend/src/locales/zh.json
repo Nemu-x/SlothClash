@@ -29,9 +29,24 @@
     "smartDns": "智能 DNS 回退",
     "ipv6Dns": "启用 IPv6 DNS",
     "allowLanBinding": "允许 LAN 绑定",
-    "dnsHint": "仅界面默认 — 核心 DNS 后续接入。",
+    "dnsHint": "这些 DNS 开关现在会应用到运行时配置。“默认”表示继承配置/核心默认值。",
     "installService": "安装服务",
     "guidedTun": "TUN 引导设置",
+    "tun": {
+      "title": "TUN 与流量调优",
+      "hint": "这些值叠加在当前订阅之上 — 选择“默认”以继承订阅 / Mihomo 的默认值（与 Clash Verge Rev 行为一致）。更改通过 PUT /configs?force=true 推送到运行中的核心，无需重启。",
+      "inherit": "默认",
+      "configure": "配置…",
+      "stackLabel": "TUN 栈",
+      "autoRouteLabel": "Auto-route",
+      "autoDetectInterfaceLabel": "Auto-detect interface",
+      "strictRouteLabel": "Strict route",
+      "dnsHijackLabel": "DNS hijack（逗号分隔）",
+      "mtuLabel": "MTU",
+      "deviceLabel": "设备名",
+      "snifferLabel": "Sniffer",
+      "findProcessLabel": "find-process-mode"
+    },
     "profilesUpdates": "配置与更新",
     "dataDiag": "数据与诊断",
     "info": "信息",
@@ -51,7 +66,7 @@
     "connectTitle": "连接",
     "connectBody": "用于启动或停止内置内核。导入订阅后，点击连接即可按旁边的模式与流量开关接管流量。",
     "modeTitle": "路由模式",
-    "modeBody": "规则：按规则列表分流。全局：主要走代理组。直连：不走代理（仅本地）。",
+    "modeBody": "规则：按规则列表分流。全局：主要走代理组。",
     "trafficTitle": "流量模式",
     "trafficBody": "系统代理：为系统设置 HTTP/S 代理。TUN：虚拟网卡接管各应用流量；在 Windows 上通常需要安装辅助服务。",
     "serviceTitle": "Windows 服务（TUN）",
@@ -112,19 +127,16 @@
       "lead": "显示运行中 Sloth 内核的选择器与 url-test 分组。先在首页连接，若订阅加载期间列表为空可稍后刷新。",
       "refreshGroups": "刷新分组",
       "autoPick": "自动选择安全分组",
+      "showBuiltin": "显示内置分组（DIRECT/REJECT）",
       "focusGroup": "焦点分组（UI）",
+      "autoGroupHint": "这是自动分组（url-test / fallback / load-balance），Mihomo 自行选择节点，此处不支持手动选择。如需手动切换节点，请打开 select / Manual 分组。",
       "noGroups": "暂时没有分组 - 请等待订阅健康检查后再刷新。",
       "connectFirst": "请先在首页连接以启动内置内核。"
     },
     "rules": {
       "title": "规则",
-      "leadPrefix": "来自运行中 Sloth 内核的快照。请先在首页连接，或设置",
-      "leadSuffix": "以接入外部 mihomo。",
-      "liveEyebrow": "规则与规则提供者",
-      "liveTitle": "实时 API",
       "refreshing": "刷新中...",
       "refresh": "刷新",
-      "reachable": "可达",
       "searchPlaceholder": "搜索规则 / 匹配 / 策略",
       "allTypes": "全部类型",
       "allPolicies": "全部策略",
@@ -132,8 +144,7 @@
       "type": "类型",
       "match": "匹配",
       "policy": "策略",
-      "noParsed": "尚未解析到规则。请先连接，然后点击刷新。",
-      "providersHint": "控制器可提供规则提供者快照，用于诊断。"
+      "noParsed": "请先在首页连接，然后点击刷新以加载规则。"
     },
     "advanced": {
       "lead": "用于运行时支持的诊断与维护工具。",
@@ -151,6 +162,7 @@
     "on": "开",
     "off": "关",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "close": "关闭"
   }
 }

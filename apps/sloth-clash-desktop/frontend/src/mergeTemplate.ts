@@ -85,7 +85,7 @@ function rowToProxyGroupObj(r: ProxyGroupRow): Record<string, unknown> {
   return out
 }
 
-function proxyGroupObjToRow(
+export function proxyGroupObjToRow(
   gm: Record<string, unknown>,
   idx: number,
 ): ProxyGroupRow | null {
@@ -266,6 +266,45 @@ function splitRuleCSV(rule: string): string[] {
 function isRuleOptionToken(token: string): boolean {
   const t = token.trim().toLowerCase()
   return t === 'no-resolve' || t.startsWith('src=') || t.startsWith('dst=')
+}
+
+// parseRuleLine turns a single Mihomo rule string ("DOMAIN-SUFFIX,google.com,DIRECT,no-resolve")
+// into a RuleRow shape so the UI can render type / content / policy parts the
+// same way it renders custom rows from the editor. Exported so the rules
+// editor can display read-only subscription rules without duplicating the
+// CSV parsing rules.
+export function parseRuleLine(line: string, idx: number = 0): RuleRow {
+  const s = String(line ?? '').trim()
+  const parts = splitRuleCSV(s)
+  const type = parts[0] ?? 'DOMAIN-SUFFIX'
+  let policy = 'DIRECT'
+  const options: string[] = []
+  let policyIdx = -1
+  for (let i = parts.length - 1; i >= 2; i--) {
+    const tok = parts[i] ?? ''
+    if (!tok) continue
+    if (isRuleOptionToken(tok)) {
+      options.unshift(tok)
+      continue
+    }
+    policy = tok
+    policyIdx = i
+    break
+  }
+  if (parts.length === 2) {
+    policy = parts[1] ?? 'DIRECT'
+    policyIdx = 1
+  }
+  const contentEnd = policyIdx > 1 ? policyIdx : parts.length
+  const content =
+    contentEnd > 1 ? parts.slice(1, contentEnd).join(',') : (parts[1] ?? '')
+  return {
+    id: `base-${idx}-${s.slice(0, 24)}`,
+    ruleType: type,
+    content,
+    policy,
+    options,
+  }
 }
 
 function ruleRowsFromAny(raw: unknown): RuleRow[] {

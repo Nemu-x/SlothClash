@@ -17,7 +17,6 @@ import titleBarLogo from '../../build/appicon.png'
 import {
   ActivateProfile,
   ApplyUpdate,
-  AutoSelectProxyGroup,
   CheckForUpdates,
   Connect,
   DeleteProfile,
@@ -26,7 +25,11 @@ import {
   FetchRulesOverview,
   GetAppState,
   GetTrayAvailability,
+  GetLaunchOnStartupPreference,
+  GetDesktopPrefs,
   GetProfilePaths,
+  GetProfileProxyGroupsBaseline,
+  GetProfileRulesBaseline,
   GetPreferredLanguage,
   GetTunStatus,
   GetUpdateState,
@@ -42,11 +45,14 @@ import {
   SetProfileProxyTemplate,
   SetProfileRulesTemplate,
   SetCloseToTrayPreference,
+  SetLaunchOnStartupPreference,
   SetMode,
+  StartedMinimized,
   SetProfileAutoUpdate,
   SetProxyNode,
   SetTrafficMode,
-  SetUpdateChannel,
+  SetTrafficSettings,
+  SetTunSettings,
   UpdateProfileInfo,
   WriteProfileConfig,
 } from '../wailsjs/go/main/App'
@@ -74,6 +80,8 @@ import {
   rulesBucketsToAdvancedYaml,
   rulesBucketsFromAdvancedYaml,
   applyRulesBucketsToMerge,
+  parseRuleLine,
+  proxyGroupObjToRow,
   type ProxyGroupRow,
   type RuleRow,
 } from './mergeTemplate'
@@ -546,6 +554,15 @@ function App() {
   >(null)
   const [proxyRows, setProxyRows] = useState<ProxyGroupRow[]>([])
   const [proxyAppendRows, setProxyAppendRows] = useState<ProxyGroupRow[]>([])
+  const [proxyGroupsBaseline, setProxyGroupsBaseline] = useState<
+    Record<string, unknown>[] | null
+  >(null)
+  const [proxyGroupsBaselineLoading, setProxyGroupsBaselineLoading] =
+    useState(false)
+  const [proxyGroupsBaselineError, setProxyGroupsBaselineError] = useState<
+    string | null
+  >(null)
+  const [deletedProxyGroups, setDeletedProxyGroups] = useState<string[]>([])
   const [proxyTarget, setProxyTarget] = useState<'prepend' | 'append'>(
     'prepend',
   )
@@ -575,6 +592,12 @@ function App() {
   >(null)
   const [ruleRows, setRuleRows] = useState<RuleRow[]>([])
   const [ruleAppendRows, setRuleAppendRows] = useState<RuleRow[]>([])
+  const [rulesBaseline, setRulesBaseline] = useState<string[] | null>(null)
+  const [rulesBaselineLoading, setRulesBaselineLoading] = useState(false)
+  const [rulesBaselineError, setRulesBaselineError] = useState<string | null>(
+    null,
+  )
+  const [deletedBaselineRules, setDeletedBaselineRules] = useState<string[]>([])
   const [ruleTarget, setRuleTarget] = useState<'prepend' | 'append'>('prepend')
   const [ruleFormType, setRuleFormType] = useState('DOMAIN-SUFFIX')
   const [ruleFormContent, setRuleFormContent] = useState('')
@@ -603,6 +626,18 @@ function App() {
   )
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [trayAvailable, setTrayAvailable] = useState(false)
+  const [showBuiltinProxyGroups, setShowBuiltinProxyGroups] = useState(false)
+  const [tunPrefs, setTunPrefs] = useState<main.TunSettings>(
+    () => new main.TunSettings({}),
+  )
+  const [trafficPrefs, setTrafficPrefs] = useState<main.TrafficSettings>(
+    () => new main.TrafficSettings({}),
+  )
+  const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
+  const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
+  const [tunDeviceDraft, setTunDeviceDraft] = useState<string>('')
+  const [tunPrefsSaving, setTunPrefsSaving] = useState(false)
+  const [showTunModal, setShowTunModal] = useState(false)
   const [settingsResetModal, setSettingsResetModal] = useState<
     'keep_profiles' | 'with_profiles' | null
   >(null)
@@ -703,6 +738,41 @@ function App() {
     void GetUpdateState().then(setUpdateSnap)
   }, [])
 
+  // Sync the persisted autostart state with the OS-level registry on mount
+  // and honour Start Minimized by hiding the window immediately when the
+  // app was either launched with --minimized (autostart) or the user has
+  // toggled the "Start minimized" preference.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const actual = await GetLaunchOnStartupPreference()
+        setSetting('launchOnStartup', Boolean(actual))
+      } catch {
+        /* ignore: registry not available (non-Windows / permission denied) */
+      }
+      try {
+        const launchedHidden = await StartedMinimized()
+        if (launchedHidden || settings.startMinimized) {
+          WindowHide()
+        }
+      } catch {
+        if (settings.startMinimized) WindowHide()
+      }
+      try {
+        const prefs = await GetDesktopPrefs()
+        const nextTun = new main.TunSettings(prefs?.tun ?? {})
+        const nextTraffic = new main.TrafficSettings(prefs?.traffic ?? {})
+        setTunPrefs(nextTun)
+        setTrafficPrefs(nextTraffic)
+        setTunDnsHijackDraft((nextTun.dnsHijack ?? []).join(', '))
+        setTunMtuDraft(nextTun.mtu ? String(nextTun.mtu) : '')
+        setTunDeviceDraft(nextTun.device ?? '')
+      } catch {
+        /* ignore: prefs API unavailable */
+      }
+    })()
+  }, [])
+
   useEffect(() => {
     const off = EventsOn('app:state', () => {
       if (isAnyEditorModalOpen) return
@@ -776,13 +846,18 @@ function App() {
     setError('')
   }, [state?.connection?.status])
 
-  // If /proxies was still warming up, or groups loaded before activeGroup — nudge briefly.
+  // Warmup nudge: only fire while /proxies is still returning an empty
+  // group list right after Connect. An empty activeGroup is a VALID
+  // steady state now — we removed the auto-picker, so on first-ever
+  // connects the Proxies screen legitimately shows "—" until the user
+  // clicks a group. Polling on empty activeGroup there would spin
+  // refresh() for 8.4s every connect and was the main driver of the
+  // "подлагивает, по 5 реконнектов" behaviour reported in the logs.
   useEffect(() => {
     if (isAnyEditorModalOpen) return
     if (state?.connection?.status !== 'connected') return
     const hasGroups = (state?.proxy?.groups?.length ?? 0) > 0
-    const ag = String(state?.proxy?.activeGroup ?? '').trim()
-    if (hasGroups && ag) return
+    if (hasGroups) return
     let i = 0
     const id = setInterval(() => {
       i++
@@ -794,7 +869,6 @@ function App() {
     isAnyEditorModalOpen,
     state?.connection?.status,
     state?.proxy?.groups?.length,
-    state?.proxy?.activeGroup,
     refresh,
   ])
 
@@ -998,6 +1072,7 @@ function App() {
     const buckets = proxyBucketsFromMerge(raw)
     setProxyRows(buckets.prepend)
     setProxyAppendRows(buckets.append)
+    setDeletedProxyGroups(buckets.delete)
     setProxyAdvancedDraft(proxyBucketsToAdvancedYaml(buckets))
     setProxyTarget('prepend')
     setPgFormUrl('http://www.gstatic.com/generate_204')
@@ -1006,6 +1081,28 @@ function App() {
     setPgFormMaxFailed('5')
     setPgFormLazy(true)
     setProxyUiMode('visual')
+    setProxyGroupsBaseline(null)
+    setProxyGroupsBaselineError(null)
+    setProxyGroupsBaselineLoading(true)
+    const id = profileProxyModal.id
+    void (async () => {
+      try {
+        const peek = await GetProfileProxyGroupsBaseline(id)
+        if (peek?.lastError) {
+          setProxyGroupsBaselineError(peek.lastError)
+          setProxyGroupsBaseline([])
+        } else {
+          setProxyGroupsBaseline(
+            Array.isArray(peek?.groups) ? (peek.groups as any) : [],
+          )
+        }
+      } catch (e: any) {
+        setProxyGroupsBaselineError(String(e))
+        setProxyGroupsBaseline([])
+      } finally {
+        setProxyGroupsBaselineLoading(false)
+      }
+    })()
   }, [profileProxyModal])
 
   useEffect(() => {
@@ -1018,9 +1115,30 @@ function App() {
     const buckets = rulesBucketsFromMerge(raw)
     setRuleRows(buckets.prepend)
     setRuleAppendRows(buckets.append)
+    setDeletedBaselineRules(buckets.delete)
     setRulesAdvancedDraft(rulesBucketsToAdvancedYaml(buckets))
     setRuleTarget('prepend')
     setRulesUiMode('visual')
+    setRulesBaseline(null)
+    setRulesBaselineError(null)
+    setRulesBaselineLoading(true)
+    const id = profileRulesModal.id
+    void (async () => {
+      try {
+        const peek = await GetProfileRulesBaseline(id)
+        if (peek?.lastError) {
+          setRulesBaselineError(peek.lastError)
+          setRulesBaseline([])
+        } else {
+          setRulesBaseline(Array.isArray(peek?.rules) ? peek.rules : [])
+        }
+      } catch (e: any) {
+        setRulesBaselineError(String(e))
+        setRulesBaseline([])
+      } finally {
+        setRulesBaselineLoading(false)
+      }
+    })()
   }, [profileRulesModal])
 
   useEffect(() => {
@@ -1085,6 +1203,110 @@ function App() {
   ) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
+
+  const commitTunPrefs = async (
+    patch: Partial<main.TunSettings>,
+    drafts?: {
+      dnsHijack?: string
+      mtu?: string
+      device?: string
+    },
+  ) => {
+    if (tunPrefsSaving) return
+    setTunPrefsSaving(true)
+    try {
+      const dnsHijackRaw = drafts?.dnsHijack ?? tunDnsHijackDraft
+      const dnsHijack = dnsHijackRaw
+        .split(/[,\n;\r]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const mtuRaw = drafts?.mtu ?? tunMtuDraft
+      const mtu = mtuRaw.trim() === '' ? 0 : Math.max(0, Number(mtuRaw) || 0)
+      const device = (drafts?.device ?? tunDeviceDraft).trim()
+      const next: main.TunSettings = new main.TunSettings({
+        ...tunPrefs,
+        ...patch,
+        dnsHijack: dnsHijack.length > 0 ? dnsHijack : undefined,
+        mtu: mtu > 0 ? mtu : undefined,
+        device: device !== '' ? device : undefined,
+      })
+      const updated = await SetTunSettings(next)
+      const updatedTun = new main.TunSettings(updated?.tun ?? {})
+      setTunPrefs(updatedTun)
+      setTunDnsHijackDraft((updatedTun.dnsHijack ?? []).join(', '))
+      setTunMtuDraft(updatedTun.mtu ? String(updatedTun.mtu) : '')
+      setTunDeviceDraft(updatedTun.device ?? '')
+    } catch (e: any) {
+      setError(String(e))
+    } finally {
+      setTunPrefsSaving(false)
+    }
+  }
+
+  const commitTrafficPrefs = async (patch: Partial<main.TrafficSettings>) => {
+    if (tunPrefsSaving) return
+    setTunPrefsSaving(true)
+    try {
+      const next: main.TrafficSettings = new main.TrafficSettings({
+        ...trafficPrefs,
+        ...patch,
+      })
+      const updated = await SetTrafficSettings(next)
+      setTrafficPrefs(new main.TrafficSettings(updated?.traffic ?? {}))
+    } catch (e: any) {
+      setError(String(e))
+    } finally {
+      setTunPrefsSaving(false)
+    }
+  }
+
+  const tunStackValue: string = tunPrefs.stack ?? ''
+  const tunStackOptions: { id: string; label: string }[] = [
+    { id: '', label: t('settings.tun.inherit') },
+    { id: 'gvisor', label: 'gvisor' },
+    { id: 'system', label: 'system' },
+    { id: 'mixed', label: 'mixed' },
+  ]
+
+  const tristatePills = (
+    value: boolean | undefined,
+    onChange: (next: boolean | undefined) => void,
+  ) => (
+    <div className="segPill settingsTunPillRow">
+      <button
+        type="button"
+        className={value === undefined ? 'pillOpt active' : 'pillOpt'}
+        onClick={() => onChange(undefined)}
+        disabled={tunPrefsSaving}
+      >
+        {t('settings.tun.inherit')}
+      </button>
+      <button
+        type="button"
+        className={value === true ? 'pillOpt active' : 'pillOpt'}
+        onClick={() => onChange(true)}
+        disabled={tunPrefsSaving}
+      >
+        {t('common.on')}
+      </button>
+      <button
+        type="button"
+        className={value === false ? 'pillOpt active' : 'pillOpt'}
+        onClick={() => onChange(false)}
+        disabled={tunPrefsSaving}
+      >
+        {t('common.off')}
+      </button>
+    </div>
+  )
+
+  const findProcessModeValue: string = trafficPrefs.findProcessMode ?? ''
+  const findProcessModeOptions: { id: string; label: string }[] = [
+    { id: '', label: t('settings.tun.inherit') },
+    { id: 'off', label: 'off' },
+    { id: 'strict', label: 'strict' },
+    { id: 'always', label: 'always' },
+  ]
 
   const refreshAllSubscriptions = async () => {
     if (settingsBusy) return
@@ -1770,7 +1992,7 @@ function App() {
                     {t('ui.home.mode')}
                   </span>
                   <div
-                    className="segmentInset segmentInset3"
+                    className="segmentInset segmentInset2"
                     role="group"
                     aria-label="Routing mode"
                   >
@@ -1779,25 +2001,18 @@ function App() {
                       aria-hidden
                       style={
                         {
-                          '--seg-i':
-                            displayMode === 'rule'
-                              ? 0
-                              : displayMode === 'global'
-                                ? 1
-                                : 2,
+                          '--seg-i': displayMode === 'global' ? 1 : 0,
                         } as CSSProperties
                       }
                     />
-                    {(['rule', 'global', 'direct'] as const).map((m) => (
+                    {(['rule', 'global'] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
                         title={
                           m === 'rule'
                             ? t('ui.home.ruleTitle')
-                            : m === 'global'
-                              ? t('ui.home.globalTitle')
-                              : t('ui.home.directTitle')
+                            : t('ui.home.globalTitle')
                         }
                         className={
                           displayMode === m
@@ -1821,9 +2036,7 @@ function App() {
                       >
                         {m === 'rule'
                           ? t('ui.common.rule')
-                          : m === 'global'
-                            ? t('ui.common.global')
-                            : t('ui.common.direct')}
+                          : t('ui.common.global')}
                       </button>
                     ))}
                   </div>
@@ -2151,222 +2364,258 @@ function App() {
           <div className="panel proxiesPanel">
             <h2>{t('ui.proxies.title')}</h2>
             <p className="muted">{t('ui.proxies.lead')}</p>
-            <div className="row">
-              <button
-                type="button"
-                className="btn"
-                disabled={state?.connection?.status !== 'connected'}
-                onClick={() => run(() => RefreshProxies())}
-              >
-                {t('ui.proxies.refreshGroups')}
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
-                disabled={state?.connection?.status !== 'connected'}
-                onClick={() => run(() => AutoSelectProxyGroup())}
-              >
-                {t('ui.proxies.autoPick')}
-              </button>
-            </div>
-            <div className="proxyTopSwitches">
-              <div
-                className="segmentInset segmentInset3 proxyModeInset"
-                role="group"
-                aria-label="Proxy mode"
-              >
-                <div
-                  className="segmentGlider"
-                  aria-hidden
-                  style={
-                    {
-                      '--seg-i':
-                        displayMode === 'rule'
-                          ? 0
-                          : displayMode === 'global'
-                            ? 1
-                            : 2,
-                    } as CSSProperties
-                  }
-                />
-                <button
-                  type="button"
-                  className={
-                    displayMode === 'rule'
-                      ? 'segmentInsetBtn isOn'
-                      : 'segmentInsetBtn'
-                  }
-                  onClick={() => run(() => SetMode('rule'))}
-                >
-                  {t('ui.common.rule')}
-                </button>
-                <button
-                  type="button"
-                  className={
-                    displayMode === 'global'
-                      ? 'segmentInsetBtn isOn'
-                      : 'segmentInsetBtn'
-                  }
-                  onClick={() => run(() => SetMode('global'))}
-                >
-                  {t('ui.common.global')}
-                </button>
-                <button
-                  type="button"
-                  className={
-                    displayMode === 'direct'
-                      ? 'segmentInsetBtn isOn'
-                      : 'segmentInsetBtn'
-                  }
-                  onClick={() => run(() => SetMode('direct'))}
-                >
-                  {t('ui.common.direct')}
-                </button>
-              </div>
-            </div>
-            <div className="segment modern policyBlock">
-              <span className="segLabel">{t('ui.proxies.focusGroup')}</span>
-              <select
-                className="selectModern"
-                value={state?.proxy?.activeGroup ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value
-                  if (!v) return
-                  void run(() => SelectProxyGroup(v))
-                }}
-              >
-                <option value="">—</option>
-                {(state?.proxy?.groups ?? []).map((g: any) => (
-                  <option
-                    key={g.name}
-                    value={g.name}
-                    disabled={isUnsafeGroupName(g.name)}
-                  >
-                    {(() => {
-                      const flag = selectedNodeEmoji(g.selected)
-                      return `${flag ? `${flag} ` : ''}${g.name} (${g.type})`
-                    })()}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="proxyCardList">
-              {(state?.proxy?.groups ?? []).length === 0 ? (
-                <p className="muted">
-                  {state?.connection?.status === 'connected'
-                    ? t('ui.proxies.noGroups')
-                    : t('ui.proxies.connectFirst')}
-                </p>
-              ) : (
-                (state?.proxy?.groups ?? []).map((g: any) => (
-                  <div key={g.name} className="proxyGroupCard">
-                    <div className="proxyGroupHead">
-                      <div className="proxyGroupHeadMain">
-                        <div className="proxyGroupTitle">
-                          {(() => {
-                            const emoji = selectedNodeEmoji(g.selected)
-                            return (
-                              <>
-                                {emoji ? (
-                                  <span className="proxyGroupFlag">
-                                    {emoji}
-                                  </span>
-                                ) : null}
-                                <span>{g.name}</span>
-                              </>
-                            )
-                          })()}
-                        </div>
-                        <div className="proxyGroupMeta">
-                          <span className="proxyTypeChip">{g.type}</span>
-                          <span className="proxyCountChip">
-                            {(g.proxies ?? []).length}
-                          </span>
-                        </div>
-                        <div
-                          className="proxySelectedInline"
-                          title={String(g.selected ?? '')}
-                        >
-                          {(() => {
-                            const iso = extractNodeFlagIso(
-                              String(g.selected ?? ''),
-                            )
-                            return (
-                              <>
-                                <FlagMark iso2={iso} width={14} height={10} />
-                                <span className="proxySelectedName">
-                                  {nodeDisplayName(String(g.selected ?? ''))}
-                                </span>
-                                <div className="proxyNodeTags">
-                                  {nodeFeatureTags(
-                                    String(g.selected ?? ''),
-                                  ).map((t) => (
-                                    <span key={t} className="proxyNodeTag">
-                                      {t}
-                                    </span>
-                                  ))}
-                                </div>
-                              </>
-                            )
-                          })()}
-                        </div>
-                      </div>
+            {(() => {
+              const allGroups = (state?.proxy?.groups ?? []) as any[]
+              const visibleGroups = showBuiltinProxyGroups
+                ? allGroups
+                : allGroups.filter(
+                    (g: any) => !isUnsafeGroupName(String(g?.name ?? '')),
+                  )
+              return (
+                <>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={state?.connection?.status !== 'connected'}
+                      onClick={() => run(() => RefreshProxies())}
+                    >
+                      {t('ui.proxies.refreshGroups')}
+                    </button>
+                    <button
+                      type="button"
+                      className={showBuiltinProxyGroups ? 'btn' : 'btn ghost'}
+                      onClick={() => setShowBuiltinProxyGroups((prev) => !prev)}
+                    >
+                      {t('ui.proxies.showBuiltin')}
+                    </button>
+                  </div>
+                  <div className="proxyTopSwitches">
+                    <div
+                      className="segmentInset segmentInset2 proxyModeInset"
+                      role="group"
+                      aria-label="Proxy mode"
+                    >
+                      <div
+                        className="segmentGlider"
+                        aria-hidden
+                        style={
+                          {
+                            '--seg-i': displayMode === 'rule' ? 0 : 1,
+                          } as CSSProperties
+                        }
+                      />
                       <button
                         type="button"
-                        className="btn ghost proxyExpandBtn"
-                        onClick={() =>
-                          setExpandedProxyGroups((prev) => ({
-                            ...prev,
-                            [String(g.name)]: !prev[String(g.name)],
-                          }))
+                        className={
+                          displayMode === 'rule'
+                            ? 'segmentInsetBtn isOn'
+                            : 'segmentInsetBtn'
                         }
+                        onClick={() => run(() => SetMode('rule'))}
                       >
-                        {expandedProxyGroups[String(g.name)]
-                          ? 'Collapse'
-                          : 'Expand'}
+                        {t('ui.common.rule')}
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          displayMode === 'global'
+                            ? 'segmentInsetBtn isOn'
+                            : 'segmentInsetBtn'
+                        }
+                        onClick={() => run(() => SetMode('global'))}
+                      >
+                        {t('ui.common.global')}
                       </button>
                     </div>
-                    {expandedProxyGroups[String(g.name)] ? (
-                      <div className="proxyNodesGrid">
-                        {(g.proxies ?? []).map((p: string) => {
-                          const active = String(g.selected ?? '') === p
-                          const iso = extractNodeFlagIso(p)
-                          return (
-                            <button
-                              key={p}
-                              type="button"
-                              className={`proxyNodeCard${active ? ' active' : ''}`}
-                              title={p}
-                              onClick={() => {
-                                if (!p || active) return
-                                void run(() => SetProxyNode(g.name, p))
-                              }}
-                            >
-                              <div className="proxyNodeTop">
-                                <FlagMark iso2={iso} width={16} height={12} />
-                                <span className="proxyNodeName">
-                                  {nodeDisplayName(p)}
-                                </span>
-                                <div className="proxyNodeTags">
-                                  {nodeFeatureTags(p).map((t) => (
-                                    <span key={t} className="proxyNodeTag">
-                                      {t}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    ) : null}
                   </div>
-                ))
-              )}
-            </div>
-            {error ? (
-              <p className="error">{friendlyErrorMessage(error)}</p>
-            ) : null}
+                  <div className="segment modern policyBlock">
+                    <span className="segLabel">
+                      {t('ui.proxies.focusGroup')}
+                    </span>
+                    <select
+                      className="selectModern"
+                      value={state?.proxy?.activeGroup ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (!v) return
+                        void run(() => SelectProxyGroup(v))
+                      }}
+                    >
+                      <option value="">—</option>
+                      {visibleGroups.map((g: any) => (
+                        <option key={g.name} value={g.name}>
+                          {(() => {
+                            const flag = selectedNodeEmoji(g.selected)
+                            return `${flag ? `${flag} ` : ''}${g.name} (${g.type})`
+                          })()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="proxyCardList">
+                    {visibleGroups.length === 0 ? (
+                      <p className="muted">
+                        {state?.connection?.status === 'connected'
+                          ? t('ui.proxies.noGroups')
+                          : t('ui.proxies.connectFirst')}
+                      </p>
+                    ) : (
+                      visibleGroups.map((g: any) => (
+                        <div key={g.name} className="proxyGroupCard">
+                          <div className="proxyGroupHead">
+                            <div className="proxyGroupHeadMain">
+                              <div className="proxyGroupTitle">
+                                {(() => {
+                                  const emoji = selectedNodeEmoji(g.selected)
+                                  return (
+                                    <>
+                                      {emoji ? (
+                                        <span className="proxyGroupFlag">
+                                          {emoji}
+                                        </span>
+                                      ) : null}
+                                      <span>{g.name}</span>
+                                    </>
+                                  )
+                                })()}
+                              </div>
+                              <div className="proxyGroupMeta">
+                                <span className="proxyTypeChip">{g.type}</span>
+                                <span className="proxyCountChip">
+                                  {(g.proxies ?? []).length}
+                                </span>
+                              </div>
+                              <div
+                                className="proxySelectedInline"
+                                title={String(g.selected ?? '')}
+                              >
+                                {(() => {
+                                  const iso = extractNodeFlagIso(
+                                    String(g.selected ?? ''),
+                                  )
+                                  return (
+                                    <>
+                                      <FlagMark
+                                        iso2={iso}
+                                        width={14}
+                                        height={10}
+                                      />
+                                      <span className="proxySelectedName">
+                                        {nodeDisplayName(
+                                          String(g.selected ?? ''),
+                                        )}
+                                      </span>
+                                      <div className="proxyNodeTags">
+                                        {nodeFeatureTags(
+                                          String(g.selected ?? ''),
+                                        ).map((t) => (
+                                          <span
+                                            key={t}
+                                            className="proxyNodeTag"
+                                          >
+                                            {t}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )
+                                })()}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn ghost proxyExpandBtn"
+                              onClick={() =>
+                                setExpandedProxyGroups((prev) => ({
+                                  ...prev,
+                                  [String(g.name)]: !prev[String(g.name)],
+                                }))
+                              }
+                            >
+                              {expandedProxyGroups[String(g.name)]
+                                ? 'Collapse'
+                                : 'Expand'}
+                            </button>
+                          </div>
+                          {expandedProxyGroups[String(g.name)] ? (
+                            <div className="proxyNodesGrid">
+                              {(() => {
+                                const normalizedType = String(g.type ?? '')
+                                  .toLowerCase()
+                                  .replace(/-/g, '')
+                                const isAutoGroup =
+                                  normalizedType === 'urltest' ||
+                                  normalizedType === 'fallback' ||
+                                  normalizedType === 'loadbalance'
+                                return (
+                                  <>
+                                    {isAutoGroup ? (
+                                      <p className="muted small proxyAutoGroupHint">
+                                        {t('ui.proxies.autoGroupHint')}
+                                      </p>
+                                    ) : null}
+                                    {(g.proxies ?? []).map((p: string) => {
+                                      const active =
+                                        String(g.selected ?? '') === p
+                                      const iso = extractNodeFlagIso(p)
+                                      return (
+                                        <button
+                                          key={p}
+                                          type="button"
+                                          className={`proxyNodeCard${active ? ' active' : ''}${isAutoGroup ? ' proxyNodeDisabled' : ''}`}
+                                          title={
+                                            isAutoGroup
+                                              ? t('ui.proxies.autoGroupHint')
+                                              : p
+                                          }
+                                          disabled={isAutoGroup}
+                                          onClick={() => {
+                                            if (!p || active || isAutoGroup)
+                                              return
+                                            void run(() =>
+                                              SetProxyNode(g.name, p),
+                                            )
+                                          }}
+                                        >
+                                          <div className="proxyNodeTop">
+                                            <FlagMark
+                                              iso2={iso}
+                                              width={16}
+                                              height={12}
+                                            />
+                                            <span className="proxyNodeName">
+                                              {nodeDisplayName(p)}
+                                            </span>
+                                            <div className="proxyNodeTags">
+                                              {nodeFeatureTags(p).map((t) => (
+                                                <span
+                                                  key={t}
+                                                  className="proxyNodeTag"
+                                                >
+                                                  {t}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      )
+                                    })}
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {error ? (
+                    <p className="error">{friendlyErrorMessage(error)}</p>
+                  ) : null}
+                </>
+              )
+            })()}
           </div>
         ) : null}
 
@@ -2526,122 +2775,101 @@ function App() {
         ) : null}
 
         {screen === 'rules' ? (
-          <div className="panel">
-            <h2>{t('ui.rules.title')}</h2>
-            <p className="muted">
-              {t('ui.rules.leadPrefix')}{' '}
-              <code className="code">SLOTH_CLASH_CONTROLLER</code>{' '}
-              {t('ui.rules.leadSuffix')}
-            </p>
-
-            <div className="homeCard">
-              <div className="homeCardHead">
-                <div>
-                  <p className="eyebrow">{t('ui.rules.liveEyebrow')}</p>
-                  <h3 className="homeCardTitle">{t('ui.rules.liveTitle')}</h3>
-                </div>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={rulesBusy}
-                  onClick={() => refreshRules()}
-                >
-                  {rulesBusy ? t('ui.rules.refreshing') : t('ui.rules.refresh')}
-                </button>
-              </div>
-              {rulesOverview?.lastError ? (
-                <p className="error tight">{rulesOverview.lastError}</p>
-              ) : null}
-              {rulesOverview?.reachable ? (
-                <p className="muted small tight">
-                  {t('ui.rules.reachable')}: {rulesOverview.controller}
-                </p>
-              ) : null}
-              {rulesRows.length > 0 ? (
-                <>
-                  <div className="rulesFilterRow">
-                    <input
-                      className="input rulesFilterSearch"
-                      value={ruleSearch}
-                      onChange={(e) => setRuleSearch(e.target.value)}
-                      placeholder={t('ui.rules.searchPlaceholder')}
-                    />
-                    <select
-                      className="selectModern rulesFilterSelect"
-                      value={ruleTypeFilter}
-                      onChange={(e) => setRuleTypeFilter(e.target.value)}
-                    >
-                      <option value="all">{t('ui.rules.allTypes')}</option>
-                      {ruleTypeFilterOptions.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="selectModern rulesFilterSelect"
-                      value={rulePolicyFilter}
-                      onChange={(e) => setRulePolicyFilter(e.target.value)}
-                    >
-                      <option value="all">{t('ui.rules.allPolicies')}</option>
-                      {rulePolicyFilterOptions.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="rulesSummaryRow">
-                    <span className="rulesSummaryChip">
-                      {t('ui.rules.total')}: {filteredRulesRows.length}/
-                      {rulesRows.length}
-                    </span>
-                    {rulesTypeTop.map(([t, c]) => (
-                      <span key={t} className="rulesSummaryChip">
-                        {t}: {c}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="rulesTableWrap">
-                    <table className="rulesTable">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>{t('ui.rules.type')}</th>
-                          <th>{t('ui.rules.match')}</th>
-                          <th>{t('ui.rules.policy')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRulesRows.map((r) => (
-                          <tr key={`${r.idx}-${r.type}-${r.payload}`}>
-                            <td>{r.idx}</td>
-                            <td>{r.type}</td>
-                            <td className="rulesPayload">{r.payload || '—'}</td>
-                            <td
-                              className={
-                                r.proxy && r.proxy !== 'DIRECT'
-                                  ? 'rulesPolicy rulesPolicyProxy'
-                                  : 'rulesPolicy'
-                              }
-                            >
-                              {r.proxy}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              ) : (
-                <p className="muted small tight">{t('ui.rules.noParsed')}</p>
-              )}
-              {rulesOverview?.ruleProvidersBody ? (
-                <p className="muted small tight">
-                  {t('ui.rules.providersHint')}
-                </p>
-              ) : null}
+          <div className="panel rulesPanel">
+            <div className="rulesPanelHead">
+              <h2 className="rulesPanelTitle">{t('ui.rules.title')}</h2>
+              <button
+                type="button"
+                className="btn"
+                disabled={rulesBusy}
+                onClick={() => refreshRules()}
+              >
+                {rulesBusy ? t('ui.rules.refreshing') : t('ui.rules.refresh')}
+              </button>
             </div>
+            {state?.connection?.status === 'connected' &&
+            rulesOverview?.lastError ? (
+              <p className="error tight">{rulesOverview.lastError}</p>
+            ) : null}
+            {rulesRows.length > 0 ? (
+              <>
+                <div className="rulesFilterRow">
+                  <input
+                    className="input rulesFilterSearch"
+                    value={ruleSearch}
+                    onChange={(e) => setRuleSearch(e.target.value)}
+                    placeholder={t('ui.rules.searchPlaceholder')}
+                  />
+                  <select
+                    className="selectModern rulesFilterSelect"
+                    value={ruleTypeFilter}
+                    onChange={(e) => setRuleTypeFilter(e.target.value)}
+                  >
+                    <option value="all">{t('ui.rules.allTypes')}</option>
+                    {ruleTypeFilterOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="selectModern rulesFilterSelect"
+                    value={rulePolicyFilter}
+                    onChange={(e) => setRulePolicyFilter(e.target.value)}
+                  >
+                    <option value="all">{t('ui.rules.allPolicies')}</option>
+                    {rulePolicyFilterOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rulesSummaryRow">
+                  <span className="rulesSummaryChip">
+                    {t('ui.rules.total')}: {filteredRulesRows.length}/
+                    {rulesRows.length}
+                  </span>
+                  {rulesTypeTop.map(([t, c]) => (
+                    <span key={t} className="rulesSummaryChip">
+                      {t}: {c}
+                    </span>
+                  ))}
+                </div>
+                <div className="rulesTableWrap rulesTableWrapFull">
+                  <table className="rulesTable">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{t('ui.rules.type')}</th>
+                        <th>{t('ui.rules.match')}</th>
+                        <th>{t('ui.rules.policy')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRulesRows.map((r) => (
+                        <tr key={`${r.idx}-${r.type}-${r.payload}`}>
+                          <td>{r.idx}</td>
+                          <td>{r.type}</td>
+                          <td className="rulesPayload">{r.payload || '—'}</td>
+                          <td
+                            className={
+                              r.proxy && r.proxy !== 'DIRECT'
+                                ? 'rulesPolicy rulesPolicyProxy'
+                                : 'rulesPolicy'
+                            }
+                          >
+                            {r.proxy}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="muted small tight">{t('ui.rules.noParsed')}</p>
+            )}
             {error ? (
               <p className="error">{friendlyErrorMessage(error)}</p>
             ) : null}
@@ -2905,9 +3133,18 @@ function App() {
                   <button
                     type="button"
                     className={`trafficKnob ${settings.launchOnStartup ? 'on' : ''}`}
-                    onClick={() =>
-                      setSetting('launchOnStartup', !settings.launchOnStartup)
-                    }
+                    onClick={() => {
+                      const next = !settings.launchOnStartup
+                      setSetting('launchOnStartup', next)
+                      void (async () => {
+                        try {
+                          await SetLaunchOnStartupPreference(next)
+                        } catch (e: any) {
+                          setError(String(e))
+                          setSetting('launchOnStartup', !next)
+                        }
+                      })()
+                    }}
                   >
                     {settings.launchOnStartup
                       ? t('common.on')
@@ -2985,6 +3222,56 @@ function App() {
                     onClick={ensureTun}
                   >
                     {t('settings.guidedTun')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="homeCard settingsCardCompact">
+                <h3 className="homeCardTitle">{t('settings.tun.title')}</h3>
+                <p className="muted settingsMicroHint">
+                  {t('settings.tun.hint')}
+                </p>
+                <div className="settingsTunSummary">
+                  <span className="settingsTunSummaryItem">
+                    <span className="settingsTunSummaryLabel">
+                      {t('settings.tun.stackLabel')}:
+                    </span>
+                    <span className="settingsTunSummaryValue">
+                      {tunStackValue || t('settings.tun.inherit')}
+                    </span>
+                  </span>
+                  <span className="settingsTunSummaryItem">
+                    <span className="settingsTunSummaryLabel">
+                      {t('settings.tun.autoRouteLabel')}:
+                    </span>
+                    <span className="settingsTunSummaryValue">
+                      {tunPrefs.autoRoute === undefined
+                        ? t('settings.tun.inherit')
+                        : tunPrefs.autoRoute
+                          ? t('common.on')
+                          : t('common.off')}
+                    </span>
+                  </span>
+                  <span className="settingsTunSummaryItem">
+                    <span className="settingsTunSummaryLabel">
+                      {t('settings.tun.snifferLabel')}:
+                    </span>
+                    <span className="settingsTunSummaryValue">
+                      {trafficPrefs.snifferEnabled === undefined
+                        ? t('settings.tun.inherit')
+                        : trafficPrefs.snifferEnabled
+                          ? t('common.on')
+                          : t('common.off')}
+                    </span>
+                  </span>
+                </div>
+                <div className="settingsInlineActions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setShowTunModal(true)}
+                  >
+                    {t('settings.tun.configure')}
                   </button>
                 </div>
               </div>
@@ -3100,143 +3387,123 @@ function App() {
                   </button>
                 </div>
               </div>
-            </div>
 
-            <div className="homeCard settingsCardCompact settingsInfoDevCard">
-              <div className="settingsInfoDevHead">
+              <div className="homeCard settingsCardCompact settingsInfoDevCard">
                 <h3 className="homeCardTitle settingsInfoDevTitle">
                   {t('settings.info')}
                 </h3>
-                <span className="muted settingsMicroHint">
-                  Developer: Nemu-x
-                </span>
-              </div>
-              <div className="settingsInfoDevBody">
-                <div className="settingsKpiGrid">
-                  <div className="settingsKpi">
-                    <span>Core</span>
-                    <strong title="Mihomo / embedded core">
-                      {state?.core?.version?.trim() ? state.core.version : '—'}
-                    </strong>
+                <div className="settingsInfoDevBody">
+                  <div className="settingsKpiGrid">
+                    <div className="settingsKpi">
+                      <span>Core</span>
+                      <strong title="Mihomo / embedded core">
+                        {state?.core?.version?.trim()
+                          ? state.core.version
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="settingsKpi">
+                      <span>{t('settings.appVersionLabel')}</span>
+                      <strong>
+                        {String(updateSnap?.currentVersion ?? '').trim()
+                          ? String(updateSnap.currentVersion)
+                          : ((import.meta.env.VITE_APP_VERSION as
+                              | string
+                              | undefined) ?? 'dev')}
+                      </strong>
+                    </div>
+                    <div className="settingsKpi">
+                      <span>Channel</span>
+                      <strong>{updateSnap?.channel ?? 'stable'}</strong>
+                    </div>
+                    <div className="settingsKpi">
+                      <span>Checked</span>
+                      <strong>
+                        {updateSnap?.lastCheckedAt
+                          ? new Date(
+                              (updateSnap.lastCheckedAt as number) * 1000,
+                            ).toLocaleString()
+                          : 'Never'}
+                      </strong>
+                    </div>
                   </div>
-                  <div className="settingsKpi">
-                    <span>{t('settings.appVersionLabel')}</span>
-                    <strong>
-                      {String(updateSnap?.currentVersion ?? '').trim()
-                        ? String(updateSnap.currentVersion)
-                        : ((import.meta.env.VITE_APP_VERSION as
-                            | string
-                            | undefined) ?? 'dev')}
-                    </strong>
-                  </div>
-                  <div className="settingsKpi">
-                    <span>Channel</span>
-                    <strong>{updateSnap?.channel ?? 'stable'}</strong>
-                  </div>
-                  <div className="settingsKpi">
-                    <span>Checked</span>
-                    <strong>
-                      {updateSnap?.lastCheckedAt
-                        ? new Date(
-                            (updateSnap.lastCheckedAt as number) * 1000,
-                          ).toLocaleString()
-                        : 'Never'}
-                    </strong>
-                  </div>
-                </div>
-                <div className="settingsInfoDevActions">
-                  {updateSnap?.hasUpdate ? (
-                    <p className="banner" role="status">
-                      {t('settings.updateAvailable', {
-                        version: String(updateSnap.latestVersion ?? ''),
-                      })}
-                    </p>
-                  ) : updateSnap?.lastCheckedAt && !updateSnap?.lastError ? (
-                    <p className="muted small" role="status">
-                      {t('settings.upToDate')}
-                    </p>
-                  ) : null}
-                  {updateSnap?.lastError ? (
-                    <p className="error small">
-                      {String(updateSnap.lastError)}
-                    </p>
-                  ) : null}
-                  <div className="row settingsInfoDevBtnRow">
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        void (async () => {
-                          setError('')
-                          try {
-                            const u = await CheckForUpdates()
-                            setUpdateSnap(u)
-                          } catch (e: any) {
-                            setError(String(e))
-                          }
-                        })()
-                      }
-                    >
-                      {t('settings.checkUpdates')}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() =>
-                        void (async () => {
-                          setError('')
-                          try {
-                            const u = await SetUpdateChannel('stable')
-                            setUpdateSnap(u)
-                          } catch (e: any) {
-                            setError(String(e))
-                          }
-                        })()
-                      }
-                    >
-                      {t('settings.stableChannel')}
-                    </button>
-                    {updateSnap?.hasUpdate &&
-                    String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+                  <div className="settingsInfoDevActions">
+                    {updateSnap?.hasUpdate ? (
+                      <p className="banner" role="status">
+                        {t('settings.updateAvailable', {
+                          version: String(updateSnap.latestVersion ?? ''),
+                        })}
+                      </p>
+                    ) : updateSnap?.lastCheckedAt && !updateSnap?.lastError ? (
+                      <p className="muted small" role="status">
+                        {t('settings.upToDate')}
+                      </p>
+                    ) : null}
+                    {updateSnap?.lastError ? (
+                      <p className="error small">
+                        {String(updateSnap.lastError)}
+                      </p>
+                    ) : null}
+                    <div className="row settingsInfoDevBtnRow">
                       <button
                         type="button"
-                        className="btn primary"
+                        className="btn"
                         onClick={() =>
                           void (async () => {
                             setError('')
                             try {
-                              const ok = window.confirm(
-                                'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
-                              )
-                              if (!ok) return
-                              await ApplyUpdate()
-                              // Give installer process a moment to initialize before we exit.
-                              setTimeout(() => {
-                                void Quit()
-                              }, 350)
+                              const u = await CheckForUpdates()
+                              setUpdateSnap(u)
                             } catch (e: any) {
                               setError(String(e))
                             }
-                            await refresh()
-                            const u = await GetUpdateState()
-                            setUpdateSnap(u)
                           })()
                         }
                       >
-                        {t('settings.downloadInstaller')}
+                        {t('settings.checkUpdates')}
                       </button>
-                    ) : null}
-                    {String(updateSnap?.releaseUrl ?? '').trim() ? (
-                      <button
-                        type="button"
-                        className="btn ghost"
-                        onClick={() =>
-                          BrowserOpenURL(String(updateSnap.releaseUrl))
-                        }
-                      >
-                        {t('settings.openReleasePage')}
-                      </button>
-                    ) : null}
+                      {updateSnap?.hasUpdate &&
+                      String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={() =>
+                            void (async () => {
+                              setError('')
+                              try {
+                                const ok = window.confirm(
+                                  'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
+                                )
+                                if (!ok) return
+                                await ApplyUpdate()
+                                // Give installer process a moment to initialize before we exit.
+                                setTimeout(() => {
+                                  void Quit()
+                                }, 350)
+                              } catch (e: any) {
+                                setError(String(e))
+                              }
+                              await refresh()
+                              const u = await GetUpdateState()
+                              setUpdateSnap(u)
+                            })()
+                          }
+                        >
+                          {t('settings.downloadInstaller')}
+                        </button>
+                      ) : null}
+                      {String(updateSnap?.releaseUrl ?? '').trim() ? (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() =>
+                            BrowserOpenURL(String(updateSnap.releaseUrl))
+                          }
+                        >
+                          {t('settings.openReleasePage')}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3541,6 +3808,7 @@ function App() {
                     const b = proxyBucketsFromAdvancedYaml(proxyAdvancedDraft)
                     setProxyRows(b.prepend)
                     setProxyAppendRows(b.append)
+                    setDeletedProxyGroups(b.delete)
                   }}
                 >
                   Visual
@@ -3675,14 +3943,14 @@ function App() {
                           applyProxyBucketsToMerge(prev, {
                             prepend: prepNext,
                             append: appNext,
-                            delete: [],
+                            delete: deletedProxyGroups,
                           }),
                         )
                         setProxyAdvancedDraft(
                           proxyBucketsToAdvancedYaml({
                             prepend: prepNext,
                             append: appNext,
-                            delete: [],
+                            delete: deletedProxyGroups,
                           }),
                         )
                         setPgFormName('')
@@ -3730,7 +3998,78 @@ function App() {
               </div>
               {proxyUiMode === 'visual' ? (
                 <div className="vergePane vergePaneList">
-                  <p className="eyebrow">prepend.proxy-groups</p>
+                  <p className="eyebrow">subscription.proxy-groups</p>
+                  <div className="vergeScrollList">
+                    {proxyGroupsBaselineLoading ? (
+                      <p className="muted small">
+                        Loading subscription groups…
+                      </p>
+                    ) : proxyGroupsBaselineError ? (
+                      <p className="muted small" style={{ color: '#ff6b6b' }}>
+                        {proxyGroupsBaselineError}
+                      </p>
+                    ) : !proxyGroupsBaseline ||
+                      proxyGroupsBaseline.length === 0 ? (
+                      <p className="muted small">
+                        No subscription groups detected.
+                      </p>
+                    ) : (
+                      proxyGroupsBaseline.map((gm, idx) => {
+                        const row = proxyGroupObjToRow(gm as any, idx)
+                        if (!row) return null
+                        const deleted = deletedProxyGroups.includes(row.name)
+                        return (
+                          <div
+                            key={row.id}
+                            className={`vergeCard vergeCardReadOnly ${
+                              deleted ? 'vergeCardDeleted' : ''
+                            }`}
+                          >
+                            <div>
+                              <div className="vergeCardTitle">{row.name}</div>
+                              <div className="muted small">{row.type}</div>
+                              <div className="muted small vergeCardSub">
+                                use: {row.use || '—'}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn ghost vergeTrash"
+                              aria-label={deleted ? 'Restore' : 'Delete'}
+                              title={deleted ? 'Restore' : 'Delete'}
+                              onClick={() => {
+                                const nextDel = deleted
+                                  ? deletedProxyGroups.filter(
+                                      (x) => x !== row.name,
+                                    )
+                                  : [...deletedProxyGroups, row.name]
+                                setDeletedProxyGroups(nextDel)
+                                setProxyMergeDraft((prev) =>
+                                  applyProxyBucketsToMerge(prev, {
+                                    prepend: proxyRows,
+                                    append: proxyAppendRows,
+                                    delete: nextDel,
+                                  }),
+                                )
+                                setProxyAdvancedDraft(
+                                  proxyBucketsToAdvancedYaml({
+                                    prepend: proxyRows,
+                                    append: proxyAppendRows,
+                                    delete: nextDel,
+                                  }),
+                                )
+                              }}
+                            >
+                              {deleted ? '↺' : '×'}
+                            </button>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  <p className="eyebrow" style={{ marginTop: 10 }}>
+                    prepend.proxy-groups
+                  </p>
                   <div className="vergeScrollList">
                     {proxyRows.length === 0 ? (
                       <p className="muted small">No groups yet.</p>
@@ -3758,7 +4097,7 @@ function App() {
                                 {
                                   prepend: next,
                                   append: proxyAppendRows,
-                                  delete: [],
+                                  delete: deletedProxyGroups,
                                 },
                               )
                               setProxyMergeDraft(merged)
@@ -3766,7 +4105,7 @@ function App() {
                                 proxyBucketsToAdvancedYaml({
                                   prepend: next,
                                   append: proxyAppendRows,
-                                  delete: [],
+                                  delete: deletedProxyGroups,
                                 }),
                               )
                             }}
@@ -3807,7 +4146,7 @@ function App() {
                                 {
                                   prepend: proxyRows,
                                   append: next,
-                                  delete: [],
+                                  delete: deletedProxyGroups,
                                 },
                               )
                               setProxyMergeDraft(merged)
@@ -3815,7 +4154,7 @@ function App() {
                                 proxyBucketsToAdvancedYaml({
                                   prepend: proxyRows,
                                   append: next,
-                                  delete: [],
+                                  delete: deletedProxyGroups,
                                 }),
                               )
                             }}
@@ -3851,7 +4190,7 @@ function App() {
                         ? applyProxyBucketsToMerge(proxyMergeDraft, {
                             prepend: proxyRows,
                             append: proxyAppendRows,
-                            delete: [],
+                            delete: deletedProxyGroups,
                           })
                         : (() => {
                             if (proxyAdvancedYamlErr) return null
@@ -3891,7 +4230,9 @@ function App() {
         >
           <div
             className={`modalCard modalCardWide yamlModalCard vergeModal ${
-              rulesUiMode === 'advanced' ? 'modalCardFullscreen' : ''
+              rulesUiMode === 'advanced'
+                ? 'modalCardFullscreen'
+                : 'modalCardVisualTall'
             }`}
             role="dialog"
             aria-modal="true"
@@ -3920,6 +4261,7 @@ function App() {
                         : rulesBucketsFromMerge(rulesMergeDraft)
                     setRuleRows(buckets.prepend)
                     setRuleAppendRows(buckets.append)
+                    setDeletedBaselineRules(buckets.delete)
                   }}
                 >
                   Visual
@@ -4023,14 +4365,14 @@ function App() {
                             applyRulesBucketsToMerge(prev, {
                               prepend: prepNext,
                               append: appNext,
-                              delete: [],
+                              delete: deletedBaselineRules,
                             }),
                           )
                           setRulesAdvancedDraft(
                             rulesBucketsToAdvancedYaml({
                               prepend: prepNext,
                               append: appNext,
-                              delete: [],
+                              delete: deletedBaselineRules,
                             }),
                           )
                           setRuleFormContent('')
@@ -4062,7 +4404,78 @@ function App() {
               </div>
               {rulesUiMode === 'visual' ? (
                 <div className="vergePane vergePaneList">
-                  <p className="eyebrow">prepend.rules</p>
+                  <p className="eyebrow">subscription.rules</p>
+                  <div className="vergeScrollList">
+                    {rulesBaselineLoading ? (
+                      <p className="muted small">Loading subscription rules…</p>
+                    ) : rulesBaselineError ? (
+                      <p className="muted small" style={{ color: '#ff6b6b' }}>
+                        {rulesBaselineError}
+                      </p>
+                    ) : !rulesBaseline || rulesBaseline.length === 0 ? (
+                      <p className="muted small">
+                        No subscription rules detected.
+                      </p>
+                    ) : (
+                      rulesBaseline.map((line, idx) => {
+                        const parsed = parseRuleLine(line, idx)
+                        const deleted = deletedBaselineRules.includes(line)
+                        return (
+                          <div
+                            key={parsed.id}
+                            className={`vergeCard vergeCardReadOnly ${
+                              deleted ? 'vergeCardDeleted' : ''
+                            }`}
+                          >
+                            <div>
+                              <div className="vergeCardTitle">
+                                {parsed.ruleType}
+                              </div>
+                              <div className="muted small">
+                                {parsed.content}
+                              </div>
+                              <div className="muted small">
+                                → {parsed.policy}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn ghost vergeTrash"
+                              aria-label={deleted ? 'Restore' : 'Delete'}
+                              title={deleted ? 'Restore' : 'Delete'}
+                              onClick={() => {
+                                const nextDel = deleted
+                                  ? deletedBaselineRules.filter(
+                                      (x) => x !== line,
+                                    )
+                                  : [...deletedBaselineRules, line]
+                                setDeletedBaselineRules(nextDel)
+                                setRulesMergeDraft((prev) =>
+                                  applyRulesBucketsToMerge(prev, {
+                                    prepend: ruleRows,
+                                    append: ruleAppendRows,
+                                    delete: nextDel,
+                                  }),
+                                )
+                                setRulesAdvancedDraft(
+                                  rulesBucketsToAdvancedYaml({
+                                    prepend: ruleRows,
+                                    append: ruleAppendRows,
+                                    delete: nextDel,
+                                  }),
+                                )
+                              }}
+                            >
+                              {deleted ? '↺' : '×'}
+                            </button>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  <p className="eyebrow" style={{ marginTop: 10 }}>
+                    prepend.rules
+                  </p>
                   <div className="vergeScrollList">
                     {ruleRows.length === 0 ? (
                       <p className="muted small">No custom prepend rules.</p>
@@ -4085,14 +4498,14 @@ function App() {
                                 applyRulesBucketsToMerge(prev, {
                                   prepend: next,
                                   append: ruleAppendRows,
-                                  delete: [],
+                                  delete: deletedBaselineRules,
                                 }),
                               )
                               setRulesAdvancedDraft(
                                 rulesBucketsToAdvancedYaml({
                                   prepend: next,
                                   append: ruleAppendRows,
-                                  delete: [],
+                                  delete: deletedBaselineRules,
                                 }),
                               )
                             }}
@@ -4130,14 +4543,14 @@ function App() {
                                 applyRulesBucketsToMerge(prev, {
                                   prepend: ruleRows,
                                   append: next,
-                                  delete: [],
+                                  delete: deletedBaselineRules,
                                 }),
                               )
                               setRulesAdvancedDraft(
                                 rulesBucketsToAdvancedYaml({
                                   prepend: ruleRows,
                                   append: next,
-                                  delete: [],
+                                  delete: deletedBaselineRules,
                                 }),
                               )
                             }}
@@ -4176,7 +4589,7 @@ function App() {
                           ? applyRulesBucketsToMerge(rulesMergeDraft, {
                               prepend: ruleRows,
                               append: ruleAppendRows,
-                              delete: [],
+                              delete: deletedBaselineRules,
                             })
                           : (() => {
                               const buckets =
@@ -4557,6 +4970,156 @@ function App() {
           >
             Edit file
           </button>
+        </div>
+      ) : null}
+
+      {showTunModal ? (
+        <div
+          className="modalOverlay"
+          role="presentation"
+          onClick={() => setShowTunModal(false)}
+        >
+          <div
+            className="modalCard modalCardVisualTall tunSettingsModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tunSettingsTitle"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="tunSettingsTitle" className="modalTitle">
+              {t('settings.tun.title')}
+            </h3>
+            <p className="muted small">{t('settings.tun.hint')}</p>
+            <div className="tunModalBody">
+              <label className="field modalField">
+                <span className="fieldLab">{t('settings.tun.stackLabel')}</span>
+                <div className="segPill settingsTunPillRow">
+                  {tunStackOptions.map((opt) => (
+                    <button
+                      key={opt.id || 'inherit'}
+                      type="button"
+                      className={
+                        tunStackValue === opt.id ? 'pillOpt active' : 'pillOpt'
+                      }
+                      disabled={tunPrefsSaving}
+                      onClick={() => void commitTunPrefs({ stack: opt.id })}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.autoRouteLabel')}
+                </span>
+                {tristatePills(
+                  tunPrefs.autoRoute,
+                  (next) => void commitTunPrefs({ autoRoute: next }),
+                )}
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.autoDetectInterfaceLabel')}
+                </span>
+                {tristatePills(
+                  tunPrefs.autoDetectInterface,
+                  (next) => void commitTunPrefs({ autoDetectInterface: next }),
+                )}
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.strictRouteLabel')}
+                </span>
+                {tristatePills(
+                  tunPrefs.strictRoute,
+                  (next) => void commitTunPrefs({ strictRoute: next }),
+                )}
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.dnsHijackLabel')}
+                </span>
+                <input
+                  className="input"
+                  placeholder="any:53"
+                  value={tunDnsHijackDraft}
+                  onChange={(e) => setTunDnsHijackDraft(e.target.value)}
+                  onBlur={() =>
+                    void commitTunPrefs({}, { dnsHijack: tunDnsHijackDraft })
+                  }
+                />
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">{t('settings.tun.mtuLabel')}</span>
+                <input
+                  className="input"
+                  placeholder="1500"
+                  value={tunMtuDraft}
+                  onChange={(e) => setTunMtuDraft(e.target.value)}
+                  onBlur={() => void commitTunPrefs({}, { mtu: tunMtuDraft })}
+                />
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.deviceLabel')}
+                </span>
+                <input
+                  className="input"
+                  placeholder="Mihomo"
+                  value={tunDeviceDraft}
+                  onChange={(e) => setTunDeviceDraft(e.target.value)}
+                  onBlur={() =>
+                    void commitTunPrefs({}, { device: tunDeviceDraft })
+                  }
+                />
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.snifferLabel')}
+                </span>
+                {tristatePills(
+                  trafficPrefs.snifferEnabled,
+                  (next) => void commitTrafficPrefs({ snifferEnabled: next }),
+                )}
+              </label>
+              <label className="field modalField">
+                <span className="fieldLab">
+                  {t('settings.tun.findProcessLabel')}
+                </span>
+                <div className="segPill settingsTunPillRow">
+                  {findProcessModeOptions.map((opt) => (
+                    <button
+                      key={opt.id || 'inherit'}
+                      type="button"
+                      className={
+                        findProcessModeValue === opt.id
+                          ? 'pillOpt active'
+                          : 'pillOpt'
+                      }
+                      disabled={tunPrefsSaving}
+                      onClick={() =>
+                        void commitTrafficPrefs({ findProcessMode: opt.id })
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </label>
+            </div>
+            <div className="modalFooter">
+              <div className="modalFooterRight">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => setShowTunModal(false)}
+                >
+                  {t('common.close') || 'Close'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 

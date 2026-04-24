@@ -10,10 +10,6 @@ export function ApplyUpdate() {
   return window['go']['main']['App']['ApplyUpdate']()
 }
 
-export function AutoSelectProxyGroup() {
-  return window['go']['main']['App']['AutoSelectProxyGroup']()
-}
-
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']()
 }
@@ -42,12 +38,28 @@ export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
 }
 
+export function GetDesktopPrefs() {
+  return window['go']['main']['App']['GetDesktopPrefs']()
+}
+
+export function GetLaunchOnStartupPreference() {
+  return window['go']['main']['App']['GetLaunchOnStartupPreference']()
+}
+
 export function GetPreferredLanguage() {
   return window['go']['main']['App']['GetPreferredLanguage']()
 }
 
 export function GetProfilePaths(arg1) {
   return window['go']['main']['App']['GetProfilePaths'](arg1)
+}
+
+export function GetProfileProxyGroupsBaseline(arg1) {
+  return window['go']['main']['App']['GetProfileProxyGroupsBaseline'](arg1)
+}
+
+export function GetProfileRulesBaseline(arg1) {
+  return window['go']['main']['App']['GetProfileRulesBaseline'](arg1)
 }
 
 export function GetTrayAvailability() {
@@ -118,6 +130,10 @@ export function SetCloseToTrayPreference(arg1) {
   return window['go']['main']['App']['SetCloseToTrayPreference'](arg1)
 }
 
+export function SetLaunchOnStartupPreference(arg1) {
+  return window['go']['main']['App']['SetLaunchOnStartupPreference'](arg1)
+}
+
 export function SetMode(arg1) {
   return window['go']['main']['App']['SetMode'](arg1)
 }
@@ -146,8 +162,20 @@ export function SetTrafficMode(arg1) {
   return window['go']['main']['App']['SetTrafficMode'](arg1)
 }
 
+export function SetTrafficSettings(arg1) {
+  return window['go']['main']['App']['SetTrafficSettings'](arg1)
+}
+
+export function SetTunSettings(arg1) {
+  return window['go']['main']['App']['SetTunSettings'](arg1)
+}
+
 export function SetUpdateChannel(arg1) {
   return window['go']['main']['App']['SetUpdateChannel'](arg1)
+}
+
+export function StartedMinimized() {
+  return window['go']['main']['App']['StartedMinimized']()
 }
 
 export function UpdateProfileInfo(arg1, arg2, arg3) {

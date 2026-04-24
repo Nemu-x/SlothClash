@@ -3,6 +3,7 @@ import { normalizeUriAndGetScheme } from './helpers'
 import { URI_HTTP } from './http'
 import { URI_Hysteria } from './hysteria'
 import { URI_Hysteria2 } from './hysteria2'
+import { URI_MIERU } from './mieru'
 import { URI_SOCKS } from './socks'
 import { URI_SS } from './ss'
 import { URI_SSR } from './ssr'
@@ -25,6 +26,8 @@ const URI_PARSERS: Record<string, UriParser> = {
   hy2: URI_Hysteria2,
   hysteria: URI_Hysteria,
   hy: URI_Hysteria,
+  mieru: URI_MIERU,
+  mierus: URI_MIERU,
   tuic: URI_TUIC,
   wireguard: URI_Wireguard,
   wg: URI_Wireguard,

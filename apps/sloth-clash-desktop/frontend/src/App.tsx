@@ -804,6 +804,25 @@ function App() {
   }, [spotlightOpen])
 
   useEffect(() => {
+    const off = EventsOn('app:navigate', (payload: unknown) => {
+      const p = payload as { screen?: string } | undefined
+      const id = String(p?.screen ?? '').trim() as Screen
+      const allowed: Screen[] = [
+        'home',
+        'proxies',
+        'profiles',
+        'rules',
+        'advanced',
+        'settings',
+      ]
+      if (!allowed.includes(id)) return
+      setScreen(id)
+      void refresh()
+    })
+    return () => off()
+  }, [refresh])
+
+  useEffect(() => {
     const off = EventsOn('app:install-config', (payload: unknown) => {
       void refresh()
       setScreen('home')

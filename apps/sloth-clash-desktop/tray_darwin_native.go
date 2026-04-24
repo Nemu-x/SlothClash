@@ -8,6 +8,7 @@ package main
 
 void SlothTrayStart(void);
 void SlothTrayStop(void);
+void slothTrayDispatch(int op);
 */
 import "C"
 
@@ -74,6 +75,42 @@ func trayIsReady() bool {
 	trayNativeMu.Lock()
 	defer trayNativeMu.Unlock()
 	return trayNativeUp
+}
+
+//export slothTrayDispatch
+func slothTrayDispatch(op C.int) {
+	trayNativeMu.Lock()
+	app := trayNativeApp
+	trayNativeMu.Unlock()
+	if app == nil {
+		return
+	}
+	switch int(op) {
+	case 1:
+		app.NavigateUIScreen("home")
+	case 2:
+		app.NavigateUIScreen("profiles")
+	case 3:
+		app.NavigateUIScreen("proxies")
+	case 4:
+		app.NavigateUIScreen("rules")
+	case 5:
+		app.NavigateUIScreen("advanced")
+	case 6:
+		app.NavigateUIScreen("settings")
+	case 10:
+		_, _ = app.SetMode("rule")
+	case 11:
+		_, _ = app.SetMode("global")
+	case 12:
+		_, _ = app.SetMode("direct")
+	case 20:
+		_, _ = app.SetTrafficMode("proxy")
+	case 21:
+		_, _ = app.SetTrafficMode("tun")
+	default:
+		return
+	}
 }
 
 //export slothTrayOnReady

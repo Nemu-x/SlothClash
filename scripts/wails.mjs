@@ -106,6 +106,12 @@ if (commandArgs[0] === 'build') {
 /** Prepend Go + NSIS dirs so Wails child processes (e.g. makensis) resolve reliably on Windows. */
 function spawnEnvForWails() {
   const env = { ...process.env }
+  // Native macOS tray (NSStatusBar) and ObjC lifecycle hooks require cgo. Some shells
+  // export CGO_ENABLED=0; without cgo the build selects tray stubs and the menu bar item
+  // never appears.
+  if (process.platform === 'darwin' && env.CGO_ENABLED !== '0') {
+    env.CGO_ENABLED = '1'
+  }
   if (process.platform !== 'win32') {
     return env
   }

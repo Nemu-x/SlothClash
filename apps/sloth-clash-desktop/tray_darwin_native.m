@@ -8,6 +8,7 @@ extern void slothTrayOnToggleConnect(void);
 extern void slothTrayOnQuit(void);
 extern void slothTrayOnReady(void);
 extern void slothTrayOnStopped(void);
+extern void slothTrayDispatch(int op);
 
 @interface SlothTrayHandler : NSObject
 @end
@@ -17,6 +18,20 @@ extern void slothTrayOnStopped(void);
 - (void)onHide:(id)sender { (void)sender; slothTrayOnHide(); }
 - (void)onToggleConnect:(id)sender { (void)sender; slothTrayOnToggleConnect(); }
 - (void)onQuit:(id)sender { (void)sender; slothTrayOnQuit(); }
+
+- (void)onNavHome:(id)sender { (void)sender; slothTrayDispatch(1); }
+- (void)onNavProfiles:(id)sender { (void)sender; slothTrayDispatch(2); }
+- (void)onNavProxies:(id)sender { (void)sender; slothTrayDispatch(3); }
+- (void)onNavRules:(id)sender { (void)sender; slothTrayDispatch(4); }
+- (void)onNavAdvanced:(id)sender { (void)sender; slothTrayDispatch(5); }
+- (void)onNavSettings:(id)sender { (void)sender; slothTrayDispatch(6); }
+
+- (void)onModeRule:(id)sender { (void)sender; slothTrayDispatch(10); }
+- (void)onModeGlobal:(id)sender { (void)sender; slothTrayDispatch(11); }
+- (void)onModeDirect:(id)sender { (void)sender; slothTrayDispatch(12); }
+
+- (void)onTrafficProxy:(id)sender { (void)sender; slothTrayDispatch(20); }
+- (void)onTrafficTun:(id)sender { (void)sender; slothTrayDispatch(21); }
 @end
 
 static NSStatusItem *gStatusItem = nil;
@@ -25,26 +40,98 @@ static NSMenu *gMenu = nil;
 static BOOL gTrayWanted = NO;
 static NSUInteger gTrayGeneration = 0;
 
+/// Prefer bundled tray icon (sync-desktop-packaging mirrors appicon → trayicons/sloth.png).
+static NSImage *SlothTrayTemplateImage(void) {
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *slothPng = [bundle pathForResource:@"sloth" ofType:@"png" inDirectory:@"trayicons"];
+    if (slothPng != nil) {
+        NSImage *img = [[NSImage alloc] initWithContentsOfFile:slothPng];
+        if (img != nil && img.valid) {
+            [img setTemplate:YES];
+            return img;
+        }
+    }
+
+    NSString *icns = [bundle pathForResource:@"iconfile" ofType:@"icns"];
+    if (icns != nil) {
+        NSImage *appIcon = [[NSImage alloc] initWithContentsOfFile:icns];
+        if (appIcon != nil && appIcon.valid) {
+            [appIcon setTemplate:YES];
+            return appIcon;
+        }
+    }
+
+    NSImage *icon = nil;
+    if (@available(macOS 11.0, *)) {
+        icon = [NSImage imageWithSystemSymbolName:@"pawprint"
+                         accessibilityDescription:@"Sloth Clash"];
+        if (icon != nil) {
+            NSImageSymbolConfiguration *cfg =
+                [NSImageSymbolConfiguration configurationWithPointSize:14
+                                                                weight:NSFontWeightRegular];
+            icon = [icon imageWithSymbolConfiguration:cfg];
+            if (icon != nil) {
+                [icon setTemplate:YES];
+                return icon;
+            }
+        }
+    }
+    if (@available(macOS 11.0, *)) {
+        icon = [NSImage imageWithSystemSymbolName:@"network"
+                         accessibilityDescription:@"Sloth Clash"];
+        if (icon != nil) {
+            NSImageSymbolConfiguration *cfg =
+                [NSImageSymbolConfiguration configurationWithPointSize:14
+                                                                weight:NSFontWeightRegular];
+            icon = [icon imageWithSymbolConfiguration:cfg];
+            if (icon != nil) {
+                [icon setTemplate:YES];
+                return icon;
+            }
+        }
+    }
+
+    NSString *png = [bundle pathForResource:@"appicon" ofType:@"png"];
+    if (png != nil) {
+        icon = [[NSImage alloc] initWithContentsOfFile:png];
+        if (icon != nil && icon.valid) {
+            [icon setTemplate:YES];
+            return icon;
+        }
+    }
+    return nil;
+}
+
 static void SlothTrayCreateOnMain(NSUInteger generation) {
     @autoreleasepool {
         if (!gTrayWanted || generation != gTrayGeneration) return;
         if (gStatusItem != nil) return;
-        gHandler = [SlothTrayHandler new];
-        gStatusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+        gHandler = [[SlothTrayHandler new] retain];
+        gStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
 
-        // Standard macOS menu bar item: monochrome template image, no forced text hacks.
-        NSImage *icon = [NSImage imageNamed:NSImageNameActionTemplate];
+        NSImage *icon = SlothTrayTemplateImage();
         if (icon != nil) {
+            NSSize s = icon.size;
+            if (s.width <= 1 || s.height <= 1 || s.width > 22 || s.height > 22) {
+                s = NSMakeSize(18, 18);
+            }
+            [icon setSize:s];
             [icon setTemplate:YES];
             gStatusItem.button.image = icon;
+            gStatusItem.button.imagePosition = NSImageOnly;
+            gStatusItem.button.title = @"";
+        } else {
+            gStatusItem.button.image = nil;
+            gStatusItem.button.imagePosition = NSNoImage;
+            gStatusItem.button.title = @"SC";
+            gStatusItem.button.font = [NSFont menuBarFontOfSize:11];
         }
-        gStatusItem.button.title = @"";
-        gStatusItem.button.imagePosition = NSImageOnly;
         gStatusItem.button.toolTip = @"Sloth Clash";
         gStatusItem.button.appearsDisabled = NO;
         gStatusItem.button.hidden = NO;
 
-        gMenu = [[NSMenu alloc] initWithTitle:@"Sloth Clash"];
+        gMenu = [[[NSMenu alloc] initWithTitle:@"Sloth Clash"] retain];
+
         NSMenuItem *showItem = [[NSMenuItem alloc] initWithTitle:@"Show Window" action:@selector(onShow:) keyEquivalent:@""];
         [showItem setTarget:gHandler];
         [gMenu addItem:showItem];
@@ -52,6 +139,56 @@ static void SlothTrayCreateOnMain(NSUInteger generation) {
         NSMenuItem *hideItem = [[NSMenuItem alloc] initWithTitle:@"Hide Window" action:@selector(onHide:) keyEquivalent:@""];
         [hideItem setTarget:gHandler];
         [gMenu addItem:hideItem];
+
+        [gMenu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *homeItem = [[NSMenuItem alloc] initWithTitle:@"Open · Home" action:@selector(onNavHome:) keyEquivalent:@""];
+        [homeItem setTarget:gHandler];
+        [gMenu addItem:homeItem];
+
+        NSMenuItem *profilesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Profiles" action:@selector(onNavProfiles:) keyEquivalent:@""];
+        [profilesItem setTarget:gHandler];
+        [gMenu addItem:profilesItem];
+
+        NSMenuItem *proxiesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Proxies" action:@selector(onNavProxies:) keyEquivalent:@""];
+        [proxiesItem setTarget:gHandler];
+        [gMenu addItem:proxiesItem];
+
+        NSMenuItem *rulesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Rules" action:@selector(onNavRules:) keyEquivalent:@""];
+        [rulesItem setTarget:gHandler];
+        [gMenu addItem:rulesItem];
+
+        NSMenuItem *advItem = [[NSMenuItem alloc] initWithTitle:@"Open · Advanced" action:@selector(onNavAdvanced:) keyEquivalent:@""];
+        [advItem setTarget:gHandler];
+        [gMenu addItem:advItem];
+
+        NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:@"Open · Settings" action:@selector(onNavSettings:) keyEquivalent:@""];
+        [settingsItem setTarget:gHandler];
+        [gMenu addItem:settingsItem];
+
+        [gMenu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *modeRule = [[NSMenuItem alloc] initWithTitle:@"Mode · Rule" action:@selector(onModeRule:) keyEquivalent:@""];
+        [modeRule setTarget:gHandler];
+        [gMenu addItem:modeRule];
+
+        NSMenuItem *modeGlobal = [[NSMenuItem alloc] initWithTitle:@"Mode · Global" action:@selector(onModeGlobal:) keyEquivalent:@""];
+        [modeGlobal setTarget:gHandler];
+        [gMenu addItem:modeGlobal];
+
+        NSMenuItem *modeDirect = [[NSMenuItem alloc] initWithTitle:@"Mode · Direct" action:@selector(onModeDirect:) keyEquivalent:@""];
+        [modeDirect setTarget:gHandler];
+        [gMenu addItem:modeDirect];
+
+        [gMenu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *trafficProxy = [[NSMenuItem alloc] initWithTitle:@"Traffic · System proxy" action:@selector(onTrafficProxy:) keyEquivalent:@""];
+        [trafficProxy setTarget:gHandler];
+        [gMenu addItem:trafficProxy];
+
+        NSMenuItem *trafficTun = [[NSMenuItem alloc] initWithTitle:@"Traffic · TUN" action:@selector(onTrafficTun:) keyEquivalent:@""];
+        [trafficTun setTarget:gHandler];
+        [gMenu addItem:trafficTun];
 
         [gMenu addItem:[NSMenuItem separatorItem]];
 
@@ -75,14 +212,10 @@ void SlothTrayStart(void) {
     gTrayWanted = YES;
     gTrayGeneration++;
     NSUInteger generation = gTrayGeneration;
-    void (^createNow)(void) = ^{
+    dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_MSEC));
+    dispatch_after(when, dispatch_get_main_queue(), ^{
         SlothTrayCreateOnMain(generation);
-    };
-    if ([NSThread isMainThread]) {
-        dispatch_async(dispatch_get_main_queue(), createNow);
-    } else {
-        dispatch_async(dispatch_get_main_queue(), createNow);
-    }
+    });
 }
 
 void SlothTrayStop(void) {
@@ -91,9 +224,12 @@ void SlothTrayStop(void) {
     void (^cleanup)(void) = ^{
         if (gStatusItem != nil) {
             [[NSStatusBar systemStatusBar] removeStatusItem:gStatusItem];
+            [gStatusItem release];
             gStatusItem = nil;
         }
+        [gMenu release];
         gMenu = nil;
+        [gHandler release];
         gHandler = nil;
         slothTrayOnStopped();
     };

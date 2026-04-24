@@ -46,7 +46,7 @@ type App struct {
 	// different ID) or on app shutdown.
 	coreActiveProfileID string
 	coreLifecycleMu     sync.Mutex // serializes ensureCoreForProfile across concurrent callers
-	systemProxyLeased   bool // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
+	systemProxyLeased   bool       // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
 	systemProxySnapshot map[string]SystemProxyServiceSnapshot
 	tunTakenOver        []tunServiceTakeover
 	connectGen          atomic.Uint64 // bumped when starting async connect or on Disconnect; invalidates in-flight worker
@@ -204,10 +204,10 @@ func trayEnabled() bool {
 	if v := strings.TrimSpace(strings.ToLower(os.Getenv("SLOTH_ENABLE_EXPERIMENTAL_TRAY"))); v != "" {
 		return v == "1" || v == "true" || v == "yes"
 	}
-	// Enabled by default on platforms where we ship a native tray backend
-	// (Windows via getlantern/systray + bundled .ico, macOS when built with
-	// the `slothtray` tag). The stub platforms return false from
-	// trayBackendAvailable().
+	// Enabled by default on platforms where we ship a tray backend (Windows:
+	// fyne systray + bundled .ico; macOS: NSStatusBar via cgo unless the
+	// optional `slothtray` getlantern build is used). Stub builds return false
+	// from trayBackendAvailable().
 	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
@@ -217,6 +217,27 @@ func trayRuntimeEnabled() bool {
 
 func (a *App) GetTrayAvailability() bool {
 	return trayRuntimeEnabled() && trayIsReady()
+}
+
+// NavigateUIScreen switches the web UI to a main navigation screen. Used by the
+// native macOS menu bar tray; the frontend listens for `app:navigate`.
+func (a *App) NavigateUIScreen(screen string) {
+	screen = strings.ToLower(strings.TrimSpace(screen))
+	switch screen {
+	case "home", "proxies", "profiles", "rules", "advanced", "settings":
+	default:
+		return
+	}
+	a.mu.Lock()
+	a.state.UI.ActiveScreen = screen
+	a.state.UpdatedAt = time.Now().Unix()
+	a.mu.Unlock()
+	if a.ctx != nil {
+		wailsrt.WindowShow(a.ctx)
+		wailsrt.WindowUnminimise(a.ctx)
+		wailsrt.EventsEmit(a.ctx, "app:navigate", map[string]string{"screen": screen})
+	}
+	a.emitAppStateChanged()
 }
 
 func (a *App) SetCloseToTrayPreference(enabled bool) AppState {

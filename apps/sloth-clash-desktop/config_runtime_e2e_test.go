@@ -30,6 +30,10 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	var b embed.FS
 	a := NewApp(b)
 
+	// Verge-rev alignment: the YAML reflects the enableTun argument verbatim.
+	// Writing a tun profile with enableTun=true must produce tun.enable=true in
+	// the emitted file so PUT /configs?force=true can bring wintun up without
+	// a follow-up PATCH.
 	tunDir := t.TempDir()
 	if err := a.writeRuntimeConfig(
 		tunDir,
@@ -42,8 +46,9 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 		"secret",
 		"tun",
 		true,
+		true,
 	); err != nil {
-		t.Fatalf("writeRuntimeConfig(tun) failed: %v", err)
+		t.Fatalf("writeRuntimeConfig(tun, enableTun=true) failed: %v", err)
 	}
 	tunCfg := readYAMLMapForTest(t, filepath.Join(tunDir, "config.yaml"))
 	tunBlock, ok := tunCfg["tun"].(map[string]any)
@@ -52,15 +57,48 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	}
 	enable, _ := tunBlock["enable"].(bool)
 	if !enable {
-		t.Fatalf("tun.enable expected true for tun mode")
+		t.Fatalf("tun.enable expected true when enableTun=true (verge-rev parity)")
+	}
+	if stack, _ := tunBlock["stack"].(string); strings.TrimSpace(stack) == "" {
+		t.Fatalf("tun.stack hardening must be present, got: %#v", tunBlock)
+	}
+	if _, has := tunBlock["dns-hijack"]; !has {
+		t.Fatalf("tun.dns-hijack hardening must be present, got: %#v", tunBlock)
 	}
 	dns, ok := tunCfg["dns"].(map[string]any)
 	if !ok {
-		t.Fatalf("dns block missing")
+		t.Fatalf("dns block missing when enableTun=true (fake-ip overlay required)")
 	}
 	psn, ok := dns["proxy-server-nameserver"].([]any)
 	if !ok || len(psn) == 0 {
-		t.Fatalf("dns.proxy-server-nameserver must be non-empty in tun mode")
+		t.Fatalf("dns.proxy-server-nameserver must be non-empty when TUN is enabled")
+	}
+
+	// Same profile but simulating "disconnected + traffic=tun": YAML must
+	// have tun.enable=false so Mihomo boots idle, without thrashing wintun.
+	idleDir := t.TempDir()
+	if err := a.writeRuntimeConfig(
+		idleDir,
+		"https://example.com/sub",
+		"",
+		"",
+		"",
+		9090,
+		7890,
+		"secret",
+		"tun",
+		true,
+		false,
+	); err != nil {
+		t.Fatalf("writeRuntimeConfig(tun, enableTun=false) failed: %v", err)
+	}
+	idleCfg := readYAMLMapForTest(t, filepath.Join(idleDir, "config.yaml"))
+	idleTun, _ := idleCfg["tun"].(map[string]any)
+	if enable, _ := idleTun["enable"].(bool); enable {
+		t.Fatalf("tun.enable must be false when enableTun=false even for tun profile")
+	}
+	if stack, _ := idleTun["stack"].(string); strings.TrimSpace(stack) == "" {
+		t.Fatalf("hardening must stay in idle YAML so Connect brings wintun up without a second reload")
 	}
 
 	proxyDir := t.TempDir()
@@ -75,6 +113,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 		"secret",
 		"proxy",
 		true,
+		false,
 	); err != nil {
 		t.Fatalf("writeRuntimeConfig(proxy) failed: %v", err)
 	}
@@ -118,6 +157,7 @@ append:
 		7890,
 		"secret",
 		"tun",
+		true,
 		true,
 	); err != nil {
 		t.Fatalf("writeRuntimeConfig with templates failed: %v", err)
@@ -236,6 +276,7 @@ rules:
 		"secret",
 		"tun",
 		true,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile(tun profile) failed: %v", err)
@@ -302,6 +343,7 @@ rules:
 		7890,
 		"secret",
 		"tun",
+		true,
 		true,
 	)
 	if err != nil {

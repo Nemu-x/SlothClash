@@ -33,7 +33,7 @@ func TestMihomoCorpusValidFilesPassPipeline(t *testing.T) {
 				t.Fatalf("parseClashDocToMap failed: %v", err)
 			}
 			tmp := t.TempDir()
-			if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true); err != nil {
+			if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true, true); err != nil {
 				t.Fatalf("finalizeRuntimeConfigPipeline failed: %v", err)
 			}
 		})
@@ -66,7 +66,7 @@ func TestMihomoCorpusInvalidFilesFailParseOrFinalize(t *testing.T) {
 				return
 			}
 			tmp := t.TempDir()
-			if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true); err == nil {
+			if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true, true); err == nil {
 				t.Fatalf("expected parse or pipeline failure for invalid corpus file")
 			}
 		})
@@ -91,7 +91,7 @@ func TestLocalStressYamlFromDownloadsIfPresent(t *testing.T) {
 		t.Fatalf("stress.yaml parse failed: %v", err)
 	}
 	tmp := t.TempDir()
-	if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(doc, tmp, 7890, 9090, "secret", "tun", true, true); err != nil {
 		t.Fatalf("stress.yaml finalize failed: %v", err)
 	}
 }

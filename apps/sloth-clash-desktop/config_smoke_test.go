@@ -22,7 +22,7 @@ func TestSmokeFinalizeRuntimeConfigPipelineDNSRepair(t *testing.T) {
 		},
 	}
 	tmp := t.TempDir()
-	if err := finalizeRuntimeConfigPipeline(cfg, tmp, 7890, 9090, "secret", "tun", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(cfg, tmp, 7890, 9090, "secret", "tun", true, true); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline error: %v", err)
 	}
 	dns, ok := cfg["dns"].(map[string]any)
@@ -67,6 +67,7 @@ rules:
 		7890,
 		"secret",
 		"tun",
+		true,
 		true,
 	)
 	if err != nil {
@@ -122,6 +123,7 @@ rules:
 		"secret",
 		"tun",
 		true,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
@@ -139,6 +141,113 @@ rules:
 	}
 	if !strings.Contains(text, "🦖 Dinosaur") {
 		t.Fatalf("expected emoji in final config, got: %s", text)
+	}
+}
+
+// TestCacheFirstSubscriptionReadIsInstantOnSubsequentConnects verifies the
+// cache-first policy added to tryWriteMergedFullProfile: once we have a
+// last-known-good body on disk, a subsequent call must succeed IMMEDIATELY
+// without waiting on the origin. This is the fix for the "connect is
+// sometimes instant, sometimes slow" regression — previously every Connect
+// did a blocking fetch with up to 50 s timeout on the critical path.
+//
+// We simulate the origin being unreachable by pointing subURL at a closed
+// httptest server. If the call still returns ok, it means the body was
+// served from the cache rather than the network.
+func TestCacheFirstSubscriptionReadIsInstantOnSubsequentConnects(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`
+proxy-groups:
+  - name: MainGroup
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,MainGroup
+`)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Errorf("cache-first path must not hit origin — got HTTP request")
+		_, _ = w.Write(body)
+	}))
+	// Close immediately: any real network attempt would fail instantly. We
+	// keep the URL for the call so the function has a non-empty subURL.
+	closedURL := srv.URL
+	srv.Close()
+
+	tmp := t.TempDir()
+	writeSubscriptionBodyCache(tmp, body)
+
+	ok, err := tryWriteMergedFullProfile(
+		tmp,
+		closedURL,
+		"",
+		"",
+		"",
+		9090,
+		7890,
+		"secret",
+		"tun",
+		true,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("tryWriteMergedFullProfile (cache-first) returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected cache-first path to succeed without the origin")
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "config.yaml")); err != nil {
+		t.Fatalf("config.yaml not written from cache: %v", err)
+	}
+}
+
+// TestFirstConnectFallsBackToNetworkWhenNoCache documents the other half of
+// the policy: when there is no cached body on disk, tryWriteMergedFullProfile
+// must still do a blocking fetch so Connect still works on the first-ever
+// run. This also protects against accidentally inverting the branches.
+func TestFirstConnectFallsBackToNetworkWhenNoCache(t *testing.T) {
+	t.Parallel()
+	body := []byte(`
+proxy-groups:
+  - name: MainGroup
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,MainGroup
+`)
+	hit := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hit++
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	ok, err := tryWriteMergedFullProfile(
+		tmp,
+		srv.URL,
+		"",
+		"",
+		"",
+		9090,
+		7890,
+		"secret",
+		"tun",
+		true,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("tryWriteMergedFullProfile (no cache) returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected fresh fetch to succeed")
+	}
+	if hit != 1 {
+		t.Fatalf("expected exactly one origin hit on first-ever connect, got %d", hit)
+	}
+	if _, err := os.Stat(subscriptionBodyCachePath(tmp)); err != nil {
+		t.Fatalf("expected cache to be written after first fetch: %v", err)
 	}
 }
 

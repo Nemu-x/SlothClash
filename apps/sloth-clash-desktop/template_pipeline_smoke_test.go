@@ -33,7 +33,7 @@ append:
 	if err := applyProfileMergeTemplate(base, tpl); err != nil {
 		t.Fatalf("applyProfileMergeTemplate failed: %v", err)
 	}
-	if err := finalizeRuntimeConfigPipeline(base, t.TempDir(), 7890, 9090, "secret", "tun", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(base, t.TempDir(), 7890, 9090, "secret", "tun", true, true); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline failed: %v", err)
 	}
 }
@@ -63,7 +63,7 @@ prepend:
 	if err := applyProfileMergeTemplate(base, tpl); err != nil {
 		t.Fatalf("applyProfileMergeTemplate failed: %v", err)
 	}
-	if err := finalizeRuntimeConfigPipeline(base, t.TempDir(), 7890, 9090, "secret", "tun", true); err == nil {
+	if err := finalizeRuntimeConfigPipeline(base, t.TempDir(), 7890, 9090, "secret", "tun", true, true); err == nil {
 		t.Fatalf("expected finalizeRuntimeConfigPipeline to reject unknown rule policy")
 	}
 }

@@ -23,7 +23,7 @@ func TestRuntimeSmokeFinalizerPrunesUnknownRefsAndProviders(t *testing.T) {
 		"rules": []any{"MATCH,Main"},
 	}
 
-	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "tun", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "tun", true, false); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline failed: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestRuntimeSmokeFinalizerMovesMatchToEnd(t *testing.T) {
 		},
 	}
 
-	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "proxy", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "proxy", true, false); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline failed: %v", err)
 	}
 
@@ -66,6 +66,12 @@ func TestRuntimeSmokeFinalizerMovesMatchToEnd(t *testing.T) {
 	}
 }
 
+// Post-v0.3.1 (verge-rev alignment): the generated YAML reflects the caller's
+// enableTun argument verbatim. This mirrors enhance::tun::use_tun — YAML always
+// tells the truth about what the user wants so PUT /configs?force=true can be
+// idempotent across reloads. Hardening knobs (stack/auto-route/dns-hijack) are
+// present regardless of enable so Mihomo has everything it needs when the
+// eventual Connect brings TUN up.
 func TestRuntimeSmokeTunAndProxyTrafficOverlays(t *testing.T) {
 	t.Parallel()
 	base := map[string]any{
@@ -78,23 +84,40 @@ func TestRuntimeSmokeTunAndProxyTrafficOverlays(t *testing.T) {
 		"rules": []any{"MATCH,Main"},
 	}
 
-	tunCfg := cloneMap(base)
-	if err := finalizeRuntimeConfigPipeline(tunCfg, t.TempDir(), 7890, 9090, "secret", "tun", true); err != nil {
-		t.Fatalf("finalizeRuntimeConfigPipeline(tun) failed: %v", err)
+	tunConnectedCfg := cloneMap(base)
+	if err := finalizeRuntimeConfigPipeline(tunConnectedCfg, t.TempDir(), 7890, 9090, "secret", "tun", true, true); err != nil {
+		t.Fatalf("finalizeRuntimeConfigPipeline(tun, enableTun=true) failed: %v", err)
 	}
-	if !tunEnabled(tunCfg) {
-		t.Fatalf("tun mode should enable tun block")
+	if !tunEnabled(tunConnectedCfg) {
+		t.Fatalf("enableTun=true must yield tun.enable=true in YAML (verge-rev parity)")
 	}
-	if !hasProxyServerNameserver(tunCfg) {
-		t.Fatalf("tun mode should repair dns.proxy-server-nameserver")
+	if !hasTunHardening(tunConnectedCfg) {
+		t.Fatalf("tun block must carry stack/auto-route hardening when enabled")
+	}
+	if !hasProxyServerNameserver(tunConnectedCfg) {
+		t.Fatalf("tun enabled mode should repair dns.proxy-server-nameserver")
+	}
+
+	tunIdleCfg := cloneMap(base)
+	if err := finalizeRuntimeConfigPipeline(tunIdleCfg, t.TempDir(), 7890, 9090, "secret", "tun", true, false); err != nil {
+		t.Fatalf("finalizeRuntimeConfigPipeline(tun, enableTun=false) failed: %v", err)
+	}
+	if tunEnabled(tunIdleCfg) {
+		t.Fatalf("enableTun=false must yield tun.enable=false even when saved traffic is tun")
+	}
+	if !hasTunHardening(tunIdleCfg) {
+		t.Fatalf("tun hardening must stay in YAML so the first Connect brings wintun up without a second reload")
 	}
 
 	proxyCfg := cloneMap(base)
-	if err := finalizeRuntimeConfigPipeline(proxyCfg, t.TempDir(), 7890, 9090, "secret", "proxy", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(proxyCfg, t.TempDir(), 7890, 9090, "secret", "proxy", true, false); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline(proxy) failed: %v", err)
 	}
 	if tunEnabled(proxyCfg) {
-		t.Fatalf("proxy mode should disable tun block")
+		t.Fatalf("proxy mode must not have tun.enable=true in YAML")
+	}
+	if !hasTunHardening(proxyCfg) {
+		t.Fatalf("tun hardening must still be present in proxy profile (SetTrafficMode→tun must not need a second reload)")
 	}
 }
 
@@ -124,7 +147,7 @@ func TestRuntimeSmokePreservesSnifferAndUDPProxyFields(t *testing.T) {
 		},
 		"rules": []any{"MATCH,Main"},
 	}
-	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "tun", true); err != nil {
+	if err := finalizeRuntimeConfigPipeline(cfg, t.TempDir(), 7890, 9090, "secret", "tun", true, true); err != nil {
 		t.Fatalf("finalizeRuntimeConfigPipeline failed: %v", err)
 	}
 
@@ -168,6 +191,26 @@ func tunEnabled(m map[string]any) bool {
 	}
 	enabled, _ := tun["enable"].(bool)
 	return enabled
+}
+
+// hasTunHardening asserts the TUN block in generated YAML carries the knobs
+// that make wintun/system-stack bring-up reliable when API flips enable=true.
+func hasTunHardening(m map[string]any) bool {
+	tun, _ := m["tun"].(map[string]any)
+	if tun == nil {
+		return false
+	}
+	stack, _ := tun["stack"].(string)
+	if strings.TrimSpace(stack) == "" {
+		return false
+	}
+	if _, ok := tun["auto-route"]; !ok {
+		return false
+	}
+	if _, ok := tun["dns-hijack"]; !ok {
+		return false
+	}
+	return true
 }
 
 func toString(v any) string {

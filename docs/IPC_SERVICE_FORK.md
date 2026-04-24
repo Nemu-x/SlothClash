@@ -38,3 +38,15 @@ In `Cargo.toml`, `[[bin]]` `name` values drive output filenames. You can keep cr
 - Re-test **Install service** + TUN with Verge’s service **stopped** / not registered under the same name.
 
 This document is a checklist; exact strings depend on what you choose for branding (`sloth_*` vs `io.github.*` bundle ids for macOS).
+
+## Relationship to the v0.3 reload model
+
+Since Sloth Desktop `0.3.0` the GUI talks to Mihomo through the **reload model** (Clash Verge Rev): a single long-lived `mihomo` process per active profile, with `Connect` / `Disconnect` / traffic-mode flips / YAML hot reloads driven over Mihomo's external controller API (`PATCH /configs`, `PUT /configs?force=true`).
+
+This does **not** change what the IPC service (`sloth_clash_service` / `\\.\pipe\sloth-clash-service`) has to do — its job is still:
+
+1. Spawn the Mihomo binary under LocalSystem with the requested config dir and arguments.
+2. Expose Mihomo's named pipe (`slothMihomoIPCPath`) to the unprivileged GUI so the desktop can hit `/configs` and `/proxies` without elevation.
+3. Kill the Mihomo process when the GUI asks for shutdown.
+
+All the reload-model traffic (TUN toggle, hot reload, mode change) rides **on top of** that existing pipe — no new SCM surface, no extra privileged endpoint, no new installer artifacts. If you are porting a Verge fork to a new branding you can follow the checklist above without touching any Sloth-specific reload logic.

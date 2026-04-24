@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -48,6 +49,21 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	peek, err := peekSubscription(ctx, target.URL)
 	if err != nil {
 		return a.GetAppState(), err
+	}
+
+	// Also refresh the on-disk subscription body cache. Connect now reads
+	// from this cache synchronously (cache-first policy in
+	// tryWriteMergedFullProfile), so if we don't update it here the
+	// reconnect triggered below would come up on the OLD body even though
+	// the user just clicked "Refresh subscription". Fetch failure is
+	// tolerated: the existing cache stays in place and peek already told
+	// us the subscription is reachable, so the background kicker will
+	// retry on the next Connect.
+	if root, derr := slothDataRoot(); derr == nil {
+		dataDir := filepath.Join(root, "runtime", profileID)
+		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
+		_ = refreshSubscriptionBodyCache(bodyCtx, dataDir, target.URL)
+		bodyCancel()
 	}
 
 	now := time.Now().Unix()

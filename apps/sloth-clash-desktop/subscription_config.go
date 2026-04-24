@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -228,6 +229,13 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
+	// Force a random free port for the internal DNS listener regardless of what the
+	// subscription / merge template prescribed. A hard-coded port (e.g. `:1053`) is
+	// routinely taken by other Clash-family clients / ad blockers / corporate DNS
+	// proxies on user machines, which leaves mihomo without a DNS server and breaks
+	// fake-ip resolution silently ("VPN works but websites fail"). The port is internal
+	// to mihomo (dns-hijack redirects TUN :53 to it), so any free port works.
+	dns["listen"] = "127.0.0.1:0"
 	if _, ok := dns["enhanced-mode"]; !ok {
 		dns["enhanced-mode"] = "fake-ip"
 	}
@@ -280,79 +288,56 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	m["dns"] = dns
 }
 
-func ensureTunOverlayForTraffic(m map[string]any, traffic string) {
-	if strings.TrimSpace(traffic) != "tun" {
-		if raw, ok := m["tun"].(map[string]any); ok {
-			raw["enable"] = false
-			m["tun"] = raw
-			return
-		}
-		m["tun"] = map[string]any{"enable": false}
-		return
-	}
-
+// ensureTunOverlayForTraffic installs or hardens the TUN block in the generated
+// runtime config. The enableTun argument is written verbatim to tun.enable, so
+// callers are expected to pass the effective user intent (connected && traffic=="tun").
+// This mirrors clash-verge-rev's enhance::tun::use_tun + IClashTemp::template():
+//
+//   - If the subscription or extended config already ships a `tun:` block we
+//     trust its stack / auto-route / dns-hijack / mtu values verbatim (same as
+//     Verge Rev's `append!` semantics in the template).
+//   - If no `tun:` block is present we install the default template (gvisor,
+//     auto-route, strict-route=false, dns-hijack=[any:53]).
+//   - Only `tun.enable` is overwritten every time, so PUT /configs?force=true
+//     stays idempotent across hot reloads.
+//
+// Previously this function forced stack=system and added tcp://any:53 on
+// Windows. That hurt UDP-heavy traffic (games) because Mihomo's kernel stack
+// is more sensitive to wintun ring-buffer pressure than gvisor, and the extra
+// TCP hijack caused double-handling of DNS. Both have been removed to track
+// upstream verbatim — users who need a different stack can override through
+// the subscription / extended config / Settings → TUN UI.
+func ensureTunOverlayForTraffic(m map[string]any, enableTun bool) {
 	rawTun, has := m["tun"].(map[string]any)
 	if !has || rawTun == nil {
-		mergeTunFromYAMLString(m, tunBlockForTraffic("tun"))
-		if t, ok := m["tun"].(map[string]any); ok {
-			t["enable"] = true
-			m["tun"] = t
+		mergeTunFromYAMLString(m, tunBlockForTraffic(enableTun))
+		rawTun, _ = m["tun"].(map[string]any)
+		if rawTun == nil {
+			rawTun = map[string]any{}
 		}
-		return
 	}
 
-	// Keep upstream/profile knobs, only ensure TUN is on.
-	rawTun["enable"] = true
+	rawTun["enable"] = enableTun
 	m["tun"] = rawTun
 }
 
+// ensureRealtimeRoutingDefaults used to force `sniffer.enable=true` and
+// `find-process-mode: strict` on every generated config. clash-verge-rev does
+// neither (enhance::use_tun only touches DNS; IClashTemp::template() never
+// sets sniffer or find-process-mode), so forcing them was a measurable
+// regression vs Verge Rev for UDP-heavy traffic like games: sniffing every
+// QUIC packet adds latency and can drop packets under load, and strict
+// per-connection PID lookup on Windows adds overhead per UDP session.
+//
+// Post-alignment this function is intentionally a no-op — if the subscription
+// or extended config ships a sniffer / find-process-mode block it is left
+// verbatim, otherwise Mihomo falls back to its own defaults (sniffer off,
+// find-process-mode off) which matches Verge Rev behaviour.
 func ensureRealtimeRoutingDefaults(m map[string]any) {
-	if _, ok := m["find-process-mode"]; !ok {
-		m["find-process-mode"] = "strict"
-	}
-	rawSniffer, ok := m["sniffer"]
-	if !ok || rawSniffer == nil {
-		m["sniffer"] = map[string]any{
-			"enable":        true,
-			"parse-pure-ip": true,
-			"sniff": map[string]any{
-				"TLS":  map[string]any{"ports": []any{"443", "8443"}},
-				"HTTP": map[string]any{"ports": []any{"80", "8080-8880"}, "override-destination": true},
-				"QUIC": map[string]any{"ports": []any{"443", "8443"}},
-			},
-		}
-		return
-	}
-	sm, ok := rawSniffer.(map[string]any)
-	if !ok {
-		return
-	}
-	if _, ok := sm["enable"]; !ok {
-		sm["enable"] = true
-	}
-	if _, ok := sm["parse-pure-ip"]; !ok {
-		sm["parse-pure-ip"] = true
-	}
-	raw, ok := sm["sniff"]
-	if !ok {
-		sm["sniff"] = map[string]any{
-			"TLS":  map[string]any{"ports": []any{"443", "8443"}},
-			"HTTP": map[string]any{"ports": []any{"80", "8080-8880"}, "override-destination": true},
-			"QUIC": map[string]any{"ports": []any{"443", "8443"}},
-		}
-	} else if sniffMap, ok := raw.(map[string]any); ok {
-		if httpRaw, ok := sniffMap["HTTP"].(map[string]any); ok {
-			if _, has := httpRaw["override-destination"]; !has {
-				httpRaw["override-destination"] = true
-			}
-			sniffMap["HTTP"] = httpRaw
-		}
-		sm["sniff"] = sniffMap
-	}
-	m["sniffer"] = sm
+	_ = m
 }
 
-func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool) {
+func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool) {
 	m["mixed-port"] = mixedPort
 	m["socks-port"] = 0
 	m["port"] = 0
@@ -365,15 +350,24 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	m["secret"] = secret
 	m["allow-lan"] = false
 
-	// Keep DNS invariants valid regardless of traffic mode.
-	ensureDefaultDNSForTun(m)
-
-	if strings.TrimSpace(traffic) == "tun" {
-		ensureTunOverlayForTraffic(m, "tun")
-	} else {
-		ensureTunOverlayForTraffic(m, "proxy")
+	// Match clash-verge-rev enhance::tun::use_tun: only harden DNS (fake-ip
+	// invariants) when TUN is actually being brought up. With TUN off we leave
+	// DNS alone so Mihomo falls back to system DNS for proxied traffic.
+	if enableTun {
+		ensureDefaultDNSForTun(m)
 	}
+
+	ensureTunOverlayForTraffic(m, enableTun)
+	_ = traffic
 	ensureRealtimeRoutingDefaults(m)
+
+	// User-controlled overlays last: Settings → TUN / Traffic preferences
+	// (Verge-Rev-style `tun-viewer.tsx` + sniffer / find-process-mode fields)
+	// must win over subscription defaults, matching Verge Rev's merge order
+	// where the verge config patches are applied after the profile's own YAML.
+	prefs := currentDesktopPrefs()
+	applyUserTunOverlay(m, prefs.TUN)
+	applyUserTrafficOverlay(m, prefs.Traffic)
 }
 
 // ensureGlobalProxyGroup prepends a GLOBAL selector when missing so PATCH mode global +
@@ -406,8 +400,10 @@ func ensureGlobalProxyGroup(m map[string]any) {
 			continue
 		}
 		n, _ := gm["name"].(string)
-		n = strings.TrimSpace(n)
-		if n == "" || strings.EqualFold(n, "GLOBAL") {
+		// Preserve the group name verbatim (trailing/leading whitespace included)
+		// so GLOBAL's reference matches the group's declared name byte-for-byte.
+		trimmed := strings.TrimSpace(n)
+		if trimmed == "" || strings.EqualFold(trimmed, "GLOBAL") {
 			continue
 		}
 		if !seen[n] {
@@ -537,7 +533,13 @@ func extractRulePolicyToken(rule string) string {
 // It sanitizes both:
 //   - `use`: only existing proxy-providers remain
 //   - `proxies`: only valid proxy/group/provider/builtin names remain
-// This mirrors Verge-like cleanup to reduce parse/runtime surprises.
+//
+// Matches clash-verge-rev's cleanup_proxy_groups exactly: names are compared
+// and preserved *verbatim* (no whitespace trimming). This is important because
+// some subscriptions intentionally include trailing/leading whitespace in a
+// proxy name and reference the same whitespace-sensitive string from a group;
+// trimming only the reference side (but not the proxy.name field) would break
+// the link and cause Mihomo to report "'<name>' not found".
 func normalizeProxyGroupRefs(m map[string]any) {
 	rawProviders, ok := m["proxy-providers"]
 	if !ok || rawProviders == nil {
@@ -550,12 +552,11 @@ func normalizeProxyGroupRefs(m map[string]any) {
 	providerNames := make([]string, 0, len(providerMap))
 	providerSet := make(map[string]bool, len(providerMap))
 	for name := range providerMap {
-		n := strings.TrimSpace(name)
-		if n == "" {
+		if strings.TrimSpace(name) == "" {
 			continue
 		}
-		providerSet[n] = true
-		providerNames = append(providerNames, n)
+		providerSet[name] = true
+		providerNames = append(providerNames, name)
 	}
 	if len(providerNames) == 0 {
 		return
@@ -567,11 +568,11 @@ func normalizeProxyGroupRefs(m map[string]any) {
 			switch v := it.(type) {
 			case map[string]any:
 				if n, _ := v["name"].(string); strings.TrimSpace(n) != "" {
-					proxySet[strings.TrimSpace(n)] = true
+					proxySet[n] = true
 				}
 			case string:
 				if strings.TrimSpace(v) != "" {
-					proxySet[strings.TrimSpace(v)] = true
+					proxySet[v] = true
 				}
 			}
 		}
@@ -588,7 +589,7 @@ func normalizeProxyGroupRefs(m map[string]any) {
 			continue
 		}
 		if n, _ := gm["name"].(string); strings.TrimSpace(n) != "" {
-			groupSet[strings.TrimSpace(n)] = true
+			groupSet[n] = true
 		}
 	}
 	allowed := map[string]bool{
@@ -622,12 +623,11 @@ func normalizeProxyGroupRefs(m map[string]any) {
 				if !ok {
 					continue
 				}
-				n := strings.TrimSpace(s)
-				if n == "" {
+				if strings.TrimSpace(s) == "" {
 					continue
 				}
-				if providerSet[n] {
-					filtered = append(filtered, n)
+				if providerSet[s] {
+					filtered = append(filtered, s)
 					hasValidProvider = true
 				}
 			}
@@ -649,12 +649,11 @@ func normalizeProxyGroupRefs(m map[string]any) {
 					if !ok {
 						continue
 					}
-					n := strings.TrimSpace(s)
-					if n == "" {
+					if strings.TrimSpace(s) == "" {
 						continue
 					}
-					if allowed[n] {
-						out = append(out, n)
+					if allowed[s] {
+						out = append(out, s)
 					}
 				}
 				if len(out) == 0 {
@@ -709,12 +708,18 @@ func validateDNSInvariants(m map[string]any) error {
 	return nil
 }
 
+// validateProxyGroupRefs verifies every proxy-group reference (use / proxies)
+// resolves to a known provider / proxy / group / builtin policy. Names are
+// compared *verbatim* — same rule as clash-verge-rev's cleanup_proxy_groups —
+// so trailing/leading whitespace baked into a subscription is respected on
+// both sides of the comparison. Only the membership check uses TrimSpace to
+// skip empty / whitespace-only tokens.
 func validateProxyGroupRefs(m map[string]any) error {
 	providerSet := map[string]bool{}
 	if providers, ok := m["proxy-providers"].(map[string]any); ok {
 		for k := range providers {
 			if strings.TrimSpace(k) != "" {
-				providerSet[strings.TrimSpace(k)] = true
+				providerSet[k] = true
 			}
 		}
 	}
@@ -729,11 +734,11 @@ func validateProxyGroupRefs(m map[string]any) error {
 			switch v := it.(type) {
 			case map[string]any:
 				if n, _ := v["name"].(string); strings.TrimSpace(n) != "" {
-					allowed[strings.TrimSpace(n)] = true
+					allowed[n] = true
 				}
 			case string:
 				if strings.TrimSpace(v) != "" {
-					allowed[strings.TrimSpace(v)] = true
+					allowed[v] = true
 				}
 			}
 		}
@@ -742,7 +747,7 @@ func validateProxyGroupRefs(m map[string]any) error {
 		for _, g := range groups {
 			if gm, ok := g.(map[string]any); ok {
 				if n, _ := gm["name"].(string); strings.TrimSpace(n) != "" {
-					allowed[strings.TrimSpace(n)] = true
+					allowed[n] = true
 				}
 			}
 		}
@@ -752,18 +757,17 @@ func validateProxyGroupRefs(m map[string]any) error {
 				continue
 			}
 			name, _ := gm["name"].(string)
-			name = strings.TrimSpace(name)
 			if useArr, ok := gm["use"].([]any); ok {
 				for _, u := range useArr {
-					if s, ok := u.(string); ok && strings.TrimSpace(s) != "" && !providerSet[strings.TrimSpace(s)] {
-						return fmt.Errorf("proxy-groups[%d] %q references unknown provider %q", idx, name, strings.TrimSpace(s))
+					if s, ok := u.(string); ok && strings.TrimSpace(s) != "" && !providerSet[s] {
+						return fmt.Errorf("proxy-groups[%d] %q references unknown provider %q", idx, name, s)
 					}
 				}
 			}
 			if pArr, ok := gm["proxies"].([]any); ok {
 				for _, p := range pArr {
-					if s, ok := p.(string); ok && strings.TrimSpace(s) != "" && !allowed[strings.TrimSpace(s)] {
-						return fmt.Errorf("proxy-groups[%d] %q references unknown proxy/group %q", idx, name, strings.TrimSpace(s))
+					if s, ok := p.(string); ok && strings.TrimSpace(s) != "" && !allowed[s] {
+						return fmt.Errorf("proxy-groups[%d] %q references unknown proxy/group %q", idx, name, s)
 					}
 				}
 			}
@@ -828,6 +832,7 @@ func finalizeRuntimeConfigPipeline(
 	mixedPort, ctrlPort int,
 	secret, traffic string,
 	withExternalController bool,
+	enableTun bool,
 ) error {
 	if fixed, ok := normalizeEscapedUnicodeStrings(m).(map[string]any); ok {
 		for k := range m {
@@ -841,7 +846,7 @@ func finalizeRuntimeConfigPipeline(
 	normalizeProxyGroupRefs(m)
 	pruneFallbackAutoManualIfCustom(m)
 	cleanupUnusedProxyProviders(m)
-	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController)
+	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun)
 	if err := validateFinalConfigSemantics(m); err != nil {
 		return err
 	}
@@ -970,8 +975,20 @@ func pruneFallbackAutoManualIfCustom(m map[string]any) {
 		return
 	}
 	repl := safeGroupNameForRules(filtered)
-	if repl != "" && autoIdx >= 0 {
-		rewriteMatchRuleTarget(m, "Auto", repl)
+	if repl != "" {
+		// Both synthetic group names (Auto, Manual) used by the bare
+		// fallback must be rewritten to a real custom group when we prune
+		// them — otherwise the terminal MATCH rule dangles on a policy the
+		// validator can no longer resolve. writeRuntimeConfig now emits
+		// MATCH,Manual (select group) so manual node selection works in
+		// Rule mode; keep rewriting MATCH,Auto too for back-compat with
+		// configs / merge templates still using the old target.
+		if autoIdx >= 0 {
+			rewriteMatchRuleTarget(m, "Auto", repl)
+		}
+		if manualIdx >= 0 {
+			rewriteMatchRuleTarget(m, "Manual", repl)
+		}
 	}
 	m["proxy-groups"] = filtered
 }
@@ -1036,15 +1053,117 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate string, ctrlPort, mixedPort int, secret, traffic string, withExternalController bool) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
-	defer cancel()
+// subscriptionBodyCachePath returns the on-disk location where we persist the
+// last-known-good subscription body bytes for a given runtime dataDir. The
+// cache is the PRIMARY source on every Connect — the HTTP fetch runs in the
+// background to refresh the cache for the NEXT connect, so Connect itself is
+// never blocked on a slow / flaky subscription provider (previously a single
+// slow origin could add 5–50 s of latency to Connect). This mirrors
+// clash-verge-rev's behaviour: the runtime uses the last profile file on disk
+// and subscription updates are a separate scheduled / manual operation.
+func subscriptionBodyCachePath(dataDir string) string {
+	return filepath.Join(dataDir, "subscription.cache.yaml")
+}
 
-	b, err := fetchSubscriptionBody(ctx, subURL)
-	if err != nil || len(bytes.TrimSpace(b)) == 0 {
-		return false, nil
+func writeSubscriptionBodyCache(dataDir string, body []byte) {
+	if dataDir == "" || len(body) == 0 {
+		return
 	}
-	doc, err := parseClashDocToMap(b)
+	_ = os.MkdirAll(dataDir, 0o755)
+	_ = os.WriteFile(subscriptionBodyCachePath(dataDir), body, 0o600)
+}
+
+func readSubscriptionBodyCache(dataDir string) []byte {
+	if dataDir == "" {
+		return nil
+	}
+	b, err := os.ReadFile(subscriptionBodyCachePath(dataDir))
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// refreshSubscriptionBodyCache synchronously fetches the subscription body and
+// writes it to the on-disk cache. Called from RefreshProfileSubscription and
+// the background auto-update loop so the next Connect for that profile uses
+// the freshly fetched body (cache-first semantics). On fetch failure it
+// leaves the existing cache untouched — a transient flap must never wipe the
+// last-known-good body.
+func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL string) error {
+	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
+		return nil
+	}
+	body, err := fetchSubscriptionBody(ctx, subURL)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return errors.New("empty subscription body")
+	}
+	writeSubscriptionBodyCache(dataDir, body)
+	return nil
+}
+
+// inflightSubscriptionBGFetch dedupes fire-and-forget background refreshes so
+// we don't stack N concurrent HTTP fetches when the user hammers Connect /
+// Disconnect / Connect. Keyed by dataDir (one runtime per profile).
+var inflightSubscriptionBGFetch sync.Map
+
+func kickBackgroundSubscriptionRefresh(dataDir, subURL string) {
+	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
+		return
+	}
+	if _, loaded := inflightSubscriptionBGFetch.LoadOrStore(dataDir, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer inflightSubscriptionBGFetch.Delete(dataDir)
+		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
+		defer cancel()
+		_ = refreshSubscriptionBodyCache(ctx, dataDir, subURL)
+	}()
+}
+
+// tryWriteMergedFullProfile generates the runtime config.yaml from the active
+// subscription body. The body source follows a cache-first policy:
+//
+//  1. If the dataDir already has a cached subscription body
+//     (`subscription.cache.yaml` — written on first-ever Connect, by every
+//     explicit "Refresh subscription", and by the background auto-update
+//     loop), it is used as the source and Connect returns IMMEDIATELY
+//     without any network I/O. A background refresh is kicked off for the
+//     next Connect so subscription changes still propagate, just not on
+//     the critical path.
+//
+//  2. If no cache exists (first-ever Connect, cache wiped by Clear cache,
+//     brand-new profile), we do a synchronous fetch with a 55 s budget and
+//     write the body to the cache. Subsequent connects fall into step 1.
+//
+//  3. If step 2's fetch fails we fall through to the bare `sub1 + Manual`
+//     fallback — the only scenario that still triggers it, since we now
+//     preserve the cached body across transient fetch failures by design.
+func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate string, ctrlPort, mixedPort int, secret, traffic string, withExternalController bool, enableTun bool) (bool, error) {
+	var body []byte
+	if cached := readSubscriptionBodyCache(dataDir); len(bytes.TrimSpace(cached)) > 0 {
+		body = cached
+		// Fresh-enough body is on disk; defer the network hit. Next Connect
+		// will pick up whatever the origin ships, but THIS Connect does
+		// not wait for it.
+		kickBackgroundSubscriptionRefresh(dataDir, subURL)
+	} else {
+		// First-ever Connect for this profile (or cache was wiped). We HAVE
+		// to block on the network because there's no prior body to serve.
+		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
+		defer cancel()
+		b, err := fetchSubscriptionBody(ctx, subURL)
+		if err != nil || len(bytes.TrimSpace(b)) == 0 {
+			return false, nil
+		}
+		body = b
+		writeSubscriptionBodyCache(dataDir, body)
+	}
+	doc, err := parseClashDocToMap(body)
 	if err != nil || doc == nil {
 		return false, nil
 	}
@@ -1070,6 +1189,7 @@ func tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, r
 		secret,
 		traffic,
 		withExternalController,
+		enableTun,
 	); err != nil {
 		return false, err
 	}

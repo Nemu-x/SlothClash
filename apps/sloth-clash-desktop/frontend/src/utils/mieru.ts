@@ -139,5 +139,12 @@ export function URI_MIERU(line: string): IProxyMieruConfig {
     }
   }
 
+  if (!proxy.transport) {
+    proxy.transport = proxy.udp === true ? 'UDP' : 'TCP'
+  }
+  if (proxy.transport === 'UDP' && proxy.udp === undefined) {
+    proxy.udp = true
+  }
+
   return proxy
 }

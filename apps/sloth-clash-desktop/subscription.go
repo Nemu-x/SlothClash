@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -218,10 +219,79 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 	return bestErr, errors.New("subscription probe failed")
 }
 
+// normalizeMieruSubscriptionURL rebuilds mieru/mierus URLs so passwords may
+// contain unescaped '@' (delimiter before host:port is the last '@').
+func normalizeMieruSubscriptionURL(raw string) (string, error) {
+	lower := strings.ToLower(raw)
+	const pMierus = "mierus://"
+	const pMieru = "mieru://"
+	var scheme string
+	var rest string
+	switch {
+	case strings.HasPrefix(lower, pMierus):
+		scheme = "mierus"
+		rest = raw[len(pMierus):]
+	case strings.HasPrefix(lower, pMieru):
+		scheme = "mieru"
+		rest = raw[len(pMieru):]
+	default:
+		return "", errors.New("invalid subscription url")
+	}
+
+	frag := ""
+	if i := strings.Index(rest, "#"); i >= 0 {
+		frag = rest[i+1:]
+		rest = rest[:i]
+	}
+	query := ""
+	if i := strings.Index(rest, "?"); i >= 0 {
+		query = rest[i+1:]
+		rest = rest[:i]
+	}
+
+	lastAt := strings.LastIndex(rest, "@")
+	var userInfo, hostPort string
+	if lastAt < 0 {
+		hostPort = strings.TrimSpace(rest)
+	} else {
+		userInfo = rest[:lastAt]
+		hostPort = strings.TrimSpace(rest[lastAt+1:])
+	}
+	if hostPort == "" {
+		return "", errors.New("invalid subscription url")
+	}
+
+	u := &url.URL{Scheme: scheme}
+	userInfo = strings.TrimSpace(userInfo)
+	if userInfo != "" {
+		user, pass, hasColon := strings.Cut(userInfo, ":")
+		if hasColon {
+			u.User = url.UserPassword(user, pass)
+		} else {
+			u.User = url.User(userInfo)
+		}
+	}
+
+	host, port, splitErr := net.SplitHostPort(hostPort)
+	if splitErr != nil {
+		u.Host = hostPort
+	} else {
+		u.Host = net.JoinHostPort(host, port)
+	}
+
+	u.RawQuery = query
+	u.Fragment = frag
+	return u.String(), nil
+}
+
 func normalizeSubscriptionURL(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return "", errors.New("url is required")
+	}
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "mieru://") || strings.HasPrefix(lower, "mierus://") {
+		return normalizeMieruSubscriptionURL(s)
 	}
 	if !strings.Contains(s, "://") {
 		s = "https://" + s

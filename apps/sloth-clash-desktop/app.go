@@ -131,6 +131,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) bootActiveProfileCoreInBackground() {
 	a.mu.RLock()
 	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	traffic := strings.TrimSpace(a.state.Traffic)
 	var profile Profile
 	found := false
 	for _, p := range a.profiles {
@@ -156,6 +157,24 @@ func (a *App) bootActiveProfileCoreInBackground() {
 			"background core boot failed (not fatal; Connect will retry)",
 			map[string]any{
 				"profileId": profile.ID,
+				"error":     err.Error(),
+			},
+		)
+		return
+	}
+	// If a core survived an unclean OS shutdown (or was already started by the
+	// service), ensureCoreForProfile may early-return without touching tun.enable.
+	// Force a runtime YAML sync with enableTun=false so UI "disconnected" and
+	// actual network state stay aligned on startup.
+	if err := a.applyRuntimeConfig(profile, traffic, false); err != nil {
+		debugLog(
+			"startup",
+			"H1",
+			"app.go:bootActiveProfileCoreInBackground",
+			"startup runtime sync failed (Connect will retry)",
+			map[string]any{
+				"profileId": profile.ID,
+				"traffic":   traffic,
 				"error":     err.Error(),
 			},
 		)

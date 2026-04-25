@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -53,6 +55,25 @@ async function step(title, command, args, cwd) {
   }
 }
 
+/**
+ * `main.go` embeds `all:build/resources` and `all:build/sidecar`. Go requires at least one
+ * file per directory. This gate runs before `prebuild`, so CI/fresh clones need tiny
+ * placeholders until prebuild seeds real service binaries.
+ */
+async function ensureDesktopEmbedDirsForGoTest(desktopDir) {
+  for (const rel of ['build/resources', 'build/sidecar']) {
+    const dir = path.join(desktopDir, rel)
+    await fsp.mkdir(dir, { recursive: true })
+    const entries = await fsp.readdir(dir)
+    if (entries.length === 0) {
+      await fsp.writeFile(
+        path.join(dir, '_embed_placeholder.txt'),
+        'Placeholder for go:embed until prebuild adds service binaries.\n',
+      )
+    }
+  }
+}
+
 async function optionalStep(title, command, args, cwd) {
   console.log(`\n=== ${title} ===`)
   try {
@@ -88,6 +109,25 @@ async function main() {
   const desktopDir = path.join(repoRoot, 'apps', 'sloth-clash-desktop')
   const frontendDir = path.join(desktopDir, 'frontend')
   // Required smoke+build baseline before PR merge.
+  await ensureDesktopEmbedDirsForGoTest(desktopDir)
+  const appiconPng = path.join(desktopDir, 'build', 'appicon.png')
+  if (!fs.existsSync(appiconPng)) {
+    await step(
+      'Copy desktop app icon',
+      pnpmBin,
+      ['run', 'copy:desktop-appicon'],
+      repoRoot,
+    )
+  }
+  const indexHtml = path.join(frontendDir, 'dist', 'index.html')
+  if (!fs.existsSync(indexHtml)) {
+    await step(
+      'Desktop frontend production build',
+      pnpmBin,
+      ['--dir', 'apps/sloth-clash-desktop/frontend', 'run', 'build'],
+      repoRoot,
+    )
+  }
   await step(
     'Config corpus tests',
     goBin,

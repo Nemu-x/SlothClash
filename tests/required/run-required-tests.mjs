@@ -119,6 +119,15 @@ async function main() {
       repoRoot,
     )
   }
+  const winTrayIco = path.join(desktopDir, 'build', 'windows', 'icon.ico')
+  if (process.platform === 'win32' && !fs.existsSync(winTrayIco)) {
+    await step(
+      'Windows icon (ico) for go:embed',
+      pnpmBin,
+      ['run', 'icons:windows'],
+      repoRoot,
+    )
+  }
   const indexHtml = path.join(frontendDir, 'dist', 'index.html')
   if (!fs.existsSync(indexHtml)) {
     await step(

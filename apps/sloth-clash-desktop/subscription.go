@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SubscriptionPeek is returned before import so the UI can show a suggested name.
@@ -179,6 +183,10 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 		return SubscriptionPeek{}, err
 	}
 
+	if peek, ok := mieruSubscriptionPeek(norm); ok {
+		return peek, nil
+	}
+
 	cctx, cancel := context.WithTimeout(ctx, 26*time.Second)
 	defer cancel()
 
@@ -301,6 +309,135 @@ func normalizeSubscriptionURL(raw string) (string, error) {
 		return "", errors.New("invalid subscription url")
 	}
 	return u.String(), nil
+}
+
+func subscriptionURLIsMieru(norm string) bool {
+	u, err := url.Parse(norm)
+	if err != nil || u == nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "mieru", "mierus":
+		return true
+	default:
+		return false
+	}
+}
+
+// mieruSubscriptionPeek returns a synthetic peek for mieru/mierus subscription
+// URLs. Go's net/http cannot GET these schemes (unsupported protocol scheme).
+func mieruSubscriptionPeek(norm string) (SubscriptionPeek, bool) {
+	if !subscriptionURLIsMieru(norm) {
+		return SubscriptionPeek{}, false
+	}
+	u, err := url.Parse(norm)
+	if err != nil || u.Hostname() == "" {
+		return SubscriptionPeek{URL: norm, LastError: "invalid mieru url"}, true
+	}
+	name := "Mieru " + u.Hostname()
+	if p := u.Port(); p != "" {
+		name = name + ":" + p
+	}
+	return SubscriptionPeek{
+		URL:           norm,
+		SuggestedName: name,
+		HTTPStatus:    200,
+	}, true
+}
+
+// buildMieruSubscriptionYAML returns a minimal full-profile YAML document so
+// tryWriteMergedFullProfile treats it like a normal subscription body. Mihomo
+// cannot fetch mieru:// over HTTP; Clash Verge-style flow is inline proxies
+// (see enfein/mieru clash-verge-rev docs).
+func buildMieruSubscriptionYAML(norm string) ([]byte, error) {
+	u, err := url.Parse(norm)
+	if err != nil {
+		return nil, err
+	}
+	if !subscriptionURLIsMieru(norm) {
+		return nil, errors.New("not a mieru subscription url")
+	}
+	if u.Hostname() == "" {
+		return nil, errors.New("mieru subscription url has no host")
+	}
+	portStr := u.Port()
+	if portStr == "" {
+		portStr = "443"
+	}
+	portNum, err := strconv.Atoi(portStr)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		return nil, fmt.Errorf("invalid mieru port %q", portStr)
+	}
+	proxyName := "mieru-auto"
+	if frag := strings.TrimSpace(u.Fragment); frag != "" {
+		proxyName = frag
+	}
+	proxy := map[string]any{
+		"name":   proxyName,
+		"type":   "mieru",
+		"server": u.Hostname(),
+		"port":   portNum,
+	}
+	if u.User != nil {
+		if v := strings.TrimSpace(u.User.Username()); v != "" {
+			proxy["username"] = v
+		}
+		if pw, ok := u.User.Password(); ok && pw != "" {
+			proxy["password"] = pw
+		}
+	}
+	if q := u.Query(); len(q) > 0 {
+		if v := strings.TrimSpace(q.Get("port-range")); v != "" {
+			proxy["port-range"] = v
+		}
+		if v := strings.TrimSpace(q.Get("transport")); v != "" {
+			proxy["transport"] = v
+		}
+		if vals, ok := q["udp"]; ok && len(vals) > 0 {
+			v := strings.TrimSpace(vals[0])
+			if v == "" {
+				// ?udp — флаг присутствия (как parseBoolOrPresence на фронте)
+				proxy["udp"] = true
+			} else {
+				proxy["udp"] = strings.EqualFold(v, "true") || v == "1"
+			}
+		}
+		if v := strings.TrimSpace(q.Get("handshake-mode")); v != "" {
+			proxy["handshake-mode"] = v
+		}
+		if v := strings.TrimSpace(q.Get("multiplexing")); v != "" {
+			proxy["multiplexing"] = v
+		}
+	}
+	// Mihomo requires `transport`. Order: explicit ?transport= wins; else if
+	// ?udp is a truthy flag use UDP (matches ?udp / ?udp=true); else TCP.
+	if _, ok := proxy["transport"]; !ok {
+		if u, okb := proxy["udp"].(bool); okb && u {
+			proxy["transport"] = "UDP"
+		} else {
+			proxy["transport"] = "TCP"
+		}
+	}
+	if tr, _ := proxy["transport"].(string); strings.EqualFold(strings.TrimSpace(tr), "UDP") {
+		if _, has := proxy["udp"]; !has {
+			proxy["udp"] = true
+		}
+	}
+	groupName := "mieru-manual"
+	doc := map[string]any{
+		"proxies": []any{proxy},
+		"proxy-groups": []any{
+			map[string]any{
+				"name":    groupName,
+				"type":    "select",
+				"proxies": []any{proxyName},
+			},
+		},
+		"rules": []any{
+			fmt.Sprintf("MATCH,%s", groupName),
+		},
+	}
+	return yaml.Marshal(doc)
 }
 
 func headerGet(h http.Header, key string) string {

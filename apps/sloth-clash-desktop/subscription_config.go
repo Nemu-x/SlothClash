@@ -106,6 +106,9 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if subscriptionURLIsMieru(norm) {
+		return buildMieruSubscriptionYAML(norm)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, norm, nil)
 	if err != nil {
 		return nil, err

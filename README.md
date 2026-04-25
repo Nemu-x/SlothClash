@@ -1,8 +1,5 @@
 <h1 align="center">
-  <img src="docs/appicon.png" alt="Sloth Clash" width="256" />
-  <br />
-  Sloth Clash
-  <br />
+  <img src="docs/readmelogo.png" alt="Sloth Clash" width="256" />
 </h1>
 
 <p align="center">

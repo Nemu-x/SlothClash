@@ -1,7 +1,6 @@
-# Builds Sloth Clash desktop for Windows, macOS Apple Silicon, and Linux.
-# macOS Intel (darwin/amd64) is in desktop-artifacts-darwin-amd64.yml (slow GitHub queue).
+# Builds Sloth Clash desktop for Windows, macOS (Apple Silicon + Intel), and Linux.
 # Service binaries: https://github.com/Nemu-x/sloth-clash-service-ipc/releases
-# Run: workflow_dispatch or push tag v* for the primary release artifacts.
+# Run: workflow_dispatch or push tag v* for the full release artifact set.
 
 name: Desktop artifacts
 
@@ -76,6 +75,69 @@ jobs:
           name: release-windows-amd64
           path: dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip
 
+  windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install NSIS (Windows installer)
+        run: choco install nsis -y
+
+      - name: Desktop resources + icons + NSIS template
+        run: pnpm run desktop:resources
+
+      - name: Verify Windows tray icon (go:embed build/windows/icon.ico)
+        shell: pwsh
+        run: |
+          $ico = "apps/sloth-clash-desktop/build/windows/icon.ico"
+          if (-not (Test-Path $ico)) {
+            throw "Missing $ico — ensure copy:desktop-appicon + icons:windows ran (desktop:resources)."
+          }
+          if ((Get-Item $ico).Length -lt 64) {
+            throw "$ico exists but is suspiciously small."
+          }
+          $sloth = "apps/sloth-clash-desktop/trayicons/sloth.png"
+          if (-not (Test-Path $sloth)) {
+            throw "Missing $sloth — sync-desktop-packaging should copy appicon after prebuild."
+          }
+
+      - name: Wails build (windows/arm64 + NSIS)
+        id: wails_windows_arm64
+        continue-on-error: true
+        run: pnpm run desktop:build:windows:arm64
+
+      - name: Pack Windows ARM64 artifact
+        id: pack_windows_arm64
+        continue-on-error: true
+        if: steps.wails_windows_arm64.outcome == 'success'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
+          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        if: steps.pack_windows_arm64.outcome == 'success'
+        with:
+          name: release-windows-arm64
+          path: dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip
+
   darwin-arm64:
     runs-on: macos-14
     steps:
@@ -116,6 +178,57 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: release-darwin-arm64
+          path: dist/*.dmg
+
+  darwin-amd64:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Desktop resources
+        run: pnpm run desktop:resources
+
+      - name: Verify macOS tray mono icon (go:embed)
+        run: test -f apps/sloth-clash-desktop/trayicons/mono.png
+
+      - name: Wails build (darwin/amd64)
+        id: wails_darwin_amd64
+        continue-on-error: true
+        run: pnpm run desktop:build:darwin:amd64
+
+      - name: Package DMG (darwin/amd64)
+        id: pack_darwin_amd64
+        continue-on-error: true
+        if: steps.wails_darwin_amd64.outcome == 'success'
+        run: pnpm run desktop:package:dmg
+
+      - name: Pack macOS Intel artifact
+        id: pack_darwin_amd64_dist
+        continue-on-error: true
+        if: steps.pack_darwin_amd64.outcome == 'success'
+        run: |
+          mkdir -p dist
+          cp apps/sloth-clash-desktop/build/bin/*.dmg dist/ || true
+
+      - uses: actions/upload-artifact@v4
+        if: steps.pack_darwin_amd64_dist.outcome == 'success'
+        with:
+          name: release-darwin-amd64
           path: dist/*.dmg
 
   linux-amd64:
@@ -163,7 +276,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - windows-amd64
+      - windows-arm64
       - darwin-arm64
+      - darwin-amd64
       - linux-amd64
     runs-on: ubuntu-latest
     permissions:
@@ -179,6 +294,7 @@ jobs:
           prerelease: false
           generate_release_notes: true
           overwrite_files: true
+          fail_on_unmatched_files: false
           files: |
             dist/**/*.zip
             dist/**/*.tar.gz

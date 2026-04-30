@@ -189,7 +189,18 @@ async function main() {
   }
   await step('Backend unit/smoke tests', goBin, ['test', './...'], desktopDir)
   await step('Backend compile check', goBin, ['build', './...'], desktopDir)
-  await step('Frontend type check', pnpmBin, ['tsc', '--noEmit'], frontendDir)
+  await step(
+    'Frontend type check',
+    pnpmBin,
+    [
+      'exec',
+      'tsc',
+      '--noEmit',
+      '-p',
+      'apps/sloth-clash-desktop/frontend/tsconfig.json',
+    ],
+    repoRoot,
+  )
   console.log('\nPASS: required test gate')
 }
 

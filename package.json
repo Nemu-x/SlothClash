@@ -1,6 +1,6 @@
 {
   "name": "sloth-clash",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "GPL-3.0-only",
   "scripts": {
     "prepare": "husky || true",
@@ -16,6 +16,7 @@
     "wails:build": "node scripts/wails.mjs build",
     "desktop:resources": "pnpm run copy:desktop-appicon && pnpm run test:required && pnpm run prebuild && pnpm run prepare:wails && pnpm run icons:windows && pnpm run desktop:packaging",
     "desktop:build:windows": "node scripts/wails.mjs build -platform windows/amd64 -clean -nsis",
+    "desktop:build:windows:arm64": "node scripts/wails.mjs build -platform windows/arm64 -clean -nsis",
     "desktop:build:darwin:arm64": "node scripts/wails.mjs build -platform darwin/arm64 -clean",
     "desktop:build:darwin:amd64": "node scripts/wails.mjs build -platform darwin/amd64 -clean",
     "desktop:package:dmg": "node scripts/create-macos-dmg.mjs",

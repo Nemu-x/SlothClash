@@ -19,9 +19,11 @@ import {
   ApplyUpdate,
   CheckForUpdates,
   Connect,
+  CloseAllConnections,
   DeleteProfile,
   Disconnect,
   EnsureTunReady,
+  FetchConnectionsOverview,
   FetchRulesOverview,
   GetAppState,
   GetTrayAvailability,
@@ -31,7 +33,9 @@ import {
   GetProfileProxyGroupsBaseline,
   GetProfileRulesBaseline,
   GetPreferredLanguage,
+  GetRuntimeDiagEvents,
   GetTunStatus,
+  OnWindowBecameVisible,
   GetUpdateState,
   ImportProfileFromURL,
   InstallService,
@@ -40,7 +44,9 @@ import {
   RefreshProfileSubscription,
   RefreshHomeInsight,
   RefreshProxies,
+  RefreshSlothServiceStatus,
   SelectProxyGroup,
+  UpdateRuleProvider,
   SetProfileMergeTemplate,
   SetProfileProxyTemplate,
   SetProfileRulesTemplate,
@@ -52,6 +58,7 @@ import {
   SetProxyNode,
   SetTrafficMode,
   SetTrafficSettings,
+  TestProxyDelay,
   SetTunSettings,
   UpdateProfileInfo,
   WriteProfileConfig,
@@ -89,13 +96,15 @@ import { MonacoYamlEditor } from './MonacoYamlEditor'
 import {
   IconAdvanced,
   IconChevronNav,
+  IconConnections,
   IconHome,
+  IconLogs,
   IconProfiles,
   IconProxies,
   IconRules,
   IconSettings,
 } from './navIcons'
-import { parseMihomoRulesJson } from './rulesTable'
+import { parseMihomoRulesJson, parseRuleProvidersJson } from './rulesTable'
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 
@@ -103,7 +112,9 @@ type Screen =
   | 'home'
   | 'proxies'
   | 'profiles'
+  | 'connections'
   | 'rules'
+  | 'logs'
   | 'advanced'
   | 'settings'
 
@@ -115,7 +126,9 @@ const NAV_DEFS: {
   { id: 'home', labelKey: 'nav.home', Icon: IconHome },
   { id: 'profiles', labelKey: 'nav.profiles', Icon: IconProfiles },
   { id: 'proxies', labelKey: 'nav.proxies', Icon: IconProxies },
+  { id: 'connections', labelKey: 'nav.connections', Icon: IconConnections },
   { id: 'rules', labelKey: 'nav.rules', Icon: IconRules },
+  { id: 'logs', labelKey: 'nav.logs', Icon: IconLogs },
   { id: 'advanced', labelKey: 'nav.advanced', Icon: IconAdvanced },
   { id: 'settings', labelKey: 'nav.settings', Icon: IconSettings },
 ]
@@ -442,6 +455,56 @@ function formatProfileAgo(lastUpdatedUnix: number): string {
   return `${d}d ago`
 }
 
+const RULE_TYPE_OPTIONS = [
+  'DOMAIN-SUFFIX',
+  'DOMAIN',
+  'DOMAIN-KEYWORD',
+  'DOMAIN-REGEX',
+  'MATCH',
+  'GEOSITE',
+  'GEOIP',
+  'IP-CIDR',
+  'IP-CIDR6',
+  'SRC-IP-CIDR',
+  'DST-PORT',
+  'SRC-PORT',
+  'PROCESS-NAME',
+  'PROCESS-PATH',
+  'NETWORK',
+] as const
+
+function formatProviderUpdatedAt(raw: string): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return '—'
+  const ts = Date.parse(s)
+  if (!Number.isFinite(ts)) return s
+  const ago = formatProfileAgo(Math.floor(ts / 1000))
+  return ago || new Date(ts).toLocaleString()
+}
+
+type ConnectionsOverview = {
+  reachable?: boolean
+  lastError?: string
+  uploadTotal?: number
+  downloadTotal?: number
+  connections?: Array<{
+    id: string
+    upload?: number
+    download?: number
+    start?: string
+    rule?: string
+    rulePayload?: string
+    metadata?: {
+      host?: string
+      destinationIP?: string
+      destinationPort?: string
+      process?: string
+      network?: string
+      type?: string
+    }
+  }>
+}
+
 type CompactSettings = {
   startMinimized: boolean
   launchOnStartup: boolean
@@ -512,6 +575,17 @@ function App() {
     null,
   )
   const [rulesBusy, setRulesBusy] = useState(false)
+  const [connectionsOverview, setConnectionsOverview] =
+    useState<ConnectionsOverview | null>(null)
+  const [connectionsBusy, setConnectionsBusy] = useState(false)
+  const [connectionsSearch, setConnectionsSearch] = useState('')
+  const [ruleProviderBusyMap, setRuleProviderBusyMap] = useState<
+    Record<string, boolean>
+  >({})
+  const [ruleProviderErrMap, setRuleProviderErrMap] = useState<
+    Record<string, string>
+  >({})
+  const [ruleProvidersBulkBusy, setRuleProvidersBulkBusy] = useState(false)
   const [serviceLog, setServiceLog] = useState<main.ServiceLogPeek | null>(null)
   const [updateSnap, setUpdateSnap] = useState<any>(null)
   const [profileMenu, setProfileMenu] = useState<{
@@ -669,6 +743,11 @@ function App() {
   const [expandedProxyGroups, setExpandedProxyGroups] = useState<
     Record<string, boolean>
   >({})
+  const [proxyDelayBusy, setProxyDelayBusy] = useState<Record<string, boolean>>(
+    {},
+  )
+  const [proxyDelayMap, setProxyDelayMap] = useState<Record<string, number>>({})
+  const [proxyDelayErr, setProxyDelayErr] = useState<Record<string, string>>({})
   const [ruleSearch, setRuleSearch] = useState('')
   const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
   const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
@@ -716,6 +795,33 @@ function App() {
 
   useEffect(() => {
     refresh()
+  }, [refresh])
+
+  // Upstream-style: re-check service + Windows HKCU proxy when returning to the window.
+  useEffect(() => {
+    let timer: number | null = null
+    const schedule = () => {
+      if (document.visibilityState !== 'visible') return
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = null
+        void (async () => {
+          try {
+            await OnWindowBecameVisible()
+          } catch {
+            /* ignore */
+          }
+          await refresh()
+        })()
+      }, 260)
+    }
+    document.addEventListener('visibilitychange', schedule)
+    window.addEventListener('focus', schedule)
+    return () => {
+      document.removeEventListener('visibilitychange', schedule)
+      window.removeEventListener('focus', schedule)
+      if (timer !== null) window.clearTimeout(timer)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -1388,6 +1494,7 @@ function App() {
     setError('')
     try {
       const log = await ReadServiceLatestLog(180000)
+      const runtimeEvents = await GetRuntimeDiagEvents()
       const payload = {
         exportedAt: new Date().toISOString(),
         appVersion:
@@ -1397,6 +1504,7 @@ function App() {
         settings,
         appState: state,
         serviceLog: log,
+        runtimeEvents,
       }
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
         type: 'application/json',
@@ -1477,20 +1585,43 @@ function App() {
 
   const connectionLabel = useMemo(() => {
     const s = state?.connection?.status
+    const health = String(state?.connection?.health ?? '').trim()
     if (connectBusy || s === 'connecting') return 'Connecting'
-    if (s === 'connected') return 'Protected'
+    if (s === 'connected') {
+      // Only "broken" is shown as a problem; warming/degraded are still connected for users.
+      if (health === 'broken') return t('ui.home.brokenConnection')
+      return t('ui.home.protected')
+    }
     if (s === 'disconnecting') return 'Disconnecting'
     if (s === 'error') return 'Problem'
     return 'Not connected'
-  }, [state, connectBusy])
+  }, [state, connectBusy, t])
 
   const connectVisual = useMemo(() => {
     if (connectBusy) return 'connecting'
     const s = state?.connection?.status
+    const health = String(state?.connection?.health ?? '').trim()
     if (s === 'error') return 'error'
-    if (s === 'connected') return 'connected'
+    if (s === 'connected') {
+      if (health === 'broken') return 'broken'
+      return 'connected'
+    }
     return 'idle'
-  }, [connectBusy, state?.connection?.status])
+  }, [connectBusy, state?.connection?.status, state?.connection?.health])
+
+  const showProtectedBadge = useMemo(() => {
+    const health = String(state?.connection?.health ?? '').trim()
+    return state?.connection?.status === 'connected' && health !== 'broken'
+  }, [state?.connection?.status, state?.connection?.health])
+
+  const homeTrafficHealthSubtitle = useMemo(() => {
+    if (state?.connection?.status !== 'connected') return ''
+    const tr = displayTraffic === 'tun' ? 'TUN' : t('ui.common.proxy')
+    const h = String(state?.connection?.health ?? '').trim()
+    const hk =
+      h === 'broken' ? t('ui.home.healthBroken') : t('ui.home.healthReady')
+    return t('ui.home.trafficHealthLine', { traffic: tr, health: hk })
+  }, [state?.connection?.status, state?.connection?.health, displayTraffic, t])
 
   const activeNode = useMemo(() => {
     const groups = (state?.proxy?.groups ?? []) as any[]
@@ -1569,14 +1700,26 @@ function App() {
   const homeAlertTooltip = useMemo(() => {
     const parts: string[] = []
     if (tunBanner?.trim()) parts.push(tunBanner.trim())
-    if (
-      state?.connection?.status === 'connected' &&
-      state?.connection?.lastWarning
-    ) {
-      parts.push(String(state.connection.lastWarning).trim())
+    if (state?.connection?.status === 'connected') {
+      const health = String(state?.connection?.health ?? '').trim()
+      if (health === 'degraded') {
+        parts.push(t('ui.home.healthDegradedHint'))
+      }
+      if (health === 'broken') {
+        parts.push(t('ui.home.healthBrokenHint'))
+      }
+      if (state?.connection?.lastWarning) {
+        parts.push(String(state.connection.lastWarning).trim())
+      }
     }
     return parts.join('\n\n')
-  }, [tunBanner, state?.connection?.status, state?.connection?.lastWarning])
+  }, [
+    t,
+    tunBanner,
+    state?.connection?.status,
+    state?.connection?.health,
+    state?.connection?.lastWarning,
+  ])
 
   const homeUpdateTooltip = useMemo(() => {
     if (!updateSnap?.hasUpdate) return ''
@@ -1667,6 +1810,10 @@ function App() {
     () => parseMihomoRulesJson(rulesOverview?.rulesBody),
     [rulesOverview?.rulesBody],
   )
+  const ruleProvidersRows = useMemo(
+    () => parseRuleProvidersJson(rulesOverview?.ruleProvidersBody),
+    [rulesOverview?.ruleProvidersBody],
+  )
   const ruleTypeFilterOptions = useMemo(() => {
     const set = new Set<string>()
     for (const r of rulesRows) {
@@ -1702,6 +1849,17 @@ function App() {
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
   }, [filteredRulesRows])
+  const filteredConnections = useMemo(() => {
+    const rows = connectionsOverview?.connections ?? []
+    const q = connectionsSearch.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((c) => {
+      const meta = c.metadata ?? {}
+      const hay =
+        `${c.id} ${meta.host ?? ''} ${meta.destinationIP ?? ''} ${meta.process ?? ''} ${c.rule ?? ''} ${c.rulePayload ?? ''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  }, [connectionsOverview?.connections, connectionsSearch])
 
   const dismissSpotlight = useCallback(() => {
     localStorage.setItem(LS_SPOTLIGHT, '1')
@@ -1815,10 +1973,113 @@ function App() {
     }
   }, [])
 
+  const refreshConnections = useCallback(async () => {
+    setConnectionsBusy(true)
+    setError('')
+    try {
+      const overview = (await FetchConnectionsOverview()) as ConnectionsOverview
+      setConnectionsOverview(overview)
+    } catch (e: any) {
+      setError(String(e))
+    } finally {
+      setConnectionsBusy(false)
+    }
+  }, [])
+
+  const refreshRuntimeLog = useCallback(async () => {
+    setError('')
+    try {
+      const peek = await ReadServiceLatestLog(200_000)
+      setServiceLog(peek)
+    } catch (e: any) {
+      setError(String(e))
+    }
+  }, [])
+
+  const refreshRuleProviderOne = useCallback(
+    async (name: string) => {
+      const id = String(name ?? '').trim()
+      if (!id) return
+      setRuleProviderErrMap((prev) => {
+        if (!prev[id]) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setRuleProviderBusyMap((prev) => ({ ...prev, [id]: true }))
+      try {
+        await UpdateRuleProvider(id)
+        await refreshRules()
+      } catch (e: any) {
+        setRuleProviderErrMap((prev) => ({ ...prev, [id]: String(e) }))
+      } finally {
+        setRuleProviderBusyMap((prev) => ({ ...prev, [id]: false }))
+      }
+    },
+    [refreshRules],
+  )
+
+  const refreshRuleProvidersAll = useCallback(async () => {
+    if (ruleProvidersRows.length === 0) return
+    setRuleProvidersBulkBusy(true)
+    setRuleProviderErrMap({})
+    const busySeed: Record<string, boolean> = {}
+    for (const p of ruleProvidersRows) busySeed[p.name] = true
+    setRuleProviderBusyMap(busySeed)
+    try {
+      for (const p of ruleProvidersRows) {
+        try {
+          await UpdateRuleProvider(p.name)
+          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
+        } catch (e: any) {
+          setRuleProviderErrMap((prev) => ({ ...prev, [p.name]: String(e) }))
+          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
+        }
+      }
+      await refreshRules()
+    } finally {
+      setRuleProvidersBulkBusy(false)
+    }
+  }, [refreshRules, ruleProvidersRows])
+
+  const runProxyDelayTest = useCallback(async (name: string) => {
+    const id = String(name ?? '').trim()
+    if (!id) return
+    setProxyDelayBusy((prev) => ({ ...prev, [id]: true }))
+    setProxyDelayErr((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    try {
+      const ms = await TestProxyDelay(id)
+      setProxyDelayMap((prev) => ({ ...prev, [id]: Number(ms) || 0 }))
+    } catch (e: any) {
+      setProxyDelayErr((prev) => ({ ...prev, [id]: String(e) }))
+    } finally {
+      setProxyDelayBusy((prev) => ({ ...prev, [id]: false }))
+    }
+  }, [])
+
   useEffect(() => {
     if (screen !== 'rules') return
     void refreshRules()
   }, [screen, refreshRules])
+
+  useEffect(() => {
+    if (screen !== 'connections') return
+    void refreshConnections()
+    const t = window.setInterval(() => {
+      void refreshConnections()
+    }, 3500)
+    return () => window.clearInterval(t)
+  }, [screen, refreshConnections])
+
+  useEffect(() => {
+    if (screen !== 'logs') return
+    void refreshRuntimeLog()
+  }, [screen, refreshRuntimeLog])
 
   const importModalTitle = () => {
     if (importModalReason === 'connect') {
@@ -2076,7 +2337,7 @@ function App() {
                         : t('ui.home.connect')}
                   </button>
                   <div className="statusLine statusLineSolo protectedLine">
-                    {connectionLabel === 'Protected' ? (
+                    {showProtectedBadge ? (
                       <span className="protectedBadge">
                         <span className="protectedDot" aria-hidden />
                         <span>{t('ui.home.protected')}</span>
@@ -2084,6 +2345,11 @@ function App() {
                     ) : (
                       <span className="pill">{connectionLabel}</span>
                     )}
+                    {homeTrafficHealthSubtitle ? (
+                      <div className="homeTrafficHealth" role="status">
+                        {homeTrafficHealthSubtitle}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <div
@@ -2170,6 +2436,34 @@ function App() {
                     />
                   </div>
                 </div>
+                {service?.installed &&
+                (!service?.running ||
+                  String(service?.lastError ?? '').trim()) ? (
+                  <div className="statusRow serviceIssueRow">
+                    <p className="muted serviceIssueText">
+                      {String(service?.lastError ?? '').trim()
+                        ? String(service.lastError).trim()
+                        : t('ui.home.serviceStoppedHint')}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btnCompact"
+                      onClick={() =>
+                        void (async () => {
+                          try {
+                            const s = await RefreshSlothServiceStatus()
+                            setService(s as main.ServiceState)
+                            await refresh()
+                          } catch (e: any) {
+                            setError(String(e))
+                          }
+                        })()
+                      }
+                    >
+                      {t('ui.home.serviceRetry')}
+                    </button>
+                  </div>
+                ) : null}
                 <div className="statusRow">
                   <span>{t('ui.home.activeGroup')}</span>
                   <strong>
@@ -2616,7 +2910,34 @@ function App() {
                                                 </span>
                                               ))}
                                             </div>
+                                            <div className="proxyDelayBox">
+                                              <button
+                                                type="button"
+                                                className="btn subtle btnCompact"
+                                                disabled={Boolean(
+                                                  proxyDelayBusy[p],
+                                                )}
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  void runProxyDelayTest(p)
+                                                }}
+                                              >
+                                                {proxyDelayBusy[p]
+                                                  ? t('ui.proxies.pinging')
+                                                  : t('ui.proxies.ping')}
+                                              </button>
+                                              <span className="proxyDelayText">
+                                                {proxyDelayMap[p] > 0
+                                                  ? `${proxyDelayMap[p]} ms`
+                                                  : '—'}
+                                              </span>
+                                            </div>
                                           </div>
+                                          {proxyDelayErr[p] ? (
+                                            <div className="error small">
+                                              {proxyDelayErr[p]}
+                                            </div>
+                                          ) : null}
                                         </button>
                                       )
                                     })}
@@ -2793,22 +3114,195 @@ function App() {
           </div>
         ) : null}
 
+        {screen === 'connections' ? (
+          <div className="panel rulesPanel">
+            <div className="rulesPanelHead">
+              <h2 className="rulesPanelTitle">{t('ui.connections.title')}</h2>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={connectionsBusy}
+                  onClick={() => void refreshConnections()}
+                >
+                  {connectionsBusy
+                    ? t('ui.connections.refreshing')
+                    : t('ui.connections.refresh')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => run(() => CloseAllConnections())}
+                >
+                  {t('ui.connections.closeAll')}
+                </button>
+              </div>
+            </div>
+            {connectionsOverview?.lastError ? (
+              <p className="error tight">{connectionsOverview.lastError}</p>
+            ) : null}
+            <div className="rulesSummaryRow">
+              <span className="rulesSummaryChip">
+                {t('ui.connections.upload')}:{' '}
+                {formatBytesSmart(
+                  Number(connectionsOverview?.uploadTotal ?? 0),
+                )}
+              </span>
+              <span className="rulesSummaryChip">
+                {t('ui.connections.download')}:{' '}
+                {formatBytesSmart(
+                  Number(connectionsOverview?.downloadTotal ?? 0),
+                )}
+              </span>
+              <span className="rulesSummaryChip">
+                {t('ui.connections.total')}: {filteredConnections.length}/
+                {(connectionsOverview?.connections ?? []).length}
+              </span>
+            </div>
+            <input
+              className="input rulesFilterSearch"
+              value={connectionsSearch}
+              onChange={(e) => setConnectionsSearch(e.target.value)}
+              placeholder={t('ui.connections.searchPlaceholder')}
+            />
+            <div className="rulesTableWrap rulesTableWrapFull">
+              <table className="rulesTable">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>{t('ui.connections.host')}</th>
+                    <th>{t('ui.connections.process')}</th>
+                    <th>{t('ui.connections.rule')}</th>
+                    <th>{t('ui.connections.traffic')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredConnections.map((c) => {
+                    const meta = c.metadata ?? {}
+                    return (
+                      <tr key={c.id}>
+                        <td className="monoTight">
+                          {String(c.id).slice(0, 8)}
+                        </td>
+                        <td className="rulesPayload">
+                          {meta.host || meta.destinationIP || '—'}
+                          {meta.destinationPort
+                            ? `:${meta.destinationPort}`
+                            : ''}
+                        </td>
+                        <td>{meta.process || '—'}</td>
+                        <td className="rulesPayload">
+                          {c.rulePayload || c.rule || '—'}
+                        </td>
+                        <td>
+                          ↑ {formatBytesSmart(Number(c.upload ?? 0))} / ↓{' '}
+                          {formatBytesSmart(Number(c.download ?? 0))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        {screen === 'logs' ? (
+          <div className="panel rulesPanel">
+            <div className="rulesPanelHead">
+              <h2 className="rulesPanelTitle">{t('ui.logs.title')}</h2>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => void refreshRuntimeLog()}
+              >
+                {t('ui.logs.refresh')}
+              </button>
+            </div>
+            {serviceLog?.path ? (
+              <p className="muted small tight">
+                <strong className="monoTight">{serviceLog.path}</strong>
+              </p>
+            ) : null}
+            {serviceLog?.lastError ? (
+              <p className="error tight">{serviceLog.lastError}</p>
+            ) : null}
+            {serviceLog?.text ? (
+              <pre className="mono tightPre logPre">{serviceLog.text}</pre>
+            ) : (
+              <p className="muted small">{t('ui.logs.empty')}</p>
+            )}
+          </div>
+        ) : null}
+
         {screen === 'rules' ? (
           <div className="panel rulesPanel">
             <div className="rulesPanelHead">
               <h2 className="rulesPanelTitle">{t('ui.rules.title')}</h2>
-              <button
-                type="button"
-                className="btn"
-                disabled={rulesBusy}
-                onClick={() => refreshRules()}
-              >
-                {rulesBusy ? t('ui.rules.refreshing') : t('ui.rules.refresh')}
-              </button>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={rulesBusy}
+                  onClick={() => refreshRules()}
+                >
+                  {rulesBusy ? t('ui.rules.refreshing') : t('ui.rules.refresh')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={
+                    ruleProvidersBulkBusy || ruleProvidersRows.length === 0
+                  }
+                  onClick={() => void refreshRuleProvidersAll()}
+                  title={t('ui.rules.providersUpdateAll')}
+                >
+                  {ruleProvidersBulkBusy
+                    ? t('ui.rules.providersUpdating')
+                    : t('ui.rules.providersUpdateAll')}
+                </button>
+              </div>
             </div>
             {state?.connection?.status === 'connected' &&
             rulesOverview?.lastError ? (
               <p className="error tight">{rulesOverview.lastError}</p>
+            ) : null}
+            {ruleProvidersRows.length > 0 ? (
+              <div className="rulesProvidersWrap">
+                {ruleProvidersRows.map((p) => {
+                  const busy = Boolean(ruleProviderBusyMap[p.name])
+                  const err = ruleProviderErrMap[p.name]
+                  return (
+                    <div key={p.name} className="rulesProviderRow">
+                      <div className="rulesProviderMain">
+                        <strong>{p.name}</strong>
+                        <span className="rulesProviderMeta">
+                          {p.behavior} · {p.vehicleType} · {p.ruleCount}
+                        </span>
+                        <span className="rulesProviderMeta">
+                          {t('ui.rules.lastUpdated')}:{' '}
+                          {formatProviderUpdatedAt(p.updatedAt)}
+                        </span>
+                        {err ? (
+                          <span className="error small">
+                            {t('ui.rules.providerUpdateFailed')}: {err}
+                          </span>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn subtle btnCompact"
+                        disabled={busy || ruleProvidersBulkBusy}
+                        onClick={() => void refreshRuleProviderOne(p.name)}
+                      >
+                        {busy
+                          ? t('ui.rules.providersUpdating')
+                          : t('ui.rules.providersUpdate')}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
             ) : null}
             {rulesRows.length > 0 ? (
               <>
@@ -4309,13 +4803,11 @@ function App() {
                         value={ruleFormType}
                         onChange={(e) => setRuleFormType(e.target.value)}
                       >
-                        <option value="DOMAIN-SUFFIX">DOMAIN-SUFFIX</option>
-                        <option value="DOMAIN">DOMAIN</option>
-                        <option value="DOMAIN-KEYWORD">DOMAIN-KEYWORD</option>
-                        <option value="MATCH">MATCH</option>
-                        <option value="GEOSITE">GEOSITE</option>
-                        <option value="GEOIP">GEOIP</option>
-                        <option value="IP-CIDR">IP-CIDR</option>
+                        {RULE_TYPE_OPTIONS.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="field modalField">
@@ -4363,11 +4855,12 @@ function App() {
                         className="btn primary vergeStackBtn"
                         onClick={() => {
                           const content = ruleFormContent.trim()
-                          if (!content) return
+                          const needsContent = ruleFormType !== 'MATCH'
+                          if (needsContent && !content) return
                           const row: RuleRow = {
                             id: `rl-${Date.now()}`,
                             ruleType: ruleFormType,
-                            content,
+                            content: needsContent ? content : '',
                             policy: ruleFormPolicy.trim() || 'DIRECT',
                           }
                           const prepNext =

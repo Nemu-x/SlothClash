@@ -54,6 +54,27 @@ export function IconRules(p: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function IconConnections(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...stroke(p)}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  )
+}
+
+export function IconLogs(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...stroke(p)}>
+      <path d="M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+      <path d="M8 9h8" />
+      <path d="M8 13h8" />
+      <path d="M8 17h5" />
+    </svg>
+  )
+}
+
 /** Wrench (outline), matches other nav icons */
 export function IconAdvanced(p: SVGProps<SVGSVGElement>) {
   return (

@@ -5,6 +5,14 @@ export type RuleRow = {
   proxy: string
 }
 
+export type RuleProviderRow = {
+  name: string
+  behavior: string
+  ruleCount: number
+  vehicleType: string
+  updatedAt: string
+}
+
 /** mihomo GET /rules returns `rules` as string lines: TYPE,PAYLOAD,POLICY[,opts…] */
 function parseMihomoRuleString(line: string, idx: number): RuleRow {
   const parts = line
@@ -59,6 +67,33 @@ export function parseMihomoRulesJson(
         })
       }
     }
+    return out
+  } catch {
+    return []
+  }
+}
+
+export function parseRuleProvidersJson(
+  raw: string | undefined | null,
+): RuleProviderRow[] {
+  if (!raw?.trim()) return []
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>
+    const root = (data?.providers ?? data) as Record<string, unknown>
+    if (!root || typeof root !== 'object') return []
+    const out: RuleProviderRow[] = []
+    for (const [name, value] of Object.entries(root)) {
+      if (!value || typeof value !== 'object') continue
+      const o = value as Record<string, unknown>
+      out.push({
+        name,
+        behavior: String(o.behavior ?? '—'),
+        ruleCount: Number(o.ruleCount ?? o.rule_count ?? 0) || 0,
+        vehicleType: String(o.vehicleType ?? o.vehicle_type ?? '—'),
+        updatedAt: String(o.updatedAt ?? o.updated_at ?? ''),
+      })
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name))
     return out
   } catch {
     return []

@@ -700,6 +700,22 @@
 
 .protectedLine {
   margin-top: 12px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.homeTrafficHealth {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(230, 225, 215, 0.55);
+  text-align: center;
+  letter-spacing: 0.04em;
+  max-width: 280px;
+  line-height: 1.35;
+}
+
+.shell[data-theme="light"] .homeTrafficHealth {
+  color: rgba(42, 34, 21, 0.58);
 }
 
 .protectedBadge {
@@ -797,6 +813,25 @@
   background: linear-gradient(145deg, #6f8f72, #4d654f);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.38);
   color: #f4f1ea;
+}
+
+.connectBtn[data-visual="degraded"] {
+  /* Still "on", but visibly different from fully-ready sage */
+  background: linear-gradient(145deg, #b8893a, #8a6324);
+  box-shadow: 0 16px 36px rgba(184, 137, 58, 0.22);
+  color: #fffaf1;
+}
+
+.connectBtn[data-visual="warming"] {
+  background: linear-gradient(145deg, #6b7c92, #4a5666);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+  color: #f4f1ea;
+}
+
+.connectBtn[data-visual="broken"] {
+  background: linear-gradient(145deg, #b45309, #7c2d12);
+  box-shadow: 0 16px 34px rgba(180, 83, 9, 0.22);
+  color: #fff7ed;
 }
 
 .connectBtn[data-visual="connecting"] {
@@ -1006,6 +1041,20 @@
   overflow: hidden;
 }
 
+.proxyDelayBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.proxyDelayText {
+  min-width: 44px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .proxyNodeTag {
   font-size: 10px;
   line-height: 1;
@@ -1056,6 +1105,12 @@
   justify-content: center;
   align-items: center;
   gap: 10px;
+}
+
+.serviceIssueText {
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .pill {
@@ -1300,6 +1355,21 @@
   flex: 1;
   min-width: 0;
   justify-content: flex-end;
+}
+
+.homeStatusGrid .statusCardCompact .statusRow.serviceIssueRow {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.homeStatusGrid
+  .statusCardCompact
+  .statusRow.serviceIssueRow
+  .serviceIssueText {
+  width: 100%;
+  text-align: left;
 }
 
 .statusCardCompact .statusRowNodeValue {
@@ -2523,6 +2593,35 @@
 
 .rulesPanelTitle {
   margin: 0;
+}
+
+.rulesProvidersWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rulesProviderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rulesProviderMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rulesProviderMeta {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .rulesTable {

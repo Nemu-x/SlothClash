@@ -1,3 +1,26 @@
+## Sloth Clash desktop `0.3.1` — 2026-04-30
+
+### English
+
+- **pnpm / Wails frontend:** monorepo `pnpm-workspace.yaml` (root + `apps/sloth-clash-desktop/frontend`), removed nested `frontend/pnpm-lock.yaml`, aligned desktop frontend deps with the root stack (React 19 / Vite 8 / TypeScript 6). The required-test gate runs `tsc` from the repo root so a single `pnpm install` is enough on fresh clones.
+- **Windows NSIS installer:** fixed inverted `taskkill` / `DetailPrint` messages, removed the extra “you may need to close the app” prompt before install, unified `tasklist` on `${PRODUCT_EXECUTABLE}`, clarified the “still running” abort text.
+- **Home UX:** while connected, the main button and “protected” row stay **green** unless `connection.health` is `broken`; warming/degraded no longer show “partial protection”, long “configuring…”, or “TUN — limited” for typical users (degraded/broken hints remain available via the home alert tooltip where applicable).
+- **Desktop (Go):** connections overview API, rule-provider refresh API, proxy latency API, runtime supervisor and related lifecycle / system-proxy / tray / state / subscription / profile plumbing (see git history on this branch for file-level detail).
+
+### Русский
+
+- **pnpm / Wails frontend:** добавлен `pnpm-workspace.yaml` (корень + `apps/sloth-clash-desktop/frontend`), удалён вложенный `frontend/pnpm-lock.yaml`, зависимости десктопного фронта выровнены с корнем (React 19 / Vite 8 / TypeScript 6). Обязательный тест запускает `tsc` из корня — на чистом клоне достаточно одного `pnpm install`.
+- **Установщик Windows (NSIS):** исправлены перепутанные сообщения после `taskkill`, убран лишний `MessageBox` перед установкой, `tasklist` унифицирован по имени exe из `${PRODUCT_EXECUTABLE}`, уточнён текст при «процесс всё ещё запущен».
+- **Главный экран:** при `connected` кнопка и блок «защищено» остаются **зелёными**, пока здоровье не `broken`; состояния warming/degraded больше не показывают «частичную защиту», долгое «настраиваем…» и «TUN — ограничено» для обычного пользователя (подсказки degraded/broken по-прежнему могут быть в тултипе предупреждения на главной).
+- **Десктоп (Go):** API обзора соединений, обновления rule-provider, задержки прокси, супервизор рантайма и сопутствующие правки lifecycle / system proxy / трей / state / subscription / profiles (детали — по коммитам в ветке).
+
+### 中文
+
+- **pnpm / Wails 前端：** 增加 `pnpm-workspace.yaml`（根目录与 `apps/sloth-clash-desktop/frontend`），移除嵌套的 `frontend/pnpm-lock.yaml`，桌面前端依赖与根项目对齐（React 19 / Vite 8 / TypeScript 6）。必选测试从仓库根运行 `tsc`，全新克隆只需一次 `pnpm install`。
+- **Windows NSIS 安装包：** 修正 `taskkill` 与日志文案颠倒、去掉安装前多余提示、`tasklist` 统一使用 `${PRODUCT_EXECUTABLE}` 对应的 exe 名。
+- **首页体验：** `connected` 时主按钮与“已保护”区域在非 `broken` 时保持绿色；warming/degraded 不再对普通用户显示“部分保护 / 正在配置 / TUN 受限”等字样（必要时仍可在首页警告气泡的提示里查看）。
+- **桌面 Go：** 连接列表、规则提供者刷新、代理延迟 API、运行时监督器及相关生命周期与系统代理/托盘/状态/订阅/配置逻辑（详见本分支提交记录）。
+
 ## Sloth Clash desktop `0.3.0` — 2026-04-25
 
 ### English

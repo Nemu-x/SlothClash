@@ -21,6 +21,9 @@ CLAUDE.md
 .vfox/
 .claude
 
+# Optional local-only pnpm tuning (e.g. Windows AV); keep out of the repo.
+.npmrc
+
 # Wails / desktop build outputs (binaries, sidecars)
 apps/sloth-clash-desktop/build/
 !apps/sloth-clash-desktop/build/

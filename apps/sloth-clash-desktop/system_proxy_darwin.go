@@ -271,3 +271,8 @@ func getDarwinProxyState(flag string, service string) (darwinProxyState, error) 
 	return state, nil
 }
 
+func (a *App) maybeWindowsSysProxyReconcile() {}
+
+func (a *App) handleMixedPortChangeForWindowsSysProxy(prevPort, newPort int) {
+	_, _ = prevPort, newPort
+}

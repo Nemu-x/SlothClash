@@ -18,9 +18,9 @@ type HomeInsight struct {
 	NodeLatencyMs int    `json:"nodeLatencyMs"` // 0 = not available
 	LatencyError  string `json:"latencyError,omitempty"`
 	ExitIP        string `json:"exitIp,omitempty"`
-	ExitLine      string `json:"exitLine,omitempty"` // plain geo text, e.g. "Russia · Moscow" (no emoji; see ExitFlagIso2)
+	ExitLine      string `json:"exitLine,omitempty"`     // plain geo text, e.g. "Russia · Moscow" (no emoji; see ExitFlagIso2)
 	ExitFlagIso2  string `json:"exitFlagIso2,omitempty"` // ISO 3166-1 alpha-2 for flag image (WebView may render 🇷🇺 as "RU")
-	DirectIP      string `json:"directIp,omitempty"` // WAN; meaningful in rule vs tun exit
+	DirectIP      string `json:"directIp,omitempty"`     // WAN; meaningful in rule vs tun exit
 	DirectError   string `json:"directError,omitempty"`
 	LastError     string `json:"lastError,omitempty"`
 	UploadKbps    int    `json:"uploadKbps"`   // mihomo GET /traffic (kbps); always sent so UI can show 0
@@ -31,7 +31,7 @@ type HomeInsight struct {
 
 type ConnectionState struct {
 	Status      string `json:"status"`
-	Health      string `json:"health,omitempty"` // ready|degraded while connected
+	Health      string `json:"health,omitempty"` // ready|degraded|broken while connected (empty = warming / not classified)
 	LastError   string `json:"lastError,omitempty"`
 	LastWarning string `json:"lastWarning,omitempty"` // non-fatal; e.g. TUN takeover skipped
 	Since       int64  `json:"since,omitempty"`
@@ -43,18 +43,18 @@ type ModeState struct {
 }
 
 type Profile struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Type           string `json:"type"`
-	URL            string `json:"url,omitempty"`
-	SubscriptionInfo string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
-	LastUpdated    int64  `json:"lastUpdated,omitempty"`
-	AutoUpdateEnabled bool `json:"autoUpdateEnabled,omitempty"` // periodically refresh subscription metadata/content
-	AutoUpdateIntervalMinutes int `json:"autoUpdateIntervalMinutes,omitempty"` // 0 => use default backend interval
-	MergeTemplate  string `json:"mergeTemplate,omitempty"`       // Extend config YAML
-	RulesTemplate  string `json:"rulesTemplate,omitempty"`       // Rules editor YAML (prepend/append/delete)
-	ProxyTemplate  string `json:"proxyTemplate,omitempty"`       // Proxy groups editor YAML (prepend/append/delete)
-	SkipAutoConfig bool   `json:"skipAutoConfig,omitempty"` // after manual config.yaml edit, skip regeneration on connect
+	ID                        string `json:"id"`
+	Name                      string `json:"name"`
+	Type                      string `json:"type"`
+	URL                       string `json:"url,omitempty"`
+	SubscriptionInfo          string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
+	LastUpdated               int64  `json:"lastUpdated,omitempty"`
+	AutoUpdateEnabled         bool   `json:"autoUpdateEnabled,omitempty"`         // periodically refresh subscription metadata/content
+	AutoUpdateIntervalMinutes int    `json:"autoUpdateIntervalMinutes,omitempty"` // 0 => use default backend interval
+	MergeTemplate             string `json:"mergeTemplate,omitempty"`             // Extend config YAML
+	RulesTemplate             string `json:"rulesTemplate,omitempty"`             // Rules editor YAML (prepend/append/delete)
+	ProxyTemplate             string `json:"proxyTemplate,omitempty"`             // Proxy groups editor YAML (prepend/append/delete)
+	SkipAutoConfig            bool   `json:"skipAutoConfig,omitempty"`            // after manual config.yaml edit, skip regeneration on connect
 	// LastGoodGroup remembers the user's last manually picked proxy group
 	// for this specific profile. It is the authoritative source for the
 	// auto-select routine: if the same group still exists in /proxies when
@@ -149,15 +149,15 @@ type UIState struct {
 }
 
 type UpdateState struct {
-	Channel            string `json:"channel"`
-	HasUpdate          bool   `json:"hasUpdate"`
-	LastCheckedAt      int64  `json:"lastCheckedAt,omitempty"`
-	CurrentVersion     string `json:"currentVersion,omitempty"`
-	LatestVersion      string `json:"latestVersion,omitempty"`
-	ReleaseURL         string `json:"releaseUrl,omitempty"`
-	AssetName          string `json:"assetName,omitempty"`
-	AssetDownloadURL   string `json:"assetDownloadUrl,omitempty"`
-	LastError          string `json:"lastError,omitempty"`
+	Channel          string `json:"channel"`
+	HasUpdate        bool   `json:"hasUpdate"`
+	LastCheckedAt    int64  `json:"lastCheckedAt,omitempty"`
+	CurrentVersion   string `json:"currentVersion,omitempty"`
+	LatestVersion    string `json:"latestVersion,omitempty"`
+	ReleaseURL       string `json:"releaseUrl,omitempty"`
+	AssetName        string `json:"assetName,omitempty"`
+	AssetDownloadURL string `json:"assetDownloadUrl,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
 }
 
 type TunSetupResult struct {
@@ -183,4 +183,12 @@ type ServiceLogPeek struct {
 	Text      string `json:"text"`
 	Truncated bool   `json:"truncated"`
 	LastError string `json:"lastError,omitempty"`
+}
+
+// RuntimeDiagEvent is a small, privacy-safe timeline for diagnostics export.
+// Categories use dotted names (for example "core.reload", "connection.degraded").
+type RuntimeDiagEvent struct {
+	TsUnixMs int64  `json:"ts"`
+	Category string `json:"category"`
+	Message  string `json:"message,omitempty"`
 }

@@ -58,6 +58,9 @@ type App struct {
 	emitStateMu           sync.Mutex
 	emitStateTimer        *time.Timer
 	insightRefreshRunning atomic.Bool
+
+	diagMu     sync.Mutex
+	diagEvents []RuntimeDiagEvent
 }
 
 // NewApp creates a new App application struct
@@ -107,6 +110,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	go a.startProfileAutoUpdateLoop(ctx)
 	go a.updateCheckLoop(ctx)
+	go a.runRuntimeSupervisorLoop(ctx)
 	a.emitAppStateChanged()
 	// Warm the core in the background for the active profile (cold start with
 	// tun.enable: false) so the first Connect only has to push a single
@@ -243,7 +247,7 @@ func (a *App) GetTrayAvailability() bool {
 func (a *App) NavigateUIScreen(screen string) {
 	screen = strings.ToLower(strings.TrimSpace(screen))
 	switch screen {
-	case "home", "proxies", "profiles", "rules", "advanced", "settings":
+	case "home", "proxies", "profiles", "connections", "rules", "logs", "advanced", "settings":
 	default:
 		return
 	}
@@ -366,11 +370,16 @@ func (a *App) refreshServiceStatus() {
 		return
 	}
 	a.mu.Lock()
+	prevErr := strings.TrimSpace(a.state.Service.LastError)
 	a.state.Service.Installed = installed
 	a.state.Service.Running = running
-	a.state.Service.LastError = strings.TrimSpace(lastErr)
+	newErr := strings.TrimSpace(lastErr)
+	a.state.Service.LastError = newErr
 	a.state.UpdatedAt = time.Now().Unix()
 	a.mu.Unlock()
+	if newErr != "" && newErr != prevErr {
+		a.appendRuntimeDiag("ipc.error", "service status: "+newErr)
+	}
 }
 
 func queryDarwinServiceStatus() (installed bool, running bool, lastErr string) {
@@ -486,6 +495,43 @@ func (a *App) GetAppState() AppState {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.state
+}
+
+const maxRuntimeDiagEvents = 220
+const maxRuntimeDiagMsgLen = 520
+
+func (a *App) appendRuntimeDiag(category, message string) {
+	cat := strings.TrimSpace(category)
+	if cat == "" {
+		return
+	}
+	msg := strings.TrimSpace(message)
+	if len(msg) > maxRuntimeDiagMsgLen {
+		msg = msg[:maxRuntimeDiagMsgLen] + "…"
+	}
+	ev := RuntimeDiagEvent{
+		TsUnixMs: time.Now().UnixMilli(),
+		Category: cat,
+		Message:  msg,
+	}
+	a.diagMu.Lock()
+	a.diagEvents = append(a.diagEvents, ev)
+	if len(a.diagEvents) > maxRuntimeDiagEvents {
+		a.diagEvents = a.diagEvents[len(a.diagEvents)-maxRuntimeDiagEvents:]
+	}
+	a.diagMu.Unlock()
+}
+
+// GetRuntimeDiagEvents returns recent runtime diagnostics (bounded ring).
+func (a *App) GetRuntimeDiagEvents() []RuntimeDiagEvent {
+	a.diagMu.Lock()
+	defer a.diagMu.Unlock()
+	if len(a.diagEvents) == 0 {
+		return nil
+	}
+	out := make([]RuntimeDiagEvent, len(a.diagEvents))
+	copy(out, a.diagEvents)
+	return out
 }
 
 // GetPreferredLanguage returns installer/system preferred UI language for first-run.
@@ -631,6 +677,7 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 	}
 	a.mu.Unlock()
 	if notify {
+		a.appendRuntimeDiag("connection.error", err.Error())
 		a.emitAppStateChanged()
 	}
 }
@@ -640,7 +687,9 @@ func (a *App) finishConnectJobOK(gen uint64) {
 	a.mu.Lock()
 	if a.connectGen.Load() == gen && a.state.Connection.Status == "connecting" {
 		a.state.Connection.Status = "connected"
-		a.markConnectionReadyLocked()
+		// Health stays empty until post-connect warmup (sysproxy/TUN/mode) finishes
+		// so UI does not show "ready/protected" while OS/core may still mismatch intent.
+		a.state.Connection.Health = ""
 		a.state.Connection.Since = time.Now().Unix()
 		a.state.Connection.LastError = ""
 		a.state.UpdatedAt = time.Now().Unix()
@@ -683,11 +732,18 @@ func appendConnectionWarningLocked(current string, next string) string {
 }
 
 func (a *App) markConnectionReadyLocked() {
+	if a.state.Connection.Health == "broken" {
+		return
+	}
 	a.state.Connection.Health = "ready"
 	a.state.Core.Lifecycle = "running"
+	a.appendRuntimeDiag("connection.ready", "")
 }
 
 func (a *App) markConnectionDegradedLocked(reason string) {
+	if a.state.Connection.Health == "broken" {
+		return
+	}
 	if strings.TrimSpace(reason) != "" {
 		a.state.Connection.LastWarning = appendConnectionWarningLocked(a.state.Connection.LastWarning, reason)
 	}
@@ -696,6 +752,18 @@ func (a *App) markConnectionDegradedLocked(reason string) {
 	}
 	a.state.Connection.Health = "degraded"
 	a.state.Core.Lifecycle = "degraded"
+	a.appendRuntimeDiag("connection.degraded", reason)
+}
+
+func (a *App) markConnectionBrokenLocked(reason string) {
+	msg := strings.TrimSpace(reason)
+	if msg == "" {
+		msg = "connection broken"
+	}
+	a.state.Connection.Health = "broken"
+	a.state.Connection.LastWarning = msg
+	a.state.Core.Lifecycle = "degraded"
+	a.appendRuntimeDiag("connection.broken", msg)
 }
 
 func isIgnorableWarmupWarning(msg string) bool {
@@ -862,6 +930,27 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 		a.markConnectionDegradedLocked("Could not apply system proxy snapshot: " + strings.TrimSpace(err.Error()))
 		a.mu.Unlock()
 	}
+
+	a.mu.Lock()
+	if a.connectGen.Load() == gen && a.state.Connection.Status == "connected" {
+		h := strings.TrimSpace(a.state.Connection.Health)
+		lw := strings.TrimSpace(a.state.Connection.LastWarning)
+		switch h {
+		case "broken":
+			// leave as-is
+		case "degraded":
+			// leave as-is (warmup already classified the session)
+		default:
+			if lw != "" {
+				if h != "degraded" {
+					a.markConnectionDegradedLocked("")
+				}
+			} else {
+				a.markConnectionReadyLocked()
+			}
+		}
+	}
+	a.mu.Unlock()
 	return nil
 }
 
@@ -910,13 +999,28 @@ func (a *App) Disconnect() AppState {
 	a.emitAppStateChanged()
 
 	if prevTraffic == "tun" && activeFound && strings.TrimSpace(listen) != "" {
+		// Windows-specific safety net for occasional stale wintun state:
+		// try explicit tun.disable before async YAML force-reload. This is
+		// best-effort and ignored on failure; normal flow remains reload-based.
+		if runtime.GOOS == "windows" {
+			go func(ep, sec string) {
+				dctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+				defer cancel()
+				_ = coreSetTunEnabledAt(dctx, ep, sec, false)
+			}(listen, a.coreSecret)
+		}
 		// Regeneration + PUT runs off the Wails bridge so Disconnect returns
 		// immediately. If the user clicks Connect again before the reload
 		// resolves, runConnectJob will push a fresh YAML with enableTun=true
 		// through the same path; force-reload is idempotent and the final
 		// state is always whichever regeneration arrived last.
 		go func(p Profile, savedTraffic string, disconnectGen uint64) {
-			if err := a.applyRuntimeConfig(p, savedTraffic, false); err != nil {
+			a.appendRuntimeDiag("tun.disconnect", "yaml reload scheduled")
+			if err := a.applyRuntimeConfigWithGen(p, savedTraffic, false, disconnectGen); err != nil {
+				if errors.Is(err, errConnectAborted) {
+					return
+				}
+				a.appendRuntimeDiag("tun.reload", "failed: "+strings.TrimSpace(err.Error()))
 				debugLog(
 					"gen-"+strconv.FormatUint(disconnectGen, 10),
 					"H1",
@@ -924,7 +1028,9 @@ func (a *App) Disconnect() AppState {
 					"failed to apply disconnected YAML; next Connect will override",
 					map[string]any{"error": err.Error()},
 				)
+				return
 			}
+			a.appendRuntimeDiag("tun.reload", "ok")
 		}(active, prevTraffic, gen)
 	}
 	return a.GetAppState()
@@ -1028,7 +1134,9 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 		enableTun := mode == "tun"
 		if err := a.applyRuntimeConfig(active, mode, enableTun); err != nil {
 			a.mu.Lock()
-			a.markConnectionDegradedLocked("Traffic mode switch failed: " + strings.TrimSpace(err.Error()))
+			if a.state.Connection.Status == "connected" {
+				a.markConnectionBrokenLocked("Traffic mode could not be applied to the running core: " + strings.TrimSpace(err.Error()))
+			}
 			a.mu.Unlock()
 			a.emitAppStateChanged()
 			return a.GetAppState(), err
@@ -1797,6 +1905,32 @@ func (a *App) SetUpdateChannel(channel string) (UpdateState, error) {
 
 func (a *App) GetTunStatus() ServiceState {
 	a.refreshServiceStatus()
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.state.Service
+}
+
+// OnWindowBecameVisible re-syncs service status and Windows HKCU proxy when the user
+// returns to the app (clash-verge-rev refetches system-proxy state on focus/reconnect).
+func (a *App) OnWindowBecameVisible() {
+	a.refreshServiceStatus()
+	a.mu.RLock()
+	connected := a.state.Connection.Status == "connected"
+	a.mu.RUnlock()
+	if connected {
+		go func() { _, _ = a.RefreshHomeInsight() }()
+	}
+	if runtime.GOOS == "windows" {
+		a.maybeWindowsSysProxyReconcile()
+	}
+	a.emitAppStateChanged()
+}
+
+// RefreshSlothServiceStatus runs a manual service/IPC status poll (UI "Retry").
+func (a *App) RefreshSlothServiceStatus() ServiceState {
+	a.refreshServiceStatus()
+	a.appendRuntimeDiag("ipc.retry", "RefreshSlothServiceStatus")
+	a.emitAppStateChanged()
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.state.Service

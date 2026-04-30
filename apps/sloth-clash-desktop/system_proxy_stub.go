@@ -17,3 +17,9 @@ func (a *App) clearSystemProxyFromSnapshot() error {
 func (a *App) clearSystemProxyLocked() {
 	a.systemProxyLeased = false
 }
+
+func (a *App) maybeWindowsSysProxyReconcile() {}
+
+func (a *App) handleMixedPortChangeForWindowsSysProxy(prevPort, newPort int) {
+	_, _ = prevPort, newPort
+}

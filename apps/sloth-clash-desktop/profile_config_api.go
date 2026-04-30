@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,11 +162,11 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 		doc = map[string]any{
 			"proxy-groups": []any{
 				map[string]any{
-					"name":     "Auto",
-					"type":     "url-test",
-					"use":      []any{"sub1"},
-					"url":      "http://www.gstatic.com/generate_204",
-					"interval": 300,
+					"name":      "Auto",
+					"type":      "url-test",
+					"use":       []any{"sub1"},
+					"url":       "http://www.gstatic.com/generate_204",
+					"interval":  300,
 					"tolerance": 50,
 				},
 				map[string]any{
@@ -419,6 +420,13 @@ func (a *App) reloadActiveProfileConfig() error {
 //     intent verbatim, tun.enable is stable across reloads that preserve the
 //     intent, so there is no PATCH-driven wintun flap.
 func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool) error {
+	return a.applyRuntimeConfigWithGen(profile, traffic, enableTun, 0)
+}
+
+func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableTun bool, expectedGen uint64) error {
+	if expectedGen != 0 && a.connectGen.Load() != expectedGen {
+		return errConnectAborted
+	}
 	if strings.TrimSpace(profile.URL) == "" {
 		return errors.New("profile has no subscription url")
 	}
@@ -470,6 +478,9 @@ func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool
 	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, 0, mixedPort, secret, traffic, false, enableTun); err != nil {
 		return err
 	}
+	if expectedGen != 0 && a.connectGen.Load() != expectedGen {
+		return errConnectAborted
+	}
 
 	// No running core: file on disk is up to date, Connect will consume it.
 	if strings.TrimSpace(listen) == "" {
@@ -482,5 +493,35 @@ func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), coreConfigReloadTimeout)
 	defer cancel()
-	return coreReloadConfigFileAt(ctx, listen, secret, cfgAbs)
+	if err := coreReloadConfigFileAt(ctx, listen, secret, cfgAbs); err != nil {
+		if expectedGen != 0 && a.connectGen.Load() != expectedGen {
+			return errConnectAborted
+		}
+		a.appendRuntimeDiag("core.reload_failed", err.Error())
+		// Upstream-style controlled recovery: one forced core restart when
+		// hot-reload fails, then one final reload attempt on the fresh core.
+		if restartErr := a.forceRestartCoreForProfile(profile, expectedGen, enableTun); restartErr != nil {
+			a.appendRuntimeDiag("core.restart_failed", restartErr.Error())
+			return fmt.Errorf("reload failed (%v), fallback restart failed (%v)", err, restartErr)
+		}
+		a.appendRuntimeDiag("core.restart_ok", "after reload failure")
+		if expectedGen != 0 && a.connectGen.Load() != expectedGen {
+			return errConnectAborted
+		}
+		a.mu.RLock()
+		relisten := a.effectiveCoreEndpointLocked()
+		resecret := strings.TrimSpace(a.coreSecret)
+		a.mu.RUnlock()
+		if strings.TrimSpace(relisten) == "" {
+			return errors.New("reload fallback: core endpoint is unavailable after restart")
+		}
+		ctx2, cancel2 := context.WithTimeout(context.Background(), coreConfigReloadTimeout)
+		defer cancel2()
+		if err2 := coreReloadConfigFileAt(ctx2, relisten, resecret, cfgAbs); err2 != nil {
+			a.appendRuntimeDiag("core.retry_reload_failed", err2.Error())
+			return fmt.Errorf("reload failed (%v), restart succeeded but retry reload failed (%v)", err, err2)
+		}
+		a.appendRuntimeDiag("core.retry_reload_ok", "")
+	}
+	return nil
 }

@@ -32,6 +32,7 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 	mixed := a.state.Core.MixedPort
 	groups := append([]ProxyGroup(nil), a.state.Proxy.Groups...)
 	ag := strings.TrimSpace(a.state.Proxy.ActiveGroup)
+	prevInsight := a.state.Insight
 	a.mu.RUnlock()
 
 	if st != "connected" || listen == "" {
@@ -44,7 +45,10 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 	}
 
 	delayName := resolveInsightDelayName(groups, ag)
-	ins := HomeInsight{UpdatedAt: time.Now().Unix()}
+	ins := prevInsight
+	ins.UpdatedAt = time.Now().Unix()
+	ins.NodeLatencyMs = 0
+	ins.LatencyError = ""
 
 	// Each sub-step uses its own deadline. A single shared short context caused
 	// "context deadline exceeded" in Rule (delay + ipify retries + geo + direct WAN).
@@ -59,6 +63,17 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 			ins.NodeLatencyMs = ms
 		}
 		cancel()
+
+		// Fast-path UI update: publish node latency as soon as it's measured
+		// so Home reflects a node switch quickly, without waiting for slower
+		// sub-steps (exit IP / geo / direct WAN checks).
+		a.mu.Lock()
+		a.state.Insight.NodeLatencyMs = ins.NodeLatencyMs
+		a.state.Insight.LatencyError = ins.LatencyError
+		a.state.Insight.UpdatedAt = time.Now().Unix()
+		a.state.UpdatedAt = time.Now().Unix()
+		a.mu.Unlock()
+		a.emitAppStateChanged()
 	}
 
 	if listen != "" {

@@ -28,7 +28,51 @@ var (
 	trayClickMu        sync.Mutex
 	trayLastLeftClick  time.Time
 	trayDoubleClickGap = 500 * time.Millisecond
+
+	trayConnToggleMu       sync.Mutex
+	trayConnToggleInFlight bool
+	trayConnToggleQueued   bool
 )
+
+func requestTrayConnectionToggle(a *App) {
+	if a == nil {
+		return
+	}
+	trayConnToggleMu.Lock()
+	if trayConnToggleInFlight {
+		trayConnToggleQueued = true
+		trayConnToggleMu.Unlock()
+		return
+	}
+	trayConnToggleInFlight = true
+	trayConnToggleMu.Unlock()
+
+	go func(app *App) {
+		defer func() {
+			trayConnToggleMu.Lock()
+			trayConnToggleInFlight = false
+			trayConnToggleQueued = false
+			trayConnToggleMu.Unlock()
+		}()
+		for {
+			st := app.GetAppState()
+			if st.Connection.Status == "connected" {
+				app.Disconnect()
+			} else {
+				_, _ = app.Connect()
+			}
+			trayConnToggleMu.Lock()
+			queued := trayConnToggleQueued
+			trayConnToggleQueued = false
+			trayConnToggleMu.Unlock()
+			if !queued {
+				return
+			}
+			// Coalesce burst clicks into one extra pass.
+			time.Sleep(120 * time.Millisecond)
+		}
+	}(a)
+}
 
 // startAppTray launches the Windows tray loop on a dedicated goroutine and
 // wires Show / Hide / Connect / Quit menu entries. The icon is the same .ico
@@ -124,12 +168,8 @@ func startAppTray(a *App) {
 					if app == nil {
 						continue
 					}
-					st := app.GetAppState()
-					if st.Connection.Status == "connected" {
-						app.Disconnect()
-					} else {
-						_, _ = app.Connect()
-					}
+					// Keep systray loop responsive and coalesce rapid clicks.
+					requestTrayConnectionToggle(app)
 				case <-itemQuit.ClickedCh:
 					trayMu.Lock()
 					app := trayApp

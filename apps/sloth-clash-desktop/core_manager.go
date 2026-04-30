@@ -791,11 +791,11 @@ func waitForCoreEndpointStop(parent context.Context, runID, listen, secret strin
 // desired tun.enable state and push it via PUT /configs?force=true without
 // touching the process (mirrors clash-verge-rev's CoreManager::update_config).
 //
-// - If a core is already running for the same profile, returns nil without any
-//   restart.
-// - If a core is running for a different profile, stops it cleanly and starts
-//   a fresh one.
-// - If no core is running, starts one.
+//   - If a core is already running for the same profile, returns nil without any
+//     restart.
+//   - If a core is running for a different profile, stops it cleanly and starts
+//     a fresh one.
+//   - If no core is running, starts one.
 //
 // Must not be called with a.mu held. gen is an optional supersede token; pass
 // 0 when the caller is not part of the connect-job generation machinery (e.g.
@@ -827,6 +827,18 @@ func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) 
 	// means "I'm not part of a connect-job generation" (e.g. background boot
 	// on startup). Claim a fresh gen so a concurrent Connect can cleanly
 	// supersede us instead of racing on a zero sentinel.
+	if gen == 0 {
+		gen = a.connectGen.Add(1)
+	}
+	return a.startEmbeddedCore(profile, gen, enableTun)
+}
+
+// forceRestartCoreForProfile always restarts the core for the provided profile,
+// even when the current running core already belongs to the same profile.
+// Used as a controlled fallback after runtime reload failures.
+func (a *App) forceRestartCoreForProfile(profile Profile, gen uint64, enableTun bool) error {
+	a.coreLifecycleMu.Lock()
+	defer a.coreLifecycleMu.Unlock()
 	if gen == 0 {
 		gen = a.connectGen.Add(1)
 	}
@@ -901,6 +913,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			a.mu.Lock()
 			a.state.Connection.LastWarning = "Sloth service IPC unreachable, falling back to user-process core for Proxy mode: " + err.Error()
 			a.mu.Unlock()
+			a.appendRuntimeDiag("ipc.error", "darwin service IPC unreachable, using embedded core")
 			useServiceCore = false
 		} else {
 			useServiceCore = true
@@ -995,6 +1008,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		}
 
 		a.mu.Lock()
+		prevMixed := a.state.Core.MixedPort
 		a.coreOverPipe = true
 		a.coreCmd = nil
 		a.coreCancel = nil
@@ -1008,6 +1022,9 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		listenCopy := pipeName
 		secretCopy := secret
 		a.mu.Unlock()
+		if runtime.GOOS == "windows" {
+			go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
+		}
 
 		deadline := time.Now().Add(45 * time.Second)
 		for time.Now().Before(deadline) {
@@ -1082,6 +1099,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	}
 
 	a.mu.Lock()
+	prevMixed := a.state.Core.MixedPort
 	a.coreOverPipe = false
 	a.coreCmd = cmd
 	a.coreCancel = cancel
@@ -1099,6 +1117,9 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	waitCmd := cmd
 	waitToken := a.coreProcToken
 	a.mu.Unlock()
+	if runtime.GOOS == "windows" {
+		go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
+	}
 
 	go func() {
 		waitErr := waitCmd.Wait()

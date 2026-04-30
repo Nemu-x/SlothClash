@@ -92,23 +92,27 @@ Section "${INFO_PRODUCTNAME}" SecApp
 
     !insertmacro wails.webview2runtime
 
-    MessageBox MB_ICONEXCLAMATION|MB_YESNO "${INFO_PRODUCTNAME} update may require closing running app instances. Installer can do it automatically now. Continue?" IDYES +2 IDNO 0
-    Abort
+    ; Close running instance if any (no extra prompt — same idea as silent upgrade flows).
     ; Graceful-ish close handling: Windows may keep the exe locked briefly even after taskkill.
     StrCpy $2 0
   KillAndWaitLoop:
     nsExec::ExecToStack 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
     Pop $0
     Pop $1
-    StrCmp $0 "0" +2 0
-      DetailPrint 'Process found - closing the app'
-    StrCmp $0 "128" +2 0
-      DetailPrint 'Process not found'
+    ; nsExec: first Pop = exit code. taskkill: 0 = terminated, 128 = image not found (not running).
+    StrCmp $0 "0" KillExit0 KillNot0
+  KillExit0:
+    DetailPrint 'Stopped running Sloth Clash (taskkill OK).'
+    Goto AfterKillMsg
+  KillNot0:
+    StrCmp $0 "128" KillExit128 KillUnknown
+  KillExit128:
+    DetailPrint 'Sloth Clash was not running (nothing to stop).'
+    Goto AfterKillMsg
+  KillUnknown:
+    DetailPrint "taskkill exit $0 — continuing anyway."
+  AfterKillMsg:
     Sleep 650
-    nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq Sloth Clash.exe" | find /I "Sloth Clash.exe"'
-    Pop $0
-    Pop $1
-    StrCmp $0 "0" ProcessStillRunning 0
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq ${PRODUCT_EXECUTABLE}" | find /I "${PRODUCT_EXECUTABLE}"'
     Pop $0
     Pop $1
@@ -117,7 +121,7 @@ Section "${INFO_PRODUCTNAME}" SecApp
   ProcessStillRunning:
     IntOp $2 $2 + 1
     IntCmp $2 12 0 KillAndWaitLoop 0
-    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running. Please close it and click Retry in the previous installer prompt."
+    MessageBox MB_ICONSTOP|MB_OK "${INFO_PRODUCTNAME} is still running. Close it manually, then run this installer again."
     Abort
   ProcessesClosed:
     ; Give AV/indexers a brief window to release the executable handle.

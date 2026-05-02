@@ -1179,20 +1179,23 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	}
 
 	finalName := strings.TrimSpace(name)
-	subInfo := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	peek, peekErr := peekSubscription(ctx, norm)
 	if finalName == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		defer cancel()
-		if resolved, peek, err := resolveSubscriptionName(ctx, "", norm); err == nil {
-			if strings.TrimSpace(resolved) != "" {
-				finalName = strings.TrimSpace(resolved)
-			}
-			subInfo = strings.TrimSpace(peek.SubscriptionInfo)
+		if peekErr != nil {
+			return a.GetAppState(), peekErr
 		}
+		finalName = strings.TrimSpace(peek.SuggestedName)
 		if finalName == "" {
 			finalName = "Subscription"
 		}
+	} else if peekErr != nil {
+		peek = SubscriptionPeek{}
 	}
+	subInfo := strings.TrimSpace(peek.SubscriptionInfo)
+	supportURL := strings.TrimSpace(peek.SubscriptionSupportURL)
+	announce := strings.TrimSpace(peek.SubscriptionAnnouncement)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1203,6 +1206,8 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 		Type:                      "subscription",
 		URL:                       norm,
 		SubscriptionInfo:          subInfo,
+		SubscriptionSupportURL:    supportURL,
+		SubscriptionAnnouncement:  announce,
 		LastUpdated:               time.Now().Unix(),
 		AutoUpdateEnabled:         true,
 		AutoUpdateIntervalMinutes: defaultProfileAutoUpdateMinutes,
@@ -2075,6 +2080,9 @@ func installServiceElevatedWindows(installPath, workDir string) ([]byte, error) 
 		esc(workDir),
 	)
 	cmd := exec.Command(psExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
 	return cmd.CombinedOutput()
 }
 

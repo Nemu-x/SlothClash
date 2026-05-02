@@ -19,12 +19,101 @@ import (
 
 // SubscriptionPeek is returned before import so the UI can show a suggested name.
 type SubscriptionPeek struct {
-	URL              string `json:"url"`
-	SuggestedName    string `json:"suggestedName"`
-	ProfileTitleRaw  string `json:"profileTitleRaw,omitempty"`
-	HTTPStatus       int    `json:"httpStatus,omitempty"`
-	LastError        string `json:"lastError,omitempty"`
-	SubscriptionInfo string `json:"subscriptionInfo,omitempty"` // decoded userinfo JSON when present
+	URL                      string `json:"url"`
+	SuggestedName            string `json:"suggestedName"`
+	ProfileTitleRaw          string `json:"profileTitleRaw,omitempty"`
+	HTTPStatus               int    `json:"httpStatus,omitempty"`
+	LastError                string `json:"lastError,omitempty"`
+	SubscriptionInfo         string `json:"subscriptionInfo,omitempty"` // decoded userinfo JSON when present
+	SubscriptionSupportURL   string `json:"subscriptionSupportUrl,omitempty"`
+	SubscriptionAnnouncement string `json:"subscriptionAnnouncement,omitempty"`
+}
+
+// HTTP header names that some providers use for support / docs links (first non-empty wins).
+var subscriptionSupportHeaderKeys = []string{
+	"Support",
+	"Support-Url",
+	"support-url",
+	"Profile-Web-Page",
+	"profile-web-page",
+	"Web-Page",
+	"Website",
+}
+
+// HTTP header names for a short provider announcement / notice.
+var subscriptionAnnounceHeaderKeys = []string{
+	"Announcement",
+	"announcement",
+	"Announce",
+	"Profile-Announce",
+	"X-Announcement",
+}
+
+func headerFirstNonEmpty(h http.Header, keys []string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(headerGet(h, k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func sanitizeSubscriptionSupportURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	if len(s) > 2048 {
+		s = s[:2048]
+	}
+	lower := strings.ToLower(s)
+	switch {
+	case strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://"):
+		return s
+	case strings.HasPrefix(lower, "tg://"):
+		return s
+	case strings.HasPrefix(lower, "t.me/") || strings.HasPrefix(lower, "telegram.me/"):
+		return "https://" + strings.TrimPrefix(strings.TrimPrefix(s, "https://"), "http://")
+	default:
+		if strings.Contains(lower, "t.me/") {
+			if idx := strings.Index(lower, "t.me/"); idx >= 0 {
+				return "https://" + strings.TrimSpace(s[idx:])
+			}
+		}
+	}
+	return ""
+}
+
+func sanitizeSubscriptionAnnouncement(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	runes := []rune(s)
+	const maxRunes = 6000
+	if len(runes) > maxRunes {
+		s = string(runes[:maxRunes])
+	}
+	return s
+}
+
+// normalizeSubscriptionAnnouncementFromHeader decodes provider payloads (e.g. `base64:…` UTF-8)
+// before we persist — same idea as Profile-Title / Subscription-Userinfo normalization.
+func normalizeSubscriptionAnnouncementFromHeader(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	text := raw
+	if strings.HasPrefix(strings.ToLower(raw), "base64:") {
+		payload := strings.TrimSpace(raw[len("base64:"):])
+		if b, err := decodeBase64Flexible(payload); err == nil && utf8.Valid(b) {
+			text = strings.TrimSpace(string(b))
+		}
+	}
+	return sanitizeSubscriptionAnnouncement(text)
 }
 
 func (a *App) PeekSubscriptionFromURL(raw string) (SubscriptionPeek, error) {
@@ -172,6 +261,12 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 		if norm := normalizeSubscriptionUserinfoHeader(sub); norm != "" {
 			out.SubscriptionInfo = norm
 		}
+	}
+	if sup := sanitizeSubscriptionSupportURL(headerFirstNonEmpty(resp.Header, subscriptionSupportHeaderKeys)); sup != "" {
+		out.SubscriptionSupportURL = sup
+	}
+	if ann := normalizeSubscriptionAnnouncementFromHeader(headerFirstNonEmpty(resp.Header, subscriptionAnnounceHeaderKeys)); ann != "" {
+		out.SubscriptionAnnouncement = ann
 	}
 
 	return out, nil

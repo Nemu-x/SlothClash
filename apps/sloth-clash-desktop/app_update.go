@@ -240,6 +240,9 @@ func (a *App) ApplyUpdate() error {
 		return cerr
 	}
 	cmd := exec.Command(tmp)
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Start()

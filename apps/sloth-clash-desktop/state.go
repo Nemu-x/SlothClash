@@ -43,11 +43,14 @@ type ModeState struct {
 }
 
 type Profile struct {
-	ID                        string `json:"id"`
-	Name                      string `json:"name"`
-	Type                      string `json:"type"`
-	URL                       string `json:"url,omitempty"`
-	SubscriptionInfo          string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	URL              string `json:"url,omitempty"`
+	SubscriptionInfo string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
+	// Optional provider metadata from subscription HTTP response headers (non-standard; see subscription.go).
+	SubscriptionSupportURL    string `json:"subscriptionSupportUrl,omitempty"`
+	SubscriptionAnnouncement  string `json:"subscriptionAnnouncement,omitempty"`
 	LastUpdated               int64  `json:"lastUpdated,omitempty"`
 	AutoUpdateEnabled         bool   `json:"autoUpdateEnabled,omitempty"`         // periodically refresh subscription metadata/content
 	AutoUpdateIntervalMinutes int    `json:"autoUpdateIntervalMinutes,omitempty"` // 0 => use default backend interval

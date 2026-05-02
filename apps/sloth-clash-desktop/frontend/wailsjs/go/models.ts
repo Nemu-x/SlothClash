@@ -145,6 +145,8 @@ export namespace main {
     type: string
     url?: string
     subscriptionInfo?: string
+    subscriptionSupportUrl?: string
+    subscriptionAnnouncement?: string
     lastUpdated?: number
     autoUpdateEnabled?: boolean
     autoUpdateIntervalMinutes?: number
@@ -165,6 +167,8 @@ export namespace main {
       this.type = source['type']
       this.url = source['url']
       this.subscriptionInfo = source['subscriptionInfo']
+      this.subscriptionSupportUrl = source['subscriptionSupportUrl']
+      this.subscriptionAnnouncement = source['subscriptionAnnouncement']
       this.lastUpdated = source['lastUpdated']
       this.autoUpdateEnabled = source['autoUpdateEnabled']
       this.autoUpdateIntervalMinutes = source['autoUpdateIntervalMinutes']
@@ -603,6 +607,8 @@ export namespace main {
     httpStatus?: number
     lastError?: string
     subscriptionInfo?: string
+    subscriptionSupportUrl?: string
+    subscriptionAnnouncement?: string
 
     static createFrom(source: any = {}) {
       return new SubscriptionPeek(source)
@@ -616,6 +622,8 @@ export namespace main {
       this.httpStatus = source['httpStatus']
       this.lastError = source['lastError']
       this.subscriptionInfo = source['subscriptionInfo']
+      this.subscriptionSupportUrl = source['subscriptionSupportUrl']
+      this.subscriptionAnnouncement = source['subscriptionAnnouncement']
     }
   }
 

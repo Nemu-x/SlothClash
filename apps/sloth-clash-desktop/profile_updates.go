@@ -79,6 +79,12 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 		if s := strings.TrimSpace(peek.SubscriptionInfo); s != "" {
 			a.profiles[i].SubscriptionInfo = s
 		}
+		if s := strings.TrimSpace(peek.SubscriptionSupportURL); s != "" {
+			a.profiles[i].SubscriptionSupportURL = s
+		}
+		if s := strings.TrimSpace(peek.SubscriptionAnnouncement); s != "" {
+			a.profiles[i].SubscriptionAnnouncement = s
+		}
 		if a.profiles[i].AutoUpdateIntervalMinutes <= 0 {
 			a.profiles[i].AutoUpdateIntervalMinutes = defaultProfileAutoUpdateMinutes
 		}

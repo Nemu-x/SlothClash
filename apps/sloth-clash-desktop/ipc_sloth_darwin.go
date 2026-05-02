@@ -102,6 +102,9 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 
 	// Common post-upgrade failure on macOS: stale root-owned socket with restrictive perms.
 	// Attempt one privileged launchd/socket heal so users don't need manual service reinstall.
+	// This runs `osascript … with administrator privileges` and shows a system password prompt.
+	// It should be rare if the IPC service creates a world-writable socket; if it happens on
+	// every cold boot, fix permissions in sloth-clash-service-ipc (launchd / umask / chmod).
 	if isDarwinSocketAccessIssue(origErr) {
 		if healErr := darwinHealServiceIPCWithPrivileges(ctx); healErr == nil {
 			deadline2 := time.Now().Add(8 * time.Second)
@@ -245,4 +248,3 @@ func ipcSlothStopCore(ctx context.Context) error {
 	}
 	return nil
 }
-

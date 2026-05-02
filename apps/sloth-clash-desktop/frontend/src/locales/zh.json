@@ -125,7 +125,10 @@
       "pickGroup": "选择分组",
       "activeNode": "当前节点",
       "updateAvailable": "有可用更新",
-      "updateAvailableVersion": "有可用更新：{{version}}"
+      "updateAvailableVersion": "有可用更新：{{version}}",
+      "subscriptionSupport": "支持",
+      "supportShort": "支持",
+      "subscriptionAnnouncement": "公告"
     },
     "profiles": {
       "title": "配置",
@@ -142,6 +145,7 @@
       "refreshGroups": "刷新分组",
       "autoPick": "自动选择安全分组",
       "ping": "测速",
+      "pingAll": "测试本组全部节点延迟",
       "pinging": "测速中...",
       "showBuiltin": "显示内置分组（DIRECT/REJECT）",
       "focusGroup": "焦点分组（UI）",

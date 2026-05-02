@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next'
 
 import './App.css'
 // Same asset Wails uses from build/appicon.png (single source of truth for the window chrome).
-import titleBarLogo from '../../build/appicon.png'
 import {
   ActivateProfile,
   ApplyUpdate,
@@ -69,8 +68,6 @@ import {
   EventsOn,
   Quit,
   WindowHide,
-  WindowMinimise,
-  WindowToggleMaximise,
 } from '../wailsjs/runtime/runtime'
 
 import i18n, { LS_LANG, readStoredLang } from './i18n'
@@ -146,6 +143,34 @@ function isUnsafeGroupName(name: string) {
   return u === 'DIRECT' || u === 'REJECT'
 }
 
+/** Built-in policy nodes hidden from picker/grid when "show builtin" is off. */
+function isBuiltinProxyNodeName(name: string) {
+  const u = String(name ?? '')
+    .trim()
+    .toUpperCase()
+  return u === 'DIRECT' || u === 'REJECT' || u === 'REJECT-DROP' || u === 'PASS'
+}
+
+function filterProxyNodesForDisplay(
+  names: string[],
+  showBuiltin: boolean,
+  selected: string,
+): string[] {
+  const raw = names.map((x) => String(x))
+  if (showBuiltin) return raw
+  const filtered = raw.filter((p) => !isBuiltinProxyNodeName(p))
+  const sel = String(selected ?? '').trim()
+  if (
+    sel &&
+    isBuiltinProxyNodeName(sel) &&
+    raw.includes(sel) &&
+    !filtered.includes(sel)
+  ) {
+    return [sel, ...filtered]
+  }
+  return filtered
+}
+
 function decodeUnicodeEscapes(input: string): string {
   let s = String(input ?? '')
   // Python-style escapes often found in subscriptions: \U0001F1EA\U0001F1F8
@@ -169,6 +194,26 @@ function decodeUnicodeEscapes(input: string): string {
     }
   })
   return s
+}
+
+/** Subscription announce header sometimes ships as `base64:…` (UTF-8). */
+function decodeSubscriptionAnnouncementDisplay(raw: string): string {
+  let s = String(raw ?? '').trim()
+  if (!s) return ''
+  if (s.toLowerCase().startsWith('base64:')) {
+    const payload = s.slice('base64:'.length).trim().replace(/\s/g, '')
+    try {
+      const binary = atob(payload)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
+      }
+      s = new TextDecoder('utf-8').decode(bytes)
+    } catch {
+      return decodeUnicodeEscapes(String(raw ?? '').trim())
+    }
+  }
+  return decodeUnicodeEscapes(s)
 }
 
 function extractNodeFlagIso(nodeName: string): string {
@@ -284,13 +329,44 @@ function selectedNodeEmoji(value: unknown): string {
   )
 }
 
-function nodeOptionLabel(nodeName: string): string {
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Label text next to {@link FlagMark}: no leading ISO/country token or duplicate flag emoji
+ * when the country is already shown as an image flag (Home Active node menu).
+ */
+function proxyNodeLabelBesideFlag(nodeName: string): string {
   const raw = decodeUnicodeEscapes(String(nodeName ?? '')).trim()
   if (!raw) return '—'
   const iso = extractNodeFlagIso(raw)
-  const emoji = isoToFlagEmoji(iso)
-  const name = nodeDisplayName(raw)
-  return emoji ? `${emoji} ${name}` : raw
+  let rest = nodeDisplayName(raw)
+  if (!rest || rest === '—') rest = raw
+
+  if (iso) {
+    rest = rest.replace(new RegExp(`^${escapeRegExp(iso)}\\s+`, 'i'), '').trim()
+    const flagEmoji = isoToFlagEmoji(iso)
+    if (flagEmoji && rest.startsWith(flagEmoji)) {
+      rest = rest.slice(flagEmoji.length).trim()
+    }
+    rest = rest.replace(/^(?:[\u{1F1E6}-\u{1F1FF}]{2}\s*)+/gu, '').trim()
+  }
+
+  return rest || raw
+}
+
+function supportSubscriptionUrlKind(url: string): 'telegram' | 'web' {
+  const u = String(url ?? '').toLowerCase()
+  if (
+    u.startsWith('tg:') ||
+    u.includes('t.me/') ||
+    u.includes('telegram.me/') ||
+    u.includes('telegram.org')
+  ) {
+    return 'telegram'
+  }
+  return 'web'
 }
 
 /** mihomo /traffic reports speeds in kbps */
@@ -701,6 +777,8 @@ function App() {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [trayAvailable, setTrayAvailable] = useState(false)
   const [showBuiltinProxyGroups, setShowBuiltinProxyGroups] = useState(false)
+  const [homeActiveNodeOpen, setHomeActiveNodeOpen] = useState(false)
+  const homeActiveNodeRef = useRef<HTMLDivElement | null>(null)
   const [tunPrefs, setTunPrefs] = useState<main.TunSettings>(
     () => new main.TunSettings({}),
   )
@@ -1639,6 +1717,19 @@ function App() {
     return selected
   }, [state?.proxy?.activeGroup, state?.proxy?.groups])
 
+  const activeNodeVisual = useMemo(() => {
+    const raw = decodeUnicodeEscapes(String(activeNode ?? '')).trim()
+    if (!raw) return { iso: '', text: '' as string }
+    const tail = raw.includes(' -> ')
+      ? (raw.split(' -> ').pop() ?? '').trim()
+      : raw
+    const piece = tail || raw
+    return {
+      iso: extractNodeFlagIso(piece),
+      text: piece,
+    }
+  }, [activeNode])
+
   /** Group whose `proxies` list we let the user change from Home (GLOBAL → nested group). */
   const nodePickerGroup = useMemo(() => {
     const groups = (state?.proxy?.groups ?? []) as any[]
@@ -1741,20 +1832,6 @@ function App() {
     }
   }, [updateSnap?.assetDownloadUrl, updateSnap?.releaseUrl])
 
-  const loadServiceLog = useCallback(async () => {
-    try {
-      const peek = await ReadServiceLatestLog(200_000)
-      setServiceLog(peek as main.ServiceLogPeek)
-    } catch (e: any) {
-      setServiceLog({
-        path: '',
-        text: '',
-        truncated: false,
-        lastError: String(e),
-      } as main.ServiceLogPeek)
-    }
-  }, [])
-
   const runConnectivityCheck = useCallback(async (id: string, url: string) => {
     setConnectivityBusy(id)
     const started = performance.now()
@@ -1805,6 +1882,27 @@ function App() {
       cancelled = true
     }
   }, [screen, state?.profile?.activeProfileId])
+
+  useEffect(() => {
+    if (!homeActiveNodeOpen) return
+    const onDown = (e: MouseEvent) => {
+      const el = homeActiveNodeRef.current
+      if (el && !el.contains(e.target as Node)) setHomeActiveNodeOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHomeActiveNodeOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [homeActiveNodeOpen])
+
+  useEffect(() => {
+    setHomeActiveNodeOpen(false)
+  }, [screen, state?.connection?.status])
 
   const rulesRows = useMemo(
     () => parseMihomoRulesJson(rulesOverview?.rulesBody),
@@ -2062,6 +2160,26 @@ function App() {
     }
   }, [])
 
+  /** Ping every node in the group (chunked parallel — similar to Clash Verge “ping all”). */
+  const runProxyDelayTestAll = useCallback(
+    async (groupName: string, proxies: string[]) => {
+      const list = proxies.map((p) => String(p).trim()).filter(Boolean)
+      if (list.length === 0) return
+      const batchKey = `__all_${groupName}`
+      setProxyDelayBusy((prev) => ({ ...prev, [batchKey]: true }))
+      try {
+        const chunkSize = 8
+        for (let i = 0; i < list.length; i += chunkSize) {
+          const chunk = list.slice(i, i + chunkSize)
+          await Promise.all(chunk.map((id) => runProxyDelayTest(id)))
+        }
+      } finally {
+        setProxyDelayBusy((prev) => ({ ...prev, [batchKey]: false }))
+      }
+    },
+    [runProxyDelayTest],
+  )
+
   useEffect(() => {
     if (screen !== 'rules') return
     void refreshRules()
@@ -2103,75 +2221,6 @@ function App() {
       className={`shell ${navCollapsed ? 'navCollapsed' : ''}`}
       ref={shellRef}
     >
-      <header className="titleBar">
-        <div
-          className="titleBarLeft wailsDrag"
-          onDoubleClick={() => WindowToggleMaximise()}
-        >
-          <img
-            className="titleBarLogo"
-            src={titleBarLogo}
-            alt=""
-            width={32}
-            height={32}
-            draggable={false}
-          />
-          <span className="titleBarTitle">Sloth Clash</span>
-        </div>
-        <div className="titleBarWin noDrag">
-          <button
-            type="button"
-            className="winBtnIcon"
-            title="Minimize"
-            aria-label="Minimize"
-            onClick={() => WindowMinimise()}
-          >
-            <svg className="winIcon" viewBox="0 0 12 12" aria-hidden>
-              <path d="M2.5 9h7" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="winBtnIcon"
-            title="Maximize"
-            aria-label="Maximize or restore"
-            onClick={() => WindowToggleMaximise()}
-          >
-            <svg className="winIcon" viewBox="0 0 12 12" aria-hidden>
-              <rect
-                x="2.25"
-                y="2.25"
-                width="7.5"
-                height="7.5"
-                rx="1"
-                fill="none"
-              />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="winBtnIcon winClose"
-            title="Close"
-            aria-label="Close"
-            onClick={() => {
-              if (settings.closeToTray) {
-                if (trayAvailable) {
-                  void WindowHide()
-                  return
-                }
-                void WindowMinimise()
-                return
-              }
-              void Quit()
-            }}
-          >
-            <svg className="winIcon" viewBox="0 0 12 12" aria-hidden>
-              <path d="M3 3l6 6M9 3L3 9" />
-            </svg>
-          </button>
-        </div>
-      </header>
-
       <aside className="nav">
         <nav className="navList">
           {NAV_DEFS.map(({ id, labelKey, Icon }) => (
@@ -2262,6 +2311,51 @@ function App() {
                     {t('ui.home.addSubscriptionShort')}
                   </button>
                 )}
+                {activeProfile?.type === 'subscription' &&
+                String(activeProfile?.subscriptionSupportUrl ?? '').trim() ? (
+                  <button
+                    type="button"
+                    className="homeSupportHeaderBtn"
+                    title={String(
+                      activeProfile?.subscriptionSupportUrl ?? '',
+                    ).trim()}
+                    aria-label={t('ui.home.subscriptionSupport')}
+                    onClick={() =>
+                      void BrowserOpenURL(
+                        String(
+                          activeProfile?.subscriptionSupportUrl ?? '',
+                        ).trim(),
+                      )
+                    }
+                  >
+                    <span>{t('ui.home.supportShort')}</span>
+                    {supportSubscriptionUrlKind(
+                      String(activeProfile?.subscriptionSupportUrl ?? ''),
+                    ) === 'telegram' ? (
+                      <svg
+                        className="homeSupportHeaderGlyph"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                      >
+                        <path
+                          fill="currentColor"
+                          d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="homeSupportHeaderGlyph"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                      >
+                        <path
+                          fill="currentColor"
+                          d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                ) : null}
               </div>
             </header>
 
@@ -2508,37 +2602,90 @@ function App() {
                   <div className="statusRowValue statusRowNodeValue">
                     {nodePickerGroup &&
                     state?.connection?.status === 'connected' ? (
-                      <div className="statusNodePick">
-                        <select
-                          className="selectModern selectInline selectCompact"
-                          aria-label="Active outbound node"
-                          value={
-                            nodePickerGroup.selected &&
-                            (nodePickerGroup.proxies ?? []).includes(
-                              nodePickerGroup.selected,
-                            )
-                              ? nodePickerGroup.selected
-                              : nodePickerGroup.selected || ''
-                          }
-                          onChange={(e) => {
-                            const v = e.target.value
-                            if (!v || !nodePickerGroup) return
-                            void run(() =>
-                              SetProxyNode(String(nodePickerGroup.name), v),
-                            )
-                          }}
+                      <div className="statusNodeMenu" ref={homeActiveNodeRef}>
+                        <button
+                          type="button"
+                          className="statusNodeMenuTrigger selectModern selectInline selectCompact"
+                          aria-haspopup="listbox"
+                          aria-expanded={homeActiveNodeOpen}
+                          aria-label={t('ui.home.activeNode')}
+                          onClick={() => setHomeActiveNodeOpen((o) => !o)}
                         >
-                          {(nodePickerGroup.proxies ?? []).map((p: string) => (
-                            <option key={p} value={p}>
-                              {nodeOptionLabel(p)}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="statusNodeMenuTriggerInner">
+                            <FlagMark
+                              iso2={extractNodeFlagIso(
+                                String(nodePickerGroup.selected ?? ''),
+                              )}
+                              width={20}
+                              height={14}
+                            />
+                            <span className="statusNodeMenuTriggerLabel">
+                              {proxyNodeLabelBesideFlag(
+                                String(nodePickerGroup.selected ?? ''),
+                              )}
+                            </span>
+                          </span>
+                        </button>
+                        {homeActiveNodeOpen ? (
+                          <ul
+                            className="statusNodeMenuList"
+                            role="listbox"
+                            aria-label={t('ui.home.activeNode')}
+                          >
+                            {filterProxyNodesForDisplay(
+                              (nodePickerGroup.proxies ?? []) as string[],
+                              showBuiltinProxyGroups,
+                              String(nodePickerGroup.selected ?? ''),
+                            ).map((p: string) => {
+                              const sel = String(nodePickerGroup.selected ?? '')
+                              const isSel = sel === p
+                              return (
+                                <li
+                                  key={p}
+                                  role="option"
+                                  aria-selected={isSel}
+                                  className={
+                                    'statusNodeMenuItem' +
+                                    (isSel ? ' isActive' : '')
+                                  }
+                                  onClick={() => {
+                                    setHomeActiveNodeOpen(false)
+                                    if (!p || isSel) return
+                                    void run(() =>
+                                      SetProxyNode(
+                                        String(nodePickerGroup.name),
+                                        p,
+                                      ),
+                                    )
+                                  }}
+                                >
+                                  <FlagMark
+                                    iso2={extractNodeFlagIso(p)}
+                                    width={16}
+                                    height={11}
+                                  />
+                                  <span className="statusNodeMenuItemLabel">
+                                    {proxyNodeLabelBesideFlag(p)}
+                                  </span>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        ) : null}
                       </div>
                     ) : (
-                      <strong className="monoTight statusNodeTextClamp">
-                        {activeNode || '—'}
-                      </strong>
+                      <span className="statusNodeStatic">
+                        {activeNodeVisual.iso ? (
+                          <FlagMark
+                            iso2={activeNodeVisual.iso}
+                            width={20}
+                            height={14}
+                          />
+                        ) : null}
+                        <strong className="monoTight statusNodeTextClamp">
+                          {activeNodeVisual.text || activeNode || '—'}
+                        </strong>
+                      </span>
                     )}
                   </div>
                 </div>
@@ -2653,6 +2800,22 @@ function App() {
                 </div>
               </div>
             </div>
+
+            {activeProfile?.type === 'subscription' &&
+            String(activeProfile?.subscriptionAnnouncement ?? '').trim() ? (
+              <div className="homeSubscriptionExtras">
+                <div className="homeSubscriptionCard">
+                  <p className="homeSubscriptionCardTitle">
+                    {t('ui.home.subscriptionAnnouncement')}
+                  </p>
+                  <p className="homeSubscriptionAnnounce allowSelect">
+                    {decodeSubscriptionAnnouncementDisplay(
+                      String(activeProfile?.subscriptionAnnouncement ?? ''),
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {(() => {
               const le =
@@ -2861,14 +3024,50 @@ function App() {
                                   normalizedType === 'urltest' ||
                                   normalizedType === 'fallback' ||
                                   normalizedType === 'loadbalance'
+                                const pingAllKey = `__all_${String(g.name)}`
+                                const groupProxies = filterProxyNodesForDisplay(
+                                  (g.proxies ?? []) as string[],
+                                  showBuiltinProxyGroups,
+                                  String(g.selected ?? ''),
+                                )
                                 return (
                                   <>
+                                    <div className="proxyGroupToolbar">
+                                      <button
+                                        type="button"
+                                        className="proxyToolbarIconBtn"
+                                        disabled={
+                                          state?.connection?.status !==
+                                            'connected' ||
+                                          Boolean(proxyDelayBusy[pingAllKey])
+                                        }
+                                        title={t('ui.proxies.pingAll')}
+                                        aria-label={t('ui.proxies.pingAll')}
+                                        onClick={() =>
+                                          void runProxyDelayTestAll(
+                                            String(g.name),
+                                            groupProxies,
+                                          )
+                                        }
+                                      >
+                                        <svg
+                                          className="proxyToolbarIcon"
+                                          viewBox="0 0 24 24"
+                                          aria-hidden
+                                        >
+                                          <path
+                                            fill="currentColor"
+                                            d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.65c.58 0 .57.32.38.66-.19.34-.05.08-.07.12C14.52 13.06 12.58 16.46 10 21z"
+                                          />
+                                        </svg>
+                                      </button>
+                                    </div>
                                     {isAutoGroup ? (
                                       <p className="muted small proxyAutoGroupHint">
                                         {t('ui.proxies.autoGroupHint')}
                                       </p>
                                     ) : null}
-                                    {(g.proxies ?? []).map((p: string) => {
+                                    {groupProxies.map((p: string) => {
                                       const active =
                                         String(g.selected ?? '') === p
                                       const iso = extractNodeFlagIso(p)
@@ -2910,26 +3109,13 @@ function App() {
                                                 </span>
                                               ))}
                                             </div>
-                                            <div className="proxyDelayBox">
-                                              <button
-                                                type="button"
-                                                className="btn subtle btnCompact"
-                                                disabled={Boolean(
-                                                  proxyDelayBusy[p],
-                                                )}
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  void runProxyDelayTest(p)
-                                                }}
-                                              >
-                                                {proxyDelayBusy[p]
-                                                  ? t('ui.proxies.pinging')
-                                                  : t('ui.proxies.ping')}
-                                              </button>
+                                            <div className="proxyDelayBox proxyDelayBoxReadonly">
                                               <span className="proxyDelayText">
-                                                {proxyDelayMap[p] > 0
-                                                  ? `${proxyDelayMap[p]} ms`
-                                                  : '—'}
+                                                {proxyDelayBusy[p]
+                                                  ? '…'
+                                                  : proxyDelayMap[p] > 0
+                                                    ? `${proxyDelayMap[p]} ms`
+                                                    : '—'}
                                               </span>
                                             </div>
                                           </div>
@@ -3268,37 +3454,65 @@ function App() {
               <p className="error tight">{rulesOverview.lastError}</p>
             ) : null}
             {ruleProvidersRows.length > 0 ? (
-              <div className="rulesProvidersWrap">
+              <div className="rulesProvidersGrid">
                 {ruleProvidersRows.map((p) => {
                   const busy = Boolean(ruleProviderBusyMap[p.name])
                   const err = ruleProviderErrMap[p.name]
                   return (
-                    <div key={p.name} className="rulesProviderRow">
-                      <div className="rulesProviderMain">
-                        <strong>{p.name}</strong>
-                        <span className="rulesProviderMeta">
+                    <div key={p.name} className="ruleProviderCard">
+                      <div className="ruleProviderCardInner">
+                        <div className="ruleProviderCardTop">
+                          <div className="ruleProviderTitle" title={p.name}>
+                            {p.name}
+                          </div>
+                          <button
+                            type="button"
+                            className={`ruleProviderRefreshIcon${busy ? ' isBusy' : ''}`}
+                            aria-label={t('ui.rules.providersUpdate')}
+                            title={t('ui.rules.providersUpdate')}
+                            disabled={busy || ruleProvidersBulkBusy}
+                            onClick={() => void refreshRuleProviderOne(p.name)}
+                          >
+                            <svg
+                              className="profileRefreshSvg"
+                              viewBox="0 0 24 24"
+                              width="18"
+                              height="18"
+                              aria-hidden
+                            >
+                              <path
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M21 12a9 9 0 1 1-3-6.7"
+                              />
+                              <path
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M21 3v6h-6"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="ruleProviderMetaLine">
                           {p.behavior} · {p.vehicleType} · {p.ruleCount}
-                        </span>
-                        <span className="rulesProviderMeta">
-                          {t('ui.rules.lastUpdated')}:{' '}
-                          {formatProviderUpdatedAt(p.updatedAt)}
-                        </span>
-                        {err ? (
-                          <span className="error small">
-                            {t('ui.rules.providerUpdateFailed')}: {err}
+                        </div>
+                        <div className="ruleProviderFoot">
+                          <span className="ruleProviderUpdated">
+                            {formatProviderUpdatedAt(p.updatedAt)}
                           </span>
+                        </div>
+                        {err ? (
+                          <p className="error small tight ruleProviderErr">
+                            {t('ui.rules.providerUpdateFailed')}: {err}
+                          </p>
                         ) : null}
                       </div>
-                      <button
-                        type="button"
-                        className="btn subtle btnCompact"
-                        disabled={busy || ruleProvidersBulkBusy}
-                        onClick={() => void refreshRuleProviderOne(p.name)}
-                      >
-                        {busy
-                          ? t('ui.rules.providersUpdating')
-                          : t('ui.rules.providersUpdate')}
-                      </button>
                     </div>
                   )
                 })}
@@ -3494,46 +3708,6 @@ function App() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className="homeCard">
-              <h3 className="homeCardTitle">Service log (tail)</h3>
-              <details className="compatDetails">
-                <summary className="compatSummary">
-                  Show live service logs
-                </summary>
-                <p className="muted small">
-                  Windows service core writes to{' '}
-                  <code className="monoTight">logs/service_latest.log</code>{' '}
-                  under the active profile runtime folder.
-                </p>
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => void loadServiceLog()}
-                  >
-                    Refresh log
-                  </button>
-                </div>
-                {serviceLog?.path ? (
-                  <div className="statusRow">
-                    <span>Log file</span>
-                    <strong className="monoTight">{serviceLog.path}</strong>
-                  </div>
-                ) : null}
-                {serviceLog?.truncated ? (
-                  <p className="muted small">Showing last ~200 KB only.</p>
-                ) : null}
-                {serviceLog?.lastError ? (
-                  <p className="error tight">{serviceLog.lastError}</p>
-                ) : null}
-                {serviceLog?.text ? (
-                  <pre className="mono tightPre logPre">{serviceLog.text}</pre>
-                ) : !serviceLog?.lastError ? (
-                  <p className="muted small">No log text yet — tap Refresh.</p>
-                ) : null}
-              </details>
             </div>
 
             <div className="homeCard">

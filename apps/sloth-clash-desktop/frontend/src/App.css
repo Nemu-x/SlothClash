@@ -2,10 +2,8 @@
   --nav-w: 220px;
   display: grid;
   grid-template-columns: var(--nav-w) 1fr;
-  grid-template-rows: 44px 1fr;
-  grid-template-areas:
-    "titlebar titlebar"
-    "nav content";
+  grid-template-rows: 1fr;
+  grid-template-areas: "nav content";
   min-height: 100vh;
   --accent: #c9a86c;
   --accent-dim: rgba(201, 168, 108, 0.24);
@@ -960,6 +958,45 @@
   font-size: 12px;
 }
 
+.proxyGroupToolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.proxyToolbarIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.proxyToolbarIconBtn:hover:not(:disabled) {
+  border-color: var(--accent-muted);
+  background: rgba(201, 168, 108, 0.12);
+}
+
+.proxyToolbarIconBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.proxyToolbarIcon {
+  width: 18px;
+  height: 18px;
+}
+
 .proxyNodesGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -1222,12 +1259,37 @@
   padding-bottom: 4px;
 }
 
-.homeStatusGrid .statusRowNode .selectModern.selectInline.selectCompact {
-  padding: 2px 28px 2px 6px;
+/* Same chevron + padding for Pick group `<select>` and Active node trigger — avoids mismatched OS glyph vs ▾ */
+.homeStatusGrid .statusRowNode select.selectModern.selectInline.selectCompact,
+.homeStatusGrid
+  .statusRowNode
+  button.statusNodeMenuTrigger.selectModern.selectInline.selectCompact {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  margin: 0;
+  padding: 2px 26px 2px 6px;
   font-size: 11px;
   line-height: 1.2;
   min-height: 26px;
   max-height: 28px;
+  background-color: rgba(12, 11, 10, 0.75);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23b8aea0' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.25 6 7.75 9.5 4.25'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 10px 10px;
+}
+
+.shell[data-theme="light"]
+  .homeStatusGrid
+  .statusRowNode
+  select.selectModern.selectInline.selectCompact,
+.shell[data-theme="light"]
+  .homeStatusGrid
+  .statusRowNode
+  button.statusNodeMenuTrigger.selectModern.selectInline.selectCompact {
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23585048' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.25 6 7.75 9.5 4.25'/%3E%3C/svg%3E");
 }
 
 /* Tighter label column; rows share vertical space evenly when cards stretch */
@@ -1253,6 +1315,96 @@
 
 .homeStatusGrid .statusCardCompact .speedChip {
   line-height: 1.25;
+}
+
+.homeSubscriptionExtras {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+  margin: 16px auto 0;
+  padding: 0 6px;
+}
+
+.homeSubscriptionCard {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.homeSubscriptionCardTitle {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.homeSubscriptionAnnounce {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.homeSupportLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(201, 168, 108, 0.08);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+}
+
+.homeSupportLink:hover {
+  border-color: var(--accent-muted);
+  background: rgba(201, 168, 108, 0.14);
+}
+
+.homeSupportIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.homeSupportLinkText {
+  font-size: 12px;
+  word-break: break-all;
+  min-width: 0;
+  color: #e8dfd0;
+}
+
+.statusNodePickWithFlag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.statusNodePickWithFlag .selectModern.selectInline.selectCompact {
+  flex: 1;
+  min-width: 0;
+}
+
+.statusNodeStatic {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-end;
 }
 
 .statusCardCompact .statusExitStack {
@@ -1438,6 +1590,102 @@
   gap: 4px;
   min-width: 0;
   width: 100%;
+}
+
+.statusNodeMenu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.statusNodeMenuTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.statusNodeMenuTriggerInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.statusNodeMenuTriggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusNodeMenuList {
+  position: absolute;
+  top: calc(100% + 3px);
+  right: 0;
+  left: auto;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  min-width: min(100%, 260px);
+  max-width: min(calc(100vw - 48px), 400px);
+  max-height: min(38vh, 240px);
+  overflow-y: auto;
+  z-index: 45;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(12, 11, 10, 0.96);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  font-family:
+    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    sans-serif;
+}
+
+.statusNodeMenuList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.statusNodeMenuList::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.statusNodeMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.statusNodeMenuItem:hover {
+  background: rgba(201, 168, 108, 0.12);
+}
+
+.statusNodeMenuItem.isActive {
+  background: rgba(201, 168, 108, 0.16);
+}
+
+.statusNodeMenuItemLabel {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .statusDot {
@@ -2016,9 +2264,37 @@
 
 .homeHeaderActions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.homeSupportHeaderBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(201, 168, 108, 0.1);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.homeSupportHeaderBtn:hover {
+  border-color: var(--accent-muted);
+  background: rgba(201, 168, 108, 0.16);
+}
+
+.homeSupportHeaderGlyph {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.95;
 }
 
 .btn.subtle {
@@ -2595,33 +2871,111 @@
   margin: 0;
 }
 
-.rulesProvidersWrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.rulesProvidersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
 }
 
-.rulesProviderRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+.ruleProviderCard {
+  border-radius: 16px;
   border: 1px solid var(--hairline);
-  border-radius: 12px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.rulesProviderMain {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border-left: 3px solid rgba(201, 168, 108, 0.35);
+  background: linear-gradient(
+    155deg,
+    rgba(34, 32, 29, 0.96) 0%,
+    rgba(18, 17, 16, 0.98) 100%
+  );
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 10px 12px 10px 9px;
   min-width: 0;
 }
 
-.rulesProviderMeta {
+.ruleProviderCardInner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ruleProviderCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ruleProviderTitle {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruleProviderMetaLine {
   font-size: 11px;
   color: var(--text-muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.ruleProviderFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ruleProviderUpdated {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.ruleProviderErr {
+  margin: 0;
+}
+
+.ruleProviderRefreshIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ruleProviderRefreshIcon:hover:not(:disabled) {
+  border-color: var(--accent-muted);
+  background: rgba(201, 168, 108, 0.12);
+}
+
+.ruleProviderRefreshIcon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ruleProviderRefreshIcon.isBusy .profileRefreshSvg {
+  animation: profileRefreshSpin 0.75s linear infinite;
+}
+
+.proxyDelayBoxReadonly {
+  justify-content: flex-end;
 }
 
 .rulesTable {
@@ -2884,9 +3238,8 @@
 
 .settingsKpi strong {
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .settingsInfoDevActions {

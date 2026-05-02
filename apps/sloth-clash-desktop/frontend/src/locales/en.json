@@ -125,7 +125,10 @@
       "pickGroup": "Pick group",
       "activeNode": "Active node",
       "updateAvailable": "Update available",
-      "updateAvailableVersion": "Update available: {{version}}"
+      "updateAvailableVersion": "Update available: {{version}}",
+      "subscriptionSupport": "Support",
+      "supportShort": "Support",
+      "subscriptionAnnouncement": "Announcement"
     },
     "profiles": {
       "title": "Profiles",
@@ -142,6 +145,7 @@
       "refreshGroups": "Refresh groups",
       "autoPick": "Auto-pick safe group",
       "ping": "Ping",
+      "pingAll": "Ping all nodes in this group",
       "pinging": "Pinging...",
       "showBuiltin": "Show built-in groups (DIRECT/REJECT)",
       "focusGroup": "Focus group (UI)",

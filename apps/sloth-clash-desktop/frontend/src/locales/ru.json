@@ -125,7 +125,10 @@
       "pickGroup": "Выбор группы",
       "activeNode": "Активный узел",
       "updateAvailable": "Доступно обновление",
-      "updateAvailableVersion": "Доступно обновление: {{version}}"
+      "updateAvailableVersion": "Доступно обновление: {{version}}",
+      "subscriptionSupport": "Поддержка",
+      "supportShort": "Поддержка",
+      "subscriptionAnnouncement": "Объявление"
     },
     "profiles": {
       "title": "Профили",
@@ -142,6 +145,7 @@
       "refreshGroups": "Обновить группы",
       "autoPick": "Автовыбор безопасной группы",
       "ping": "Пинг",
+      "pingAll": "Пинг всех узлов в группе",
       "pinging": "Пинг...",
       "showBuiltin": "Показывать встроенные группы (DIRECT/REJECT)",
       "focusGroup": "Фокус-группа (UI)",

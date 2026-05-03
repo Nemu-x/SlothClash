@@ -1,4 +1,4 @@
 package main
 
 // AppVersion must match wails.json info.productVersion (X.Y.Z) for update checks.
-const AppVersion = "0.3.1"
+const AppVersion = "0.3.2"

@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 
 extern void slothOnTerminateRequest(void);
+extern void slothOnOpenURL(const char *rawURL);
 
 // Wails does not implement applicationShouldHandleReopen:hasVisibleWindows:.
 // After WindowHide (orderOut), clicking the Dock often does nothing. Install the
@@ -34,6 +35,25 @@ static NSApplicationTerminateReply sloth_applicationShouldTerminate(id self, SEL
 	return NSTerminateNow;
 }
 
+static void sloth_applicationOpenURLs(id self, SEL _cmd, NSApplication *app, NSArray<NSURL *> *urls) {
+	(void)self;
+	(void)_cmd;
+	(void)app;
+	if (urls == nil || [urls count] == 0) {
+		return;
+	}
+	for (NSURL *u in urls) {
+		if (u == nil) {
+			continue;
+		}
+		NSString *s = [u absoluteString];
+		if (s == nil || [s length] == 0) {
+			continue;
+		}
+		slothOnOpenURL([s UTF8String]);
+	}
+}
+
 void sloth_link_dock_reopen(void) {
 	Class c = objc_getClass("AppDelegate");
 	if (c == NULL) {
@@ -58,5 +78,14 @@ void sloth_link_dock_reopen(void) {
 	}
 	if (!class_addMethod(c, terminateSel, (IMP)sloth_applicationShouldTerminate, termDesc.types)) {
 		class_replaceMethod(c, terminateSel, (IMP)sloth_applicationShouldTerminate, termDesc.types);
+	}
+
+	SEL openURLsSel = @selector(application:openURLs:);
+	struct objc_method_description openURLsDesc =
+	    protocol_getMethodDescription(@protocol(NSApplicationDelegate), openURLsSel, NO, YES);
+	if (openURLsDesc.types != NULL) {
+		if (!class_addMethod(c, openURLsSel, (IMP)sloth_applicationOpenURLs, openURLsDesc.types)) {
+			class_replaceMethod(c, openURLsSel, (IMP)sloth_applicationOpenURLs, openURLsDesc.types);
+		}
 	}
 }

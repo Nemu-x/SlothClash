@@ -33,6 +33,7 @@ import {
   GetProfileRulesBaseline,
   GetPreferredLanguage,
   GetRuntimeDiagEvents,
+  GetSubscriptionDeviceIdentity,
   GetTunStatus,
   OnWindowBecameVisible,
   GetUpdateState,
@@ -641,6 +642,8 @@ function App() {
   const [connectivityResults, setConnectivityResults] = useState<
     Record<string, string>
   >({})
+  const [deviceIdentity, setDeviceIdentity] =
+    useState<main.SubscriptionDeviceIdentityPublic | null>(null)
   const [importName, setImportName] = useState('')
   const [importUrl, setImportUrl] = useState('')
   const [importModalOpen, setImportModalOpen] = useState(false)
@@ -1884,6 +1887,22 @@ function App() {
   }, [screen, state?.profile?.activeProfileId])
 
   useEffect(() => {
+    if (screen !== 'advanced') return
+    let cancelled = false
+    void GetSubscriptionDeviceIdentity()
+      .then((d) => {
+        if (!cancelled)
+          setDeviceIdentity(d as main.SubscriptionDeviceIdentityPublic)
+      })
+      .catch(() => {
+        if (!cancelled) setDeviceIdentity(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [screen])
+
+  useEffect(() => {
     if (!homeActiveNodeOpen) return
     const onDown = (e: MouseEvent) => {
       const el = homeActiveNodeRef.current
@@ -2722,61 +2741,86 @@ function App() {
                       : '—'}
                   </strong>
                 </div>
-                <div className="statusRow statusRowMultiline">
-                  <span>Exit</span>
-                  <div className="statusRowValue statusExitStack">
-                    {state?.insight?.exitLine ||
-                    state?.insight?.exitFlagIso2 ? (
-                      <strong className="statusNodeTextClamp exitGeoLine">
-                        {state?.insight?.exitFlagIso2 ? (
-                          <img
-                            className="exitFlagImg"
-                            src={`https://flagcdn.com/w20/${String(state.insight.exitFlagIso2).toLowerCase()}.png`}
-                            alt=""
-                            width={14}
-                            height={11}
-                            loading="lazy"
-                            decoding="async"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none'
-                            }}
-                          />
-                        ) : null}
-                        {state?.insight?.exitLine ? (
-                          <span className="exitGeoText">
-                            {state.insight.exitLine}
-                          </span>
-                        ) : null}
-                      </strong>
-                    ) : null}
-                    {state?.insight?.exitIp ? (
-                      <span className="monoTight exitIpCompact">
-                        {state.insight.exitIp}
+                <div className="statusRow">
+                  <span>{t('ui.home.insightExit')}</span>
+                  <div
+                    className="statusRowValue insightFlagCell"
+                    title={
+                      [state?.insight?.exitLine, state?.insight?.exitIp]
+                        .map((s) => String(s ?? '').trim())
+                        .filter(Boolean)
+                        .join(' · ') || undefined
+                    }
+                  >
+                    {state?.insight?.exitFlagIso2 ? (
+                      <FlagMark
+                        iso2={String(state.insight.exitFlagIso2)}
+                        width={22}
+                        height={15}
+                      />
+                    ) : state?.insight?.lastError ? (
+                      <span className="muted small insightExitErr">
+                        {state.insight.lastError}
+                      </span>
+                    ) : state?.insight?.exitIp || state?.insight?.exitLine ? (
+                      <span
+                        className="muted small"
+                        title={[
+                          state?.insight?.exitLine,
+                          state?.insight?.exitIp,
+                        ]
+                          .map((s) => String(s ?? '').trim())
+                          .filter(Boolean)
+                          .join(' · ')}
+                      >
+                        …
                       </span>
                     ) : (
-                      <span className="muted small insightExitErr">
-                        {state?.insight?.lastError || '—'}
-                      </span>
+                      <span className="muted">—</span>
                     )}
                   </div>
                 </div>
                 <div className="statusRow">
-                  <span>Direct IP</span>
-                  <strong
-                    className="monoTight"
+                  <span>{t('ui.home.insightDirect')}</span>
+                  <div
+                    className="statusRowValue insightFlagCell"
                     title={
-                      String(state?.mode?.current ?? '') === 'rule' &&
-                      state?.insight?.directError
-                        ? state.insight.directError
+                      String(state?.mode?.current ?? '') === 'rule'
+                        ? [
+                            state?.insight?.directIp,
+                            state?.insight?.directError,
+                          ]
+                            .map((s) => String(s ?? '').trim())
+                            .filter(Boolean)
+                            .join(' — ') || undefined
                         : undefined
                     }
                   >
-                    {String(state?.mode?.current ?? '') === 'rule' &&
-                    state?.insight?.directIp
-                      ? state.insight.directIp
-                      : '—'}
-                  </strong>
+                    {String(state?.mode?.current ?? '') === 'rule' ? (
+                      state?.insight?.directFlagIso2 ? (
+                        <FlagMark
+                          iso2={String(state.insight.directFlagIso2)}
+                          width={22}
+                          height={15}
+                        />
+                      ) : state?.insight?.directError ? (
+                        <span className="muted small insightExitErr">
+                          {state.insight.directError}
+                        </span>
+                      ) : state?.insight?.directIp ? (
+                        <span
+                          className="muted small"
+                          title={state.insight.directIp}
+                        >
+                          …
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </div>
                 </div>
                 <div className="statusRow">
                   <span>Speed</span>
@@ -3707,6 +3751,89 @@ function App() {
                     <strong>{connectivityResults.telegram ?? '—'}</strong>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="homeCard advancedDeviceIdentityCard">
+              <h3 className="homeCardTitle">
+                {t('ui.advanced.deviceIdentity')}
+              </h3>
+              <p className="muted small">
+                {t('ui.advanced.deviceIdentityLead')}
+              </p>
+              <div className="deviceIdentityHwidRow">
+                <div className="deviceIdentityHwid monoTight">
+                  {deviceIdentity?.hwid ?? '—'}
+                </div>
+                <div className="deviceIdentityActions">
+                  <button
+                    type="button"
+                    className="btn btnCompact"
+                    disabled={!deviceIdentity?.hwid}
+                    onClick={() => {
+                      const h = deviceIdentity?.hwid
+                      if (!h) return
+                      void navigator.clipboard.writeText(h).then(
+                        () => {
+                          setLinkToast(t('ui.advanced.identityCopied'))
+                          window.setTimeout(() => setLinkToast(''), 2500)
+                        },
+                        () => setError('Clipboard unavailable'),
+                      )
+                    }}
+                  >
+                    {t('ui.advanced.copyHwid')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost btnCompact"
+                    disabled={!deviceIdentity}
+                    onClick={() => {
+                      const d = deviceIdentity
+                      if (!d) return
+                      const text = [
+                        `x-hwid: ${d.hwid}`,
+                        `x-device-os: ${d.deviceOs}`,
+                        `x-ver-os: ${d.osVersion}`,
+                        `x-device-model: ${d.deviceModel}`,
+                        `x-app-version: ${d.appVersion}`,
+                      ].join('\n')
+                      void navigator.clipboard.writeText(text).then(
+                        () => {
+                          setLinkToast(t('ui.advanced.identityCopiedAll'))
+                          window.setTimeout(() => setLinkToast(''), 2500)
+                        },
+                        () => setError('Clipboard unavailable'),
+                      )
+                    }}
+                  >
+                    {t('ui.advanced.copyAllIdentity')}
+                  </button>
+                </div>
+              </div>
+              <div className="statusRow">
+                <span>{t('ui.advanced.identityDeviceOs')}</span>
+                <strong className="monoTight">
+                  {deviceIdentity?.deviceOs ?? '—'}
+                </strong>
+              </div>
+              <div className="statusRow">
+                <span>{t('ui.advanced.identityOsVersion')}</span>
+                <strong className="monoTight">
+                  {deviceIdentity?.osVersion ?? '—'}
+                </strong>
+              </div>
+              <div className="statusRow">
+                <span>{t('ui.advanced.identityDeviceModel')}</span>
+                <strong className="monoTight">
+                  {deviceIdentity?.deviceModel ?? '—'}
+                </strong>
+              </div>
+              <div className="statusRow">
+                <span>{t('ui.advanced.identityAppVersion')}</span>
+                <strong className="monoTight">
+                  {deviceIdentity?.appVersion ?? '—'}
+                </strong>
               </div>
             </div>
 

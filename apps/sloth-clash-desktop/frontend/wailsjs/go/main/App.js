@@ -74,6 +74,10 @@ export function GetRuntimeDiagEvents() {
   return window['go']['main']['App']['GetRuntimeDiagEvents']()
 }
 
+export function GetSubscriptionDeviceIdentity() {
+  return window['go']['main']['App']['GetSubscriptionDeviceIdentity']()
+}
+
 export function GetTrayAvailability() {
   return window['go']['main']['App']['GetTrayAvailability']()
 }

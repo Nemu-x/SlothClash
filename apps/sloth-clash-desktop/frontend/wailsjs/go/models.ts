@@ -22,6 +22,7 @@ export namespace main {
     exitLine?: string
     exitFlagIso2?: string
     directIp?: string
+    directFlagIso2?: string
     directError?: string
     lastError?: string
     uploadKbps: number
@@ -41,6 +42,7 @@ export namespace main {
       this.exitLine = source['exitLine']
       this.exitFlagIso2 = source['exitFlagIso2']
       this.directIp = source['directIp']
+      this.directFlagIso2 = source['directFlagIso2']
       this.directError = source['directError']
       this.lastError = source['lastError']
       this.uploadKbps = source['uploadKbps']
@@ -600,6 +602,26 @@ export namespace main {
     }
   }
 
+  export class SubscriptionDeviceIdentityPublic {
+    hwid: string
+    deviceOs: string
+    osVersion: string
+    deviceModel: string
+    appVersion: string
+
+    static createFrom(source: any = {}) {
+      return new SubscriptionDeviceIdentityPublic(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.hwid = source['hwid']
+      this.deviceOs = source['deviceOs']
+      this.osVersion = source['osVersion']
+      this.deviceModel = source['deviceModel']
+      this.appVersion = source['appVersion']
+    }
+  }
   export class SubscriptionPeek {
     url: string
     suggestedName: string

@@ -1317,6 +1317,14 @@
   line-height: 1.25;
 }
 
+/* Home insight: country flags only; full geo / IPs in native tooltip */
+.homeStatusGrid .insightFlagCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 22px;
+}
+
 .homeSubscriptionExtras {
   display: flex;
   flex-direction: column;
@@ -2095,21 +2103,84 @@
   margin-top: 8px;
 }
 
+.advancedPanel h2 {
+  font-size: 1.2rem;
+  margin: 0 0 4px 0;
+}
+
+.advancedPanel > p.muted {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .advancedPanel .homeCard {
-  margin: 12px 0;
-  padding: 12px 14px;
+  margin: 6px 0;
+  padding: 8px 10px;
+}
+
+.advancedPanel .homeCardTitle {
+  font-size: 11px;
+  margin: 0 0 4px 0;
+}
+
+.advancedPanel .advancedGrid .statusRow {
+  padding: 4px 0;
+}
+
+.advancedPanel .advancedGrid .diagList {
+  margin-top: 4px;
+}
+
+.advancedPanel .advancedGrid .row {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.advancedPanel .advancedGrid .btn.ghost {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .advancedGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(280px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 8px;
 }
 
 @media (max-width: 980px) {
   .advancedGrid {
     grid-template-columns: 1fr;
   }
+}
+
+.advancedDeviceIdentityCard .deviceIdentityHwidRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.advancedDeviceIdentityCard .deviceIdentityHwid {
+  flex: 1;
+  min-width: min(100%, 220px);
+  font-size: 10px;
+  line-height: 1.35;
+  word-break: break-all;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(0, 0, 0, 0.22);
+  color: #e8dfd0;
+}
+
+.advancedDeviceIdentityCard .deviceIdentityActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 @media (max-width: 900px) {

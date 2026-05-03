@@ -43,6 +43,8 @@ export function GetProfileRulesBaseline(
 
 export function GetRuntimeDiagEvents(): Promise<Array<main.RuntimeDiagEvent>>
 
+export function GetSubscriptionDeviceIdentity(): Promise<main.SubscriptionDeviceIdentityPublic>
+
 export function GetTrayAvailability(): Promise<boolean>
 
 export function GetTunStatus(): Promise<main.ServiceState>

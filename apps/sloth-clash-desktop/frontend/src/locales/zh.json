@@ -128,7 +128,9 @@
       "updateAvailableVersion": "有可用更新：{{version}}",
       "subscriptionSupport": "支持",
       "supportShort": "支持",
-      "subscriptionAnnouncement": "公告"
+      "subscriptionAnnouncement": "公告",
+      "insightExit": "出口",
+      "insightDirect": "直连"
     },
     "profiles": {
       "title": "配置",
@@ -199,7 +201,17 @@
       "runtimeDir": "运行目录",
       "configFile": "配置文件",
       "connectivityTools": "连通性工具",
-      "connectivityLead": "通过 webview fetch (no-cors) 进行尽力探测，适合快速检查。"
+      "connectivityLead": "通过 webview fetch (no-cors) 进行尽力探测，适合快速检查。",
+      "deviceIdentity": "设备标识",
+      "deviceIdentityLead": "稳定的客户端 ID 与设备信息——与订阅请求所附 HTTP 头一致。若服务商索要 HWID 可复制给对方。",
+      "copyHwid": "复制 HWID",
+      "copyAllIdentity": "复制全部（请求头格式）",
+      "identityCopied": "已复制 HWID。",
+      "identityCopiedAll": "已复制全部字段。",
+      "identityDeviceOs": "操作系统",
+      "identityOsVersion": "系统版本",
+      "identityDeviceModel": "设备型号",
+      "identityAppVersion": "应用版本"
     }
   },
   "common": {

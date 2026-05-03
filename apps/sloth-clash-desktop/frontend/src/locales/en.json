@@ -128,7 +128,9 @@
       "updateAvailableVersion": "Update available: {{version}}",
       "subscriptionSupport": "Support",
       "supportShort": "Support",
-      "subscriptionAnnouncement": "Announcement"
+      "subscriptionAnnouncement": "Announcement",
+      "insightExit": "Exit",
+      "insightDirect": "Direct"
     },
     "profiles": {
       "title": "Profiles",
@@ -199,7 +201,17 @@
       "runtimeDir": "Runtime dir",
       "configFile": "Config file",
       "connectivityTools": "Connectivity tools",
-      "connectivityLead": "Best-effort probe via webview fetch (no-cors), useful for quick checks."
+      "connectivityLead": "Best-effort probe via webview fetch (no-cors), useful for quick checks.",
+      "deviceIdentity": "Device identity",
+      "deviceIdentityLead": "Stable client id and device info—same values sent as HTTP headers on subscription requests. Use when a provider asks for your HWID.",
+      "copyHwid": "Copy HWID",
+      "copyAllIdentity": "Copy all (headers)",
+      "identityCopied": "HWID copied.",
+      "identityCopiedAll": "All fields copied.",
+      "identityDeviceOs": "Device OS",
+      "identityOsVersion": "OS version",
+      "identityDeviceModel": "Device model",
+      "identityAppVersion": "App version"
     }
   },
   "common": {

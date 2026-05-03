@@ -128,7 +128,9 @@
       "updateAvailableVersion": "Доступно обновление: {{version}}",
       "subscriptionSupport": "Поддержка",
       "supportShort": "Поддержка",
-      "subscriptionAnnouncement": "Объявление"
+      "subscriptionAnnouncement": "Объявление",
+      "insightExit": "Выход",
+      "insightDirect": "Напрямую"
     },
     "profiles": {
       "title": "Профили",
@@ -199,7 +201,17 @@
       "runtimeDir": "Runtime директория",
       "configFile": "Файл конфигурации",
       "connectivityTools": "Инструменты проверки соединения",
-      "connectivityLead": "Пробный запрос через webview fetch (no-cors), полезно для быстрых проверок."
+      "connectivityLead": "Пробный запрос через webview fetch (no-cors), полезно для быстрых проверок.",
+      "deviceIdentity": "Идентификация устройства",
+      "deviceIdentityLead": "Стабильный id клиента и сведения об устройстве — те же значения, что в HTTP-заголовках при запросе подписки. Покажите провайдеру, если просят HWID.",
+      "copyHwid": "Копировать HWID",
+      "copyAllIdentity": "Копировать всё (как заголовки)",
+      "identityCopied": "HWID скопирован.",
+      "identityCopiedAll": "Все поля скопированы.",
+      "identityDeviceOs": "ОС",
+      "identityOsVersion": "Версия ОС",
+      "identityDeviceModel": "Модель устройства",
+      "identityAppVersion": "Версия приложения"
     }
   },
   "common": {

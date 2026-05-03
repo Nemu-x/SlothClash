@@ -75,7 +75,7 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 
 	qctx, qcancel := context.WithTimeout(ctx, 8*time.Second)
 	defer qcancel()
-	qcmd := exec.CommandContext(qctx, "sc", "query", slothWindowsSCMService)
+	qcmd := exec.CommandContext(qctx, system32Exe("sc.exe"), "query", slothWindowsSCMService)
 	if attr := hideWindowSysProcAttr(); attr != nil {
 		qcmd.SysProcAttr = attr
 	}
@@ -85,7 +85,7 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 	}
 	lower := strings.ToLower(string(out))
 	if !strings.Contains(lower, "running") {
-		ncmd := exec.CommandContext(qctx, "net", "start", slothWindowsSCMService)
+		ncmd := exec.CommandContext(qctx, system32Exe("net.exe"), "start", slothWindowsSCMService)
 		if attr := hideWindowSysProcAttr(); attr != nil {
 			ncmd.SysProcAttr = attr
 		}

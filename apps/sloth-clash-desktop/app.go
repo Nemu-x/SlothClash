@@ -330,7 +330,7 @@ func queryWindowsServiceStatus(name string) (installed bool, running bool, lastE
 	if runtime.GOOS != "windows" {
 		return false, false, ""
 	}
-	cmd := exec.Command("sc.exe", "query", name)
+	cmd := exec.Command(system32Exe("sc.exe"), "query", name)
 	if attr := hideWindowSysProcAttr(); attr != nil {
 		cmd.SysProcAttr = attr
 	}

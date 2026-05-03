@@ -107,18 +107,28 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 		cancel()
 	}
 
-	// In rule mode, show WAN IP alongside tunnel exit so users can compare routing.
+	// In rule mode, resolve WAN IP (and geo flag) for comparison with tunnel exit on Home.
 	if mode == "rule" {
 		ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
 		if ip, err := fetchIPDirect(ctx); err != nil {
 			ins.DirectError = err.Error()
+			ins.DirectIP = ""
+			ins.DirectFlagIso2 = ""
 		} else {
 			ins.DirectIP = ip
+			ins.DirectError = ""
+			ins.DirectFlagIso2 = ""
+			gctx, gcancel := context.WithTimeout(context.Background(), 12*time.Second)
+			if geo, err := geoForIP(gctx, ip); err == nil && geo.ISO2 != "" {
+				ins.DirectFlagIso2 = geo.ISO2
+			}
+			gcancel()
 		}
 		cancel()
 	} else {
 		ins.DirectIP = ""
 		ins.DirectError = ""
+		ins.DirectFlagIso2 = ""
 	}
 
 	a.mu.Lock()

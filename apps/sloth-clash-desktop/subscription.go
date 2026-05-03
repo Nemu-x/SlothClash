@@ -228,6 +228,7 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 		return out, err
 	}
 	req.Header.Set("User-Agent", userAgent)
+	applySubscriptionIdentityHeaders(req)
 
 	client := &http.Client{
 		Timeout: 22 * time.Second,

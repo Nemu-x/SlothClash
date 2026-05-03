@@ -27,7 +27,7 @@ func skipTunTakeoverByEnv() bool {
 func scHidden(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sc", args...)
+	cmd := exec.CommandContext(ctx, system32Exe("sc.exe"), args...)
 	if attr := hideWindowSysProcAttr(); attr != nil {
 		cmd.SysProcAttr = attr
 	}

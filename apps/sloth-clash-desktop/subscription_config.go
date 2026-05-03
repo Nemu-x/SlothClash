@@ -114,6 +114,7 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "clash.meta/mihomo; SlothClash/1.0")
+	applySubscriptionIdentityHeaders(req)
 
 	client := &http.Client{
 		Timeout: 50 * time.Second,

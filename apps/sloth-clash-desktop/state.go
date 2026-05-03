@@ -13,20 +13,21 @@ type AppState struct {
 	UpdatedAt  int64           `json:"updatedAt"`
 }
 
-// HomeInsight is a best-effort snapshot for the Home screen (latency, exit IP, optional direct IP in rule mode).
+// HomeInsight is a best-effort snapshot for the Home screen (latency, exit/direct geo flags, IPs for tooltips / diagnostics).
 type HomeInsight struct {
-	NodeLatencyMs int    `json:"nodeLatencyMs"` // 0 = not available
-	LatencyError  string `json:"latencyError,omitempty"`
-	ExitIP        string `json:"exitIp,omitempty"`
-	ExitLine      string `json:"exitLine,omitempty"`     // plain geo text, e.g. "Russia · Moscow" (no emoji; see ExitFlagIso2)
-	ExitFlagIso2  string `json:"exitFlagIso2,omitempty"` // ISO 3166-1 alpha-2 for flag image (WebView may render 🇷🇺 as "RU")
-	DirectIP      string `json:"directIp,omitempty"`     // WAN; meaningful in rule vs tun exit
-	DirectError   string `json:"directError,omitempty"`
-	LastError     string `json:"lastError,omitempty"`
-	UploadKbps    int    `json:"uploadKbps"`   // mihomo GET /traffic (kbps); always sent so UI can show 0
-	DownloadKbps  int    `json:"downloadKbps"` // mihomo GET /traffic (kbps)
-	TrafficError  string `json:"trafficError,omitempty"`
-	UpdatedAt     int64  `json:"updatedAt,omitempty"`
+	NodeLatencyMs  int    `json:"nodeLatencyMs"` // 0 = not available
+	LatencyError   string `json:"latencyError,omitempty"`
+	ExitIP         string `json:"exitIp,omitempty"`
+	ExitLine       string `json:"exitLine,omitempty"`       // plain geo text, e.g. "Russia · Moscow" (no emoji; see ExitFlagIso2)
+	ExitFlagIso2   string `json:"exitFlagIso2,omitempty"`   // ISO 3166-1 alpha-2 for flag image (WebView may render 🇷🇺 as "RU")
+	DirectIP       string `json:"directIp,omitempty"`       // WAN; meaningful in rule vs tun exit (tooltip / diagnostics)
+	DirectFlagIso2 string `json:"directFlagIso2,omitempty"` // geo for direct WAN when available
+	DirectError    string `json:"directError,omitempty"`
+	LastError      string `json:"lastError,omitempty"`
+	UploadKbps     int    `json:"uploadKbps"`   // mihomo GET /traffic (kbps); always sent so UI can show 0
+	DownloadKbps   int    `json:"downloadKbps"` // mihomo GET /traffic (kbps)
+	TrafficError   string `json:"trafficError,omitempty"`
+	UpdatedAt      int64  `json:"updatedAt,omitempty"`
 }
 
 type ConnectionState struct {

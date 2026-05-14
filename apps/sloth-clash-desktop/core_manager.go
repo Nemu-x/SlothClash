@@ -359,7 +359,11 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 
 	if _, err := os.Stat(geoIP); err == nil {
 		fmt.Fprintf(&cfg, "geo-auto-update: false\n")
-		fmt.Fprintf(&cfg, "geodata-mode: standard\n")
+		// geodata-mode: true selects .dat geoip database; the previous value
+		// "standard" was not a valid mode (it's a value for the unrelated
+		// `geodata-loader` key) — mihomo silently fell back to mmdb and our
+		// bundled .dat files were never loaded.
+		fmt.Fprintf(&cfg, "geodata-mode: true\n")
 		fmt.Fprintf(&cfg, "geoip: %q\n", filepath.ToSlash(geoIP))
 		if _, err2 := os.Stat(geoSite); err2 == nil {
 			fmt.Fprintf(&cfg, "geosite: %q\n", filepath.ToSlash(geoSite))

@@ -206,10 +206,16 @@ func mergeBundledGeoIfMissing(m map[string]any, dataDir string) {
 		return
 	}
 	m["geoip"] = filepath.ToSlash(geoIP)
-	m["geo-auto-update"] = false
 	if gs := filepath.Join(geoDir, "geosite.dat"); fileExists(gs) {
 		m["geosite"] = filepath.ToSlash(gs)
 	}
+	// Mihomo's default for `geodata-mode` is false, which means it interprets
+	// the geoip path as MaxMind mmdb. We're handing it a `.dat` (V2Ray-style)
+	// geoip database, so without this flag mihomo would silently fail to load
+	// GeoIP entries and rules like `GEOIP,CN,REJECT` would never match.
+	// See https://wiki.metacubex.one/config/general/#geodata-mode.
+	m["geodata-mode"] = true
+	m["geo-auto-update"] = false
 }
 
 func fileExists(p string) bool {

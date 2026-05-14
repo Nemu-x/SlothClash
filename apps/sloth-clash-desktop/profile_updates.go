@@ -59,10 +59,14 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	// tolerated: the existing cache stays in place and peek already told
 	// us the subscription is reachable, so the background kicker will
 	// retry on the next Connect.
+	//
+	// Routes through runSubscriptionFetchOnce so an in-flight background
+	// refresh isn't trampled by this explicit click — both callers attach
+	// to the same singleflight slot per dataDir and share the outcome.
 	if root, derr := slothDataRoot(); derr == nil {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		_ = refreshSubscriptionBodyCache(bodyCtx, dataDir, target.URL)
+		_ = runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL)
 		bodyCancel()
 	}
 

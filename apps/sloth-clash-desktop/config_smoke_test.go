@@ -57,7 +57,7 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
 		"",
@@ -73,8 +73,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected full-profile path to be used")
+	if outcome != pipelineOK {
+		t.Fatalf("expected full-profile path to be used, got outcome=%s", outcome)
 	}
 	cfgPath := filepath.Join(tmp, "config.yaml")
 	b, err := os.ReadFile(cfgPath)
@@ -112,7 +112,7 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
 		"",
@@ -128,8 +128,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected full-profile path to be used")
+	if outcome != pipelineOK {
+		t.Fatalf("expected full-profile path to be used, got outcome=%s", outcome)
 	}
 	b, err := os.ReadFile(filepath.Join(tmp, "config.yaml"))
 	if err != nil {
@@ -178,7 +178,7 @@ rules:
 	tmp := t.TempDir()
 	writeSubscriptionBodyCache(tmp, body)
 
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		closedURL,
 		"",
@@ -194,8 +194,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile (cache-first) returned error: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected cache-first path to succeed without the origin")
+	if outcome != pipelineOK {
+		t.Fatalf("expected cache-first path to succeed without the origin, got outcome=%s", outcome)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "config.yaml")); err != nil {
 		t.Fatalf("config.yaml not written from cache: %v", err)
@@ -224,7 +224,7 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
 		"",
@@ -240,8 +240,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile (no cache) returned error: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected fresh fetch to succeed")
+	if outcome != pipelineOK {
+		t.Fatalf("expected fresh fetch to succeed, got outcome=%s", outcome)
 	}
 	if hit != 1 {
 		t.Fatalf("expected exactly one origin hit on first-ever connect, got %d", hit)

@@ -307,11 +307,16 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
 
-	if ok, err := tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun); ok {
+	outcome, err := tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun)
+	if outcome == pipelineOK {
 		return nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return err
 	}
+	// outcome is one of the "soft" cases (cache_miss_no_net / not_full_profile);
+	// fall through to write the bare provider profile below.
+	_ = outcome.useBareFallback() // anchor for readers — see pipelineOutcome.
 
 	geoDir := filepath.Join(dataDir, "geo")
 	geoIP := filepath.Join(geoDir, "geoip.dat")
@@ -431,7 +436,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		return err
 	}
 	cfgPath := filepath.Join(dataDir, "config.yaml")
-	return os.WriteFile(cfgPath, out, 0o644)
+	return atomicWriteFile(cfgPath, out, 0o644)
 }
 
 // writeRuntimeConfigIfNeeded uses a hand-edited config.yaml as base when SkipAutoConfig is set,
@@ -467,7 +472,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(cfgPath, out, 0o644); err != nil {
+			if err := atomicWriteFile(cfgPath, out, 0o644); err != nil {
 				return err
 			}
 			return runConfigPreflight(binPath, dataDir)
@@ -596,7 +601,7 @@ func repairRuntimeConfigDNS(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(cfgPath, out, 0o644)
+	return atomicWriteFile(cfgPath, out, 0o644)
 }
 
 func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string, body io.Reader) (*http.Response, error) {

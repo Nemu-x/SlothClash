@@ -94,7 +94,7 @@ func saveDesktopPrefsLocked(prefs DesktopPrefs) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, b, 0o644)
+	return atomicWriteFile(p, b, 0o644)
 }
 
 func currentDesktopPrefs() DesktopPrefs {

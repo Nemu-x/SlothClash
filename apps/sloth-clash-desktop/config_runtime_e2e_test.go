@@ -265,7 +265,7 @@ rules:
 	defer srv.Close()
 
 	dir := t.TempDir()
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		dir,
 		srv.URL,
 		"",
@@ -281,8 +281,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile(tun profile) failed: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected full-profile path for tun profile e2e")
+	if outcome != pipelineOK {
+		t.Fatalf("expected full-profile path for tun profile e2e, got outcome=%s", outcome)
 	}
 	cfg := readYAMLMapForTest(t, filepath.Join(dir, "config.yaml"))
 
@@ -333,7 +333,7 @@ rules:
 	defer srv.Close()
 
 	dir := t.TempDir()
-	ok, err := tryWriteMergedFullProfile(
+	outcome, err := tryWriteMergedFullProfile(
 		dir,
 		srv.URL,
 		"",
@@ -349,8 +349,8 @@ rules:
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile with broken refs should self-heal, got: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected full-profile path for broken ref repair e2e")
+	if outcome != pipelineOK {
+		t.Fatalf("expected full-profile path for broken ref repair e2e, got outcome=%s", outcome)
 	}
 	cfg := readYAMLMapForTest(t, filepath.Join(dir, "config.yaml"))
 

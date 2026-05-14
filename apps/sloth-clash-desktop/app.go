@@ -227,10 +227,9 @@ func trayEnabled() bool {
 	if v := strings.TrimSpace(strings.ToLower(os.Getenv("SLOTH_ENABLE_EXPERIMENTAL_TRAY"))); v != "" {
 		return v == "1" || v == "true" || v == "yes"
 	}
-	// Enabled by default on platforms where we ship a tray backend (Windows:
-	// fyne systray + bundled .ico; macOS: NSStatusBar via cgo unless the
-	// optional `slothtray` getlantern build is used). Stub builds return false
-	// from trayBackendAvailable().
+	// Enabled by default on platforms where we ship a tray backend
+	// (Windows: fyne systray + bundled .ico; macOS: NSStatusBar via cgo).
+	// Stub builds return false from trayBackendAvailable().
 	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
@@ -581,19 +580,11 @@ func (a *App) Connect() (AppState, error) {
 	a.state.Connection.LastWarning = ""
 	a.state.UpdatedAt = time.Now().Unix()
 	gen := a.connectGen.Add(1)
-	// #region agent log
-	debugLog(
-		"gen-"+strconv.FormatUint(gen, 10),
-		"H1",
-		"app.go:396",
-		"connect requested",
-		map[string]any{
-			"profileId": active.ID,
-			"status":    a.state.Connection.Status,
-		},
-	)
-	// #endregion
 	a.mu.Unlock()
+	a.traceEvent("pipeline.connect.requested", "ok", 0, map[string]any{
+		"profileId": active.ID,
+		"gen":       gen,
+	})
 
 	go a.runConnectJob(active, gen)
 	a.emitAppStateChanged()
@@ -677,7 +668,10 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 	}
 	a.mu.Unlock()
 	if notify {
-		a.appendRuntimeDiag("connection.error", err.Error())
+		a.traceEvent("pipeline.connect.done", "fail", 0, map[string]any{
+			"gen":   gen,
+			"error": err.Error(),
+		})
 		a.emitAppStateChanged()
 	}
 }
@@ -697,6 +691,7 @@ func (a *App) finishConnectJobOK(gen uint64) {
 	}
 	a.mu.Unlock()
 	if notify {
+		a.traceEvent("pipeline.connect.done", "ok", 0, map[string]any{"gen": gen})
 		a.emitAppStateChanged()
 	}
 }
@@ -956,17 +951,10 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 
 func (a *App) Disconnect() AppState {
 	gen := a.connectGen.Add(1)
-	// #region agent log
-	debugLog(
-		"gen-"+strconv.FormatUint(gen, 10),
-		"H1",
-		"app.go:Disconnect",
-		"disconnect requested",
-		map[string]any{
-			"prevStatus": a.state.Connection.Status,
-		},
-	)
-	// #endregion
+	a.traceEvent("pipeline.disconnect.requested", "ok", 0, map[string]any{
+		"gen":        gen,
+		"prevStatus": a.state.Connection.Status,
+	})
 	// Reload-model Disconnect (aligned with clash-verge-rev toggle_tun_mode):
 	// do not tear down Mihomo. Transition state to disconnected, clear the OS
 	// system proxy, and regenerate YAML with enableTun=false + PUT /configs

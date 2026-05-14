@@ -295,7 +295,7 @@ func (a *App) WriteProfileConfig(profileID string, content string) (AppState, er
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return a.GetAppState(), err
 	}
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	if err := atomicWriteFile(p, []byte(content), 0o644); err != nil {
 		return a.GetAppState(), err
 	}
 
@@ -341,23 +341,32 @@ func (a *App) WriteProfileConfig(profileID string, content string) (AppState, er
 func (a *App) reconnectActiveProfile() {
 	if !a.reconnectInFlight.CompareAndSwap(false, true) {
 		a.reconnectQueued.Store(true)
+		a.traceEvent("pipeline.reconnect.coalesced", "skip", 0, nil)
 		return
 	}
 	go func() {
 		defer a.reconnectInFlight.Store(false)
+		passes := 0
+		overall := time.Now()
 		for {
+			passes++
 			a.reconnectQueued.Store(false)
+			passStart := time.Now()
 			if err := a.reloadActiveProfileConfig(); err != nil {
-				debugLog(
-					"reload",
-					"H7",
-					"profile_config_api.go:reconnectActiveProfile",
-					"hot reload failed; will not fall back to restart",
-					map[string]any{"error": err.Error()},
-				)
+				a.traceEvent("pipeline.reconnect.pass", "fail", time.Since(passStart), map[string]any{
+					"pass":  passes,
+					"error": err.Error(),
+				})
+			} else {
+				a.traceEvent("pipeline.reconnect.pass", "ok", time.Since(passStart), map[string]any{
+					"pass": passes,
+				})
 			}
 			a.emitAppStateChanged()
 			if !a.reconnectQueued.Load() {
+				a.traceEvent("pipeline.reconnect.done", "ok", time.Since(overall), map[string]any{
+					"passes": passes,
+				})
 				return
 			}
 			// Coalesce bursts of triggers (template save + subscription
@@ -427,6 +436,20 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 	if expectedGen != 0 && a.connectGen.Load() != expectedGen {
 		return errConnectAborted
 	}
+	applyStart := time.Now()
+	traceFields := map[string]any{
+		"profileId": profile.ID,
+		"traffic":   traffic,
+		"enableTun": enableTun,
+		"gen":       expectedGen,
+	}
+	defer func() {
+		// Final outcome is logged by caller-specific paths below; this defer is
+		// a backstop so we always see a duration even if a fast-return slipped
+		// past the explicit trace points (e.g. dataDir prep error).
+		_ = applyStart
+		_ = traceFields
+	}()
 	if strings.TrimSpace(profile.URL) == "" {
 		return errors.New("profile has no subscription url")
 	}
@@ -484,6 +507,9 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 
 	// No running core: file on disk is up to date, Connect will consume it.
 	if strings.TrimSpace(listen) == "" {
+		a.traceEvent("pipeline.apply.done", "skip", time.Since(applyStart), mergeFields(traceFields, map[string]any{
+			"reason": "no_running_core",
+		}))
 		return nil
 	}
 
@@ -491,20 +517,25 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 	if abserr != nil {
 		return abserr
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), coreConfigReloadTimeout)
+	reloadStart := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), coreReloadTimeout())
 	defer cancel()
 	if err := coreReloadConfigFileAt(ctx, listen, secret, cfgAbs); err != nil {
 		if expectedGen != 0 && a.connectGen.Load() != expectedGen {
 			return errConnectAborted
 		}
-		a.appendRuntimeDiag("core.reload_failed", err.Error())
+		a.traceEvent("pipeline.apply.reload", "fail", time.Since(reloadStart), mergeFields(traceFields, map[string]any{
+			"error": err.Error(),
+		}))
 		// Upstream-style controlled recovery: one forced core restart when
 		// hot-reload fails, then one final reload attempt on the fresh core.
 		if restartErr := a.forceRestartCoreForProfile(profile, expectedGen, enableTun); restartErr != nil {
-			a.appendRuntimeDiag("core.restart_failed", restartErr.Error())
+			a.traceEvent("pipeline.apply.restart", "fail", 0, mergeFields(traceFields, map[string]any{
+				"error": restartErr.Error(),
+			}))
 			return fmt.Errorf("reload failed (%v), fallback restart failed (%v)", err, restartErr)
 		}
-		a.appendRuntimeDiag("core.restart_ok", "after reload failure")
+		a.traceEvent("pipeline.apply.restart", "ok", 0, traceFields)
 		if expectedGen != 0 && a.connectGen.Load() != expectedGen {
 			return errConnectAborted
 		}
@@ -515,13 +546,32 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 		if strings.TrimSpace(relisten) == "" {
 			return errors.New("reload fallback: core endpoint is unavailable after restart")
 		}
-		ctx2, cancel2 := context.WithTimeout(context.Background(), coreConfigReloadTimeout)
+		retryStart := time.Now()
+		ctx2, cancel2 := context.WithTimeout(context.Background(), coreReloadTimeout())
 		defer cancel2()
 		if err2 := coreReloadConfigFileAt(ctx2, relisten, resecret, cfgAbs); err2 != nil {
-			a.appendRuntimeDiag("core.retry_reload_failed", err2.Error())
+			a.traceEvent("pipeline.apply.retry_reload", "fail", time.Since(retryStart), mergeFields(traceFields, map[string]any{
+				"error": err2.Error(),
+			}))
 			return fmt.Errorf("reload failed (%v), restart succeeded but retry reload failed (%v)", err, err2)
 		}
-		a.appendRuntimeDiag("core.retry_reload_ok", "")
+		a.traceEvent("pipeline.apply.retry_reload", "ok", time.Since(retryStart), traceFields)
+	} else {
+		a.traceEvent("pipeline.apply.reload", "ok", time.Since(reloadStart), traceFields)
 	}
+	a.traceEvent("pipeline.apply.done", "ok", time.Since(applyStart), traceFields)
 	return nil
+}
+
+// mergeFields shallow-merges two field maps, with overrides winning over base.
+// Used to add per-event fields to the shared trace context without mutating it.
+func mergeFields(base, extra map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(extra))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
 }

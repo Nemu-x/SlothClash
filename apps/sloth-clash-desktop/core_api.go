@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,9 +28,65 @@ import (
 // (see shutdown() in app.go). All other flows use PUT force-reload.
 
 const (
-	coreTunToggleTimeout    = 10 * time.Second
-	coreConfigReloadTimeout = 30 * time.Second
+	coreTunToggleTimeout = 10 * time.Second
+
+	// defaultCoreConfigReloadTimeout — Mihomo's /configs?force=true normally
+	// returns in 50-500 ms. The previous 30 s window mostly stranded the UI
+	// during pathological cases (the user re-clicked Connect long before the
+	// deadline fired). 8 s leaves headroom for slow disks / antivirus
+	// scanning the freshly-written config without blocking the user's intent
+	// for an absurd window.
+	defaultCoreConfigReloadTimeout = 8 * time.Second
+
+	// maxCoreConfigReloadTimeout caps the env override at 5 minutes. Anything
+	// longer is almost certainly a typo; without a ceiling a stale `=300s` env
+	// could resurrect the same UI-stranding bug we are fixing here.
+	maxCoreConfigReloadTimeout = 5 * time.Minute
 )
+
+// envCoreReloadTimeout — name of the env var that overrides the default
+// /configs?force=true reload deadline. Accepts any Go duration literal
+// (e.g. "500ms", "5s", "1m"). Out-of-range or unparseable values are
+// silently rejected and the default is used; the rejection is recorded as
+// a `pipeline.config.timeout_override skip` trace event so a misconfigured
+// install is visible in the debug log.
+const envCoreReloadTimeout = "SLOTH_RELOAD_TIMEOUT"
+
+var (
+	coreReloadTimeoutOnce  sync.Once
+	coreReloadTimeoutCache time.Duration
+)
+
+// coreReloadTimeout returns the effective deadline for coreReloadConfigFileAt.
+// Resolved once on first use: env override if present and sane, otherwise
+// defaultCoreConfigReloadTimeout. Subsequent calls reuse the cached value so
+// changing the env after process start has no effect (deliberate — every
+// reload should see the same deadline).
+func coreReloadTimeout() time.Duration {
+	coreReloadTimeoutOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv(envCoreReloadTimeout))
+		if raw == "" {
+			coreReloadTimeoutCache = defaultCoreConfigReloadTimeout
+			return
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 || d > maxCoreConfigReloadTimeout {
+			traceEvent("pipeline.config.timeout_override", "skip", 0, map[string]any{
+				"raw":     raw,
+				"default": defaultCoreConfigReloadTimeout.String(),
+				"reason":  "parse_failed_or_out_of_range",
+			})
+			coreReloadTimeoutCache = defaultCoreConfigReloadTimeout
+			return
+		}
+		traceEvent("pipeline.config.timeout_override", "ok", 0, map[string]any{
+			"value":  d.String(),
+			"source": envCoreReloadTimeout,
+		})
+		coreReloadTimeoutCache = d
+	})
+	return coreReloadTimeoutCache
+}
 
 // coreSetTunEnabledAt flips tun.enable on the running core via PATCH /configs.
 // Use only for pre-shutdown graceful adapter teardown; normal runtime flows
@@ -82,7 +140,7 @@ func coreReloadConfigFileAt(ctx context.Context, listen, secret, absPath string)
 	q := url.Values{}
 	q.Set("path", absPath)
 	q.Set("force", "true")
-	cctx, cancel := context.WithTimeout(ctx, coreConfigReloadTimeout)
+	cctx, cancel := context.WithTimeout(ctx, coreReloadTimeout())
 	defer cancel()
 	resp, err := coreDoWithEndpoint(cctx, listen, secret, http.MethodPut, "/configs?"+q.Encode(), bytes.NewReader([]byte("{}")))
 	if err != nil {

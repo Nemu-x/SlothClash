@@ -10,7 +10,7 @@ func TestMarkConnectionDegradedLockedSetsHealthAndLifecycle(t *testing.T) {
 	t.Parallel()
 	var b embed.FS
 	a := NewApp(b)
-	a.state.Connection.Status = "connected"
+	a.state.Connection.Status = ConnConnected
 	a.state.Connection.LastWarning = ""
 	a.state.Connection.Health = "ready"
 	a.state.Core.Lifecycle = "running"

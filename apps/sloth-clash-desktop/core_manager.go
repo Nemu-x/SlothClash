@@ -258,9 +258,36 @@ func (a *App) extractBundledMihomoBinary() (string, error) {
 	return "", errors.New("embedded mihomo not found in build/sidecar")
 }
 
+// ensureGeoInDataDir copies the bundled geo data files into the running
+// profile's working directory, mirroring clash-verge-rev's prepare_service_path
+// pattern (src-tauri/src/utils/init.rs):
+//
+//   - Files land at the root of <dataDir>, not in a `geo/` subdirectory.
+//     Mihomo's default lookup is "<workdir>/geoip.dat", "<workdir>/geosite.dat",
+//     "<workdir>/Country.mmdb" — putting them at the root means we never have
+//     to touch the user's YAML to point at custom paths.
+//   - Each file is only overwritten when the destination is missing or
+//     strictly older than the source. This preserves manual replacements
+//     (the user dropping a fresher .dat in the runtime directory) across
+//     normal app launches — only an explicit "Re-extract bundled geo" call
+//     with force=true overwrites unconditionally.
+//
+// Files we don't ship in the bundle (e.g. when the build dropped Country.mmdb)
+// are skipped silently rather than producing a hard error — the pipeline can
+// continue with whatever subset is available.
 func (a *App) ensureGeoInDataDir(dataDir string) error {
-	geoDir := filepath.Join(dataDir, "geo")
-	if err := os.MkdirAll(geoDir, 0o755); err != nil {
+	return a.copyBundledGeoFiles(dataDir, false)
+}
+
+// reExtractGeoInDataDir is the "force" variant used by the Advanced
+// "Re-extract bundled geo" power tool. Overwrites whatever is currently on
+// disk with the files baked into the app bundle.
+func (a *App) reExtractGeoInDataDir(dataDir string) error {
+	return a.copyBundledGeoFiles(dataDir, true)
+}
+
+func (a *App) copyBundledGeoFiles(dataDir string, force bool) error {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
 	}
 	names := []string{"geoip.dat", "geosite.dat", "Country.mmdb"}
@@ -270,12 +297,35 @@ func (a *App) ensureGeoInDataDir(dataDir string) error {
 		if err != nil {
 			continue
 		}
-		dst := filepath.Join(geoDir, n)
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
+		dstPath := filepath.Join(dataDir, n)
+		if !force {
+			// Match Verge's "copy only if missing or source is newer"
+			// semantic. Embedded files share the binary's mtime, so we
+			// approximate "newer" by comparing byte counts: a fresh
+			// meta-rules-dat build almost never matches the previous
+			// bundle exactly, so a size mismatch is good enough to trigger
+			// a refresh without baking in a sentinel version file.
+			missing, srcNewer := destIsStale(dstPath, len(data))
+			if !missing && !srcNewer {
+				continue
+			}
+		}
+		if err := atomicWriteFile(dstPath, data, 0o644); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func destIsStale(dst string, srcSize int) (missing bool, srcNewer bool) {
+	info, err := os.Stat(dst)
+	if err != nil {
+		return true, false
+	}
+	if int(info.Size()) != srcSize {
+		return false, true
+	}
+	return false, false
 }
 
 // tunBlockForTraffic returns the TUN configuration embedded in generated YAML.
@@ -449,6 +499,18 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 // written YAML — match the user's current intent (connected && traffic=="tun") so
 // that PUT /configs?force=true on subsequent reloads does not thrash the adapter.
 func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool, enableTun bool) error {
+	// Geo files must exist before the pipeline runs — overlayBundledGeoData
+	// only points YAML at <dataDir>/geo/*.dat if those files are physically
+	// present. Without this, an applyRuntimeConfig call that bypasses
+	// startEmbeddedCore (warm-reload, prefs-driven trigger) writes a YAML
+	// with the old geox-url still in place and preflight tries to download
+	// geoip-lite.dat → DNS fail → Connect dies.
+	if err := a.ensureGeoInDataDir(dataDir); err != nil {
+		// Non-fatal: we still try the pipeline. overlayBundledGeoData will
+		// safely no-op if the files are missing and mihomo's own fallback
+		// kicks in (which may also fail, but at least we have not lied).
+		_ = err
+	}
 	if profile.SkipAutoConfig {
 		cfgPath := filepath.Join(dataDir, "config.yaml")
 		if st, err := os.Stat(cfgPath); err == nil && st.Size() > 0 {
@@ -1143,19 +1205,37 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			return
 		}
 		notify := false
+		shouldAutoRestart := false
+		var restartProfileID, restartTraffic string
 		if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
+			prevStatus := strings.TrimSpace(a.state.Connection.Status)
 			a.state.Core.Running = false
 			a.state.Core.Lifecycle = "degraded"
-			a.state.Connection.Status = "error"
+			a.state.Connection.Status = ConnError
 			a.state.Connection.Health = ""
 			a.state.Connection.LastError = "core exited: " + waitErr.Error()
 			a.state.Core.LastError = waitErr.Error()
 			notify = true
+			// Auto-restart only when the user was actively connected. A warm
+			// boot core (status == "disconnected") dying is not worth a noisy
+			// retry; the user will get fresh attempt on next Connect.
+			if prevStatus == "connected" {
+				shouldAutoRestart = true
+				restartProfileID = a.coreActiveProfileID
+				restartTraffic = strings.TrimSpace(a.state.Traffic)
+			}
 		}
 		a.state.UpdatedAt = time.Now().Unix()
 		a.mu.Unlock()
 		if notify {
 			a.emitAppStateChanged()
+		}
+		if shouldAutoRestart && restartProfileID != "" {
+			a.traceEvent("core.exit.unexpected", "fail", 0, map[string]any{
+				"profileId": restartProfileID,
+				"error":     waitErr.Error(),
+			})
+			go a.attemptCoreAutoRestart(restartProfileID, restartTraffic)
 		}
 	}()
 

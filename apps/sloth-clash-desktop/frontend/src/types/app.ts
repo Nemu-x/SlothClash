@@ -8,6 +8,27 @@ export type Screen =
   | 'advanced'
   | 'settings'
 
+/** Canonical Connection.Status values — mirror connection_status.go in Go. */
+export type ConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error'
+
+export const CONN_STATUS = {
+  Disconnected: 'disconnected',
+  Connecting: 'connecting',
+  Connected: 'connected',
+  Reconnecting: 'reconnecting',
+  Error: 'error',
+} as const satisfies Record<string, ConnectionStatus>
+
+/** True while a connect job, established connection, or auto-restart is live. */
+export function isConnStatusActive(s: string): boolean {
+  return s === 'connecting' || s === 'connected' || s === 'reconnecting'
+}
+
 export type ImportModalReason = 'beacon' | 'connect' | 'manual'
 
 export type ConnectionsOverview = {

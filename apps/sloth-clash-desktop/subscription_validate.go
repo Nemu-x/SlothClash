@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -186,36 +185,49 @@ func finalizeRuntimeConfigPipeline(
 	if err := validateFinalConfigSemantics(m); err != nil {
 		return err
 	}
-	mergeBundledGeoIfMissing(m, dataDir)
+	overlayBundledGeoData(m, dataDir)
 	return nil
 }
 
-func mergeBundledGeoIfMissing(m map[string]any, dataDir string) {
-	if _, has := m["geoip"]; has {
-		return
+// overlayBundledGeoData applies the minimal config nudges that let Mihomo
+// find our shipped geo data without going to the network. It deliberately
+// stays light-touch, mirroring clash-verge-rev's approach:
+//
+//   - `ensureGeoInDataDir` (called before the pipeline runs) drops
+//     `geoip.dat` / `geosite.dat` / `Country.mmdb` into the profile's
+//     workdir root. Mihomo's default lookup path is exactly that, so we do
+//     NOT need to rewrite the `geoip:` / `geosite:` config fields — mihomo
+//     finds them on its own.
+//   - We set `geodata-mode: true` only if the user has not explicitly set
+//     it themselves (V2Ray-style .dat files are what we ship; mmdb mode
+//     would fail). User overrides are respected so power users running on
+//     MaxMind .mmdb keep their setup.
+//   - We disable `geo-auto-update` because we do not have a known-good
+//     mirror we can trust globally — the default geox-url (cdn.jsdelivr
+//     or mirror.ghproxy) is the very thing that DNS-fails for users behind
+//     restrictive networks and stalls preflight. Auto-update can be turned
+//     back on by the user in the merge template if they have a good mirror.
+//   - We intentionally do NOT delete `geox-url` from the config. Mihomo
+//     uses it only as a fallback when the local files are missing, or for
+//     the on-demand "Update GeoData" action. With local files present and
+//     auto-update off, geox-url is harmless to keep, and dropping it would
+//     prevent the user from using a manual refresh if they want fresher
+//     data than what the app ships.
+//
+// The behaviour: if local geo files exist (the common case after the first
+// successful Connect or after `ensureGeoInDataDir` ran), mihomo uses them
+// and never touches the network. If they are somehow missing, mihomo falls
+// back to its own download path with whatever geox-url is in the config —
+// which may also fail, but we are no longer in a worse position than the
+// user's plain mihomo would be.
+func overlayBundledGeoData(m map[string]any, dataDir string) {
+	_ = dataDir // kept for symmetry; we no longer build paths from it
+	if _, has := m["geodata-mode"]; !has {
+		m["geodata-mode"] = true
 	}
-	if _, has := m["geosite"]; has {
-		return
+	if _, has := m["geo-auto-update"]; !has {
+		m["geo-auto-update"] = false
 	}
-	if _, has := m["geox-url"]; has {
-		return
-	}
-	geoDir := filepath.Join(dataDir, "geo")
-	geoIP := filepath.Join(geoDir, "geoip.dat")
-	if _, err := os.Stat(geoIP); err != nil {
-		return
-	}
-	m["geoip"] = filepath.ToSlash(geoIP)
-	if gs := filepath.Join(geoDir, "geosite.dat"); fileExists(gs) {
-		m["geosite"] = filepath.ToSlash(gs)
-	}
-	// Mihomo's default for `geodata-mode` is false, which means it interprets
-	// the geoip path as MaxMind mmdb. We're handing it a `.dat` (V2Ray-style)
-	// geoip database, so without this flag mihomo would silently fail to load
-	// GeoIP entries and rules like `GEOIP,CN,REJECT` would never match.
-	// See https://wiki.metacubex.one/config/general/#geodata-mode.
-	m["geodata-mode"] = true
-	m["geo-auto-update"] = false
 }
 
 func fileExists(p string) bool {

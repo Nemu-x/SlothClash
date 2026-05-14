@@ -42,6 +42,14 @@ export function FetchRulesOverview() {
   return window['go']['main']['App']['FetchRulesOverview']()
 }
 
+export function GetAdvancedGeoStatus() {
+  return window['go']['main']['App']['GetAdvancedGeoStatus']()
+}
+
+export function GetAdvancedPaths() {
+  return window['go']['main']['App']['GetAdvancedPaths']()
+}
+
 export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
 }
@@ -118,8 +126,16 @@ export function OnWindowBecameVisible() {
   return window['go']['main']['App']['OnWindowBecameVisible']()
 }
 
+export function OpenPathInExplorer(arg1) {
+  return window['go']['main']['App']['OpenPathInExplorer'](arg1)
+}
+
 export function PeekSubscriptionFromURL(arg1) {
   return window['go']['main']['App']['PeekSubscriptionFromURL'](arg1)
+}
+
+export function ReExtractBundledResources() {
+  return window['go']['main']['App']['ReExtractBundledResources']()
 }
 
 export function ReadProfileConfig(arg1) {
@@ -148,6 +164,14 @@ export function RefreshSlothServiceStatus() {
 
 export function RenameProfile(arg1, arg2) {
   return window['go']['main']['App']['RenameProfile'](arg1, arg2)
+}
+
+export function ResetSubscriptionCache() {
+  return window['go']['main']['App']['ResetSubscriptionCache']()
+}
+
+export function RestartCore() {
+  return window['go']['main']['App']['RestartCore']()
 }
 
 export function SelectProxyGroup(arg1) {
@@ -196,6 +220,10 @@ export function SetTrafficSettings(arg1) {
 
 export function SetTunSettings(arg1) {
   return window['go']['main']['App']['SetTunSettings'](arg1)
+}
+
+export function SetUiLanguage(arg1) {
+  return window['go']['main']['App']['SetUiLanguage'](arg1)
 }
 
 export function SetUpdateChannel(arg1) {

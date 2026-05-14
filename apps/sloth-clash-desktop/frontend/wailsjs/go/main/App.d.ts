@@ -23,6 +23,10 @@ export function FetchConnectionsOverview(): Promise<main.ConnectionsOverview>
 
 export function FetchRulesOverview(): Promise<main.RulesOverview>
 
+export function GetAdvancedGeoStatus(): Promise<main.AdvancedGeoStatus>
+
+export function GetAdvancedPaths(): Promise<main.AdvancedPaths>
+
 export function GetAppState(): Promise<main.AppState>
 
 export function GetDesktopPrefs(): Promise<main.DesktopPrefs>
@@ -70,9 +74,13 @@ export function OnSecondInstance(
 
 export function OnWindowBecameVisible(): Promise<void>
 
+export function OpenPathInExplorer(arg1: string): Promise<void>
+
 export function PeekSubscriptionFromURL(
   arg1: string,
 ): Promise<main.SubscriptionPeek>
+
+export function ReExtractBundledResources(): Promise<void>
 
 export function ReadProfileConfig(arg1: string): Promise<main.ProfileConfigPeek>
 
@@ -90,6 +98,10 @@ export function RenameProfile(
   arg1: string,
   arg2: string,
 ): Promise<main.AppState>
+
+export function ResetSubscriptionCache(): Promise<void>
+
+export function RestartCore(): Promise<void>
 
 export function SelectProxyGroup(arg1: string): Promise<main.AppState>
 
@@ -131,6 +143,8 @@ export function SetTrafficSettings(
 export function SetTunSettings(
   arg1: main.TunSettings,
 ): Promise<main.DesktopPrefs>
+
+export function SetUiLanguage(arg1: string): Promise<main.DesktopPrefs>
 
 export function SetUpdateChannel(arg1: string): Promise<main.UpdateState>
 

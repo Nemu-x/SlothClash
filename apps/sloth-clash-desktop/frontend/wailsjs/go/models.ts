@@ -1,4 +1,52 @@
 export namespace main {
+  export class AdvancedGeoStatus {
+    geoIpPath: string
+    geoIpSize: number
+    geoIpModified: number
+    geoSitePath: string
+    geoSiteSize: number
+    geoSiteModified: number
+
+    static createFrom(source: any = {}) {
+      return new AdvancedGeoStatus(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.geoIpPath = source['geoIpPath']
+      this.geoIpSize = source['geoIpSize']
+      this.geoIpModified = source['geoIpModified']
+      this.geoSitePath = source['geoSitePath']
+      this.geoSiteSize = source['geoSiteSize']
+      this.geoSiteModified = source['geoSiteModified']
+    }
+  }
+  export class AdvancedPaths {
+    dataRoot: string
+    runtimeDir: string
+    profilesJson: string
+    prefsJson: string
+    debugLog: string
+    serviceLog: string
+    geoDir: string
+    activeConfig: string
+
+    static createFrom(source: any = {}) {
+      return new AdvancedPaths(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.dataRoot = source['dataRoot']
+      this.runtimeDir = source['runtimeDir']
+      this.profilesJson = source['profilesJson']
+      this.prefsJson = source['prefsJson']
+      this.debugLog = source['debugLog']
+      this.serviceLog = source['serviceLog']
+      this.geoDir = source['geoDir']
+      this.activeConfig = source['activeConfig']
+    }
+  }
   export class UIState {
     isLoading: boolean
     activeModal?: string
@@ -454,6 +502,7 @@ export namespace main {
   export class DesktopPrefs {
     tun: TunSettings
     traffic: TrafficSettings
+    lang?: string
 
     static createFrom(source: any = {}) {
       return new DesktopPrefs(source)
@@ -463,6 +512,7 @@ export namespace main {
       if ('string' === typeof source) source = JSON.parse(source)
       this.tun = this.convertValues(source['tun'], TunSettings)
       this.traffic = this.convertValues(source['traffic'], TrafficSettings)
+      this.lang = source['lang']
     }
 
     convertValues(a: any, classs: any, asMap: boolean = false): any {

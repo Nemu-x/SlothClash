@@ -67,11 +67,71 @@ LangString SL_UNINSTALL_DATA ${LANG_SIMPCHINESE} "删除用户数据（配置、
 LangString SL_LAUNCH_APP ${LANG_ENGLISH} "Launch SlothClash"
 LangString SL_LAUNCH_APP ${LANG_RUSSIAN} "Запустить SlothClash"
 LangString SL_LAUNCH_APP ${LANG_SIMPCHINESE} "启动 SlothClash"
+LangString SL_VCREDIST_INSTALLING ${LANG_ENGLISH} "Installing: Visual C++ 2015-2022 Redistributable"
+LangString SL_VCREDIST_INSTALLING ${LANG_RUSSIAN} "Установка: Visual C++ 2015-2022 Redistributable"
+LangString SL_VCREDIST_INSTALLING ${LANG_SIMPCHINESE} "正在安装: Visual C++ 2015-2022 Redistributable"
+LangString SL_VCREDIST_DOWNLOAD_FAIL ${LANG_ENGLISH} "Could not download Visual C++ 2015-2022 Redistributable. The app may fail to start. Install it manually from https://aka.ms/vs/17/release/vc_redist.x64.exe"
+LangString SL_VCREDIST_DOWNLOAD_FAIL ${LANG_RUSSIAN} "Не удалось скачать Visual C++ 2015-2022 Redistributable. Без него приложение может не запуститься. Установите вручную: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+LangString SL_VCREDIST_DOWNLOAD_FAIL ${LANG_SIMPCHINESE} "无法下载 Visual C++ 2015-2022 Redistributable，应用可能无法启动。请手动安装: https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe"
 InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
 ShowInstDetails show
+
+# Microsoft Visual C++ 2015-2022 Redistributable runtime check.
+# Required by bundled Rust executables (mihomo sidecar, sloth-clash-service).
+# Without it the core silently fails to start on user machines that never had
+# Visual Studio runtimes installed (common on fresh Windows installs).
+!macro sloth.vcRedistRuntime
+    SetRegView 64
+    StrCpy $1 ""
+
+    !ifdef SUPPORTS_AMD64
+        ${If} ${IsNativeAMD64}
+            ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64" "Installed"
+            ${If} $0 == "1"
+                Goto sloth_vcredist_ok
+            ${EndIf}
+            StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        ${EndIf}
+    !endif
+
+    !ifdef SUPPORTS_ARM64
+        ${If} ${IsNativeARM64}
+            ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\ARM64" "Installed"
+            ${If} $0 == "1"
+                Goto sloth_vcredist_ok
+            ${EndIf}
+            StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.arm64.exe"
+        ${EndIf}
+    !endif
+
+    StrCmp $1 "" sloth_vcredist_ok 0
+
+    SetDetailsPrint both
+    DetailPrint "$(SL_VCREDIST_INSTALLING)"
+    SetDetailsPrint listonly
+
+    InitPluginsDir
+
+    # Download + silent install via a standalone PS1 script. Keeping the
+    # logic in a file rather than inline avoids tricky NSIS-vs-PowerShell
+    # quoting (the comment block above used to embed quote/escape characters
+    # which NSIS happily tried to parse). The script is synced into the
+    # installer build directory by scripts/sync-desktop-packaging.mjs.
+    File "/oname=$pluginsdir\vc_install.ps1" "vc_install.ps1"
+    ExecWait '"powershell.exe" -ExecutionPolicy Bypass -NoProfile -File "$pluginsdir\vc_install.ps1" -Url "$1"' $2
+    StrCmp $2 "0" sloth_vcredist_ok sloth_vcredist_dl_fail
+
+sloth_vcredist_dl_fail:
+    # NB: MB_ICONEXCLAMATION (not MB_ICONWARNING) — older NSIS builds only
+    # know the legacy WinAPI name. Both map to 0x30 at runtime.
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(SL_VCREDIST_DOWNLOAD_FAIL)"
+
+sloth_vcredist_ok:
+    SetDetailsPrint both
+!macroend
 
 Function .onInit
   SetShellVarContext current
@@ -91,6 +151,7 @@ Section "${INFO_PRODUCTNAME}" SecApp
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
+    !insertmacro sloth.vcRedistRuntime
 
     ; Close running instance if any (no extra prompt — same idea as silent upgrade flows).
     ; Graceful-ish close handling: Windows may keep the exe locked briefly even after taskkill.

@@ -35,6 +35,16 @@ const destNsi = path.join(
   'installer',
   'project.nsi',
 )
+// PowerShell helper invoked by sloth.vcRedistRuntime macro. Lives next to
+// project.nsi so the NSIS `File` directive picks it up at compile time.
+const srcVcPs1 = path.join(appDir, 'packaging', 'windows', 'vc_install.ps1')
+const destVcPs1 = path.join(
+  appDir,
+  'build',
+  'windows',
+  'installer',
+  'vc_install.ps1',
+)
 const appIcon = path.join(appDir, 'build', 'appicon.png')
 const trayDir = path.join(appDir, 'trayicons')
 const trayPng = path.join(trayDir, 'sloth.png')
@@ -53,6 +63,19 @@ function main() {
     '[sync-desktop-packaging] copied project.nsi →',
     path.relative(repoRoot, destNsi),
   )
+
+  if (fs.existsSync(srcVcPs1)) {
+    fs.copyFileSync(srcVcPs1, destVcPs1)
+    console.log(
+      '[sync-desktop-packaging] copied vc_install.ps1 →',
+      path.relative(repoRoot, destVcPs1),
+    )
+  } else {
+    console.error(
+      '[sync-desktop-packaging] missing vc_install.ps1 — VC runtime gate in installer will not work:',
+      srcVcPs1,
+    )
+  }
 
   if (fs.existsSync(appIcon)) {
     fs.mkdirSync(trayDir, { recursive: true })

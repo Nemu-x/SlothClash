@@ -35,7 +35,7 @@ type App struct {
 	bundle              embed.FS
 	coreSecret          string
 	coreListen          string
-	coreOverPipe        bool // Windows: mihomo started by sloth_clash_service; API on coreListen named pipe
+	coreOverPipe        bool // mihomo started by sloth_clash_service; stop goes via IPC. API still uses coreListen (TCP).
 	coreCmd             *exec.Cmd
 	coreCancel          context.CancelFunc
 	coreStopIntentional bool

@@ -31,12 +31,16 @@ const (
 	coreTunToggleTimeout = 10 * time.Second
 
 	// defaultCoreConfigReloadTimeout — Mihomo's /configs?force=true normally
-	// returns in 50-500 ms. The previous 30 s window mostly stranded the UI
-	// during pathological cases (the user re-clicked Connect long before the
-	// deadline fired). 8 s leaves headroom for slow disks / antivirus
-	// scanning the freshly-written config without blocking the user's intent
-	// for an absurd window.
-	defaultCoreConfigReloadTimeout = 8 * time.Second
+	// returns in 50-500 ms, but on Windows the HTTP-over-named-pipe transport
+	// has been observed to sit on a finished reload for 10-20 s before the
+	// response flushes back to us — mihomo logs "Initial configuration
+	// complete, total time: 15ms" yet our PUT keeps waiting. With the
+	// previous 8 s window every Connect on a config-heavy profile (30+ rule
+	// providers) hit the fallback path: timeout → forceRestartCoreForProfile
+	// → second timeout → Connect reported failed even though the core was
+	// already serving traffic. 30 s gives the pipe transport room to drain
+	// while still capping pathological hangs.
+	defaultCoreConfigReloadTimeout = 30 * time.Second
 
 	// maxCoreConfigReloadTimeout caps the env override at 5 minutes. Anything
 	// longer is almost certainly a typo; without a ceiling a stale `=300s` env

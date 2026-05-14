@@ -77,6 +77,22 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 	//   3. If the core was already up, applyRuntimeConfig regenerates YAML
 	//      and pushes PUT /configs?force=true — wintun is not torn down when
 	//      the intent was already matching.
+	//
+	// Every major step is wrapped in a trace so debug-cb9690.log shows
+	// exactly where Connect stalls. A panic here used to silently strand the
+	// status at "connecting" with no Connect-job left to advance it; recover
+	// surfaces that condition explicitly via the trace and marks the
+	// connection as failed so the UI can move on.
+	defer func() {
+		if r := recover(); r != nil {
+			a.traceEvent("pipeline.connect.panic", "fail", 0, map[string]any{
+				"gen":   gen,
+				"panic": fmt.Sprintf("%v", r),
+			})
+			a.finishConnectJobFailed(gen, fmt.Errorf("connect goroutine panicked: %v", r))
+		}
+	}()
+
 	a.mu.RLock()
 	traffic := strings.TrimSpace(a.state.Traffic)
 	a.mu.RUnlock()
@@ -85,23 +101,62 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 	}
 	enableTun := traffic == "tun"
 
-	if err := a.ensureCoreForProfile(active, gen, enableTun); err != nil {
+	ensureStart := time.Now()
+	a.traceEvent("pipeline.connect.ensure_core", "start", 0, map[string]any{
+		"gen": gen, "profileId": active.ID, "enableTun": enableTun,
+	})
+	coldStarted, err := a.ensureCoreForProfileEx(active, gen, enableTun)
+	if err != nil {
+		a.traceEvent("pipeline.connect.ensure_core", "fail", time.Since(ensureStart), map[string]any{
+			"gen": gen, "error": err.Error(),
+		})
 		a.finishConnectJobFailed(gen, err)
 		return
 	}
+	a.traceEvent("pipeline.connect.ensure_core", "ok", time.Since(ensureStart), map[string]any{
+		"gen": gen, "coldStarted": coldStarted,
+	})
 	if a.connectGen.Load() != gen {
+		a.traceEvent("pipeline.connect.aborted", "skip", 0, map[string]any{
+			"gen": gen, "where": "after_ensure_core",
+		})
 		return
 	}
 
-	// If the core was reused (same profile already running), ensureCoreForProfile
-	// did nothing. Push the current YAML to Mihomo via PUT /configs?force=true so
-	// the running process picks up any pending template / subscription changes
-	// and the user's connect intent in a single atomic reload.
-	if err := a.applyRuntimeConfig(active, traffic, enableTun); err != nil {
-		a.finishConnectJobFailed(gen, fmt.Errorf("apply runtime config: %w", err))
-		return
+	// applyRuntimeConfig regenerates YAML and pushes PUT /configs?force=true.
+	// On a cold start we skip it: ensureCoreForProfileEx already wrote the
+	// canonical YAML to disk and mihomo loaded it on startup, so a follow-up
+	// force-reload would just trigger a second full init (rule-providers
+	// re-download, sniffer re-bind, mixed-port re-listen) for no behaviour
+	// change — and the second init has to wait for providers, which is what
+	// gave Connect a multi-second hitch on heavy subscriptions. On a hot path
+	// (core reused, same profile) we still run apply so pending template /
+	// subscription edits and the user's traffic intent reach the live core in
+	// one atomic reload.
+	if !coldStarted {
+		applyStart := time.Now()
+		a.traceEvent("pipeline.connect.apply_runtime", "start", 0, map[string]any{
+			"gen": gen, "traffic": traffic, "enableTun": enableTun,
+		})
+		if err := a.applyRuntimeConfig(active, traffic, enableTun); err != nil {
+			a.traceEvent("pipeline.connect.apply_runtime", "fail", time.Since(applyStart), map[string]any{
+				"gen": gen, "error": err.Error(),
+			})
+			a.finishConnectJobFailed(gen, fmt.Errorf("apply runtime config: %w", err))
+			return
+		}
+		a.traceEvent("pipeline.connect.apply_runtime", "ok", time.Since(applyStart), map[string]any{
+			"gen": gen,
+		})
+	} else {
+		a.traceEvent("pipeline.connect.apply_runtime", "skip", 0, map[string]any{
+			"gen": gen, "reason": "cold_start_yaml_already_loaded",
+		})
 	}
 	if a.connectGen.Load() != gen {
+		a.traceEvent("pipeline.connect.aborted", "skip", 0, map[string]any{
+			"gen": gen, "where": "after_apply_runtime",
+		})
 		return
 	}
 
@@ -109,15 +164,30 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 	// immediately; /proxies warmup runs in the background below.
 	a.finishConnectJobOK(gen)
 	if a.connectGen.Load() != gen {
+		a.traceEvent("pipeline.connect.aborted", "skip", 0, map[string]any{
+			"gen": gen, "where": "after_finish_ok",
+		})
 		return
 	}
+
+	warmupStart := time.Now()
+	a.traceEvent("pipeline.connect.warmup", "start", 0, map[string]any{"gen": gen})
 	if err := a.connectAfterCoreStarts(gen); err != nil {
 		if errors.Is(err, errConnectAborted) {
+			a.traceEvent("pipeline.connect.warmup", "cancelled", time.Since(warmupStart), map[string]any{
+				"gen": gen,
+			})
 			return
 		}
+		a.traceEvent("pipeline.connect.warmup", "fail", time.Since(warmupStart), map[string]any{
+			"gen": gen, "error": err.Error(),
+		})
 		a.finishPostConnectWarmupFailed(gen, err)
 		return
 	}
+	a.traceEvent("pipeline.connect.warmup", "ok", time.Since(warmupStart), map[string]any{
+		"gen": gen,
+	})
 	a.emitAppStateChanged()
 	go func() { _, _ = a.RefreshHomeInsight() }()
 }
@@ -153,7 +223,9 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 func (a *App) finishConnectJobOK(gen uint64) {
 	var notify bool
 	a.mu.Lock()
-	if a.connectGen.Load() == gen && a.state.Connection.Status == ConnConnecting {
+	curGen := a.connectGen.Load()
+	curStatus := a.state.Connection.Status
+	if curGen == gen && curStatus == ConnConnecting {
 		a.state.Connection.Status = ConnConnected
 		// Health stays empty until post-connect warmup (sysproxy/TUN/mode) finishes
 		// so UI does not show "ready/protected" while OS/core may still mismatch intent.
@@ -167,6 +239,17 @@ func (a *App) finishConnectJobOK(gen uint64) {
 	if notify {
 		a.traceEvent("pipeline.connect.done", "ok", 0, map[string]any{"gen": gen})
 		a.emitAppStateChanged()
+	} else {
+		// Visibility: when the OK marker silently does nothing the user used
+		// to be stuck on "Connecting" with no way to tell why. Surface the
+		// skip so debug-cb9690.log shows whether it was a stale gen or a
+		// status drift caused by a parallel state transition.
+		a.traceEvent("pipeline.connect.done", "skip", 0, map[string]any{
+			"gen":       gen,
+			"curGen":    curGen,
+			"curStatus": curStatus,
+			"reason":    "gen-mismatch-or-status-drift",
+		})
 	}
 }
 

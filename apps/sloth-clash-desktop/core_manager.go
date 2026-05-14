@@ -292,9 +292,23 @@ func (a *App) copyBundledGeoFiles(dataDir string, force bool) error {
 	}
 	names := []string{"geoip.dat", "geosite.dat", "Country.mmdb"}
 	for _, n := range names {
-		src := filepath.Join("build", "resources", n)
+		// IMPORTANT: embed.FS always uses forward-slash paths, regardless of
+		// the host OS. filepath.Join on Windows builds "build\resources\..."
+		// which silently returns "file does not exist" from a.bundle.ReadFile
+		// and we skip the file. This was the root cause of "Can't find
+		// GeoIP.dat, start download" on Windows: extraction was a no-op for
+		// the entire app lifetime, so mihomo always fell through to its
+		// online fallback (which then DNS-fails behind restrictive networks).
+		src := "build/resources/" + n
 		data, err := a.bundle.ReadFile(src)
 		if err != nil {
+			debugLog(
+				"geo.extract",
+				"H4",
+				"core_manager.go:copyBundledGeoFiles",
+				"embed read failed (file may not be in bundle)",
+				map[string]any{"name": n, "src": src, "error": err.Error()},
+			)
 			continue
 		}
 		dstPath := filepath.Join(dataDir, n)
@@ -311,7 +325,7 @@ func (a *App) copyBundledGeoFiles(dataDir string, force bool) error {
 			}
 		}
 		if err := atomicWriteFile(dstPath, data, 0o644); err != nil {
-			return err
+			return fmt.Errorf("write %s: %w", dstPath, err)
 		}
 	}
 	return nil
@@ -878,6 +892,16 @@ func waitForCoreEndpointStop(parent context.Context, runID, listen, secret strin
 // or bound to a different profile, a new one is spawned with YAML reflecting
 // enableTun so the core comes up already in the desired state.
 func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) error {
+	_, err := a.ensureCoreForProfileEx(profile, gen, enableTun)
+	return err
+}
+
+// ensureCoreForProfileEx is the cold/reuse-aware variant: the second return
+// value reports whether mihomo was just started fresh in this call. Callers
+// that follow up with a hot-reload (PUT /configs?force=true) can skip it when
+// coldStarted is true — mihomo already loaded the same YAML on startup, and
+// a second init would just stall behind the rule-provider download phase.
+func (a *App) ensureCoreForProfileEx(profile Profile, gen uint64, enableTun bool) (coldStarted bool, err error) {
 	a.coreLifecycleMu.Lock()
 	defer a.coreLifecycleMu.Unlock()
 
@@ -890,7 +914,7 @@ func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if _, err := a.coreFetchVersion(ctx); err == nil {
-			return nil
+			return false, nil
 		}
 	}
 
@@ -901,7 +925,10 @@ func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) 
 	if gen == 0 {
 		gen = a.connectGen.Add(1)
 	}
-	return a.startEmbeddedCore(profile, gen, enableTun)
+	if err := a.startEmbeddedCore(profile, gen, enableTun); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // forceRestartCoreForProfile always restarts the core for the provided profile,
@@ -991,6 +1018,19 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		}
 	}
 	if useServiceCore {
+		// External-controller TCP port for the privileged-service-managed core:
+		// mihomo listens on BOTH the service-supplied pipe (CLI flag) AND this
+		// TCP socket (YAML `external-controller`), and our HTTP client talks to
+		// the TCP socket. The named-pipe HTTP transport on Windows has been
+		// observed to stall 10-20 s on PUT /configs?force=true even after the
+		// reload has completed on the core side — using TCP matches the
+		// clash-verge-rev architecture and eliminates the long stalls. The pipe
+		// is retained purely so the privileged service can keep its existing
+		// start/stop IPC semantics (see stopCoreLocked → ipcSlothStopCore).
+		ctrlPort, perr := pickFreePort()
+		if perr != nil {
+			return perr
+		}
 		// #region agent log
 		debugLog(
 			runID,
@@ -1001,10 +1041,11 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 				"profileId": profile.ID,
 				"traffic":   traffic,
 				"pipe":      slothMihomoIPCPath(profile.ID),
+				"ctrlPort":  ctrlPort,
 			},
 		)
 		// #endregion
-		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, 0, mixedPort, secret, traffic, false, enableTun); err != nil {
+		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true, enableTun); err != nil {
 			return err
 		}
 		dataDirAbs, errAbs := filepath.Abs(dataDir)
@@ -1037,8 +1078,8 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 				"core_manager.go:903",
 				"restart stop barrier completed",
 				map[string]any{
-					"pipe":    prevListen,
-					"waitErr": errorString(waitErr),
+					"prevListen": prevListen,
+					"waitErr":    errorString(waitErr),
 				},
 			)
 			// #endregion
@@ -1078,19 +1119,23 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			return errStart
 		}
 
+		tcpListen := fmt.Sprintf("127.0.0.1:%d", ctrlPort)
 		a.mu.Lock()
 		prevMixed := a.state.Core.MixedPort
+		// coreOverPipe stays true: it controls the *stop* path
+		// (stopCoreLocked → ipcSlothStopCore vs cmd.Kill). The HTTP API
+		// transport is decided by coreListen, which now points at TCP.
 		a.coreOverPipe = true
 		a.coreCmd = nil
 		a.coreCancel = nil
 		a.coreSecret = secret
-		a.coreListen = pipeName
-		a.state.Core.ControllerAddr = pipeName
+		a.coreListen = tcpListen
+		a.state.Core.ControllerAddr = tcpListen
 		a.state.Core.MixedPort = mixedPort
 		a.state.Core.Running = true
 		a.state.Core.Lifecycle = "running"
 		a.state.Core.LastError = ""
-		listenCopy := pipeName
+		listenCopy := tcpListen
 		secretCopy := secret
 		a.mu.Unlock()
 		if runtime.GOOS == "windows" {

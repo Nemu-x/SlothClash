@@ -2949,6 +2949,39 @@
   margin-bottom: 4px;
 }
 
+/* Rule providers modal — full-list scroll, opened from the "Rule providers (N)"
+ * trigger in the Rules screen header. Keeps a wide layout so 4-column grid
+ * still fits on the typical 1200px window. */
+.ruleProvidersModalCard {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.ruleProvidersModalScroll {
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 4px;
+  /* leave room for the scrollbar without shifting the card edge */
+}
+.rulesProvidersTriggerWarn {
+  outline: 1px solid #d97706;
+}
+.rulesProvidersFailBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #d97706;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .ruleProviderCard {
   border-radius: 16px;
   border: 1px solid var(--hairline);

@@ -527,8 +527,29 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 		a.traceEvent("pipeline.apply.reload", "fail", time.Since(reloadStart), mergeFields(traceFields, map[string]any{
 			"error": err.Error(),
 		}))
-		// Upstream-style controlled recovery: one forced core restart when
-		// hot-reload fails, then one final reload attempt on the fresh core.
+		// HTTP-over-named-pipe on Windows occasionally fails to flush the PUT
+		// response even though mihomo finished the reload internally (the
+		// core log shows "Initial configuration complete, total time: 15ms"
+		// while our request still sits waiting). Before we tear the whole
+		// process down, probe /version — if it returns quickly and reports
+		// the running version, the reload likely succeeded and the user's
+		// connection is fine; we accept the soft failure with a warning
+		// rather than punishing them with a forced restart that takes another
+		// 5-15 seconds of stalled "Connecting" state.
+		probeCtx, probeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, probeErr := fetchVersionAt(listen, secret)
+		probeCancel()
+		_ = probeCtx
+		if probeErr == nil {
+			a.traceEvent("pipeline.apply.reload", "soft_ok", time.Since(reloadStart), mergeFields(traceFields, map[string]any{
+				"note": "reload HTTP response timed out but /version probe is healthy; assuming reload succeeded",
+			}))
+			a.traceEvent("pipeline.apply.done", "ok", time.Since(applyStart), traceFields)
+			return nil
+		}
+		// Core really is unresponsive. Fall back to a clean restart, then
+		// one retry of the reload. Anything beyond that fails the connect
+		// for real so the UI can surface it.
 		if restartErr := a.forceRestartCoreForProfile(profile, expectedGen, enableTun); restartErr != nil {
 			a.traceEvent("pipeline.apply.restart", "fail", 0, mergeFields(traceFields, map[string]any{
 				"error": restartErr.Error(),
@@ -550,6 +571,20 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 		ctx2, cancel2 := context.WithTimeout(context.Background(), coreReloadTimeout())
 		defer cancel2()
 		if err2 := coreReloadConfigFileAt(ctx2, relisten, resecret, cfgAbs); err2 != nil {
+			// Same probe-then-accept logic for the post-restart retry:
+			// the freshly-spawned core may also be slow to flush its first
+			// reload response but its /version handler is independent.
+			probeCtx2, probeCancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+			_, probeErr2 := fetchVersionAt(relisten, resecret)
+			probeCancel2()
+			_ = probeCtx2
+			if probeErr2 == nil {
+				a.traceEvent("pipeline.apply.retry_reload", "soft_ok", time.Since(retryStart), mergeFields(traceFields, map[string]any{
+					"note": "retry reload HTTP timed out but /version probe is healthy after restart",
+				}))
+				a.traceEvent("pipeline.apply.done", "ok", time.Since(applyStart), traceFields)
+				return nil
+			}
 			a.traceEvent("pipeline.apply.retry_reload", "fail", time.Since(retryStart), mergeFields(traceFields, map[string]any{
 				"error": err2.Error(),
 			}))

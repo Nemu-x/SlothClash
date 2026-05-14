@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,6 +100,141 @@ func pickWindowsInstallerAsset(assets []githubAsset) (name, url string) {
 		}
 	}
 	return "", ""
+}
+
+// pickChecksumsAsset locates a SHA256SUMS-style file published alongside the
+// installer. The canonical convention (used by goreleaser, GitHub release
+// tooling, and most Linux distros) is one of:
+//   - SHA256SUMS
+//   - SHA256SUMS.txt
+//   - checksums.txt
+//
+// We accept any of them so the release workflow has flexibility. Returns
+// ("", "") if the release does not ship a checksums file — in that mode the
+// updater falls back to download-without-verification with a runtime warning.
+func pickChecksumsAsset(assets []githubAsset) (name, url string) {
+	for _, as := range assets {
+		n := strings.ToLower(strings.TrimSpace(as.Name))
+		switch n {
+		case "sha256sums", "sha256sums.txt", "checksums.txt", "checksums-sha256.txt":
+			return as.Name, as.DownloadURL
+		}
+	}
+	return "", ""
+}
+
+// parseChecksumsFile reads SHA256SUMS-style content and returns a map keyed
+// by file name → lowercase hex digest. The standard format is:
+//
+//	<hex-digest>  <filename>
+//
+// optionally with a leading "*" before the filename (sha256sum -b). Empty
+// lines and lines starting with "#" are ignored.
+func parseChecksumsFile(body []byte) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(string(body), "\n") {
+		s := strings.TrimSpace(line)
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		fields := strings.Fields(s)
+		if len(fields) < 2 {
+			continue
+		}
+		digest := strings.ToLower(strings.TrimSpace(fields[0]))
+		name := strings.TrimPrefix(strings.TrimSpace(fields[len(fields)-1]), "*")
+		if len(digest) != 64 || name == "" {
+			continue
+		}
+		out[name] = digest
+	}
+	return out
+}
+
+// fetchExpectedSHA256 grabs the release's checksums file (if any) and
+// returns the digest for `installerName`. Returns ("", nil) when the release
+// ships no checksums file at all — the caller decides whether to allow the
+// update without verification (controlled by SLOTH_ALLOW_UNVERIFIED_UPDATE).
+func fetchExpectedSHA256(installerName string) (string, error) {
+	if strings.TrimSpace(installerName) == "" {
+		return "", nil
+	}
+	tag, _, _, _, err := fetchLatestGitHubRelease()
+	if err != nil {
+		return "", fmt.Errorf("look up release: %w", err)
+	}
+	if strings.TrimSpace(tag) == "" {
+		return "", nil
+	}
+	// Re-fetch release JSON to scan all assets (the cached pick returned only
+	// the installer; we want the checksums asset too).
+	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
+	resp, err := githubAPIHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var rel githubRelease
+	if err := json.Unmarshal(body, &rel); err != nil {
+		return "", err
+	}
+	_, csURL := pickChecksumsAsset(rel.Assets)
+	if csURL == "" {
+		return "", nil
+	}
+	csReq, err := http.NewRequest(http.MethodGet, csURL, nil)
+	if err != nil {
+		return "", err
+	}
+	csReq.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
+	csResp, err := githubAPIHTTPClient.Do(csReq)
+	if err != nil {
+		return "", err
+	}
+	defer csResp.Body.Close()
+	if csResp.StatusCode < 200 || csResp.StatusCode >= 300 {
+		return "", fmt.Errorf("checksums download failed: %s", csResp.Status)
+	}
+	csBody, err := io.ReadAll(csResp.Body)
+	if err != nil {
+		return "", err
+	}
+	table := parseChecksumsFile(csBody)
+	if h, ok := table[installerName]; ok {
+		return h, nil
+	}
+	// Some checksum files use just the basename without paths; fallback to
+	// case-insensitive scan in case publisher renamed the installer asset.
+	for name, digest := range table {
+		if strings.EqualFold(name, installerName) {
+			return digest, nil
+		}
+	}
+	return "", fmt.Errorf("checksums file did not list %q", installerName)
+}
+
+// hashFileSHA256 returns the lowercase hex SHA-256 digest of the file at path.
+func hashFileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func fetchLatestGitHubRelease() (tag, htmlURL, assetName, assetURL string, err error) {
@@ -199,19 +336,82 @@ func (a *App) CheckForUpdates() UpdateState {
 	return a.update
 }
 
-// ApplyUpdate downloads the latest Windows installer asset (if any) and runs it to upgrade in place.
+// ApplyUpdate downloads the latest Windows installer asset (if any), verifies
+// its SHA-256 against the release's checksums file, and launches it to
+// upgrade in place.
+//
+// Verification rules:
+//   - If a SHA256SUMS / checksums.txt is published with the release: the
+//     downloaded installer's digest MUST match. Mismatch deletes the temp
+//     file and aborts — no installer launch.
+//   - If no checksums file is published: by default the update still runs
+//     (legacy releases shipped without it). Operators who want strict
+//     verification can set SLOTH_REQUIRE_VERIFIED_UPDATE=1 to refuse such
+//     releases.
+//
+// Signature verification (cosign / ed25519) is left as a future addition —
+// the structure here is ready for it: insert the verify step between the
+// hash check and cmd.Start().
 func (a *App) ApplyUpdate() error {
 	if runtime.GOOS != "windows" {
 		return errors.New("in-app installer launch is only supported on Windows — open the release page from Settings")
 	}
 	a.mu.RLock()
 	url := strings.TrimSpace(a.update.AssetDownloadURL)
+	installerName := strings.TrimSpace(a.update.AssetName)
 	a.mu.RUnlock()
 	if url == "" {
 		return errors.New("no installer URL — run Check for updates first")
 	}
+
 	tmp := filepath.Join(os.TempDir(), "SlothClash-desktop-update.exe")
-	out, err := os.Create(tmp)
+	if err := downloadUpdateAsset(url, tmp); err != nil {
+		return err
+	}
+
+	expectedHash, hashErr := fetchExpectedSHA256(installerName)
+	if hashErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("could not fetch expected checksum: %w", hashErr)
+	}
+	if expectedHash != "" {
+		gotHash, err := hashFileSHA256(tmp)
+		if err != nil {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("could not hash downloaded installer: %w", err)
+		}
+		if !strings.EqualFold(gotHash, expectedHash) {
+			_ = os.Remove(tmp)
+			return fmt.Errorf(
+				"installer integrity check failed: expected sha256=%s, got %s — refusing to launch",
+				expectedHash, gotHash,
+			)
+		}
+		a.traceEvent("update.verify.sha256", "ok", 0, map[string]any{
+			"asset": installerName,
+		})
+	} else {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("SLOTH_REQUIRE_VERIFIED_UPDATE")), "1") {
+			_ = os.Remove(tmp)
+			return errors.New("release ships no checksums file and SLOTH_REQUIRE_VERIFIED_UPDATE=1 is set — refusing to launch")
+		}
+		a.traceEvent("update.verify.sha256", "skip", 0, map[string]any{
+			"asset":  installerName,
+			"reason": "no checksums file published",
+		})
+	}
+
+	cmd := exec.Command(tmp)
+	if attr := hideWindowSysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Start()
+}
+
+func downloadUpdateAsset(url, dest string) error {
+	out, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
@@ -236,14 +436,5 @@ func (a *App) ApplyUpdate() error {
 	if err != nil {
 		return err
 	}
-	if cerr != nil {
-		return cerr
-	}
-	cmd := exec.Command(tmp)
-	if attr := hideWindowSysProcAttr(); attr != nil {
-		cmd.SysProcAttr = attr
-	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return cerr
 }

@@ -6,6 +6,8 @@ package main
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
 
+#include <stdlib.h>
+
 void SlothTrayRegisterMonoPNG(const unsigned char *p, int n);
 void SlothTrayStart(void);
 void SlothTrayStop(void);

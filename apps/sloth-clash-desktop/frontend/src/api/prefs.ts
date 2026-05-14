@@ -10,5 +10,6 @@ export {
   OnWindowBecameVisible,
   SetCloseToTrayPreference,
   SetLaunchOnStartupPreference,
+  SetUiLanguage,
   StartedMinimized,
 } from '../../wailsjs/go/main/App'

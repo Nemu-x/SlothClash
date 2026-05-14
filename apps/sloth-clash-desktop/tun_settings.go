@@ -35,6 +35,10 @@ type TrafficSettings struct {
 type DesktopPrefs struct {
 	TUN     TunSettings     `json:"tun"`
 	Traffic TrafficSettings `json:"traffic"`
+	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
+	// this on i18n init / change so the native tray menu can localize its
+	// labels without a separate IPC roundtrip on each redraw.
+	Lang string `json:"lang,omitempty"`
 }
 
 const slothPrefsFile = "prefs.json"
@@ -159,6 +163,24 @@ func (a *App) SetTunSettings(next TunSettings) DesktopPrefs {
 	prefsMu.Unlock()
 
 	a.triggerRuntimeReloadForPrefs()
+	return snapshot
+}
+
+// SetUiLanguage is called by the frontend at i18n init and whenever the user
+// changes the UI language. The pref is persisted so subsequent app launches
+// build the tray menu in the right language even before the webview attaches.
+func (a *App) SetUiLanguage(lang string) DesktopPrefs {
+	_ = a
+	switch lang {
+	case "en", "ru", "zh":
+	default:
+		lang = ""
+	}
+	prefsMu.Lock()
+	prefsCurrent.Lang = lang
+	snapshot := prefsCurrent
+	_ = saveDesktopPrefsLocked(snapshot)
+	prefsMu.Unlock()
 	return snapshot
 }
 

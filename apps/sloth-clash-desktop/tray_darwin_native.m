@@ -31,6 +31,35 @@ static NSMenuItem *gToggleItem = nil;
 static BOOL gTrayWanted = NO;
 static NSUInteger gTrayGeneration = 0;
 
+// Localized labels populated by SlothTrayConfigureLabels before SlothTrayStart.
+// nil means "fall back to English" (first-launch path on macOS before the
+// frontend has had a chance to call SetUiLanguage).
+static NSString *gLabelShowWindow = nil;
+static NSString *gLabelSettings = nil;
+static NSString *gLabelQuit = nil;
+static NSString *gLabelConnect = nil;
+
+static NSString *SlothCopyCString(const char *s, NSString *fallback) {
+    if (s == NULL) return [fallback retain];
+    NSString *out = [NSString stringWithUTF8String:s];
+    if (out == nil || out.length == 0) return [fallback retain];
+    return [out retain];
+}
+
+void SlothTrayConfigureLabels(const char *showWindow,
+                              const char *settings,
+                              const char *quit,
+                              const char *connect) {
+    if (gLabelShowWindow != nil) { [gLabelShowWindow release]; gLabelShowWindow = nil; }
+    if (gLabelSettings != nil) { [gLabelSettings release]; gLabelSettings = nil; }
+    if (gLabelQuit != nil) { [gLabelQuit release]; gLabelQuit = nil; }
+    if (gLabelConnect != nil) { [gLabelConnect release]; gLabelConnect = nil; }
+    gLabelShowWindow = SlothCopyCString(showWindow, @"Show Window");
+    gLabelSettings = SlothCopyCString(settings, @"Settings…");
+    gLabelQuit = SlothCopyCString(quit, @"Quit Sloth Clash");
+    gLabelConnect = SlothCopyCString(connect, @"Connect");
+}
+
 void SlothTrayRegisterMonoPNG(const unsigned char *bytes, int length) {
     if (gMonoPNG != nil) {
         [gMonoPNG release];
@@ -164,23 +193,28 @@ static void SlothTrayCreateOnMain(NSUInteger generation) {
         // the popover into a wall of text and the user-facing message of
         // "Toggle Connect" stayed wrong across state changes because nothing
         // updated the menu item title (the Go-side poller now does, below).
-        NSMenuItem *showItem = [[NSMenuItem alloc] initWithTitle:@"Show Window" action:@selector(onShow:) keyEquivalent:@""];
+        NSString *showLabel = gLabelShowWindow != nil ? gLabelShowWindow : @"Show Window";
+        NSString *connectLabel = gLabelConnect != nil ? gLabelConnect : @"Connect";
+        NSString *settingsLabel = gLabelSettings != nil ? gLabelSettings : @"Settings…";
+        NSString *quitLabel = gLabelQuit != nil ? gLabelQuit : @"Quit Sloth Clash";
+
+        NSMenuItem *showItem = [[NSMenuItem alloc] initWithTitle:showLabel action:@selector(onShow:) keyEquivalent:@""];
         [showItem setTarget:gHandler];
         [gMenu addItem:showItem];
 
-        gToggleItem = [[NSMenuItem alloc] initWithTitle:@"Connect" action:@selector(onToggleConnect:) keyEquivalent:@""];
+        gToggleItem = [[NSMenuItem alloc] initWithTitle:connectLabel action:@selector(onToggleConnect:) keyEquivalent:@""];
         [gToggleItem setTarget:gHandler];
         [gMenu addItem:gToggleItem];
 
         [gMenu addItem:[NSMenuItem separatorItem]];
 
-        NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:@"Settings…" action:@selector(onNavSettings:) keyEquivalent:@""];
+        NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:settingsLabel action:@selector(onNavSettings:) keyEquivalent:@""];
         [settingsItem setTarget:gHandler];
         [gMenu addItem:settingsItem];
 
         [gMenu addItem:[NSMenuItem separatorItem]];
 
-        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit Sloth Clash" action:@selector(onQuit:) keyEquivalent:@""];
+        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:quitLabel action:@selector(onQuit:) keyEquivalent:@""];
         [quitItem setTarget:gHandler];
         [gMenu addItem:quitItem];
 

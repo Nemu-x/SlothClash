@@ -9,6 +9,7 @@ package main
 #include <stdlib.h>
 
 void SlothTrayRegisterMonoPNG(const unsigned char *p, int n);
+void SlothTrayConfigureLabels(const char *showWindow, const char *settings, const char *quit, const char *connect);
 void SlothTrayStart(void);
 void SlothTrayStop(void);
 void SlothTraySetConnectTitle(const char *title);
@@ -77,6 +78,21 @@ func startAppTray(a *App) {
 	} else {
 		writeTrayLog("[tray] warn: trayicons/mono.png missing at compile time (embed empty)")
 	}
+
+	// Push localized labels into the Objective-C side before the menu is
+	// built. The labels live in retained NSStrings until the next call so it
+	// is safe to free our C strings immediately after the call returns.
+	labels := currentTrayStrings()
+	cShow := C.CString(labels.ShowWindow)
+	cSettings := C.CString(labels.Settings)
+	cQuit := C.CString(labels.Quit)
+	cConnect := C.CString(labels.Connect)
+	C.SlothTrayConfigureLabels(cShow, cSettings, cQuit, cConnect)
+	C.free(unsafe.Pointer(cShow))
+	C.free(unsafe.Pointer(cSettings))
+	C.free(unsafe.Pointer(cQuit))
+	C.free(unsafe.Pointer(cConnect))
+
 	C.SlothTrayStart()
 	// Poll the app state on a low cadence and rewrite the Connect/Disconnect
 	// menu item title when it actually changed. The native menu is created
@@ -107,14 +123,15 @@ func trayConnectTitlePoll(stopCh <-chan struct{}) {
 				continue
 			}
 			st := app.GetAppState()
+			labels := currentTrayStrings()
 			var desired string
 			switch st.Connection.Status {
-			case "connected":
-				desired = "Disconnect"
-			case "connecting":
-				desired = "Connecting…"
+			case ConnConnected:
+				desired = labels.Disconnect
+			case ConnConnecting:
+				desired = labels.Connecting
 			default:
-				desired = "Connect"
+				desired = labels.Connect
 			}
 			if desired == last {
 				continue

@@ -63,9 +63,21 @@ export function ProxiesPage({
   onPingAll: (group: string, nodes: string[]) => void
 }) {
   const { t } = useTranslation()
-  const visibleGroups = showBuiltin
-    ? groups
-    : groups.filter((g: any) => !isUnsafeGroupName(String(g?.name ?? '')))
+  // GLOBAL is mihomo's built-in catch-all group — it's relevant only in
+  // global mode (where every flow funnels through it). In rule mode the
+  // rules decide the routing and GLOBAL is never used, so the upstream
+  // (clash-verge-rev) hides it from the picker to avoid the user mistaking
+  // it for a real selector. We do the same: hide when mode === 'rule', show
+  // when mode === 'global' or when the user explicitly turns built-ins on.
+  const visibleGroups = groups.filter((g: any) => {
+    const name = String(g?.name ?? '')
+    if (!showBuiltin) {
+      if (isUnsafeGroupName(name)) return false
+      if (displayMode === 'rule' && name.toUpperCase() === 'GLOBAL')
+        return false
+    }
+    return true
+  })
   return (
     <div className="panel proxiesPanel">
       <h2>{t('ui.proxies.title')}</h2>

@@ -18,26 +18,16 @@ extern void slothTrayDispatch(int op);
 - (void)onHide:(id)sender { (void)sender; slothTrayOnHide(); }
 - (void)onToggleConnect:(id)sender { (void)sender; slothTrayOnToggleConnect(); }
 - (void)onQuit:(id)sender { (void)sender; slothTrayOnQuit(); }
-
-- (void)onNavHome:(id)sender { (void)sender; slothTrayDispatch(1); }
-- (void)onNavProfiles:(id)sender { (void)sender; slothTrayDispatch(2); }
-- (void)onNavProxies:(id)sender { (void)sender; slothTrayDispatch(3); }
-- (void)onNavRules:(id)sender { (void)sender; slothTrayDispatch(4); }
-- (void)onNavAdvanced:(id)sender { (void)sender; slothTrayDispatch(5); }
 - (void)onNavSettings:(id)sender { (void)sender; slothTrayDispatch(6); }
-
-- (void)onModeRule:(id)sender { (void)sender; slothTrayDispatch(10); }
-- (void)onModeGlobal:(id)sender { (void)sender; slothTrayDispatch(11); }
-- (void)onModeDirect:(id)sender { (void)sender; slothTrayDispatch(12); }
-
-- (void)onTrafficProxy:(id)sender { (void)sender; slothTrayDispatch(20); }
-- (void)onTrafficTun:(id)sender { (void)sender; slothTrayDispatch(21); }
 @end
 
 static NSData *gMonoPNG = nil;
 static NSStatusItem *gStatusItem = nil;
 static SlothTrayHandler *gHandler = nil;
 static NSMenu *gMenu = nil;
+// Live reference to the Connect/Disconnect item so the Go-side poller can
+// rewrite its title as connection state changes.
+static NSMenuItem *gToggleItem = nil;
 static BOOL gTrayWanted = NO;
 static NSUInteger gTrayGeneration = 0;
 
@@ -169,69 +159,24 @@ static void SlothTrayCreateOnMain(NSUInteger generation) {
 
         gMenu = [[[NSMenu alloc] initWithTitle:@"Sloth Clash"] retain];
 
+        // Minimal menu — every navigation/mode/traffic toggle has a dedicated
+        // place in the main window already. Earlier 14-item variant turned
+        // the popover into a wall of text and the user-facing message of
+        // "Toggle Connect" stayed wrong across state changes because nothing
+        // updated the menu item title (the Go-side poller now does, below).
         NSMenuItem *showItem = [[NSMenuItem alloc] initWithTitle:@"Show Window" action:@selector(onShow:) keyEquivalent:@""];
         [showItem setTarget:gHandler];
         [gMenu addItem:showItem];
 
-        NSMenuItem *hideItem = [[NSMenuItem alloc] initWithTitle:@"Hide Window" action:@selector(onHide:) keyEquivalent:@""];
-        [hideItem setTarget:gHandler];
-        [gMenu addItem:hideItem];
+        gToggleItem = [[NSMenuItem alloc] initWithTitle:@"Connect" action:@selector(onToggleConnect:) keyEquivalent:@""];
+        [gToggleItem setTarget:gHandler];
+        [gMenu addItem:gToggleItem];
 
         [gMenu addItem:[NSMenuItem separatorItem]];
 
-        NSMenuItem *homeItem = [[NSMenuItem alloc] initWithTitle:@"Open · Home" action:@selector(onNavHome:) keyEquivalent:@""];
-        [homeItem setTarget:gHandler];
-        [gMenu addItem:homeItem];
-
-        NSMenuItem *profilesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Profiles" action:@selector(onNavProfiles:) keyEquivalent:@""];
-        [profilesItem setTarget:gHandler];
-        [gMenu addItem:profilesItem];
-
-        NSMenuItem *proxiesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Proxies" action:@selector(onNavProxies:) keyEquivalent:@""];
-        [proxiesItem setTarget:gHandler];
-        [gMenu addItem:proxiesItem];
-
-        NSMenuItem *rulesItem = [[NSMenuItem alloc] initWithTitle:@"Open · Rules" action:@selector(onNavRules:) keyEquivalent:@""];
-        [rulesItem setTarget:gHandler];
-        [gMenu addItem:rulesItem];
-
-        NSMenuItem *advItem = [[NSMenuItem alloc] initWithTitle:@"Open · Advanced" action:@selector(onNavAdvanced:) keyEquivalent:@""];
-        [advItem setTarget:gHandler];
-        [gMenu addItem:advItem];
-
-        NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:@"Open · Settings" action:@selector(onNavSettings:) keyEquivalent:@""];
+        NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:@"Settings…" action:@selector(onNavSettings:) keyEquivalent:@""];
         [settingsItem setTarget:gHandler];
         [gMenu addItem:settingsItem];
-
-        [gMenu addItem:[NSMenuItem separatorItem]];
-
-        NSMenuItem *modeRule = [[NSMenuItem alloc] initWithTitle:@"Mode · Rule" action:@selector(onModeRule:) keyEquivalent:@""];
-        [modeRule setTarget:gHandler];
-        [gMenu addItem:modeRule];
-
-        NSMenuItem *modeGlobal = [[NSMenuItem alloc] initWithTitle:@"Mode · Global" action:@selector(onModeGlobal:) keyEquivalent:@""];
-        [modeGlobal setTarget:gHandler];
-        [gMenu addItem:modeGlobal];
-
-        NSMenuItem *modeDirect = [[NSMenuItem alloc] initWithTitle:@"Mode · Direct" action:@selector(onModeDirect:) keyEquivalent:@""];
-        [modeDirect setTarget:gHandler];
-        [gMenu addItem:modeDirect];
-
-        [gMenu addItem:[NSMenuItem separatorItem]];
-
-        NSMenuItem *trafficProxy = [[NSMenuItem alloc] initWithTitle:@"Traffic · System proxy" action:@selector(onTrafficProxy:) keyEquivalent:@""];
-        [trafficProxy setTarget:gHandler];
-        [gMenu addItem:trafficProxy];
-
-        NSMenuItem *trafficTun = [[NSMenuItem alloc] initWithTitle:@"Traffic · TUN" action:@selector(onTrafficTun:) keyEquivalent:@""];
-        [trafficTun setTarget:gHandler];
-        [gMenu addItem:trafficTun];
-
-        [gMenu addItem:[NSMenuItem separatorItem]];
-
-        NSMenuItem *toggleItem = [[NSMenuItem alloc] initWithTitle:@"Toggle Connect" action:@selector(onToggleConnect:) keyEquivalent:@""];
-        [toggleItem setTarget:gHandler];
-        [gMenu addItem:toggleItem];
 
         [gMenu addItem:[NSMenuItem separatorItem]];
 
@@ -243,6 +188,20 @@ static void SlothTrayCreateOnMain(NSUInteger generation) {
         gStatusItem.visible = YES;
         slothTrayOnReady();
     }
+}
+
+// SlothTraySetConnectTitle is called from the Go-side poller every time the
+// app's connection status string changes. Marshals the update onto the main
+// queue (NSMenuItem setTitle: is main-thread-only) and is a no-op if the
+// menu has been torn down. Safe to call after SlothTrayStop.
+void SlothTraySetConnectTitle(const char *title) {
+    if (title == NULL) return;
+    NSString *t = [NSString stringWithUTF8String:title];
+    if (t == nil) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gToggleItem == nil) return;
+        [gToggleItem setTitle:t];
+    });
 }
 
 void SlothTrayStart(void) {
@@ -266,6 +225,8 @@ void SlothTrayStop(void) {
         }
         [gMenu release];
         gMenu = nil;
+        [gToggleItem release];
+        gToggleItem = nil;
         [gHandler release];
         gHandler = nil;
         if (gMonoPNG != nil) {

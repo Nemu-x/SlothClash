@@ -142,6 +142,16 @@ func startAppTray(a *App) {
 		itemQuit := systray.AddMenuItem("Quit", "Quit Sloth Clash")
 
 		go func() {
+			// Click-event dispatcher. Any panic inside a wails runtime call
+			// would otherwise kill this goroutine and leave the tray icon
+			// alive but inert (no menu reacts) — recover so the loop keeps
+			// running.
+			defer func() {
+				if r := recover(); r != nil {
+					// best-effort; cannot rely on logger order with main goroutine
+					_ = r
+				}
+			}()
 			for {
 				select {
 				case <-stopCh:
@@ -184,8 +194,21 @@ func startAppTray(a *App) {
 		}()
 
 		go func() {
-			tick := time.NewTicker(700 * time.Millisecond)
+			// fyne.io/systray's SetTitle marshals the call through a native
+			// Win32 NIF_TIP update on the systray main thread. Repeating it
+			// every 700ms with the same payload is a known wedge source —
+			// after enough updates the tray window proc has been observed to
+			// stop pumping messages, freezing the icon and the whole app.
+			// We now keep a cached `last` value and only call SetTitle when
+			// the visible label actually changes.
+			defer func() {
+				if r := recover(); r != nil {
+					_ = r
+				}
+			}()
+			tick := time.NewTicker(1500 * time.Millisecond)
 			defer tick.Stop()
+			lastTitle := "Connect"
 			for {
 				select {
 				case <-stopCh:
@@ -199,14 +222,20 @@ func startAppTray(a *App) {
 						continue
 					}
 					st := app.GetAppState()
+					var desired string
 					switch st.Connection.Status {
 					case "connected":
-						itemConn.SetTitle("Disconnect")
+						desired = "Disconnect"
 					case "connecting":
-						itemConn.SetTitle("Connecting...")
+						desired = "Connecting..."
 					default:
-						itemConn.SetTitle("Connect")
+						desired = "Connect"
 					}
+					if desired == lastTitle {
+						continue
+					}
+					lastTitle = desired
+					itemConn.SetTitle(desired)
 				}
 			}
 		}()

@@ -9,6 +9,7 @@ package main
 void SlothTrayRegisterMonoPNG(const unsigned char *p, int n);
 void SlothTrayStart(void);
 void SlothTrayStop(void);
+void SlothTraySetConnectTitle(const char *title);
 void slothTrayDispatch(int op);
 */
 import "C"
@@ -26,9 +27,10 @@ import (
 )
 
 var (
-	trayNativeMu  sync.Mutex
-	trayNativeApp *App
-	trayNativeUp  bool
+	trayNativeMu     sync.Mutex
+	trayNativeApp    *App
+	trayNativeUp     bool
+	trayNativeStopCh chan struct{}
 )
 
 func writeTrayLog(msg string) {
@@ -50,6 +52,15 @@ func startAppTray(a *App) {
 	trayNativeMu.Lock()
 	trayNativeApp = a
 	trayNativeUp = false
+	if trayNativeStopCh != nil {
+		select {
+		case <-trayNativeStopCh:
+		default:
+			close(trayNativeStopCh)
+		}
+	}
+	trayNativeStopCh = make(chan struct{})
+	stopCh := trayNativeStopCh
 	trayNativeMu.Unlock()
 	if a != nil && a.ctx != nil {
 		wailsrt.LogInfo(a.ctx, "[tray] start requested")
@@ -65,11 +76,66 @@ func startAppTray(a *App) {
 		writeTrayLog("[tray] warn: trayicons/mono.png missing at compile time (embed empty)")
 	}
 	C.SlothTrayStart()
+	// Poll the app state on a low cadence and rewrite the Connect/Disconnect
+	// menu item title when it actually changed. The native menu is created
+	// once with title "Connect"; without this poller the user always saw
+	// "Connect" even after the app was already connected.
+	go trayConnectTitlePoll(stopCh)
+}
+
+func trayConnectTitlePoll(stopCh <-chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			writeTrayLog(fmt.Sprintf("[tray] title poller panic recovered: %v", r))
+		}
+	}()
+	tick := time.NewTicker(1500 * time.Millisecond)
+	defer tick.Stop()
+	last := ""
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-tick.C:
+			trayNativeMu.Lock()
+			up := trayNativeUp
+			app := trayNativeApp
+			trayNativeMu.Unlock()
+			if !up || app == nil {
+				continue
+			}
+			st := app.GetAppState()
+			var desired string
+			switch st.Connection.Status {
+			case "connected":
+				desired = "Disconnect"
+			case "connecting":
+				desired = "Connecting…"
+			default:
+				desired = "Connect"
+			}
+			if desired == last {
+				continue
+			}
+			last = desired
+			ctitle := C.CString(desired)
+			C.SlothTraySetConnectTitle(ctitle)
+			C.free(unsafe.Pointer(ctitle))
+		}
+	}
 }
 
 func stopAppTray() {
 	trayNativeMu.Lock()
 	app := trayNativeApp
+	if trayNativeStopCh != nil {
+		select {
+		case <-trayNativeStopCh:
+		default:
+			close(trayNativeStopCh)
+		}
+		trayNativeStopCh = nil
+	}
 	trayNativeMu.Unlock()
 	if app != nil && app.ctx != nil {
 		wailsrt.LogInfo(app.ctx, "[tray] stop requested")

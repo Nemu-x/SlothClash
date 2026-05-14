@@ -1,4 +1,4 @@
-import { type CSSProperties, type RefObject } from 'react'
+import { type CSSProperties, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
@@ -70,7 +70,7 @@ export function HomePage({
   homeTrafficHealthSubtitle: string
   nodePickerGroup: any
   homeActiveNodeOpen: boolean
-  homeActiveNodeRef: RefObject<HTMLDivElement | null>
+  homeActiveNodeRef: Ref<HTMLDivElement>
   activeNode: string
   activeNodeVisual: HomeActiveNodeVisual
   showBuiltinProxyGroups: boolean

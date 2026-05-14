@@ -1,4 +1,4 @@
-//go:build darwin && cgo && !slothtray
+//go:build darwin && cgo
 
 #import <Cocoa/Cocoa.h>
 
@@ -122,27 +122,14 @@ static NSImage *SlothTrayTemplateImage(void) {
     return nil;
 }
 
-/// Embedded mono.png often has generous transparent margins; scale its max side larger so the
-/// subject reads closer to other menu bar icons. Other sources stay closer to system norms.
-static NSSize SlothTrayNormalisedIconSize(NSImage *icon, BOOL embeddedMono) {
+/// Scale the longest side to match the standard menu bar icon range (18-22pt).
+/// scripts/optimize-tray-mono.mjs guarantees mono.png ships pre-trimmed at 44px max
+/// (= 22pt @2x), so we no longer have to compensate for transparent margins here.
+static NSSize SlothTrayNormalisedIconSize(NSImage *icon) {
     NSStatusBar *bar = [NSStatusBar systemStatusBar];
     CGFloat target = (bar != nil && bar.thickness > 1.0) ? (bar.thickness - 2.0) : 22.0;
-
-    if (embeddedMono) {
-        if (target < 30.0) {
-            target = 30.0;
-        }
-        if (target > 34.0) {
-            target = 34.0;
-        }
-    } else {
-        if (target < 18.0) {
-            target = 18.0;
-        }
-        if (target > 24.0) {
-            target = 24.0;
-        }
-    }
+    if (target < 18.0) target = 18.0;
+    if (target > 22.0) target = 22.0;
 
     NSSize s = icon.size;
     if (s.width < 1.0 || s.height < 1.0) {
@@ -158,13 +145,13 @@ static void SlothTrayCreateOnMain(NSUInteger generation) {
         if (!gTrayWanted || generation != gTrayGeneration) return;
         if (gStatusItem != nil) return;
         gHandler = [[SlothTrayHandler new] retain];
-        BOOL useEmbeddedMono = (gMonoPNG != nil && [gMonoPNG length] > 0);
-        // Variable length gives room for a larger template icon (mono art with padding).
-        gStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
+        // Square length keeps the slot tight; the normalized template icon already
+        // fits the standard menu-bar metric so we no longer need NSVariableStatusItemLength.
+        gStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
 
         NSImage *icon = SlothTrayTemplateImage();
         if (icon != nil) {
-            NSSize s = SlothTrayNormalisedIconSize(icon, useEmbeddedMono);
+            NSSize s = SlothTrayNormalisedIconSize(icon);
             [icon setSize:s];
             [icon setTemplate:YES];
             gStatusItem.button.image = icon;

@@ -295,6 +295,14 @@ function App() {
   const refreshQueuedRef = useRef(false)
   const stateEventTimerRef = useRef<number | null>(null)
   const connectBusySinceRef = useRef<number | null>(null)
+  // sawConnectingRef gates the connectBusy auto-clear effect so it can only
+  // fire on a *transition* into a terminal state, not on the stale
+  // "disconnected" snapshot the local React state still holds in the same
+  // render where the user just pressed Connect. Without this, the connect
+  // button briefly flips back to "Connect" between "Connecting" and
+  // "Connected" because the auto-clear's 360 ms timer fires against the
+  // initial-disconnected state before the backend's "connecting" emit lands.
+  const sawConnectingRef = useRef(false)
   const clearConnectBusySmooth = useCallback(() => {
     const since = connectBusySinceRef.current
     const minMs = 360
@@ -532,12 +540,56 @@ function App() {
   useEffect(() => {
     if (!connectBusy) return
     const st = state?.connection?.status
-    // Do not clear on transient "disconnected" during async connect bootstrap.
-    // It causes visual bounce: idle -> connecting -> idle -> connected.
-    if (st === 'connected' || st === 'error') {
+    if (st === 'connecting') {
+      sawConnectingRef.current = true
+      return
+    }
+    // Auto-clear only AFTER we have witnessed a 'connecting' tick — otherwise
+    // the stale 'disconnected' snapshot present in this render cycle (the
+    // user just pressed Connect; the backend's `connecting` emit has not yet
+    // round-tripped) would immediately trip clearConnectBusySmooth and make
+    // the button flicker through "Connect" between "Connecting" and
+    // "Connected". 'connected' is allowed through without that gate because
+    // an already-connected core (idempotent re-press) is a legitimate
+    // terminal state to clear on.
+    if (st === 'connected') {
+      sawConnectingRef.current = false
+      clearConnectBusySmooth()
+      return
+    }
+    if (!sawConnectingRef.current) return
+    if (st === 'error' || st === 'disconnected' || st === 'reconnecting') {
+      sawConnectingRef.current = false
       clearConnectBusySmooth()
     }
   }, [state?.connection?.status, connectBusy, clearConnectBusySmooth])
+
+  // Safety net: if Connect drags on, poll state explicitly every 2s instead
+  // of waiting for the app:state event to fire. We have seen sessions where
+  // the IPC service path stalls between "ipc start finished" and the actual
+  // status transition; without this poll the user is stuck on "Connecting"
+  // forever even though mihomo is fully up and routing traffic.
+  useEffect(() => {
+    if (!connectBusy) return
+    const id = window.setInterval(() => {
+      void refresh()
+    }, 2_000)
+    // Final guardrail: force-clear after 90s no matter what so the user can
+    // try again rather than restart the app.
+    const giveUp = window.setTimeout(() => {
+      pushToast({
+        kind: 'warn',
+        message:
+          'Connection is taking unusually long. Forcing UI reset — check Logs and try again.',
+        durationMs: 8_000,
+      })
+      setConnectBusy(false)
+    }, 90_000)
+    return () => {
+      window.clearInterval(id)
+      window.clearTimeout(giveUp)
+    }
+  }, [connectBusy, refresh, pushToast])
 
   useEffect(() => {
     if (state?.connection?.status !== 'connected') {
@@ -1382,6 +1434,7 @@ function App() {
     }
     setError('')
     connectBusySinceRef.current = performance.now()
+    sawConnectingRef.current = false
     setConnectBusy(true)
     try {
       await Connect()

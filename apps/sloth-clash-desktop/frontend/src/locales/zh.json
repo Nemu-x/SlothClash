@@ -51,6 +51,7 @@
     },
     "profilesUpdates": "配置与更新",
     "dataDiag": "数据与诊断",
+    "logLevel": "日志级别",
     "info": "信息",
     "checkUpdates": "检查更新",
     "stableChannel": "稳定通道",
@@ -108,6 +109,10 @@
       "limitedProtection": "保护受限",
       "brokenConnection": "需要处理",
       "settingUpConnection": "正在就绪…",
+      "connecting": "连接中",
+      "disconnecting": "断开中",
+      "notConnected": "未连接",
+      "problem": "问题",
       "healthReady": "正常",
       "healthDegraded": "降级",
       "healthBroken": "异常",
@@ -153,7 +158,12 @@
       "focusGroup": "焦点分组（UI）",
       "autoGroupHint": "这是自动分组（url-test / fallback / load-balance），Mihomo 自行选择节点，此处不支持手动选择。如需手动切换节点，请打开 select / Manual 分组。",
       "noGroups": "暂时没有分组 - 请等待订阅健康检查后再刷新。",
-      "connectFirst": "请先在首页连接以启动内置内核。"
+      "connectFirst": "请先在首页连接以启动内置内核。",
+      "searchGroup": "搜索分组...",
+      "searchNode": "搜索节点...",
+      "noGroupMatch": "未找到分组。",
+      "noNodeMatch": "未找到节点。",
+      "pickGroupHint": "在左侧选择分组以查看其节点。"
     },
     "rules": {
       "title": "规则",
@@ -194,7 +204,20 @@
     "logs": {
       "title": "日志",
       "refresh": "刷新日志",
-      "empty": "暂无日志，点击刷新。"
+      "empty": "暂无日志，点击刷新。",
+      "search": "筛选日志行...",
+      "copyAll": "复制",
+      "copyFiltered": "复制筛选结果",
+      "copied": "日志已复制到剪贴板。",
+      "noMatch": "没有匹配的行。",
+      "lineCount": "{{visible}} / {{total}} 行",
+      "levelAll": "全部",
+      "levelInfo": "Info",
+      "levelWarn": "Warn",
+      "levelError": "Error",
+      "levelDebug": "Debug",
+      "tailOnly": "仅末尾",
+      "tailOnlyHint": "只显示最近的日志行"
     },
     "advanced": {
       "lead": "用于运行时支持的诊断与维护工具。",
@@ -215,7 +238,39 @@
       "identityDeviceOs": "操作系统",
       "identityOsVersion": "系统版本",
       "identityDeviceModel": "设备型号",
-      "identityAppVersion": "应用版本"
+      "identityAppVersion": "应用版本",
+      "runtimeTrace": "运行轨迹",
+      "runtimeTraceLead": "管道跟踪器与运行时监督程序的最近事件。提交问题时请复制。",
+      "runtimeTraceEmpty": "暂无事件。",
+      "runtimeTraceCopy": "复制",
+      "runtimeTraceCopied": "已复制日志到剪贴板。",
+      "maintenance": "维护",
+      "maintenanceLead": "无需完全重置即可保持运行的安全操作。",
+      "refreshProxiesSnapshot": "刷新代理快照",
+      "refreshHomeInsight": "刷新主页概览",
+      "paths": "文件与目录",
+      "pathsLead": "在文件管理器中打开关键目录。",
+      "openDataRoot": "数据目录",
+      "openRuntimeDir": "Runtime",
+      "openProfilesJson": "显示 profiles.json",
+      "openPrefsJson": "显示 prefs.json",
+      "openDebugLog": "显示 debug 日志",
+      "openServiceLog": "显示 service 日志",
+      "openGeoDir": "geo 目录",
+      "openActiveConfig": "显示当前 config.yaml",
+      "powerTools": "高级操作",
+      "powerToolsLead": "重操作 — 卡住时使用。",
+      "restartCore": "重启内核",
+      "restartCoreHint": "终止 Mihomo 并重新启动。若已连接将自动重连。",
+      "resetSubCache": "清除订阅缓存",
+      "resetSubCacheHint": "下次刷新将强制重新从网络获取。",
+      "reextractBundled": "重新解包 geo",
+      "reextractBundledHint": "将打包的 geoip.dat / geosite.dat 重新写入 runtime 目录。",
+      "geoStatus": "打包的地理数据",
+      "geoStatusLead": "config.yaml 引用的本地 .dat 文件。",
+      "geoIpLabel": "geoip.dat",
+      "geoSiteLabel": "geosite.dat",
+      "geoNotExtracted": "尚未解包 — 请先连接一次以初始化。"
     }
   },
   "common": {
@@ -223,6 +278,8 @@
     "off": "关",
     "yes": "是",
     "no": "否",
-    "close": "关闭"
+    "close": "关闭",
+    "show": "显示",
+    "hide": "隐藏"
   }
 }

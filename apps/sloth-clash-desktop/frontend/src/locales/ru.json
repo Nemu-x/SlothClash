@@ -51,6 +51,7 @@
     },
     "profilesUpdates": "Профили и обновления",
     "dataDiag": "Данные и диагностика",
+    "logLevel": "Уровень лога",
     "info": "Сведения",
     "checkUpdates": "Проверить обновления",
     "stableChannel": "Стабильный канал",
@@ -108,6 +109,10 @@
       "limitedProtection": "Частичная защита",
       "brokenConnection": "Нужно вмешательство",
       "settingUpConnection": "Настраиваем…",
+      "connecting": "Подключение",
+      "disconnecting": "Отключение",
+      "notConnected": "Не подключено",
+      "problem": "Проблема",
       "healthReady": "Готово",
       "healthDegraded": "Ограничено",
       "healthBroken": "Сбой",
@@ -153,7 +158,12 @@
       "focusGroup": "Фокус-группа (UI)",
       "autoGroupHint": "Это авто-группа (url-test / fallback / load-balance). Mihomo сам выбирает ноду — ручной выбор отключён. Чтобы вручную выбрать узел, откройте select / Manual группу.",
       "noGroups": "Групп пока нет - дождитесь проверки подписки и нажмите «Обновить».",
-      "connectFirst": "Подключитесь на Главной, чтобы запустить встроенное ядро."
+      "connectFirst": "Подключитесь на Главной, чтобы запустить встроенное ядро.",
+      "searchGroup": "Поиск групп...",
+      "searchNode": "Поиск нод...",
+      "noGroupMatch": "Группы не найдены.",
+      "noNodeMatch": "Ноды не найдены.",
+      "pickGroupHint": "Выберите группу слева, чтобы увидеть её ноды."
     },
     "rules": {
       "title": "Правила",
@@ -194,7 +204,20 @@
     "logs": {
       "title": "Логи",
       "refresh": "Обновить лог",
-      "empty": "Логов пока нет — нажмите «Обновить»."
+      "empty": "Логов пока нет — нажмите «Обновить».",
+      "search": "Фильтр строк лога...",
+      "copyAll": "Копировать",
+      "copyFiltered": "Копировать отфильтрованное",
+      "copied": "Лог скопирован в буфер.",
+      "noMatch": "Нет строк, подходящих под фильтр.",
+      "lineCount": "{{visible}} из {{total}} строк",
+      "levelAll": "Все",
+      "levelInfo": "Info",
+      "levelWarn": "Warn",
+      "levelError": "Error",
+      "levelDebug": "Debug",
+      "tailOnly": "Конец",
+      "tailOnlyHint": "Показывать только последние строки"
     },
     "advanced": {
       "lead": "Диагностика и сервисные инструменты для поддержки рантайма.",
@@ -215,7 +238,39 @@
       "identityDeviceOs": "ОС",
       "identityOsVersion": "Версия ОС",
       "identityDeviceModel": "Модель устройства",
-      "identityAppVersion": "Версия приложения"
+      "identityAppVersion": "Версия приложения",
+      "runtimeTrace": "Лог пайплайна",
+      "runtimeTraceLead": "Последние события трассировщика и супервайзера. Скопируй, если оформляешь баг-репорт.",
+      "runtimeTraceEmpty": "Событий пока нет.",
+      "runtimeTraceCopy": "Копировать",
+      "runtimeTraceCopied": "Лог скопирован в буфер.",
+      "maintenance": "Обслуживание",
+      "maintenanceLead": "Безопасные операции для поддержания работы без полного сброса.",
+      "refreshProxiesSnapshot": "Обновить снимок прокси",
+      "refreshHomeInsight": "Обновить главный обзор",
+      "paths": "Файлы и папки",
+      "pathsLead": "Открыть ключевые директории в проводнике.",
+      "openDataRoot": "Папка данных",
+      "openRuntimeDir": "Runtime",
+      "openProfilesJson": "Показать profiles.json",
+      "openPrefsJson": "Показать prefs.json",
+      "openDebugLog": "Показать debug log",
+      "openServiceLog": "Показать service log",
+      "openGeoDir": "Папка geo",
+      "openActiveConfig": "Показать активный config.yaml",
+      "powerTools": "Сильные средства",
+      "powerToolsLead": "Тяжёлые действия — используй, когда что-то залипло.",
+      "restartCore": "Перезапустить ядро",
+      "restartCoreHint": "Убить Mihomo и поднять заново. Если был коннект — переподключится автоматически.",
+      "resetSubCache": "Сбросить кэш подписки",
+      "resetSubCacheHint": "Следующий Refresh заново сходит в сеть.",
+      "reextractBundled": "Перераспаковать geo",
+      "reextractBundledHint": "Перезапишет geoip.dat / geosite.dat из бандла приложения в runtime-папку.",
+      "geoStatus": "Геоданные (bundle)",
+      "geoStatusLead": "Локальные .dat-файлы, на которые ссылается config.yaml.",
+      "geoIpLabel": "geoip.dat",
+      "geoSiteLabel": "geosite.dat",
+      "geoNotExtracted": "Ещё не распакованы — подключись один раз, чтобы инициализировать."
     }
   },
   "common": {
@@ -223,6 +278,8 @@
     "off": "Выкл",
     "yes": "Да",
     "no": "Нет",
-    "close": "Закрыть"
+    "close": "Закрыть",
+    "show": "Показать",
+    "hide": "Скрыть"
   }
 }

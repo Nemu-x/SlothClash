@@ -318,7 +318,7 @@ export function SettingsPage({
         <div className="homeCard settingsCardCompact">
           <h3 className="homeCardTitle">{t('settings.dataDiag')}</h3>
           <label className="field">
-            <span className="fieldLab">Log level</span>
+            <span className="fieldLab">{t('settings.logLevel')}</span>
             <select
               className="selectModern"
               value={settings.logLevel}

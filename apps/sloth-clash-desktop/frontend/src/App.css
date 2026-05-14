@@ -4,7 +4,12 @@
   grid-template-columns: var(--nav-w) 1fr;
   grid-template-rows: 1fr;
   grid-template-areas: "nav content";
-  min-height: 100vh;
+  /* `height` (not `min-height`) clamps the shell to the window so the inner
+     .content owns scrolling on its own. With `min-height` a tall page could
+     push the whole shell — including the sidebar — past the viewport and the
+     user lost reach to nav buttons. */
+  height: 100vh;
+  overflow: hidden;
   --accent: #c9a86c;
   --accent-dim: rgba(201, 168, 108, 0.24);
   --accent-muted: rgba(201, 168, 108, 0.42);
@@ -999,7 +1004,12 @@
 
 .proxyNodesGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  /* Fixed-track columns + start alignment: a single-node group ("Без VPN" →
+     DIRECT) no longer stretches a lone card across the whole pane. Cards
+     keep a sensible 220px width regardless of how many fit per row. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
+  justify-content: start;
+  align-content: start;
   gap: 6px;
   margin-top: 6px;
 }
@@ -1090,6 +1100,268 @@
   text-align: right;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.logsToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+
+.logsSearchInput {
+  flex: 1;
+  min-width: 200px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.logsSearchInput:focus {
+  border-color: var(--accent-muted);
+}
+
+.logsLevelChips {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+}
+
+.logsLevelChip {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.logsLevelChip:hover {
+  color: var(--text);
+}
+
+.logsLevelChip.active {
+  background: rgba(201, 168, 108, 0.14);
+  color: var(--accent);
+  border-color: var(--accent-muted);
+}
+
+.logsLevelChip-warn.active {
+  color: #e5b860;
+  border-color: rgba(220, 180, 100, 0.55);
+  background: rgba(220, 180, 100, 0.1);
+}
+.logsLevelChip-error.active {
+  color: #ff9b8e;
+  border-color: rgba(220, 120, 120, 0.55);
+  background: rgba(220, 120, 120, 0.1);
+}
+
+.logsTailToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.logsTailToggle input {
+  margin: 0;
+}
+
+.proxySplit {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 12px;
+  margin-top: 12px;
+  min-height: 360px;
+}
+
+.proxySplitSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.proxySplitSearchRow {
+  flex: 0 0 auto;
+}
+
+.proxySplitSearchRow .inputModern,
+.proxySplitNodeSearch {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.proxySplitSearchRow .inputModern:focus,
+.proxySplitNodeSearch:focus {
+  border-color: var(--accent-muted);
+}
+
+.proxySplitGroupList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.proxySplitEmpty {
+  padding: 6px 8px;
+}
+
+.proxySplitGroupItem {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.proxySplitGroupItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--hairline);
+}
+
+.proxySplitGroupItem.active {
+  background: rgba(201, 168, 108, 0.1);
+  border-color: var(--accent-muted);
+}
+
+.proxySplitGroupItemTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.proxySplitGroupName {
+  font-weight: 600;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.proxySplitGroupItemBottom {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.proxySplitGroupSelectedName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.proxySplitDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.12);
+  min-width: 0;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.proxySplitDetailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.proxySplitDetailTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.proxySplitDetailTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.proxySplitNodeSearch {
+  min-width: 180px;
+}
+
+.proxySplitNodesGrid {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 820px) {
+  .proxySplit {
+    grid-template-columns: 1fr;
+  }
+  .proxySplitSidebar {
+    max-height: 240px;
+  }
+}
+
+.proxyDelayText.proxyDelayFail {
+  color: #ff8d8d;
+  font-size: 10px;
+  letter-spacing: 0.02em;
 }
 
 .proxyNodeTag {
@@ -1356,6 +1628,11 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+  /* Cap height + scroll inside the card so a multi-paragraph announcement
+     stays compact on Home (the rest of the page would otherwise push the
+     sidebar nav out of reach on small windows). */
+  max-height: 96px;
+  overflow-y: auto;
 }
 
 .homeSupportLink {
@@ -2183,10 +2460,235 @@
   flex-shrink: 0;
 }
 
+.advancedRuntimeTraceCard {
+  margin-top: 12px;
+}
+
+.collapsibleCard {
+  padding: 8px 12px;
+}
+
+.collapsibleCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.collapsibleCardToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.collapsibleCardChevron {
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  transform: rotate(0deg);
+  transition: transform 140ms ease;
+  width: 12px;
+  text-align: center;
+}
+
+.collapsibleCardChevron.open {
+  transform: rotate(90deg);
+}
+
+.collapsibleCardActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.collapsibleCardBody {
+  margin-top: 8px;
+}
+
+.collapsibleCard .homeCardTitle {
+  margin: 0;
+}
+
+.advancedPathsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.advancedPathsGrid .btn {
+  text-align: left;
+  font-size: 12px;
+}
+
+.advancedPowerGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.advancedPowerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.advancedPowerRow .btn {
+  flex-shrink: 0;
+}
+
+.advancedRuntimeTraceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.advancedRuntimeTraceList {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.16);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.advancedRuntimeTraceRow {
+  display: grid;
+  grid-template-columns: 64px 180px 1fr;
+  gap: 8px;
+  padding: 1px 0;
+  align-items: baseline;
+}
+
+.advancedRuntimeTraceTime {
+  color: var(--text-muted);
+}
+
+.advancedRuntimeTraceCat {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.advancedRuntimeTraceMsg {
+  color: var(--text);
+  word-break: break-word;
+}
+
 @media (max-width: 900px) {
   .rulesFilterRow {
     grid-template-columns: 1fr;
   }
+}
+
+.toastHub {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 360px;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: rgba(24, 23, 22, 0.96);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: toastEnter 180ms ease-out;
+}
+
+@keyframes toastEnter {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.toast-info {
+  border-color: var(--hairline-strong);
+}
+.toast-success {
+  border-color: rgba(120, 200, 140, 0.45);
+}
+.toast-warn {
+  border-color: rgba(220, 180, 100, 0.45);
+}
+.toast-error {
+  border-color: rgba(220, 120, 120, 0.55);
+}
+
+.toastMsg {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toastAction {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.toastAction:hover {
+  border-color: var(--accent-muted);
+  background: rgba(201, 168, 108, 0.08);
+}
+
+.toastClose {
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+}
+
+.toastClose:hover {
+  color: var(--text);
 }
 
 .profileBadge {

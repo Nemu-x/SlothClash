@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import './App.css'
@@ -13,7 +21,14 @@ import {
   SetTrafficSettings,
   SetTunSettings,
 } from './api/core'
-import { GetRuntimeDiagEvents, ReadServiceLatestLog } from './api/diagnostics'
+import {
+  GetRuntimeDiagEvents,
+  OpenPathInExplorer,
+  ReadServiceLatestLog,
+  ReExtractBundledResources,
+  ResetSubscriptionCache,
+  RestartCore,
+} from './api/diagnostics'
 import { main } from './api/models'
 import {
   GetDesktopPrefs,
@@ -23,6 +38,7 @@ import {
   OnWindowBecameVisible,
   SetCloseToTrayPreference,
   SetLaunchOnStartupPreference,
+  SetUiLanguage,
   StartedMinimized,
 } from './api/prefs'
 import {
@@ -54,6 +70,7 @@ import { ProfileProxyModal } from './components/ProfileProxyModal'
 import { ProfileRulesModal } from './components/ProfileRulesModal'
 import { SettingsResetModal } from './components/SettingsResetModal'
 import { SidebarNav } from './components/SidebarNav'
+import { ToastHub } from './components/ToastHub'
 import { TunSettingsModal } from './components/TunSettingsModal'
 import {
   LS_NAV_COLLAPSED,
@@ -61,25 +78,40 @@ import {
   LS_SPOTLIGHT,
   LS_THEME,
 } from './constants'
+import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useConnectionsOverview } from './hooks/queries/useConnectionsOverview'
 import { useRulesOverview } from './hooks/queries/useRulesOverview'
+import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useProxyDelay } from './hooks/useProxyDelay'
+import { useToasts } from './hooks/useToasts'
 import i18n, { LS_LANG, readStoredLang } from './i18n'
 import {
   DEFAULT_MERGE_TEMPLATE,
   mergeTemplateFromProfile,
 } from './mergeTemplate'
-import { AdvancedPage } from './pages/Advanced'
-import { ConnectionsPage } from './pages/Connections'
 import { HomePage } from './pages/Home'
-import { LogsPage } from './pages/Logs'
 import { ProfilesPage } from './pages/Profiles'
 import { ProxiesPage } from './pages/Proxies'
-import { RulesPage } from './pages/Rules'
-import { SettingsPage } from './pages/Settings'
+// Heavy / rarely opened screens load lazily so the initial bundle stays
+// focused on Home + Proxies + Profiles (the path 90% of users follow).
+const AdvancedPage = lazy(() =>
+  import('./pages/Advanced').then((m) => ({ default: m.AdvancedPage })),
+)
+const ConnectionsPage = lazy(() =>
+  import('./pages/Connections').then((m) => ({ default: m.ConnectionsPage })),
+)
+const LogsPage = lazy(() =>
+  import('./pages/Logs').then((m) => ({ default: m.LogsPage })),
+)
+const RulesPage = lazy(() =>
+  import('./pages/Rules').then((m) => ({ default: m.RulesPage })),
+)
+const SettingsPage = lazy(() =>
+  import('./pages/Settings').then((m) => ({ default: m.SettingsPage })),
+)
 import { parseMihomoRulesJson, parseRuleProvidersJson } from './rulesTable'
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
@@ -109,6 +141,14 @@ function App() {
   const { log: serviceLog, refresh: refreshRuntimeLog } = useServiceLog(
     screen === 'logs',
   )
+  const { events: runtimeDiagEvents } = useRuntimeDiag(screen === 'advanced')
+  const {
+    paths: advancedPaths,
+    geo: advancedGeo,
+    refresh: refreshAdvancedInfo,
+  } = useAdvancedInfo(screen === 'advanced')
+  const [toolsBusy, setToolsBusy] = useState<string | null>(null)
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts()
   const {
     snap: updateSnap,
     runCheck: runUpdateCheck,
@@ -242,9 +282,6 @@ function App() {
   const [navCollapsed, setNavCollapsed] = useState(
     () => localStorage.getItem(LS_NAV_COLLAPSED) === '1',
   )
-  const [expandedProxyGroups, setExpandedProxyGroups] = useState<
-    Record<string, boolean>
-  >({})
   const {
     busy: proxyDelayBusy,
     delays: proxyDelayMap,
@@ -433,14 +470,64 @@ function App() {
         const n = p.profileName
           ? `Profile “${p.profileName}” added from link.`
           : 'Subscription added from link.'
-        setLinkToast(n)
-        window.setTimeout(() => setLinkToast(''), 6500)
+        pushToast({ kind: 'success', message: n })
       } else {
-        setError(String(p?.message ?? 'Could not add subscription from link.'))
+        pushToast({
+          kind: 'error',
+          message: String(
+            p?.message ?? 'Could not add subscription from link.',
+          ),
+          durationMs: 0,
+        })
       }
     })
     return () => off()
-  }, [refresh])
+  }, [refresh, pushToast])
+
+  // Background event surfacing: when Mihomo dies and the auto-restart loop
+  // walks its backoffs, the user sees "reconnecting" toasts and a clear
+  // "recovered" message when it succeeds. Without this they'd have to spot
+  // the status flicker on the Home screen mid-recovery.
+  const prevConnStatusRef = useRef<string>('')
+  useEffect(() => {
+    const cur = String(state?.connection?.status ?? '')
+    const prev = prevConnStatusRef.current
+    if (cur === prev) return
+    prevConnStatusRef.current = cur
+    if (cur === 'reconnecting') {
+      const detail = String(state?.connection?.lastError ?? '').trim()
+      pushToast({
+        kind: 'warn',
+        message: detail || 'Core exited — auto-restarting...',
+      })
+    } else if (prev === 'reconnecting' && cur === 'connected') {
+      pushToast({ kind: 'success', message: 'Connection recovered.' })
+    } else if (prev === 'reconnecting' && cur === 'error') {
+      pushToast({
+        kind: 'error',
+        message:
+          String(state?.connection?.lastError ?? '') ||
+          'Core could not recover automatically.',
+        actionLabel: 'Retry',
+        onAction: () => {
+          void run(() => Connect())
+        },
+        durationMs: 0,
+      })
+    } else if (prev === 'connecting' && cur === 'error') {
+      // Async connect job failed (most common cause: invalid profile YAML
+      // after subscription refresh). Surface a toast so the user sees the
+      // issue even if they switched screens after kicking off Connect.
+      pushToast({
+        kind: 'error',
+        message:
+          String(state?.connection?.lastError ?? '') || 'Connect failed.',
+        actionLabel: 'Logs',
+        onAction: () => setScreen('advanced'),
+        durationMs: 0,
+      })
+    }
+  }, [state?.connection?.status, state?.connection?.lastError, pushToast])
 
   useEffect(() => {
     if (!connectBusy) return
@@ -620,6 +707,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(LS_LANG, lang)
     void i18n.changeLanguage(lang)
+    // Push the language to the backend so the native tray menu (built from
+    // Go before the webview attaches) can localize its labels. Fire-and-
+    // forget — the tray rebuilds the popup on every right-click anyway.
+    void SetUiLanguage(lang).catch(() => {})
   }, [lang])
 
   useEffect(() => {
@@ -953,15 +1044,15 @@ function App() {
   const connectionLabel = useMemo(() => {
     const s = state?.connection?.status
     const health = String(state?.connection?.health ?? '').trim()
-    if (connectBusy || s === 'connecting') return 'Connecting'
+    if (connectBusy || s === 'connecting') return t('ui.home.connecting')
     if (s === 'connected') {
       // Only "broken" is shown as a problem; warming/degraded are still connected for users.
       if (health === 'broken') return t('ui.home.brokenConnection')
       return t('ui.home.protected')
     }
-    if (s === 'disconnecting') return 'Disconnecting'
-    if (s === 'error') return 'Problem'
-    return 'Not connected'
+    if (s === 'disconnecting') return t('ui.home.disconnecting')
+    if (s === 'error') return t('ui.home.problem')
+    return t('ui.home.notConnected')
   }, [state, connectBusy, t])
 
   const connectVisual = useMemo(() => {
@@ -1044,23 +1135,6 @@ function App() {
     }
     return g
   }, [state?.proxy?.activeGroup, state?.proxy?.groups])
-
-  useEffect(() => {
-    const groups = (state?.proxy?.groups ?? []) as any[]
-    if (groups.length === 0) return
-    const active = String(state?.proxy?.activeGroup ?? '').trim()
-    setExpandedProxyGroups((prev) => {
-      const next: Record<string, boolean> = { ...prev }
-      for (const g of groups) {
-        const name = String(g?.name ?? '').trim()
-        if (!name) continue
-        if (!(name in next)) {
-          next[name] = name === active
-        }
-      }
-      return next
-    })
-  }, [state?.proxy?.groups, state?.proxy?.activeGroup])
 
   const homeAlertTooltip = useMemo(() => {
     const parts: string[] = []
@@ -1312,7 +1386,18 @@ function App() {
     try {
       await Connect()
     } catch (e: any) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      // Surface as an actionable toast in parallel with the inline banner —
+      // banners are easy to miss when the user is mid-scroll on a long page,
+      // and the toast gives them Retry / View logs without clicking back.
+      pushToast({
+        kind: 'error',
+        message: msg,
+        actionLabel: 'Logs',
+        onAction: () => setScreen('advanced'),
+        durationMs: 0,
+      })
       clearConnectBusySmooth()
     }
     await refresh()
@@ -1466,7 +1551,6 @@ function App() {
             connectionStatus={state?.connection?.status ?? ''}
             displayMode={displayMode}
             showBuiltin={showBuiltinProxyGroups}
-            expandedGroups={expandedProxyGroups}
             proxyDelayBusy={proxyDelayBusy}
             proxyDelayMap={proxyDelayMap}
             proxyDelayErr={proxyDelayErr}
@@ -1477,12 +1561,6 @@ function App() {
             }
             onSetMode={(mode) => run(() => SetMode(mode))}
             onSelectGroup={(name) => void run(() => SelectProxyGroup(name))}
-            onToggleExpand={(name) =>
-              setExpandedProxyGroups((prev) => ({
-                ...prev,
-                [name]: !prev[name],
-              }))
-            }
             onSelectNode={(group, node) =>
               void run(() => SetProxyNode(group, node))
             }
@@ -1515,169 +1593,246 @@ function App() {
         ) : null}
 
         {screen === 'connections' ? (
-          <ConnectionsPage
-            overview={connectionsOverview}
-            filtered={filteredConnections}
-            busy={connectionsBusy}
-            search={connectionsSearch}
-            onSearchChange={setConnectionsSearch}
-            onRefresh={() => void refreshConnections()}
-            onCloseAll={() => run(closeAllConnections)}
-          />
+          <Suspense fallback={<div className="panel" />}>
+            <ConnectionsPage
+              overview={connectionsOverview}
+              filtered={filteredConnections}
+              busy={connectionsBusy}
+              search={connectionsSearch}
+              onSearchChange={setConnectionsSearch}
+              onRefresh={() => void refreshConnections()}
+              onCloseAll={() => run(closeAllConnections)}
+            />
+          </Suspense>
         ) : null}
 
         {screen === 'logs' ? (
-          <LogsPage
-            serviceLog={serviceLog}
-            onRefresh={() => void refreshRuntimeLog()}
-          />
+          <Suspense fallback={<div className="panel" />}>
+            <LogsPage
+              serviceLog={serviceLog}
+              onRefresh={() => void refreshRuntimeLog()}
+            />
+          </Suspense>
         ) : null}
 
         {screen === 'rules' ? (
-          <RulesPage
-            rulesOverview={rulesOverview}
-            connectionStatus={state?.connection?.status ?? ''}
-            rulesBusy={rulesBusy}
-            providers={ruleProvidersRows}
-            providerBusyMap={ruleProviderBusyMap}
-            providerErrMap={ruleProviderErrMap}
-            bulkBusy={ruleProvidersBulkBusy}
-            rulesRows={rulesRows}
-            filteredRulesRows={filteredRulesRows}
-            rulesTypeTop={rulesTypeTop}
-            ruleSearch={ruleSearch}
-            ruleTypeFilter={ruleTypeFilter}
-            rulePolicyFilter={rulePolicyFilter}
-            ruleTypeOptions={ruleTypeFilterOptions}
-            rulePolicyOptions={rulePolicyFilterOptions}
-            error={error}
-            onRefresh={() => refreshRules()}
-            onRefreshAll={() => void refreshRuleProvidersAll()}
-            onRefreshOne={(name) => void refreshRuleProviderOne(name)}
-            onSearchChange={setRuleSearch}
-            onTypeFilterChange={setRuleTypeFilter}
-            onPolicyFilterChange={setRulePolicyFilter}
-          />
+          <Suspense fallback={<div className="panel" />}>
+            <RulesPage
+              rulesOverview={rulesOverview}
+              connectionStatus={state?.connection?.status ?? ''}
+              rulesBusy={rulesBusy}
+              providers={ruleProvidersRows}
+              providerBusyMap={ruleProviderBusyMap}
+              providerErrMap={ruleProviderErrMap}
+              bulkBusy={ruleProvidersBulkBusy}
+              rulesRows={rulesRows}
+              filteredRulesRows={filteredRulesRows}
+              rulesTypeTop={rulesTypeTop}
+              ruleSearch={ruleSearch}
+              ruleTypeFilter={ruleTypeFilter}
+              rulePolicyFilter={rulePolicyFilter}
+              ruleTypeOptions={ruleTypeFilterOptions}
+              rulePolicyOptions={rulePolicyFilterOptions}
+              error={error}
+              onRefresh={() => refreshRules()}
+              onRefreshAll={() => void refreshRuleProvidersAll()}
+              onRefreshOne={(name) => void refreshRuleProviderOne(name)}
+              onSearchChange={setRuleSearch}
+              onTypeFilterChange={setRuleTypeFilter}
+              onPolicyFilterChange={setRulePolicyFilter}
+            />
+          </Suspense>
         ) : null}
 
         {screen === 'advanced' ? (
-          <AdvancedPage
-            connectionStatus={state?.connection?.status ?? ''}
-            coreVersion={String(state?.core?.version ?? '')}
-            controllerAddr={String(state?.core?.controllerAddr ?? '')}
-            mixedPort={state?.core?.mixedPort ?? ''}
-            profilePaths={profilePaths}
-            deviceIdentity={deviceIdentity}
-            connectivityBusy={connectivityBusy}
-            connectivityResults={connectivityResults}
-            error={error}
-            onConnectivityCheck={(target, url) =>
-              runConnectivityCheck(target, url)
-            }
-            onCopyHwid={() => {
-              const h = deviceIdentity?.hwid
-              if (!h) return
-              void navigator.clipboard.writeText(h).then(
-                () => {
-                  setLinkToast(t('ui.advanced.identityCopied'))
-                  window.setTimeout(() => setLinkToast(''), 2500)
-                },
-                () => setError('Clipboard unavailable'),
-              )
-            }}
-            onCopyAllIdentity={() => {
-              const d = deviceIdentity
-              if (!d) return
-              const text = [
-                `x-hwid: ${d.hwid}`,
-                `x-device-os: ${d.deviceOs}`,
-                `x-ver-os: ${d.osVersion}`,
-                `x-device-model: ${d.deviceModel}`,
-                `x-app-version: ${d.appVersion}`,
-              ].join('\n')
-              void navigator.clipboard.writeText(text).then(
-                () => {
-                  setLinkToast(t('ui.advanced.identityCopiedAll'))
-                  window.setTimeout(() => setLinkToast(''), 2500)
-                },
-                () => setError('Clipboard unavailable'),
-              )
-            }}
-            onRefreshProxies={() => run(() => RefreshProxies())}
-            onRefreshHomeInsight={() => run(() => RefreshHomeInsight())}
-          />
+          <Suspense fallback={<div className="panel" />}>
+            <AdvancedPage
+              connectionStatus={state?.connection?.status ?? ''}
+              coreVersion={String(state?.core?.version ?? '')}
+              controllerAddr={String(state?.core?.controllerAddr ?? '')}
+              mixedPort={state?.core?.mixedPort ?? ''}
+              profilePaths={profilePaths}
+              deviceIdentity={deviceIdentity}
+              connectivityBusy={connectivityBusy}
+              connectivityResults={connectivityResults}
+              error={error}
+              onConnectivityCheck={(target, url) =>
+                runConnectivityCheck(target, url)
+              }
+              onCopyHwid={() => {
+                const h = deviceIdentity?.hwid
+                if (!h) return
+                void navigator.clipboard.writeText(h).then(
+                  () => {
+                    setLinkToast(t('ui.advanced.identityCopied'))
+                    window.setTimeout(() => setLinkToast(''), 2500)
+                  },
+                  () => setError('Clipboard unavailable'),
+                )
+              }}
+              onCopyAllIdentity={() => {
+                const d = deviceIdentity
+                if (!d) return
+                const text = [
+                  `x-hwid: ${d.hwid}`,
+                  `x-device-os: ${d.deviceOs}`,
+                  `x-ver-os: ${d.osVersion}`,
+                  `x-device-model: ${d.deviceModel}`,
+                  `x-app-version: ${d.appVersion}`,
+                ].join('\n')
+                void navigator.clipboard.writeText(text).then(
+                  () => {
+                    setLinkToast(t('ui.advanced.identityCopiedAll'))
+                    window.setTimeout(() => setLinkToast(''), 2500)
+                  },
+                  () => setError('Clipboard unavailable'),
+                )
+              }}
+              onRefreshProxies={() => run(() => RefreshProxies())}
+              onRefreshHomeInsight={() => run(() => RefreshHomeInsight())}
+              runtimeDiagEvents={runtimeDiagEvents}
+              advancedPaths={advancedPaths}
+              advancedGeo={advancedGeo}
+              toolsBusy={toolsBusy}
+              onOpenPath={(p) => {
+                if (!p) return
+                void OpenPathInExplorer(p).catch((e) =>
+                  pushToast({ kind: 'error', message: String(e) }),
+                )
+              }}
+              onRestartCore={() => {
+                if (toolsBusy) return
+                setToolsBusy('restartCore')
+                void RestartCore()
+                  .then(() => {
+                    pushToast({
+                      kind: 'success',
+                      message: t('ui.advanced.restartCore'),
+                    })
+                    refreshAdvancedInfo()
+                  })
+                  .catch((e) =>
+                    pushToast({ kind: 'error', message: String(e) }),
+                  )
+                  .finally(() => setToolsBusy(null))
+              }}
+              onResetSubscriptionCache={() => {
+                if (toolsBusy) return
+                setToolsBusy('resetSubCache')
+                void ResetSubscriptionCache()
+                  .then(() => {
+                    pushToast({
+                      kind: 'success',
+                      message: t('ui.advanced.resetSubCache'),
+                    })
+                  })
+                  .catch((e) =>
+                    pushToast({ kind: 'error', message: String(e) }),
+                  )
+                  .finally(() => setToolsBusy(null))
+              }}
+              onReextractBundled={() => {
+                if (toolsBusy) return
+                setToolsBusy('reextract')
+                void ReExtractBundledResources()
+                  .then(() => {
+                    pushToast({
+                      kind: 'success',
+                      message: t('ui.advanced.reextractBundled'),
+                    })
+                    refreshAdvancedInfo()
+                  })
+                  .catch((e) =>
+                    pushToast({ kind: 'error', message: String(e) }),
+                  )
+                  .finally(() => setToolsBusy(null))
+              }}
+              onCopyRuntimeTrace={(text) => {
+                if (!text) return
+                void navigator.clipboard.writeText(text).then(
+                  () => {
+                    setLinkToast(t('ui.advanced.runtimeTraceCopied'))
+                    window.setTimeout(() => setLinkToast(''), 2500)
+                  },
+                  () => setError('Clipboard unavailable'),
+                )
+              }}
+            />
+          </Suspense>
         ) : null}
 
         {screen === 'settings' ? (
-          <SettingsPage
-            theme={theme}
-            lang={lang}
-            settings={settings}
-            settingsBusy={settingsBusy}
-            trayAvailable={trayAvailable}
-            tunStackValue={tunStackValue}
-            tunPrefs={tunPrefs}
-            trafficPrefs={trafficPrefs}
-            tunBanner={tunBanner}
-            state={state}
-            updateSnap={updateSnap}
-            error={error}
-            onBrowserOpen={(url) => BrowserOpenURL(url)}
-            onSetTheme={setTheme}
-            onSetLang={setLang}
-            onSetSetting={setSetting}
-            onSetLaunchOnStartup={(next) => {
-              setSetting('launchOnStartup', next)
-              void (async () => {
-                try {
-                  await SetLaunchOnStartupPreference(next)
-                } catch (e: any) {
-                  setError(String(e))
-                  setSetting('launchOnStartup', !next)
-                }
-              })()
-            }}
-            onInstallService={installService}
-            onEnsureTun={ensureTun}
-            onShowTunModal={() => setShowTunModal(true)}
-            onApplyDefaultAutoUpdate={() =>
-              void applyDefaultAutoUpdateToProfiles()
-            }
-            onRefreshAllSubs={() => void refreshAllSubscriptions()}
-            onExportDiagnostics={() => void exportDiagnosticsBundle()}
-            onClearCache={clearTempUiState}
-            onOpenResetModal={(mode) => setSettingsResetModal(mode)}
-            onCheckUpdates={() =>
-              void (async () => {
-                setError('')
-                try {
-                  await runUpdateCheck()
-                } catch (e: any) {
-                  setError(String(e))
-                }
-              })()
-            }
-            onApplyUpdate={() =>
-              void (async () => {
-                setError('')
-                try {
-                  const ok = window.confirm(
-                    'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
-                  )
-                  if (!ok) return
-                  await ApplyUpdate()
-                  // Give installer process a moment to initialize before we exit.
-                  setTimeout(() => {
-                    void Quit()
-                  }, 350)
-                } catch (e: any) {
-                  setError(String(e))
-                }
-                await refresh()
-                invalidateUpdateState()
-              })()
-            }
-          />
+          <Suspense fallback={<div className="panel" />}>
+            <SettingsPage
+              theme={theme}
+              lang={lang}
+              settings={settings}
+              settingsBusy={settingsBusy}
+              trayAvailable={trayAvailable}
+              tunStackValue={tunStackValue}
+              tunPrefs={tunPrefs}
+              trafficPrefs={trafficPrefs}
+              tunBanner={tunBanner}
+              state={state}
+              updateSnap={updateSnap}
+              error={error}
+              onBrowserOpen={(url) => BrowserOpenURL(url)}
+              onSetTheme={setTheme}
+              onSetLang={setLang}
+              onSetSetting={setSetting}
+              onSetLaunchOnStartup={(next) => {
+                setSetting('launchOnStartup', next)
+                void (async () => {
+                  try {
+                    await SetLaunchOnStartupPreference(next)
+                  } catch (e: any) {
+                    setError(String(e))
+                    setSetting('launchOnStartup', !next)
+                  }
+                })()
+              }}
+              onInstallService={installService}
+              onEnsureTun={ensureTun}
+              onShowTunModal={() => setShowTunModal(true)}
+              onApplyDefaultAutoUpdate={() =>
+                void applyDefaultAutoUpdateToProfiles()
+              }
+              onRefreshAllSubs={() => void refreshAllSubscriptions()}
+              onExportDiagnostics={() => void exportDiagnosticsBundle()}
+              onClearCache={clearTempUiState}
+              onOpenResetModal={(mode) => setSettingsResetModal(mode)}
+              onCheckUpdates={() =>
+                void (async () => {
+                  setError('')
+                  try {
+                    await runUpdateCheck()
+                  } catch (e: any) {
+                    setError(String(e))
+                  }
+                })()
+              }
+              onApplyUpdate={() =>
+                void (async () => {
+                  setError('')
+                  try {
+                    const ok = window.confirm(
+                      'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
+                    )
+                    if (!ok) return
+                    await ApplyUpdate()
+                    // Give installer process a moment to initialize before we exit.
+                    setTimeout(() => {
+                      void Quit()
+                    }, 350)
+                  } catch (e: any) {
+                    setError(String(e))
+                  }
+                  await refresh()
+                  invalidateUpdateState()
+                })()
+              }
+            />
+          </Suspense>
         ) : null}
       </section>
 
@@ -1904,6 +2059,8 @@ function App() {
           onSkip={dismissSpotlight}
         />
       ) : null}
+
+      <ToastHub toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

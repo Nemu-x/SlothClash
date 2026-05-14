@@ -51,6 +51,7 @@
     },
     "profilesUpdates": "Profiles & Updates",
     "dataDiag": "Data & Diagnostics",
+    "logLevel": "Log level",
     "info": "Info",
     "checkUpdates": "Check for updates",
     "stableChannel": "Stable channel",
@@ -108,6 +109,10 @@
       "limitedProtection": "Limited protection",
       "brokenConnection": "Needs attention",
       "settingUpConnection": "Securing…",
+      "connecting": "Connecting",
+      "disconnecting": "Disconnecting",
+      "notConnected": "Not connected",
+      "problem": "Problem",
       "healthReady": "Ready",
       "healthDegraded": "Degraded",
       "healthBroken": "Broken",
@@ -153,7 +158,12 @@
       "focusGroup": "Focus group (UI)",
       "autoGroupHint": "This is an auto group (url-test / fallback / load-balance). Mihomo picks the node itself — manual selection is disabled here. Open a select / Manual group to pick a specific node.",
       "noGroups": "No groups yet - wait for the subscription health check, then Refresh.",
-      "connectFirst": "Connect on Home to start the embedded core."
+      "connectFirst": "Connect on Home to start the embedded core.",
+      "searchGroup": "Search groups...",
+      "searchNode": "Search nodes...",
+      "noGroupMatch": "No groups match.",
+      "noNodeMatch": "No nodes match.",
+      "pickGroupHint": "Pick a group on the left to see its nodes."
     },
     "rules": {
       "title": "Rules",
@@ -194,7 +204,20 @@
     "logs": {
       "title": "Logs",
       "refresh": "Refresh log",
-      "empty": "No log text yet — tap Refresh."
+      "empty": "No log text yet — tap Refresh.",
+      "search": "Filter log lines...",
+      "copyAll": "Copy",
+      "copyFiltered": "Copy filtered",
+      "copied": "Log copied to clipboard.",
+      "noMatch": "No lines match the current filter.",
+      "lineCount": "{{visible}} of {{total}} lines",
+      "levelAll": "All",
+      "levelInfo": "Info",
+      "levelWarn": "Warn",
+      "levelError": "Error",
+      "levelDebug": "Debug",
+      "tailOnly": "Tail",
+      "tailOnlyHint": "Show only the most recent lines"
     },
     "advanced": {
       "lead": "Diagnostics and maintenance tools for runtime support.",
@@ -215,7 +238,39 @@
       "identityDeviceOs": "Device OS",
       "identityOsVersion": "OS version",
       "identityDeviceModel": "Device model",
-      "identityAppVersion": "App version"
+      "identityAppVersion": "App version",
+      "runtimeTrace": "Runtime trace",
+      "runtimeTraceLead": "Recent events from the pipeline tracer and runtime supervisor. Copy when filing a bug.",
+      "runtimeTraceEmpty": "No events recorded yet.",
+      "runtimeTraceCopy": "Copy",
+      "runtimeTraceCopied": "Trace copied to clipboard.",
+      "maintenance": "Maintenance",
+      "maintenanceLead": "Safe operations to keep runtime healthy without full reset.",
+      "refreshProxiesSnapshot": "Refresh proxies snapshot",
+      "refreshHomeInsight": "Refresh home insight",
+      "paths": "Files & folders",
+      "pathsLead": "Open key directories in your file manager.",
+      "openDataRoot": "Open data folder",
+      "openRuntimeDir": "Open runtime",
+      "openProfilesJson": "Show profiles.json",
+      "openPrefsJson": "Show prefs.json",
+      "openDebugLog": "Show debug log",
+      "openServiceLog": "Show service log",
+      "openGeoDir": "Open geo",
+      "openActiveConfig": "Show active config.yaml",
+      "powerTools": "Power tools",
+      "powerToolsLead": "Heavy actions — use when something is stuck.",
+      "restartCore": "Restart core",
+      "restartCoreHint": "Tear down Mihomo and re-spawn it. Reconnects automatically if you were connected.",
+      "resetSubCache": "Reset subscription cache",
+      "resetSubCacheHint": "Force a fresh network fetch on the next Refresh.",
+      "reextractBundled": "Re-extract bundled geo",
+      "reextractBundledHint": "Rewrites geoip.dat / geosite.dat from the app bundle into the runtime folder.",
+      "geoStatus": "Bundled geo data",
+      "geoStatusLead": "Local .dat files referenced by config.yaml.",
+      "geoIpLabel": "geoip.dat",
+      "geoSiteLabel": "geosite.dat",
+      "geoNotExtracted": "Not extracted yet — Connect once to provision."
     }
   },
   "common": {
@@ -223,6 +278,8 @@
     "off": "Off",
     "yes": "Yes",
     "no": "No",
-    "close": "Close"
+    "close": "Close",
+    "show": "Show",
+    "hide": "Hide"
   }
 }

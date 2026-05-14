@@ -13,6 +13,28 @@ import {
 } from '../utils/proxyNames'
 import { supportSubscriptionUrlKind } from '../utils/subscription'
 
+// Announcement card — always expanded so users see provider notices without
+// extra clicks. The text body is height-bounded with internal scroll so a
+// long announcement never pushes the Home layout below the viewport (which
+// would force the whole page to scroll and put the sidebar nav out of reach).
+function SubscriptionAnnouncement({ text }: { text: string }) {
+  const { t } = useTranslation()
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  return (
+    <div className="homeSubscriptionExtras">
+      <div className="homeSubscriptionCard">
+        <p className="homeSubscriptionCardTitle">
+          {t('ui.home.subscriptionAnnouncement')}
+        </p>
+        <p className="homeSubscriptionAnnounce allowSelect">
+          {decodeSubscriptionAnnouncementDisplay(trimmed)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export type HomeUpdateSnap = { hasUpdate?: boolean }
 
 export type HomeActiveNodeVisual = { iso: string; text: string }
@@ -622,20 +644,11 @@ export function HomePage({
         </div>
       </div>
 
-      {activeProfile?.type === 'subscription' &&
-      String(activeProfile?.subscriptionAnnouncement ?? '').trim() ? (
-        <div className="homeSubscriptionExtras">
-          <div className="homeSubscriptionCard">
-            <p className="homeSubscriptionCardTitle">
-              {t('ui.home.subscriptionAnnouncement')}
-            </p>
-            <p className="homeSubscriptionAnnounce allowSelect">
-              {decodeSubscriptionAnnouncementDisplay(
-                String(activeProfile?.subscriptionAnnouncement ?? ''),
-              )}
-            </p>
-          </div>
-        </div>
+      {activeProfile?.type === 'subscription' ? (
+        <SubscriptionAnnouncement
+          key={String(activeProfile?.id ?? '')}
+          text={String(activeProfile?.subscriptionAnnouncement ?? '')}
+        />
       ) : null}
 
       {errorLines.length ? (

@@ -1,6 +1,6 @@
 {
   "name": "sloth-clash",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "license": "GPL-3.0-only",
   "scripts": {
     "prepare": "husky || true",

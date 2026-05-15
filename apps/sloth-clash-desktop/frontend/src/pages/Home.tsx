@@ -418,15 +418,26 @@ export function HomePage({
                       onSelectGroup(v)
                     }}
                   >
-                    {(state?.proxy?.groups ?? []).map((g: any) => (
-                      <option
-                        key={g.name}
-                        value={g.name}
-                        disabled={isUnsafeGroupName(g.name)}
-                      >
-                        {g.name}
-                      </option>
-                    ))}
+                    {(state?.proxy?.groups ?? [])
+                      .filter((g: any) => {
+                        const name = String(g?.name ?? '')
+                        if (isUnsafeGroupName(name)) return false
+                        // Same rule as the Proxies sidebar: GLOBAL is mihomo's
+                        // catch-all selector used only in Global mode. In Rule
+                        // mode it is dead weight and can confuse the user into
+                        // picking it as an active group.
+                        if (
+                          displayMode === 'rule' &&
+                          name.toUpperCase() === 'GLOBAL'
+                        )
+                          return false
+                        return true
+                      })
+                      .map((g: any) => (
+                        <option key={g.name} value={g.name}>
+                          {g.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
               ) : (

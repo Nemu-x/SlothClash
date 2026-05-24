@@ -238,8 +238,21 @@ func (a *App) extractBundledMihomoBinary() (string, error) {
 					continue
 				}
 				dst := filepath.Join(sidecarDir, filepath.Base(m))
+				// Cache hit ONLY when the on-disk extracted file matches the
+				// embedded one byte-for-byte by size. New mihomo releases ship
+				// a different binary size, so a size mismatch is a reliable
+				// signal that the cache is from a prior app version and must
+				// be re-extracted. Without this check, upgrades quietly kept
+				// running the old mihomo binary because the new installer's
+				// embed.FS was never written through to %APPDATA%/_sidecar.
 				if st, err := os.Stat(dst); err == nil && !st.IsDir() && st.Size() > 0 {
-					return dst, nil
+					if st.Size() == info.Size() {
+						return dst, nil
+					}
+					// Stale cache from a prior app version: best-effort wipe
+					// so the WriteFile below cannot end up with a half-old /
+					// half-new mishmash if a previous write was interrupted.
+					_ = os.Remove(dst)
 				}
 				data, readErr := a.bundle.ReadFile(m)
 				if readErr != nil || len(data) == 0 {

@@ -3,11 +3,152 @@ package main
 import (
 	"bytes"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// canonicalRuntimeKeyOrder is the top-level key layout used by
+// clash-verge-rev's generated configs. Go's yaml.v3 marshals
+// map[string]any alphabetically, which produced configs where `secret`
+// and `sniffer` ended up *below* the `rules:` block — technically valid,
+// but visually surprising for anyone diffing against an upstream verge-rev
+// config. Reordering only kicks in at the top level; nested maps (tun.*,
+// dns.*, sniffer.*) keep yaml.v3's default alphabetical ordering, which is
+// fine for the operational use case (humans look at section position, not
+// inner-field position).
+//
+// Keys not present in this list float to the end of the document while
+// preserving their relative order — that way custom subscription fields
+// never disappear or get reshuffled.
+var canonicalRuntimeKeyOrder = []string{
+	// Network listeners / inbound first — the most operationally important.
+	"mixed-port",
+	"socks-port",
+	"port",
+	"redir-port",
+	"tproxy-port",
+	"inbound-tfo",
+	"inbound-mptcp",
+	// Global flags.
+	"ipv6",
+	"allow-lan",
+	"bind-address",
+	"lan-allowed-ips",
+	"lan-disallowed-ips",
+	"authentication",
+	"skip-auth-prefixes",
+	"mode",
+	"log-level",
+	"clash-for-android",
+	"iptables",
+	"etag-support",
+	"interface-name",
+	"routing-mark",
+	"keep-alive-idle",
+	"keep-alive-interval",
+	"disable-keep-alive",
+	"tcp-keep-alive",
+	"tcp-concurrent",
+	"unified-delay",
+	"find-process-mode",
+	"global-client-fingerprint",
+	"global-ua",
+	// Controller / API.
+	"external-controller",
+	"external-controller-tls",
+	"external-controller-pipe",
+	"external-controller-unix",
+	"external-controller-cors",
+	"external-doh-server",
+	"external-ui",
+	"external-ui-name",
+	"external-ui-url",
+	"secret",
+	// Profile / sniffer / tls / tun / dns / ntp — system-level blocks.
+	"profile",
+	"ntp",
+	"sniffer",
+	"tls",
+	"tun",
+	"dns",
+	// Geo — geo-update-interval is the cadence sibling of geo-auto-update;
+	// pre-0.4.1 it was missing from the canonical list and ended up below
+	// `rules:` in the generated YAML.
+	"geodata-mode",
+	"geodata-loader",
+	"geosite-matcher",
+	"geo-auto-update",
+	"geo-update-interval",
+	"geox-url",
+	"geoip",
+	"geosite",
+	"hosts",
+	"experimental",
+	// Inbound listener APIs (mihomo's modern way to expose multiple inbounds
+	// without bouncing the global `mixed-port`). These go between hosts and
+	// the routing payload because they are "what the core listens on" rather
+	// than "what it routes to".
+	"listeners",
+	"tunnels",
+	"ss-config",
+	"vmess-config",
+	"tuic-server",
+	// Routing payload — providers, proxies, groups, rule-providers, rules
+	// at the very bottom because they are the longest blocks.
+	"proxy-providers",
+	"proxies",
+	"proxy-groups",
+	"rule-providers",
+	"rules",
+	"sub-rules",
+	"script",
+}
+
+// reorderTopLevelMapping rewrites the top-level key sequence of a
+// MappingNode in place so it matches canonicalRuntimeKeyOrder.
+// Unknown keys are appended at the end in their original relative order
+// (stable sort) so subscription-supplied fields we do not know about are
+// never lost or shuffled relative to each other.
+func reorderTopLevelMapping(n *yaml.Node) {
+	if n == nil {
+		return
+	}
+	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
+		reorderTopLevelMapping(n.Content[0])
+		return
+	}
+	if n.Kind != yaml.MappingNode || len(n.Content) < 2 {
+		return
+	}
+	rank := make(map[string]int, len(canonicalRuntimeKeyOrder))
+	for i, k := range canonicalRuntimeKeyOrder {
+		rank[k] = i
+	}
+	unknownRank := len(canonicalRuntimeKeyOrder) + 1
+	type pair struct{ key, val *yaml.Node }
+	pairs := make([]pair, 0, len(n.Content)/2)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		pairs = append(pairs, pair{key: n.Content[i], val: n.Content[i+1]})
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		ri, ok := rank[pairs[i].key.Value]
+		if !ok {
+			ri = unknownRank
+		}
+		rj, ok := rank[pairs[j].key.Value]
+		if !ok {
+			rj = unknownRank
+		}
+		return ri < rj
+	})
+	n.Content = n.Content[:0]
+	for _, p := range pairs {
+		n.Content = append(n.Content, p.key, p.val)
+	}
+}
 
 func decodeUnicodeEscapes(s string) string {
 	if strings.IndexByte(s, '\\') < 0 {
@@ -69,7 +210,17 @@ func normalizeEscapedUnicodeStrings(v any) any {
 }
 
 func marshalRuntimeYAML(v any) ([]byte, error) {
-	b, err := yaml.Marshal(v)
+	// Encode the map into a yaml.Node tree first, then reorder the top-level
+	// keys to match clash-verge-rev's canonical layout. yaml.v3 marshals
+	// map[string]any alphabetically which would otherwise put `secret` and
+	// `sniffer` after `rules` and confuse anyone diffing against an upstream
+	// config.
+	var doc yaml.Node
+	if err := doc.Encode(v); err != nil {
+		return nil, err
+	}
+	reorderTopLevelMapping(&doc)
+	b, err := yaml.Marshal(&doc)
 	if err != nil {
 		return nil, err
 	}

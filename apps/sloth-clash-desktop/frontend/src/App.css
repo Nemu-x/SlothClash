@@ -2460,6 +2460,27 @@
   flex-shrink: 0;
 }
 
+/* Dim the HWID block when the user has turned off x-hwid sending so it is
+   visually clear that the value displayed is not currently transmitted. The
+   number is still readable for copy-and-paste support cases. */
+.advancedDeviceIdentityCard .deviceIdentityHwidRow[data-hwid-disabled="true"]
+  .deviceIdentityHwid {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.advancedDeviceIdentityCard .hwidSendToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.advancedDeviceIdentityCard .hwidSendNote {
+  margin-top: 4px;
+}
+
 .advancedRuntimeTraceCard {
   margin-top: 12px;
 }

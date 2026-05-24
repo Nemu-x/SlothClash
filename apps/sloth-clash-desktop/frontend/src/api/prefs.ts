@@ -9,6 +9,7 @@ export {
   GetTrayAvailability,
   OnWindowBecameVisible,
   SetCloseToTrayPreference,
+  SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetUiLanguage,
   StartedMinimized,

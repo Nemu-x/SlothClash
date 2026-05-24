@@ -37,6 +37,7 @@ import {
   GetTrayAvailability,
   OnWindowBecameVisible,
   SetCloseToTrayPreference,
+  SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetUiLanguage,
   StartedMinimized,
@@ -249,6 +250,12 @@ function App() {
   const [trafficPrefs, setTrafficPrefs] = useState<main.TrafficSettings>(
     () => new main.TrafficSettings({}),
   )
+  // HWID is enabled by default; the prefs.json field uses an optional bool so
+  // a fresh install (or any pre-0.4.1 prefs file lacking `privacy`) lands on
+  // `true` here. Setting this to false omits the x-hwid header on subscription
+  // import / refresh — other identity headers remain.
+  const [hwidEnabled, setHwidEnabled] = useState<boolean>(true)
+  const [hwidSaving, setHwidSaving] = useState(false)
   const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
   const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
   const [tunDeviceDraft, setTunDeviceDraft] = useState<string>('')
@@ -409,6 +416,11 @@ function App() {
         setTunDnsHijackDraft((nextTun.dnsHijack ?? []).join(', '))
         setTunMtuDraft(nextTun.mtu ? String(nextTun.mtu) : '')
         setTunDeviceDraft(nextTun.device ?? '')
+        // Privacy.hwidEnabled is *bool on the Go side: undefined/null on the
+        // wire means "default → on". Only an explicit `false` should flip the
+        // toggle off.
+        const rawHwid = prefs?.privacy?.hwidEnabled
+        setHwidEnabled(rawHwid === false ? false : true)
       } catch {
         /* ignore: prefs API unavailable */
       }
@@ -1809,6 +1821,25 @@ function App() {
                   },
                   () => setError('Clipboard unavailable'),
                 )
+              }}
+              hwidEnabled={hwidEnabled}
+              hwidSaving={hwidSaving}
+              onToggleHwid={(next) => {
+                if (hwidSaving) return
+                setHwidSaving(true)
+                // Optimistic flip so the toggle reflects user intent
+                // immediately; rolled back on backend error.
+                setHwidEnabled(next)
+                void SetHwidEnabled(next)
+                  .then((prefs) => {
+                    const raw = prefs?.privacy?.hwidEnabled
+                    setHwidEnabled(raw === false ? false : true)
+                  })
+                  .catch((e) => {
+                    setHwidEnabled(!next)
+                    pushToast({ kind: 'error', message: String(e) })
+                  })
+                  .finally(() => setHwidSaving(false))
               }}
             />
           </Suspense>

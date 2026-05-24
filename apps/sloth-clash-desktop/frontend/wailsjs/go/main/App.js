@@ -182,6 +182,10 @@ export function SetCloseToTrayPreference(arg1) {
   return window['go']['main']['App']['SetCloseToTrayPreference'](arg1)
 }
 
+export function SetHwidEnabled(arg1) {
+  return window['go']['main']['App']['SetHwidEnabled'](arg1)
+}
+
 export function SetLaunchOnStartupPreference(arg1) {
   return window['go']['main']['App']['SetLaunchOnStartupPreference'](arg1)
 }

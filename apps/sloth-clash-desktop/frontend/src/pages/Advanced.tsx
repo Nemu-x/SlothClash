@@ -112,6 +112,9 @@ export function AdvancedPage({
   onRestartCore,
   onResetSubscriptionCache,
   onReextractBundled,
+  hwidEnabled,
+  hwidSaving,
+  onToggleHwid,
 }: {
   connectionStatus: string
   coreVersion: string
@@ -136,6 +139,9 @@ export function AdvancedPage({
   onRestartCore: () => void
   onResetSubscriptionCache: () => void
   onReextractBundled: () => void
+  hwidEnabled: boolean
+  hwidSaving: boolean
+  onToggleHwid: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -243,7 +249,10 @@ export function AdvancedPage({
         className="advancedDeviceIdentityCard"
       >
         <p className="muted small">{t('ui.advanced.deviceIdentityLead')}</p>
-        <div className="deviceIdentityHwidRow">
+        <div
+          className="deviceIdentityHwidRow"
+          data-hwid-disabled={hwidEnabled ? undefined : 'true'}
+        >
           <div className="deviceIdentityHwid monoTight">
             {deviceIdentity?.hwid ?? '—'}
           </div>
@@ -266,6 +275,27 @@ export function AdvancedPage({
             </button>
           </div>
         </div>
+        <div className="statusRow">
+          <span>{t('ui.advanced.hwidSendToggle')}</span>
+          <label className="hwidSendToggle">
+            <input
+              type="checkbox"
+              checked={hwidEnabled}
+              disabled={hwidSaving}
+              onChange={(e) => onToggleHwid(e.target.checked)}
+            />
+            <strong className="monoTight">
+              {hwidEnabled
+                ? t('ui.advanced.hwidSendOn')
+                : t('ui.advanced.hwidSendOff')}
+            </strong>
+          </label>
+        </div>
+        {!hwidEnabled ? (
+          <p className="muted small hwidSendNote">
+            {t('ui.advanced.hwidSendOffNote')}
+          </p>
+        ) : null}
         <div className="statusRow">
           <span>{t('ui.advanced.identityDeviceOs')}</span>
           <strong className="monoTight">

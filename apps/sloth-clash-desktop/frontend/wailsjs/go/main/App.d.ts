@@ -107,6 +107,8 @@ export function SelectProxyGroup(arg1: string): Promise<main.AppState>
 
 export function SetCloseToTrayPreference(arg1: boolean): Promise<main.AppState>
 
+export function SetHwidEnabled(arg1: boolean): Promise<main.DesktopPrefs>
+
 export function SetLaunchOnStartupPreference(arg1: boolean): Promise<void>
 
 export function SetMode(arg1: string): Promise<main.AppState>

@@ -35,10 +35,33 @@ type TrafficSettings struct {
 type DesktopPrefs struct {
 	TUN     TunSettings     `json:"tun"`
 	Traffic TrafficSettings `json:"traffic"`
+	Privacy PrivacySettings `json:"privacy"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
 	Lang string `json:"lang,omitempty"`
+}
+
+// PrivacySettings holds opt-out toggles for client metadata sent to subscription
+// providers. The HWID header (x-hwid) is on by default because most providers
+// rate-limit / classify by it; the toggle is for users who specifically want to
+// strip it (private trials, paranoid threat models, etc).
+type PrivacySettings struct {
+	// HwidEnabled controls the x-hwid HTTP header on subscription import /
+	// refresh. nil OR true → header is sent (default). false → header is
+	// omitted. Other identity headers (x-device-os, x-ver-os, x-device-model,
+	// x-app-version) are unaffected and still sent — they are not
+	// device-unique.
+	HwidEnabled *bool `json:"hwidEnabled,omitempty"`
+}
+
+// IsHwidEnabled returns true when the x-hwid header should be sent. The
+// default (nil pointer or absent field on disk) is true: HWID enabled.
+func (p PrivacySettings) IsHwidEnabled() bool {
+	if p.HwidEnabled == nil {
+		return true
+	}
+	return *p.HwidEnabled
 }
 
 const slothPrefsFile = "prefs.json"
@@ -178,6 +201,21 @@ func (a *App) SetUiLanguage(lang string) DesktopPrefs {
 	}
 	prefsMu.Lock()
 	prefsCurrent.Lang = lang
+	snapshot := prefsCurrent
+	_ = saveDesktopPrefsLocked(snapshot)
+	prefsMu.Unlock()
+	return snapshot
+}
+
+// SetHwidEnabled toggles whether the x-hwid HTTP header is included in
+// subscription import / refresh requests. The value is persisted to
+// prefs.json; no runtime reload is needed because the change only affects
+// outgoing subscription HTTP, not the running mihomo config.
+func (a *App) SetHwidEnabled(enabled bool) DesktopPrefs {
+	_ = a
+	v := enabled
+	prefsMu.Lock()
+	prefsCurrent.Privacy.HwidEnabled = &v
 	snapshot := prefsCurrent
 	_ = saveDesktopPrefsLocked(snapshot)
 	prefsMu.Unlock()

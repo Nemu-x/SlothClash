@@ -73,12 +73,17 @@ func truncateHeaderValue(s string, maxRunes int) string {
 }
 
 // applySubscriptionIdentityHeaders sets provider-facing client metadata (import / refresh subscription HTTP).
+// The x-hwid header obeys PrivacySettings.HwidEnabled — when the user has
+// toggled it off in Advanced, the header is omitted and other identity fields
+// (x-device-os, x-ver-os, x-device-model, x-app-version) are still sent so
+// providers can route to platform-specific configs without device-unique
+// identifiers.
 func applySubscriptionIdentityHeaders(req *http.Request) {
 	if req == nil {
 		return
 	}
 	id := subscriptionDeviceIdentityCurrent()
-	if id.HWID != "" {
+	if id.HWID != "" && currentDesktopPrefs().Privacy.IsHwidEnabled() {
 		req.Header.Set("x-hwid", id.HWID)
 	}
 	req.Header.Set("x-device-os", runtime.GOOS)

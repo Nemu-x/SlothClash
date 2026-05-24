@@ -461,6 +461,18 @@ export namespace main {
     }
   }
 
+  export class PrivacySettings {
+    hwidEnabled?: boolean
+
+    static createFrom(source: any = {}) {
+      return new PrivacySettings(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.hwidEnabled = source['hwidEnabled']
+    }
+  }
   export class TrafficSettings {
     snifferEnabled?: boolean
     findProcessMode?: string
@@ -502,6 +514,7 @@ export namespace main {
   export class DesktopPrefs {
     tun: TunSettings
     traffic: TrafficSettings
+    privacy: PrivacySettings
     lang?: string
 
     static createFrom(source: any = {}) {
@@ -512,6 +525,7 @@ export namespace main {
       if ('string' === typeof source) source = JSON.parse(source)
       this.tun = this.convertValues(source['tun'], TunSettings)
       this.traffic = this.convertValues(source['traffic'], TrafficSettings)
+      this.privacy = this.convertValues(source['privacy'], PrivacySettings)
       this.lang = source['lang']
     }
 

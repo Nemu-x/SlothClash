@@ -437,7 +437,7 @@ func showTrayContextMenu(hwnd uintptr) {
 	var pt winPoint
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 
-	procTrackPopupMenu.Call(
+	cmd, _, _ := procTrackPopupMenu.Call(
 		hMenu,
 		tpmRightButton|tpmBottomAlign|tpmReturnCmd,
 		uintptr(pt.X), uintptr(pt.Y),
@@ -445,6 +445,9 @@ func showTrayContextMenu(hwnd uintptr) {
 		hwnd,
 		0,
 	)
+	if cmd != 0 {
+		handleTrayCommand(cmd)
+	}
 
 	// Per MSDN: post a no-op message to unstick the popup from the foreground
 	// queue so the next right-click is not eaten.

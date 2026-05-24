@@ -177,6 +177,31 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	m["secret"] = secret
 	m["allow-lan"] = false
 
+	// profile.store-selected / store-fake-ip mirrors clash-verge-rev's
+	// `use_clash` defaults. Without store-selected, mihomo forgets the
+	// user's pick inside each `select` group on every hot reload (and we
+	// reload on every Connect/Disconnect/SetTrafficMode) — our sticky-group
+	// code only restores the ACTIVE group, not per-group node picks, so
+	// without this flag a user who picked a specific node in two different
+	// groups would see them reset half the time. store-fake-ip keeps the
+	// fake-IP map across reloads while TUN is enabled, so apps that have
+	// cached fake-IPs do not have to renegotiate after a reconnect.
+	//
+	// We only set fields the user has not explicitly defined: subscription
+	// profiles that ship their own `profile:` block win (matches verge-rev
+	// merge order: user/subscription overrides our defaults).
+	if _, has := m["profile"]; !has {
+		m["profile"] = map[string]any{}
+	}
+	if prof, ok := m["profile"].(map[string]any); ok {
+		if _, has := prof["store-selected"]; !has {
+			prof["store-selected"] = true
+		}
+		if _, has := prof["store-fake-ip"]; !has {
+			prof["store-fake-ip"] = enableTun
+		}
+	}
+
 	// Match clash-verge-rev enhance::tun::use_tun: only harden DNS (fake-ip
 	// invariants) when TUN is actually being brought up. With TUN off we leave
 	// DNS alone so Mihomo falls back to system DNS for proxied traffic.

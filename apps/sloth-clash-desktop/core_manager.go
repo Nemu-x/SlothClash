@@ -399,6 +399,15 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 	fmt.Fprintf(&cfg, "log-level: info\n")
 	fmt.Fprintf(&cfg, "ipv6: true\n\n")
 
+	// profile.store-selected mirrors clash-verge-rev's `use_clash` defaults:
+	// preserves per-group node selections across hot reloads (we reload on
+	// every Connect/Disconnect/SetTrafficMode). store-fake-ip keeps the
+	// fake-IP map across reloads while TUN is on, so apps with cached
+	// fake-IPs do not have to renegotiate after reconnect.
+	fmt.Fprintf(&cfg, "profile:\n")
+	fmt.Fprintf(&cfg, "  store-selected: true\n")
+	fmt.Fprintf(&cfg, "  store-fake-ip: %t\n\n", enableTun)
+
 	if enableTun {
 		// Match enhance::tun::use_tun: fake-ip DNS block goes in only when TUN
 		// is actually being brought up. Without it, TUN + strict-route gives

@@ -183,9 +183,14 @@ func (a *App) resolveMihomoBinary() (string, error) {
 
 	var patterns []string
 	for _, dir := range mihomoSidecarSearchDirs() {
+		// scripts/prebuild.mjs writes only sloth-mihomo* files into
+		// build/sidecar/. Older verge-mihomo* binaries can still exist on
+		// disk from pre-fork prebuild runs (we kept the clash-verge-rev
+		// directory layout); they are intentionally NOT searched here so a
+		// stale Apr-vintage verge-mihomo binary cannot win over today's
+		// freshly-downloaded sloth-mihomo. Operators who deliberately want
+		// to point at a different binary can set SLOTH_MIHOMO_PATH.
 		patterns = append(patterns,
-			filepath.Join(dir, "verge-mihomo*.exe"),
-			filepath.Join(dir, "verge-mihomo*"),
 			filepath.Join(dir, "sloth-mihomo*.exe"),
 			filepath.Join(dir, "sloth-mihomo*"),
 		)
@@ -220,9 +225,11 @@ func (a *App) extractBundledMihomoBinary() (string, error) {
 		return "", err
 	}
 
+	// Mirror the disk-search policy: only sloth-mihomo* is considered. Any
+	// verge-mihomo* embedded from a stale build/sidecar checkout is ignored
+	// so an upgrade installer cannot resurrect a months-old binary.
 	patterns := []string{
 		"build/sidecar/sloth-mihomo*",
-		"build/sidecar/verge-mihomo*",
 	}
 	for _, preferNoAlpha := range []bool{true, false} {
 		for _, pat := range patterns {

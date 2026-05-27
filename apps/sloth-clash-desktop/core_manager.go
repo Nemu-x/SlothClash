@@ -209,20 +209,34 @@ func (a *App) resolveMihomoBinary() (string, error) {
 			}
 		}
 	}
-	if p, err := a.extractBundledMihomoBinary(); err == nil && strings.TrimSpace(p) != "" {
+	p, extractErr := a.extractBundledMihomoBinary()
+	if extractErr == nil && strings.TrimSpace(p) != "" {
 		return p, nil
 	}
-	return "", errors.New("mihomo binary not found — run `pnpm run prebuild` from repo root; run `wails dev` from apps/sloth-clash-desktop; or set SLOTH_MIHOMO_PATH / SLOTH_CLASH_DESKTOP_ROOT (absolute path to that app folder)")
+	// Pass the real extract failure through to the UI instead of the
+	// generic "run pnpm run prebuild" hint. On end-user installs the disk
+	// search always misses (no sidecar/ next to the installed exe), so the
+	// extract error IS the real diagnostic — most commonly antivirus /
+	// Defender quarantining the written mihomo.exe, secondarily a Group
+	// Policy that blocks write to %APPDATA%/SlothClash/runtime/_sidecar.
+	hint := "Run `pnpm run prebuild` from repo root or set SLOTH_MIHOMO_PATH to an absolute path."
+	if extractErr != nil {
+		debugLog("startup", "H1", "core_manager.go:resolveMihomoBinary",
+			"mihomo binary not found — extract from embed failed",
+			map[string]any{"extractErr": extractErr.Error()})
+		return "", fmt.Errorf("mihomo core unavailable: %w. If you are on an installed build this usually means antivirus quarantined the extracted file or `%%APPDATA%%/SlothClash/runtime/_sidecar` is not writable — check Windows Security › Protection history and add the SlothClash folder to exclusions. (%s)", extractErr, hint)
+	}
+	return "", fmt.Errorf("mihomo binary not found in embedded bundle or on disk. %s", hint)
 }
 
 func (a *App) extractBundledMihomoBinary() (string, error) {
 	root, err := slothDataRoot()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve data root: %w", err)
 	}
 	sidecarDir := filepath.Join(root, "runtime", "_sidecar")
 	if err := os.MkdirAll(sidecarDir, 0o755); err != nil {
-		return "", err
+		return "", fmt.Errorf("create %s: %w", sidecarDir, err)
 	}
 
 	// Mirror the disk-search policy: only sloth-mihomo* is considered. Any
@@ -231,51 +245,128 @@ func (a *App) extractBundledMihomoBinary() (string, error) {
 	patterns := []string{
 		"build/sidecar/sloth-mihomo*",
 	}
+	// Collect every reason we rejected a candidate so the final error
+	// message can tell the user/operator exactly what went wrong (read
+	// failed? write failed? glob matched nothing? AV ate the file?).
+	var rejections []string
+	embedMatches := 0
 	for _, preferNoAlpha := range []bool{true, false} {
 		for _, pat := range patterns {
 			matches, _ := fs.Glob(a.bundle, pat)
 			sort.Strings(matches)
+			embedMatches += len(matches)
 			for _, m := range matches {
 				base := strings.ToLower(filepath.Base(m))
 				if preferNoAlpha && strings.Contains(base, "alpha") {
 					continue
 				}
 				info, statErr := fs.Stat(a.bundle, m)
-				if statErr != nil || info.IsDir() {
+				if statErr != nil {
+					rejections = append(rejections, fmt.Sprintf("%s: embed stat: %v", m, statErr))
 					continue
 				}
-				dst := filepath.Join(sidecarDir, filepath.Base(m))
-				// Cache hit ONLY when the on-disk extracted file matches the
-				// embedded one byte-for-byte by size. New mihomo releases ship
-				// a different binary size, so a size mismatch is a reliable
-				// signal that the cache is from a prior app version and must
-				// be re-extracted. Without this check, upgrades quietly kept
-				// running the old mihomo binary because the new installer's
-				// embed.FS was never written through to %APPDATA%/_sidecar.
-				if st, err := os.Stat(dst); err == nil && !st.IsDir() && st.Size() > 0 {
-					if st.Size() == info.Size() {
-						return dst, nil
-					}
-					// Stale cache from a prior app version: best-effort wipe
-					// so the WriteFile below cannot end up with a half-old /
-					// half-new mishmash if a previous write was interrupted.
-					_ = os.Remove(dst)
+				if info.IsDir() {
+					continue
+				}
+				// Each embedded mihomo version is materialised to its own
+				// file under _sidecar/, suffixed with its size, so an
+				// upgrade does NOT have to overwrite (and therefore
+				// unlock) the previous version's binary. Background: on
+				// Windows a running .exe holds an exclusive lock on its
+				// own image, so when v0.4.0's mihomo was still alive
+				// (the NSIS installer does not kill running children of
+				// sloth-clash-service), v0.5.0's cache invalidation tried
+				// to Remove + WriteFile the same path and silently failed
+				// — surfacing as the generic "mihomo binary not found"
+				// error. Versioned filenames sidestep the lock entirely:
+				// the new file is a different name, the old one stays
+				// locked by the previous mihomo until that process exits
+				// and is cleaned up below on the NEXT successful extract.
+				rawBase := filepath.Base(m)
+				ext := filepath.Ext(rawBase)
+				stem := strings.TrimSuffix(rawBase, ext)
+				versioned := filepath.Join(sidecarDir, fmt.Sprintf("%s-%d%s", stem, info.Size(), ext))
+				if st, err := os.Stat(versioned); err == nil && !st.IsDir() && st.Size() == info.Size() {
+					// Already extracted by an earlier run — reuse.
+					return versioned, nil
 				}
 				data, readErr := a.bundle.ReadFile(m)
-				if readErr != nil || len(data) == 0 {
+				if readErr != nil {
+					rejections = append(rejections, fmt.Sprintf("%s: embed read: %v", m, readErr))
 					continue
 				}
-				if writeErr := os.WriteFile(dst, data, 0o755); writeErr != nil {
+				if len(data) == 0 {
+					rejections = append(rejections, fmt.Sprintf("%s: embed read returned 0 bytes (build/sidecar was empty at compile time?)", m))
+					continue
+				}
+				if writeErr := os.WriteFile(versioned, data, 0o755); writeErr != nil {
+					rejections = append(rejections, fmt.Sprintf("%s: write to %s: %v", m, versioned, writeErr))
+					continue
+				}
+				// Post-write verification: antivirus / Defender may delete
+				// the file BETWEEN our successful write and our return,
+				// silently. Stat'ing again catches that window and surfaces
+				// the cause instead of returning a path that races a
+				// quarantine event.
+				if st, statErr := os.Stat(versioned); statErr != nil || st.Size() != info.Size() {
+					reason := "missing after write (likely antivirus quarantine — check Windows Security › Protection history and exclude SlothClash)"
+					if statErr != nil {
+						reason = statErr.Error()
+					} else if st.Size() != info.Size() {
+						reason = fmt.Sprintf("size shrunk after write (expected %d got %d)", info.Size(), st.Size())
+					}
+					rejections = append(rejections, fmt.Sprintf("%s: post-write check: %s", m, reason))
 					continue
 				}
 				if runtime.GOOS != "windows" {
-					_ = os.Chmod(dst, 0o755)
+					_ = os.Chmod(versioned, 0o755)
 				}
-				return dst, nil
+				// Best-effort cleanup of older versioned files and the
+				// legacy unversioned path. On Windows Remove silently
+				// fails when the previous mihomo still holds the lock —
+				// that is fine, we will retry on the next launch after
+				// the old process has exited.
+				go cleanupStaleSidecarBinaries(sidecarDir, versioned, stem, ext)
+				return versioned, nil
 			}
 		}
 	}
-	return "", errors.New("embedded mihomo not found in build/sidecar")
+	if embedMatches == 0 {
+		return "", fmt.Errorf("embed.FS has no sloth-mihomo* entries under build/sidecar/ — installer was built from an empty sidecar directory; rebuild after `pnpm run prebuild --force`")
+	}
+	if len(rejections) == 0 {
+		return "", errors.New("embedded mihomo not found in build/sidecar (no matches passed the alpha filter)")
+	}
+	return "", fmt.Errorf("could not write embedded mihomo to %s: %s", sidecarDir, strings.Join(rejections, "; "))
+}
+
+// cleanupStaleSidecarBinaries removes older extracted mihomo binaries from
+// _sidecar/ once a freshly versioned one is in use. Two targets:
+//
+//  1. The legacy unversioned name (e.g. sloth-mihomo-x86_64-pc-windows-msvc.exe)
+//     left over from app builds before the versioned-filename scheme.
+//  2. Other versioned files for the same stem (e.g. sloth-mihomo-...-46177792.exe
+//     when we just extracted ...-47221234.exe) — stale upgrade leftovers.
+//
+// All removals are best-effort: on Windows a still-running mihomo from a
+// previous app session holds an exclusive lock on its image and Remove
+// returns ERROR_SHARING_VIOLATION. That is fine — the file will be cleaned
+// up on a subsequent app launch after the old mihomo has actually exited.
+// Never log or surface failures; this is housekeeping, not a critical path.
+func cleanupStaleSidecarBinaries(sidecarDir, keepPath, stem, ext string) {
+	defer func() { _ = recover() }()
+	legacy := filepath.Join(sidecarDir, stem+ext)
+	if legacy != keepPath {
+		_ = os.Remove(legacy)
+	}
+	pattern := filepath.Join(sidecarDir, stem+"-*"+ext)
+	matches, _ := filepath.Glob(pattern)
+	for _, m := range matches {
+		if m == keepPath {
+			continue
+		}
+		_ = os.Remove(m)
+	}
 }
 
 // ensureGeoInDataDir copies the bundled geo data files into the running

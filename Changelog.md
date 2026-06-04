@@ -3,14 +3,17 @@
 ### English
 
 - **Mihomo core pinned to `v1.19.26`.** The build no longer resolves the upstream `latest` tag at prebuild time — the core version is now an explicit, reproducible pin (`META_VERSION_PINNED` in `scripts/prebuild.mjs`), bumpable in one line and overridable per-build via `MIHOMO_CORE_VERSION`. Updated the embedded sidecar from v1.19.25 to v1.19.26; config/runtime tests pass against the new core.
+- **Security: frontend dependency vulnerabilities cleared.** Bumped `react-router` to 7.17.0 and pinned patched `dompurify` (3.4.8, via override since `monaco-editor` bundles a vulnerable build) and `js-cookie` (3.0.8). `pnpm audit --prod` now reports no known vulnerabilities (was 3 high + 9 moderate).
 
 ### Русский
 
 - **Ядро Mihomo запинено на `v1.19.26`.** Сборка больше не резолвит апстрим-тег `latest` на этапе prebuild — версия ядра теперь явный, воспроизводимый пин (`META_VERSION_PINNED` в `scripts/prebuild.mjs`), меняется одной строкой и переопределяется на сборку через `MIHOMO_CORE_VERSION`. Встроенный sidecar обновлён с v1.19.25 до v1.19.26; тесты config/runtime проходят на новом ядре.
+- **Безопасность: устранены уязвимости фронт-зависимостей.** Поднят `react-router` до 7.17.0, запинены пропатченные `dompurify` (3.4.8, через override — `monaco-editor` тянет уязвимую сборку) и `js-cookie` (3.0.8). `pnpm audit --prod` теперь не находит уязвимостей (было 3 high + 9 moderate).
 
 ### 中文
 
 - **Mihomo 内核固定为 `v1.19.26`。** 构建不再在 prebuild 阶段解析上游 `latest` 标签——内核版本现为显式、可复现的固定值（`scripts/prebuild.mjs` 中的 `META_VERSION_PINNED`），可一行修改，并可通过 `MIHOMO_CORE_VERSION` 按次构建覆盖。内置 sidecar 从 v1.19.25 更新到 v1.19.26；config/runtime 测试在新内核上通过。
+- **安全：已清除前端依赖漏洞。** 将 `react-router` 升级到 7.17.0，并固定已修复的 `dompurify`（3.4.8，因 `monaco-editor` 捆绑了存在漏洞的版本，故用 override）与 `js-cookie`（3.0.8）。`pnpm audit --prod` 现已无已知漏洞（此前为 3 高 + 9 中）。
 
 ## Sloth Clash desktop `0.3.1` — 2026-04-30
 

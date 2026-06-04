@@ -1,3 +1,17 @@
+## Unreleased
+
+### English
+
+- **Mihomo core pinned to `v1.19.26`.** The build no longer resolves the upstream `latest` tag at prebuild time — the core version is now an explicit, reproducible pin (`META_VERSION_PINNED` in `scripts/prebuild.mjs`), bumpable in one line and overridable per-build via `MIHOMO_CORE_VERSION`. Updated the embedded sidecar from v1.19.25 to v1.19.26; config/runtime tests pass against the new core.
+
+### Русский
+
+- **Ядро Mihomo запинено на `v1.19.26`.** Сборка больше не резолвит апстрим-тег `latest` на этапе prebuild — версия ядра теперь явный, воспроизводимый пин (`META_VERSION_PINNED` в `scripts/prebuild.mjs`), меняется одной строкой и переопределяется на сборку через `MIHOMO_CORE_VERSION`. Встроенный sidecar обновлён с v1.19.25 до v1.19.26; тесты config/runtime проходят на новом ядре.
+
+### 中文
+
+- **Mihomo 内核固定为 `v1.19.26`。** 构建不再在 prebuild 阶段解析上游 `latest` 标签——内核版本现为显式、可复现的固定值（`scripts/prebuild.mjs` 中的 `META_VERSION_PINNED`），可一行修改，并可通过 `MIHOMO_CORE_VERSION` 按次构建覆盖。内置 sidecar 从 v1.19.25 更新到 v1.19.26；config/runtime 测试在新内核上通过。
+
 ## Sloth Clash desktop `0.3.1` — 2026-04-30
 
 ### English

@@ -25,7 +25,6 @@ import { log_debug, log_error, log_info, log_success } from './utils.mjs'
 const cwd = process.cwd()
 const TEMP_DIR = path.join(cwd, 'node_modules/.verge')
 const FORCE = process.argv.includes('--force') || process.argv.includes('-f')
-const VERSION_CACHE_FILE = path.join(TEMP_DIR, '.version_cache.json')
 const HASH_CACHE_FILE = path.join(TEMP_DIR, '.hash_cache.json')
 
 const PLATFORM_MAP = {
@@ -104,44 +103,6 @@ const SIDECAR_DIR = path.join(desktopRoot, 'build', 'sidecar')
 const SERVICE_DIR = platform === 'linux' ? SIDECAR_DIR : RESOURCES_DIR
 
 // =======================
-// Version Cache
-// =======================
-async function loadVersionCache() {
-  try {
-    if (fs.existsSync(VERSION_CACHE_FILE)) {
-      const data = await fsp.readFile(VERSION_CACHE_FILE, 'utf-8')
-      return JSON.parse(data)
-    }
-  } catch (err) {
-    log_debug('Failed to load version cache:', err.message)
-  }
-  return {}
-}
-async function saveVersionCache(cache) {
-  try {
-    await fsp.mkdir(TEMP_DIR, { recursive: true })
-    await fsp.writeFile(VERSION_CACHE_FILE, JSON.stringify(cache, null, 2))
-    log_debug('Version cache saved')
-  } catch (err) {
-    log_debug('Failed to save version cache:', err.message)
-  }
-}
-async function getCachedVersion(key) {
-  const cache = await loadVersionCache()
-  const cached = cache[key]
-  if (cached && Date.now() - cached.timestamp < 3600000) {
-    log_info(`Using cached version for ${key}: ${cached.version}`)
-    return cached.version
-  }
-  return null
-}
-async function setCachedVersion(key, version) {
-  const cache = await loadVersionCache()
-  cache[key] = { version, timestamp: Date.now() }
-  await saveVersionCache(cache)
-}
-
-// =======================
 // Hash Cache & File Hash
 // =======================
 async function calculateFileHash(filePath) {
@@ -201,8 +162,10 @@ async function updateHashCache(targetPath) {
 // Meta maps (stable)
 // =======================
 
-const META_VERSION_URL =
-  'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'
+// Pinned mihomo (Clash.Meta) core version — single source of truth.
+// To bump: edit this constant, then run `pnpm run prebuild --force` to refresh
+// the embedded sidecar. Override at build time with MIHOMO_CORE_VERSION (CI/testing).
+const META_VERSION_PINNED = 'v1.19.26'
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 
@@ -221,38 +184,16 @@ const META_MAP = {
 }
 
 // =======================
-// Fetch latest versions
+// Resolve pinned core version
 // =======================
 async function getLatestReleaseVersion() {
-  if (!FORCE) {
-    const cached = await getCachedVersion('META_VERSION')
-    if (cached) {
-      META_VERSION = cached
-      return
-    }
-  }
-  const options = {}
-  const httpProxy =
-    process.env.HTTP_PROXY ||
-    process.env.http_proxy ||
-    process.env.HTTPS_PROXY ||
-    process.env.https_proxy
-  if (httpProxy) options.agent = new HttpsProxyAgent(httpProxy)
-
-  try {
-    const response = await fetch(META_VERSION_URL, {
-      ...options,
-      method: 'GET',
-    })
-    if (!response.ok)
-      throw new Error(`Failed to fetch ${META_VERSION_URL}: ${response.status}`)
-    META_VERSION = (await response.text()).trim()
-    log_info(`Latest release version: ${META_VERSION}`)
-    await setCachedVersion('META_VERSION', META_VERSION)
-  } catch (err) {
-    log_error('Error fetching latest release version:', err.message)
-    process.exit(1)
-  }
+  const override = (process.env.MIHOMO_CORE_VERSION || '').trim()
+  META_VERSION = override || META_VERSION_PINNED
+  log_info(
+    override
+      ? `Using MIHOMO_CORE_VERSION override: ${META_VERSION}`
+      : `Using pinned mihomo core version: ${META_VERSION}`,
+  )
 }
 
 // =======================

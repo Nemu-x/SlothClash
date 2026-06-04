@@ -8,6 +8,7 @@ export {
   GetProfilePaths,
   GetProfileProxyGroupsBaseline,
   GetProfileRulesBaseline,
+  ImportProfileFromText,
   ImportProfileFromURL,
   ReadProfileConfig,
   RefreshProfileSubscription,

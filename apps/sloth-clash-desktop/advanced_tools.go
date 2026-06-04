@@ -197,9 +197,21 @@ func (a *App) ReExtractBundledResources() error {
 func (a *App) ResetSubscriptionCache() error {
 	a.mu.RLock()
 	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	activeType := ""
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			activeType = p.Type
+			break
+		}
+	}
 	a.mu.RUnlock()
 	if activeID == "" {
 		return errors.New("no active profile")
+	}
+	// A local profile keeps its only copy of the config in the body cache —
+	// there is no URL to re-fetch from, so wiping it would destroy the profile.
+	if activeType == "local" {
+		return errors.New("local profiles have no remote cache to reset")
 	}
 	root, err := slothDataRoot()
 	if err != nil {

@@ -3257,6 +3257,47 @@
   margin-left: auto;
 }
 
+.modalFooterLeft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.importModeTabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 14px;
+}
+
+.importModeTabs .btn {
+  flex: 1;
+}
+
+.importTextarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 160px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.importDetect {
+  font-weight: 500;
+}
+
+.importDetect-yaml,
+.importDetect-links {
+  color: var(--accent);
+}
+
+.importDetect-unknown {
+  color: #d98c6a;
+}
+
 .btnModalSecondary {
   font-size: 13px;
   padding: 8px 14px;

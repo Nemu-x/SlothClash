@@ -732,6 +732,64 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	return a.state, nil
 }
 
+// ImportProfileFromText creates a "local" profile from pasted or file-loaded
+// content: a Clash/mihomo YAML config, OR a list of share links (vless://,
+// vmess://, ss://, trojan://, hysteria2://, tuic://) — a single link, a
+// newline-separated list, or a base64 envelope. The content is validated, then
+// seeded into the profile's body cache so the normal pipeline turns it into a
+// runnable config on activation. Local profiles carry no URL and are never
+// auto-refreshed.
+func (a *App) ImportProfileFromText(name string, content string) (AppState, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return a.GetAppState(), errors.New("config content is required")
+	}
+	// Validate up front: it must parse as a Clash doc, base64-Clash, or a
+	// supported share-link list. parseClashDocToMap covers all three.
+	if doc, perr := parseClashDocToMap([]byte(content)); perr != nil || len(doc) == 0 {
+		if perr != nil {
+			return a.GetAppState(), fmt.Errorf("not a valid config or supported share link: %w", perr)
+		}
+		return a.GetAppState(), errors.New("not a valid config or supported share link")
+	}
+
+	finalName := strings.TrimSpace(name)
+	if finalName == "" {
+		finalName = "Local config"
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	id := "profile-" + time.Now().Format("20060102150405")
+	root, derr := slothDataRoot()
+	if derr != nil {
+		return a.state, derr
+	}
+	// Seed the per-profile body cache (the pipeline's cache-first source). For a
+	// local profile this is the durable home of the content — there is no URL to
+	// re-fetch from — so ResetSubscriptionCache refuses to wipe local caches.
+	writeSubscriptionBodyCache(filepath.Join(root, "runtime", id), []byte(content))
+
+	p := Profile{
+		ID:                id,
+		Name:              finalName,
+		Type:              "local",
+		LastUpdated:       time.Now().Unix(),
+		AutoUpdateEnabled: false,
+	}
+	a.profiles = append(a.profiles, p)
+	a.state.Profile.Profiles = a.profiles
+	if a.state.Profile.ActiveProfileID == "" {
+		a.state.Profile.ActiveProfileID = p.ID
+	}
+	a.state.UpdatedAt = time.Now().Unix()
+	if err := a.persistProfilesLocked(); err != nil {
+		return a.state, err
+	}
+	return a.state, nil
+}
+
 func (a *App) ActivateProfile(profileID string) (AppState, error) {
 	a.mu.Lock()
 	if profileID == "" {

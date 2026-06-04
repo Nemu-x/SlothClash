@@ -4,16 +4,19 @@
 
 - **Mihomo core pinned to `v1.19.26`.** The build no longer resolves the upstream `latest` tag at prebuild time — the core version is now an explicit, reproducible pin (`META_VERSION_PINNED` in `scripts/prebuild.mjs`), bumpable in one line and overridable per-build via `MIHOMO_CORE_VERSION`. Updated the embedded sidecar from v1.19.25 to v1.19.26; config/runtime tests pass against the new core.
 - **Security: frontend dependency vulnerabilities cleared.** Bumped `react-router` to 7.17.0 and pinned patched `dompurify` (3.4.8, via override since `monaco-editor` bundles a vulnerable build) and `js-cookie` (3.0.8). `pnpm audit --prod` now reports no known vulnerabilities (was 3 high + 9 moderate).
+- **Import local configs & share links.** The Add-profile dialog gained a **Paste / File** mode: import a local mihomo/Clash `config.yaml`, or paste/load `vless://`, `vmess://`, `ss://`, `trojan://`, `hysteria2://`, `tuic://` links — a single link, a newline list, or a base64 subscription envelope — converted to a runnable config on import (with a live "Clash YAML / N share links" detection hint). Subscription URLs that return a share-link list now work too.
 
 ### Русский
 
 - **Ядро Mihomo запинено на `v1.19.26`.** Сборка больше не резолвит апстрим-тег `latest` на этапе prebuild — версия ядра теперь явный, воспроизводимый пин (`META_VERSION_PINNED` в `scripts/prebuild.mjs`), меняется одной строкой и переопределяется на сборку через `MIHOMO_CORE_VERSION`. Встроенный sidecar обновлён с v1.19.25 до v1.19.26; тесты config/runtime проходят на новом ядре.
 - **Безопасность: устранены уязвимости фронт-зависимостей.** Поднят `react-router` до 7.17.0, запинены пропатченные `dompurify` (3.4.8, через override — `monaco-editor` тянет уязвимую сборку) и `js-cookie` (3.0.8). `pnpm audit --prod` теперь не находит уязвимостей (было 3 high + 9 moderate).
+- **Импорт локальных конфигов и share-ссылок.** В диалоге добавления профиля появился режим **Paste / File**: можно импортировать локальный `config.yaml` (mihomo/Clash) или вставить/загрузить ссылки `vless://`, `vmess://`, `ss://`, `trojan://`, `hysteria2://`, `tuic://` — одну, списком по строкам или base64-обёрткой подписки — с конвертацией в рабочий конфиг при импорте (и живой подсказкой «Clash YAML / N ссылок»). Подписки, отдающие список ссылок, теперь тоже работают.
 
 ### 中文
 
 - **Mihomo 内核固定为 `v1.19.26`。** 构建不再在 prebuild 阶段解析上游 `latest` 标签——内核版本现为显式、可复现的固定值（`scripts/prebuild.mjs` 中的 `META_VERSION_PINNED`），可一行修改，并可通过 `MIHOMO_CORE_VERSION` 按次构建覆盖。内置 sidecar 从 v1.19.25 更新到 v1.19.26；config/runtime 测试在新内核上通过。
 - **安全：已清除前端依赖漏洞。** 将 `react-router` 升级到 7.17.0，并固定已修复的 `dompurify`（3.4.8，因 `monaco-editor` 捆绑了存在漏洞的版本，故用 override）与 `js-cookie`（3.0.8）。`pnpm audit --prod` 现已无已知漏洞（此前为 3 高 + 9 中）。
+- **导入本地配置与分享链接。** 添加配置文件对话框新增 **Paste / File** 模式：可导入本地 mihomo/Clash `config.yaml`，或粘贴/加载 `vless://`、`vmess://`、`ss://`、`trojan://`、`hysteria2://`、`tuic://` 链接——单条、按行列表或 base64 订阅封装——导入时转换为可运行配置（并实时提示「Clash YAML / N 条链接」）。返回链接列表的订阅 URL 现在也可用。
 
 ## Sloth Clash desktop `0.3.1` — 2026-04-30
 

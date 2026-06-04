@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"SlothClashDesktop/sharelink"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -248,10 +250,47 @@ func parseClashDocToMap(b []byte) (map[string]any, error) {
 			return m2, nil
 		}
 	}
+	// Not Clash YAML (plain or base64). Try a V2Ray-style share-link list
+	// (vless://, vmess://, ss://, trojan://, hysteria2://, tuic://) — single
+	// link, newline list, or base64 envelope — and synthesize a runnable config.
+	if doc, ok := shareLinksToClashMap(string(b)); ok {
+		return doc, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 	return nil, errors.New("invalid clash yaml mapping")
+}
+
+// shareLinksToClashMap converts proxy share links into a minimal but complete
+// Clash/mihomo config map: the parsed proxies, a default `PROXY` select group
+// (all nodes + DIRECT), and a catch-all rule. Returns ok=false if no supported
+// link is found. Having proxy-groups + rules makes the result a "full profile"
+// so the normal merge pipeline handles ports/TUN/overlay uniformly.
+func shareLinksToClashMap(text string) (map[string]any, bool) {
+	proxies, _ := sharelink.ParseMany(text)
+	if len(proxies) == 0 {
+		if dec := sharelink.DecodeBase64Block(text); dec != "" {
+			proxies, _ = sharelink.ParseMany(dec)
+		}
+	}
+	if len(proxies) == 0 {
+		return nil, false
+	}
+	rawProxies := make([]any, 0, len(proxies))
+	groupProxies := make([]any, 0, len(proxies)+1)
+	for _, p := range proxies {
+		rawProxies = append(rawProxies, map[string]any(p))
+		groupProxies = append(groupProxies, p["name"])
+	}
+	groupProxies = append(groupProxies, "DIRECT")
+	return map[string]any{
+		"proxies": rawProxies,
+		"proxy-groups": []any{
+			map[string]any{"name": "PROXY", "type": "select", "proxies": groupProxies},
+		},
+		"rules": []any{"MATCH,PROXY"},
+	}, true
 }
 
 // subscriptionDocIsFullProfile reports whether the downloaded document should be used as the

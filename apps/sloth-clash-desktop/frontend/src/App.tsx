@@ -46,6 +46,7 @@ import {
   ActivateProfile,
   DeleteProfile,
   GetProfilePaths,
+  ImportProfileFromText,
   ImportProfileFromURL,
   ReadProfileConfig,
   RefreshProfileSubscription,
@@ -62,7 +63,10 @@ import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
 import { DeleteProfileModal } from './components/DeleteProfileModal'
-import { ImportProfileModal } from './components/ImportProfileModal'
+import {
+  ImportProfileModal,
+  type ImportMode,
+} from './components/ImportProfileModal'
 import { ProfileContextMenu } from './components/ProfileContextMenu'
 import { ProfileEditInfoModal } from './components/ProfileEditInfoModal'
 import { ProfileFileModal } from './components/ProfileFileModal'
@@ -172,6 +176,8 @@ function App() {
     useState<main.SubscriptionDeviceIdentityPublic | null>(null)
   const [importName, setImportName] = useState('')
   const [importUrl, setImportUrl] = useState('')
+  const [importMode, setImportMode] = useState<ImportMode>('url')
+  const [importContent, setImportContent] = useState('')
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importModalReason, setImportModalReason] =
     useState<ImportModalReason>('manual')
@@ -1377,9 +1383,10 @@ function App() {
     setError('')
     try {
       const text = await navigator.clipboard.readText()
-      setImportUrl(text.trim())
+      if (importMode === 'paste') setImportContent(text)
+      else setImportUrl(text.trim())
     } catch {
-      setError('Could not read clipboard — paste the URL manually.')
+      setError('Could not read clipboard — paste manually.')
     }
   }
 
@@ -1388,11 +1395,16 @@ function App() {
     setImportBusy(true)
     try {
       const name = importName.trim()
-      await ImportProfileFromURL(name, importUrl.trim())
+      if (importMode === 'paste') {
+        await ImportProfileFromText(name, importContent.trim())
+      } else {
+        await ImportProfileFromURL(name, importUrl.trim())
+      }
       await refresh()
       dismissSpotlight()
       setImportUrl('')
       setImportName('')
+      setImportContent('')
       closeImportModal()
     } catch (e: any) {
       setError(String(e))
@@ -1924,11 +1936,15 @@ function App() {
         open={importModalOpen}
         title={importModalTitle()}
         blurb={importModalBlurb()}
+        mode={importMode}
         url={importUrl}
         name={importName}
+        content={importContent}
         busy={importBusy}
+        onModeChange={setImportMode}
         onUrlChange={setImportUrl}
         onNameChange={setImportName}
+        onContentChange={setImportContent}
         onPasteFromClipboard={() => pasteFromClipboard()}
         onClose={closeImportModal}
         onSubmit={() => performImportAndClose()}

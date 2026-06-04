@@ -34,6 +34,8 @@ This runs `prebuild`, Wails asset prep, Windows icon generation, and copies `pac
 
 **Windows service binaries** are downloaded from [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases); override tag with `SLOTH_SERVICE_RELEASE_TAG` if needed (see `scripts/prebuild.mjs`).
 
+**Mihomo core** is pinned to a specific release in `scripts/prebuild.mjs` (the `META_VERSION_PINNED` constant) for reproducible builds. To bump it: edit that constant, then run `pnpm run prebuild --force` to refresh the embedded sidecar. For a one-off build against a candidate version without editing the file, set `MIHOMO_CORE_VERSION` (e.g. `MIHOMO_CORE_VERSION=v1.19.27 pnpm run prebuild --force`).
+
 ## Development
 
 ```bash

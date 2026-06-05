@@ -410,9 +410,9 @@
 }
 
 .shell[data-theme="light"] .proxyTypeChip {
-  background: rgba(34, 120, 70, 0.14);
-  border-color: rgba(34, 120, 70, 0.32);
-  color: #1f6b43;
+  background: rgba(90, 80, 60, 0.1);
+  border-color: rgba(90, 80, 60, 0.28);
+  color: var(--text-muted);
 }
 
 .shell[data-theme="light"] .proxyCountChip {
@@ -1068,14 +1068,67 @@
 .proxyTypeChip {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
   font-size: var(--font-size-xs);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: rgba(90, 184, 120, 0.15);
-  border: 1px solid rgba(90, 184, 120, 0.35);
-  color: #b8f2cb;
+  letter-spacing: 0.07em;
+  /* default (unknown type) — neutral; per-type colours override below */
+  background: rgba(150, 150, 150, 0.14);
+  border: 1px solid rgba(150, 150, 150, 0.32);
+  color: var(--text-muted);
+}
+
+/* Per-type colours (no blue): url-test=emerald, selector=purple,
+   fallback=turquoise, load-balance=olive. */
+.proxyType-urltest {
+  background: rgba(46, 204, 113, 0.16);
+  border-color: rgba(46, 204, 113, 0.4);
+  color: #7ee0a8;
+}
+
+.proxyType-selector {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: rgba(167, 139, 250, 0.42);
+  color: #c4b5fd;
+}
+
+.proxyType-fallback {
+  background: rgba(45, 212, 191, 0.16);
+  border-color: rgba(45, 212, 191, 0.4);
+  color: #5eead4;
+}
+
+.proxyType-loadbalance {
+  background: rgba(170, 170, 70, 0.18);
+  border-color: rgba(170, 170, 70, 0.45);
+  color: #d2d27a;
+}
+
+.shell[data-theme="light"] .proxyType-urltest {
+  background: rgba(34, 150, 84, 0.14);
+  border-color: rgba(34, 150, 84, 0.34);
+  color: #1f7a44;
+}
+
+.shell[data-theme="light"] .proxyType-selector {
+  background: rgba(124, 92, 214, 0.14);
+  border-color: rgba(124, 92, 214, 0.34);
+  color: #6a45b8;
+}
+
+.shell[data-theme="light"] .proxyType-fallback {
+  background: rgba(20, 150, 135, 0.14);
+  border-color: rgba(20, 150, 135, 0.34);
+  color: #0f766e;
+}
+
+.shell[data-theme="light"] .proxyType-loadbalance {
+  background: rgba(120, 120, 40, 0.16);
+  border-color: rgba(120, 120, 40, 0.42);
+  color: #5f5f1e;
 }
 
 .proxyCountChip {
@@ -3213,6 +3266,254 @@
 .proxyToolbar .btn {
   padding: var(--space-1) var(--space-3);
   font-size: var(--font-size-sm);
+}
+
+/* === Proxies single-open accordion (proxies-redesign) === */
+.proxyAccordion {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+}
+
+.proxyAccFilterRow {
+  flex: 0 0 auto;
+  margin-bottom: var(--space-2);
+}
+
+.proxyAccGroupSearch {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline-strong);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+
+.proxyAccGroupSearch:focus {
+  border-color: var(--accent-muted);
+}
+
+.shell[data-theme="light"] .proxyAccGroupSearch {
+  background: #fdf9f0;
+}
+
+.proxyAccActionEmoji {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.proxyAccAction {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.proxyAccList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-right: var(--space-1);
+}
+
+.proxyAccEmpty {
+  margin: var(--space-3) 0;
+}
+
+.proxyAccHealth {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.proxyAccFastest,
+.proxyAccDensity {
+  white-space: nowrap;
+}
+
+.proxyDelayBar {
+  display: block;
+  height: 3px;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.shell[data-theme="light"] .proxyDelayBar {
+  background: rgba(74, 55, 30, 0.1);
+}
+
+.proxyDelayBarFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.proxyDelayBarGood .proxyDelayBarFill {
+  background: var(--ok);
+}
+
+.proxyDelayBarOk .proxyDelayBarFill {
+  background: var(--warn);
+}
+
+.proxyDelayBarSlow .proxyDelayBarFill {
+  background: var(--danger);
+}
+
+.proxyNodesGrid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-1);
+}
+
+.proxyNodesGrid.compact .proxyNodeCard {
+  padding: var(--space-1) var(--space-2);
+}
+
+.proxyAccGroup {
+  flex: 0 0 auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+.proxyAccGroup.open {
+  border-color: var(--accent-muted);
+}
+
+.shell[data-theme="light"] .proxyAccGroup {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.proxyAccHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  outline: none;
+}
+
+/* Kill the default full-width focus rectangle (showed as a stray white stripe
+   on click); keep an inset accent ring for keyboard users only. */
+.proxyAccHeader:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+
+.proxyAccHeader:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shell[data-theme="light"] .proxyAccHeader:hover {
+  background: rgba(74, 55, 30, 0.05);
+}
+
+.proxyAccName {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+.proxyAccCurrent {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.proxyAccCurrentName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.proxyAccChevron {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform var(--dur-base) var(--ease-standard);
+}
+
+.proxyAccGroup.open .proxyAccChevron {
+  transform: rotate(180deg);
+}
+
+.proxyAccBody {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* Nodes scroll inside the open group so collapsed groups below stay reachable
+   instead of pushing the accordion into a long scroll. */
+.proxyAccBody .proxyNodesGrid {
+  max-height: clamp(180px, 38vh, 420px);
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.proxyAccActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.proxyAccSort {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 120px;
+  max-width: 160px;
+}
+
+.proxyAccHideDead.isOn {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.proxyAccSearch {
+  margin-left: auto;
+  width: auto;
+  min-width: 150px;
+  max-width: 240px;
+}
+
+.proxyDelayGood {
+  color: var(--ok);
+}
+
+.proxyDelayOk {
+  color: var(--warn);
+}
+
+.proxyDelaySlow {
+  color: var(--danger);
 }
 
 .policyHint {

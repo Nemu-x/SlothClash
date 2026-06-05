@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo, useState } from 'react'
+import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { FlagMark } from '../components/FlagMark'
@@ -12,9 +12,7 @@ import {
 import { friendlyErrorMessage } from '../utils/yaml'
 
 // Mihomo /proxies/{name}/delay surfaces a handful of recurring failure modes.
-// Inline-rendering the raw error string blew the chip layout (the URL alone
-// is ~70 chars). Map to a short label so the chip stays compact; the full
-// message is preserved in title= for hover/inspection.
+// Map to a short label so the chip stays compact; full message stays in title=.
 function shortProxyDelayError(raw: string | undefined): string {
   if (!raw) return ''
   const s = String(raw)
@@ -29,9 +27,87 @@ function shortProxyDelayError(raw: string | undefined): string {
   return 'fail'
 }
 
+// Latency bands → quality class for at-a-glance colouring.
+function delayBand(ms: number): 'good' | 'ok' | 'slow' | '' {
+  if (ms <= 0) return ''
+  if (ms < 120) return 'good'
+  if (ms < 300) return 'ok'
+  return 'slow'
+}
+
+// Bar fill (%) by band — a quick visual on top of the colour.
+function delayBarPct(ms: number): number {
+  const b = delayBand(ms)
+  if (b === 'good') return 100
+  if (b === 'ok') return 66
+  if (b === 'slow') return 33
+  return 0
+}
+
+type GroupHealth = { alive: number; total: number; best: number }
+
+function groupHealth(
+  proxies: string[],
+  delayMap: Record<string, number>,
+  delayErr: Record<string, string>,
+): GroupHealth {
+  let alive = 0
+  let best = 0
+  for (const p of proxies) {
+    const d = delayMap[p] ?? 0
+    if (d > 0 && !delayErr[p]) {
+      alive++
+      if (best === 0 || d < best) best = d
+    }
+  }
+  return { alive, total: proxies.length, best }
+}
+
+function fastestNode(
+  proxies: string[],
+  delayMap: Record<string, number>,
+  delayErr: Record<string, string>,
+): string {
+  let best = ''
+  let bestD = Number.POSITIVE_INFINITY
+  for (const p of proxies) {
+    const d = delayMap[p] ?? 0
+    if (d > 0 && !delayErr[p] && d < bestD) {
+      bestD = d
+      best = p
+    }
+  }
+  return best
+}
+
+type SortMode = 'default' | 'latency' | 'name'
+type Density = 'comfortable' | 'compact'
+
+const LS = {
+  open: 'slothProxies.open',
+  sort: 'slothProxies.sort',
+  hideDead: 'slothProxies.hideDead',
+  density: 'slothProxies.density',
+}
+
+function lsGet(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function lsSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ProxiesPage({
   groups,
-  activeGroup,
   connectionStatus,
   displayMode,
   showBuiltin,
@@ -42,7 +118,6 @@ export function ProxiesPage({
   onRefreshProxies,
   onToggleShowBuiltin,
   onSetMode,
-  onSelectGroup,
   onSelectNode,
   onPingAll,
 }: {
@@ -63,12 +138,6 @@ export function ProxiesPage({
   onPingAll: (group: string, nodes: string[]) => void
 }) {
   const { t } = useTranslation()
-  // GLOBAL is mihomo's built-in catch-all group — it's relevant only in
-  // global mode (where every flow funnels through it). In rule mode the
-  // rules decide the routing and GLOBAL is never used, so the upstream
-  // (clash-verge-rev) hides it from the picker to avoid the user mistaking
-  // it for a real selector. We do the same: hide when mode === 'rule', show
-  // when mode === 'global' or when the user explicitly turns built-ins on.
   const visibleGroups = groups.filter((g: any) => {
     const name = String(g?.name ?? '')
     if (!showBuiltin) {
@@ -78,6 +147,7 @@ export function ProxiesPage({
     }
     return true
   })
+
   return (
     <div className="panel proxiesPanel">
       <h2>{t('ui.proxies.title')}</h2>
@@ -92,9 +162,7 @@ export function ProxiesPage({
             className="segmentGlider"
             aria-hidden
             style={
-              {
-                '--seg-i': displayMode === 'rule' ? 0 : 1,
-              } as CSSProperties
+              { '--seg-i': displayMode === 'rule' ? 0 : 1 } as CSSProperties
             }
           />
           <button
@@ -120,25 +188,6 @@ export function ProxiesPage({
             {t('ui.common.global')}
           </button>
         </div>
-        <label className="proxyFocusGroup">
-          <span className="segLabel">{t('ui.proxies.focusGroup')}</span>
-          <select
-            className="selectModern"
-            value={activeGroup}
-            onChange={(e) => {
-              const v = e.target.value
-              if (!v) return
-              onSelectGroup(v)
-            }}
-          >
-            <option value="">—</option>
-            {visibleGroups.map((g: any) => (
-              <option key={g.name} value={g.name}>
-                {`${g.name} (${g.type})`}
-              </option>
-            ))}
-          </select>
-        </label>
         <div className="proxyToolbarActions">
           <button
             type="button"
@@ -157,7 +206,7 @@ export function ProxiesPage({
           </button>
         </div>
       </div>
-      <ProxyGroupsSplit
+      <ProxyGroupsAccordion
         visibleGroups={visibleGroups}
         connectionStatus={connectionStatus}
         showBuiltin={showBuiltin}
@@ -172,7 +221,7 @@ export function ProxiesPage({
   )
 }
 
-type SplitProps = {
+type AccordionProps = {
   visibleGroups: any[]
   connectionStatus: string
   showBuiltin: boolean
@@ -184,13 +233,13 @@ type SplitProps = {
 }
 
 /**
- * Two-pane proxy groups layout (upstream Verge-Rev pattern). Left rail holds
- * a dense list of groups with their selected node summary so the user can
- * eyeball the whole topology at once; right pane focuses on the active
- * group's nodes with its own search. Scales gracefully from 1 group to 50+
- * without the page turning into an endless scroll of expanded cards.
+ * Single-open accordion: groups are full-width rows; clicking one expands its
+ * nodes inline. Adds a group quick-filter, per-group health (alive/total +
+ * best latency), auto-test + "select fastest", latency bars, density toggle,
+ * and persists the open group / sort / filters. "Our own" take on the
+ * FlClashX / mobile accordion — not a 1:1 clash-verge clone.
  */
-function ProxyGroupsSplit({
+function ProxyGroupsAccordion({
   visibleGroups,
   connectionStatus,
   showBuiltin,
@@ -199,245 +248,363 @@ function ProxyGroupsSplit({
   proxyDelayErr,
   onSelectNode,
   onPingAll,
-}: SplitProps) {
+}: AccordionProps) {
   const { t } = useTranslation()
   const [groupSearch, setGroupSearch] = useState('')
+  const [openName, setOpenName] = useState(() => lsGet(LS.open, ''))
   const [nodeSearch, setNodeSearch] = useState('')
-  const [focusedName, setFocusedName] = useState<string>('')
-
-  const groupList = useMemo(() => {
-    const q = groupSearch.trim().toLowerCase()
-    if (!q) return visibleGroups
-    return visibleGroups.filter((g: any) =>
-      String(g.name ?? '')
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [visibleGroups, groupSearch])
-
-  // Derive the effective focused group during render. This avoids a setState
-  // effect (which the React lint flags) by treating focusedName as a "hint"
-  // and falling back to the first available group when the hint no longer
-  // matches anything in the filtered list.
-  const effectiveFocused = useMemo(() => {
-    if (groupList.length === 0) return ''
-    if (
-      focusedName &&
-      groupList.some((g: any) => String(g.name ?? '') === focusedName)
-    ) {
-      return focusedName
-    }
-    return String(groupList[0]?.name ?? '')
-  }, [groupList, focusedName])
-
-  const focused = useMemo(
-    () =>
-      visibleGroups.find((g: any) => String(g.name ?? '') === effectiveFocused),
-    [visibleGroups, effectiveFocused],
+  const [sortMode, setSortMode] = useState<SortMode>(
+    () => lsGet(LS.sort, 'default') as SortMode,
   )
+  const [hideDead, setHideDead] = useState(
+    () => lsGet(LS.hideDead, '0') === '1',
+  )
+  const [density, setDensity] = useState<Density>(
+    () => lsGet(LS.density, 'compact') as Density,
+  )
+  const autoTestedRef = useRef<Set<string>>(new Set())
+  const activeCardRef = useRef<HTMLButtonElement | null>(null)
+
+  const connected = connectionStatus === 'connected'
+
+  useEffect(() => lsSet(LS.open, openName), [openName])
+  useEffect(() => lsSet(LS.sort, sortMode), [sortMode])
+  useEffect(() => lsSet(LS.hideDead, hideDead ? '1' : '0'), [hideDead])
+  useEffect(() => lsSet(LS.density, density), [density])
+
+  // Auto-test the open group's nodes once, if they have no delays yet — so
+  // opening a group surfaces live latencies without a manual ping.
+  useEffect(() => {
+    if (!openName || !connected) return
+    if (autoTestedRef.current.has(openName)) return
+    const g = visibleGroups.find((x: any) => String(x.name ?? '') === openName)
+    if (!g) return
+    const ps = filterProxyNodesForDisplay(
+      (g.proxies ?? []) as string[],
+      showBuiltin,
+      String(g.selected ?? ''),
+    )
+    if (ps.length === 0) return
+    const anyMeasured = ps.some(
+      (p) => (proxyDelayMap[p] ?? 0) > 0 || proxyDelayErr[p],
+    )
+    if (!anyMeasured) {
+      autoTestedRef.current.add(openName)
+      onPingAll(openName, ps)
+    }
+  }, [
+    openName,
+    connected,
+    visibleGroups,
+    showBuiltin,
+    proxyDelayMap,
+    proxyDelayErr,
+    onPingAll,
+  ])
+
+  // Scroll the selected node into view when a group opens.
+  useEffect(() => {
+    activeCardRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [openName])
 
   if (visibleGroups.length === 0) {
     return (
       <p className="muted">
-        {connectionStatus === 'connected'
-          ? t('ui.proxies.noGroups')
-          : t('ui.proxies.connectFirst')}
+        {connected ? t('ui.proxies.noGroups') : t('ui.proxies.connectFirst')}
       </p>
     )
   }
 
-  const focusedProxies: string[] = focused
-    ? filterProxyNodesForDisplay(
-        (focused.proxies ?? []) as string[],
-        showBuiltin,
-        String(focused.selected ?? ''),
+  const gq = groupSearch.trim().toLowerCase()
+  const shownGroups = gq
+    ? visibleGroups.filter((g: any) =>
+        String(g.name ?? '')
+          .toLowerCase()
+          .includes(gq),
       )
-    : []
-  const focusedType = String(focused?.type ?? '')
-    .toLowerCase()
-    .replace(/-/g, '')
-  const focusedIsAuto =
-    focusedType === 'urltest' ||
-    focusedType === 'fallback' ||
-    focusedType === 'loadbalance'
-  const focusedPingKey = focused ? `__all_${String(focused.name)}` : ''
-  const focusedNodeQ = nodeSearch.trim().toLowerCase()
-  const filteredNodes = focusedNodeQ
-    ? focusedProxies.filter(
-        (p) =>
-          nodeDisplayName(p).toLowerCase().includes(focusedNodeQ) ||
-          p.toLowerCase().includes(focusedNodeQ),
+    : visibleGroups
+
+  const sortNodes = (nodes: string[]): string[] => {
+    if (sortMode === 'name') {
+      return [...nodes].sort((a, b) =>
+        nodeDisplayName(a).localeCompare(nodeDisplayName(b)),
       )
-    : focusedProxies
+    }
+    if (sortMode === 'latency') {
+      const rank = (p: string): number => {
+        if (proxyDelayErr[p]) return Number.MAX_SAFE_INTEGER
+        const d = proxyDelayMap[p] ?? 0
+        return d > 0 ? d : Number.MAX_SAFE_INTEGER - 1
+      }
+      return [...nodes].sort((a, b) => rank(a) - rank(b))
+    }
+    return nodes
+  }
 
   return (
-    <div className="proxySplit">
-      <aside className="proxySplitSidebar">
-        <div className="proxySplitSearchRow">
-          <input
-            type="text"
-            value={groupSearch}
-            onChange={(e) => setGroupSearch(e.target.value)}
-            placeholder={t('ui.proxies.searchGroup')}
-            className="inputModern"
-            aria-label={t('ui.proxies.searchGroup')}
-          />
-        </div>
-        <ul className="proxySplitGroupList" role="listbox">
-          {groupList.map((g: any) => {
-            const name = String(g.name ?? '')
-            const selectedIso = extractNodeFlagIso(String(g.selected ?? ''))
-            const isFocused = name === effectiveFocused
-            return (
-              <li key={name}>
-                <button
-                  type="button"
-                  className={`proxySplitGroupItem${isFocused ? ' active' : ''}`}
-                  onClick={() => setFocusedName(name)}
-                  role="option"
-                  aria-selected={isFocused}
-                >
-                  <div className="proxySplitGroupItemTop">
-                    <span className="proxySplitGroupName">{name}</span>
-                    <span className="proxyCountChip">
-                      {(g.proxies ?? []).length}
-                    </span>
-                  </div>
-                  <div className="proxySplitGroupItemBottom">
-                    <span className="proxyTypeChip">{g.type}</span>
-                    <FlagMark iso2={selectedIso} width={12} height={9} />
-                    <span className="proxySplitGroupSelectedName">
-                      {nodeDisplayName(String(g.selected ?? '')) || '—'}
-                    </span>
-                  </div>
-                </button>
-              </li>
-            )
-          })}
-          {groupList.length === 0 ? (
-            <li className="muted small proxySplitEmpty">
-              {t('ui.proxies.noGroupMatch')}
-            </li>
-          ) : null}
-        </ul>
-      </aside>
+    <div className="proxyAccordion">
+      <div className="proxyAccFilterRow">
+        <input
+          type="text"
+          value={groupSearch}
+          onChange={(e) => setGroupSearch(e.target.value)}
+          placeholder={t('ui.proxies.searchGroup')}
+          className="inputModern proxyAccGroupSearch"
+          aria-label={t('ui.proxies.searchGroup')}
+        />
+      </div>
+      <div className="proxyAccList">
+        {shownGroups.map((g: any) => {
+          const name = String(g.name ?? '')
+          const isOpen = name === openName
+          const selected = String(g.selected ?? '')
+          const type = String(g.type ?? '')
+            .toLowerCase()
+            .replace(/-/g, '')
+          const isAuto =
+            type === 'urltest' || type === 'fallback' || type === 'loadbalance'
+          const allProxies = filterProxyNodesForDisplay(
+            (g.proxies ?? []) as string[],
+            showBuiltin,
+            selected,
+          )
+          const pingKey = `__all_${name}`
+          const selectedIso = extractNodeFlagIso(selected)
+          const health = groupHealth(allProxies, proxyDelayMap, proxyDelayErr)
 
-      <section className="proxySplitDetail">
-        {!focused ? (
-          <p className="muted">{t('ui.proxies.pickGroupHint')}</p>
-        ) : (
-          <>
-            <div className="proxySplitDetailHeader">
-              <div className="proxySplitDetailTitle">
-                <span className="proxySplitGroupName">
-                  {String(focused.name)}
+          let nodes = allProxies
+          if (isOpen) {
+            const q = nodeSearch.trim().toLowerCase()
+            if (q) {
+              nodes = nodes.filter(
+                (p) =>
+                  nodeDisplayName(p).toLowerCase().includes(q) ||
+                  p.toLowerCase().includes(q),
+              )
+            }
+            if (hideDead) nodes = nodes.filter((p) => !proxyDelayErr[p])
+            nodes = sortNodes(nodes)
+          }
+
+          return (
+            <div className={`proxyAccGroup${isOpen ? ' open' : ''}`} key={name}>
+              <button
+                type="button"
+                className="proxyAccHeader"
+                aria-expanded={isOpen}
+                onClick={() => setOpenName(isOpen ? '' : name)}
+              >
+                <span className="proxyAccName">{name}</span>
+                <span className={`proxyTypeChip proxyType-${type}`}>
+                  {g.type}
                 </span>
-                <span className="proxyTypeChip">{focused.type}</span>
                 <span className="proxyCountChip">
-                  {(focused.proxies ?? []).length}
+                  {(g.proxies ?? []).length}
                 </span>
-              </div>
-              <div className="proxySplitDetailTools">
-                <input
-                  type="text"
-                  value={nodeSearch}
-                  onChange={(e) => setNodeSearch(e.target.value)}
-                  placeholder={t('ui.proxies.searchNode')}
-                  className="inputModern proxySplitNodeSearch"
-                  aria-label={t('ui.proxies.searchNode')}
-                />
-                <button
-                  type="button"
-                  className="proxyToolbarIconBtn"
-                  disabled={
-                    connectionStatus !== 'connected' ||
-                    Boolean(proxyDelayBusy[focusedPingKey])
-                  }
-                  title={t('ui.proxies.pingAll')}
-                  aria-label={t('ui.proxies.pingAll')}
-                  onClick={() =>
-                    onPingAll(String(focused.name), focusedProxies)
-                  }
+                {health.best > 0 ? (
+                  <span
+                    className="proxyAccHealth"
+                    title={t('ui.proxies.healthTitle')}
+                  >
+                    {health.alive}/{health.total} · {health.best} ms
+                  </span>
+                ) : null}
+                <span className="proxyAccCurrent">
+                  <FlagMark iso2={selectedIso} width={12} height={9} />
+                  <span className="proxyAccCurrentName">
+                    {nodeDisplayName(selected) || '—'}
+                  </span>
+                </span>
+                <svg
+                  className="proxyAccChevron"
+                  viewBox="0 0 24 24"
+                  aria-hidden
                 >
-                  <svg
-                    className="proxyToolbarIcon"
-                    viewBox="0 0 24 24"
-                    aria-hidden
-                  >
-                    <path
-                      fill="currentColor"
-                      d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.65c.58 0 .57.32.38.66-.19.34-.05.08-.07.12C14.52 13.06 12.58 16.46 10 21z"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 9l6 6 6-6"
+                  />
+                </svg>
+              </button>
 
-            {focusedIsAuto ? (
-              <p className="muted small proxyAutoGroupHint">
-                {t('ui.proxies.autoGroupHint')}
-              </p>
-            ) : null}
-
-            <div className="proxyNodesGrid proxySplitNodesGrid">
-              {filteredNodes.map((p: string) => {
-                const active = String(focused.selected ?? '') === p
-                const iso = extractNodeFlagIso(p)
-                const rawErr = proxyDelayErr[p]
-                const shortErr = shortProxyDelayError(rawErr)
-                const titleParts: string[] = []
-                if (focusedIsAuto)
-                  titleParts.push(t('ui.proxies.autoGroupHint'))
-                else titleParts.push(p)
-                if (rawErr) titleParts.push(String(rawErr))
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`proxyNodeCard${active ? ' active' : ''}${focusedIsAuto ? ' proxyNodeDisabled' : ''}`}
-                    title={titleParts.join(' — ')}
-                    disabled={focusedIsAuto}
-                    onClick={() => {
-                      if (!p || active || focusedIsAuto) return
-                      onSelectNode(String(focused.name), p)
-                    }}
-                  >
-                    <div className="proxyNodeTop">
-                      <FlagMark iso2={iso} width={16} height={12} />
-                      <span className="proxyNodeName">
-                        {nodeDisplayName(p)}
+              {isOpen ? (
+                <div className="proxyAccBody">
+                  <div className="proxyAccActions">
+                    <button
+                      type="button"
+                      className="btn ghost proxyAccAction"
+                      disabled={!connected || Boolean(proxyDelayBusy[pingKey])}
+                      title={t('ui.proxies.pingAll')}
+                      onClick={() => onPingAll(name, allProxies)}
+                    >
+                      <span className="proxyAccActionEmoji" aria-hidden>
+                        📶
                       </span>
-                      <div className="proxyNodeTags">
-                        {nodeFeatureTags(p).map((tag) => (
-                          <span key={tag} className="proxyNodeTag">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="proxyDelayBox proxyDelayBoxReadonly">
-                        <span
-                          className={`proxyDelayText${shortErr ? ' proxyDelayFail' : ''}`}
-                        >
-                          {proxyDelayBusy[p]
-                            ? '…'
-                            : shortErr
-                              ? shortErr
-                              : proxyDelayMap[p] > 0
-                                ? `${proxyDelayMap[p]} ms`
-                                : '—'}
+                      {t('ui.proxies.pingAllShort')}
+                    </button>
+                    {!isAuto ? (
+                      <button
+                        type="button"
+                        className="btn ghost proxyAccAction proxyAccFastest"
+                        title={t('ui.proxies.selectFastest')}
+                        disabled={
+                          !fastestNode(allProxies, proxyDelayMap, proxyDelayErr)
+                        }
+                        onClick={() => {
+                          const f = fastestNode(
+                            allProxies,
+                            proxyDelayMap,
+                            proxyDelayErr,
+                          )
+                          if (f && f !== selected) onSelectNode(name, f)
+                        }}
+                      >
+                        <span className="proxyAccActionEmoji" aria-hidden>
+                          ⚡
                         </span>
-                      </div>
-                    </div>
-                  </button>
-                )
-              })}
-              {filteredNodes.length === 0 ? (
-                <p className="muted small">{t('ui.proxies.noNodeMatch')}</p>
+                        {t('ui.proxies.fastest')}
+                      </button>
+                    ) : null}
+                    <select
+                      className="selectModern selectInline proxyAccSort"
+                      value={sortMode}
+                      onChange={(e) => setSortMode(e.target.value as SortMode)}
+                      aria-label={t('ui.proxies.sortLabel')}
+                    >
+                      <option value="default">
+                        {t('ui.proxies.sortDefault')}
+                      </option>
+                      <option value="latency">
+                        {t('ui.proxies.sortLatency')}
+                      </option>
+                      <option value="name">{t('ui.proxies.sortName')}</option>
+                    </select>
+                    <button
+                      type="button"
+                      className={`btn ghost proxyAccHideDead${hideDead ? ' isOn' : ''}`}
+                      aria-pressed={hideDead}
+                      onClick={() => setHideDead((v) => !v)}
+                    >
+                      {t('ui.proxies.hideDead')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost proxyAccDensity"
+                      onClick={() =>
+                        setDensity((d) =>
+                          d === 'compact' ? 'comfortable' : 'compact',
+                        )
+                      }
+                      title={t('ui.proxies.density')}
+                    >
+                      {density === 'compact'
+                        ? t('ui.proxies.densityComfortable')
+                        : t('ui.proxies.densityCompact')}
+                    </button>
+                    <input
+                      type="text"
+                      value={nodeSearch}
+                      onChange={(e) => setNodeSearch(e.target.value)}
+                      placeholder={t('ui.proxies.searchNode')}
+                      className="inputModern proxySplitNodeSearch proxyAccSearch"
+                      aria-label={t('ui.proxies.searchNode')}
+                    />
+                  </div>
+
+                  {isAuto ? (
+                    <p className="muted small proxyAutoGroupHint">
+                      {t('ui.proxies.autoGroupHint')}
+                    </p>
+                  ) : null}
+
+                  <div
+                    className={`proxyNodesGrid${density === 'compact' ? ' compact' : ''}`}
+                  >
+                    {nodes.map((p: string) => {
+                      const active = selected === p
+                      const iso = extractNodeFlagIso(p)
+                      const rawErr = proxyDelayErr[p]
+                      const shortErr = shortProxyDelayError(rawErr)
+                      const ms = proxyDelayMap[p] ?? 0
+                      const band = delayBand(ms)
+                      const titleParts: string[] = []
+                      if (isAuto) titleParts.push(t('ui.proxies.autoGroupHint'))
+                      else titleParts.push(p)
+                      if (rawErr) titleParts.push(String(rawErr))
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          ref={active ? activeCardRef : undefined}
+                          className={`proxyNodeCard${active ? ' active' : ''}${isAuto ? ' proxyNodeDisabled' : ''}`}
+                          title={titleParts.join(' — ')}
+                          disabled={isAuto}
+                          onClick={() => {
+                            if (!p || active || isAuto) return
+                            onSelectNode(name, p)
+                          }}
+                        >
+                          <div className="proxyNodeTop">
+                            <FlagMark iso2={iso} width={16} height={12} />
+                            <span className="proxyNodeName">
+                              {nodeDisplayName(p)}
+                            </span>
+                            <div className="proxyNodeTags">
+                              {nodeFeatureTags(p).map((tag) => (
+                                <span key={tag} className="proxyNodeTag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="proxyDelayBox proxyDelayBoxReadonly">
+                              <span
+                                className={`proxyDelayText${shortErr ? ' proxyDelayFail' : band ? ` proxyDelay${band[0].toUpperCase()}${band.slice(1)}` : ''}`}
+                              >
+                                {proxyDelayBusy[p]
+                                  ? '…'
+                                  : shortErr
+                                    ? shortErr
+                                    : ms > 0
+                                      ? `${ms} ms`
+                                      : '—'}
+                              </span>
+                            </div>
+                          </div>
+                          {band ? (
+                            <span
+                              className={`proxyDelayBar proxyDelayBar${band[0].toUpperCase()}${band.slice(1)}`}
+                              aria-hidden
+                            >
+                              <span
+                                className="proxyDelayBarFill"
+                                style={{ width: `${delayBarPct(ms)}%` }}
+                              />
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                    {nodes.length === 0 ? (
+                      <p className="muted small">
+                        {t('ui.proxies.noNodeMatch')}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               ) : null}
             </div>
-          </>
-        )}
-      </section>
+          )
+        })}
+        {shownGroups.length === 0 ? (
+          <p className="muted small proxyAccEmpty">
+            {t('ui.proxies.noGroupMatch')}
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }

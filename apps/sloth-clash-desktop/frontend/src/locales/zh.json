@@ -163,7 +163,19 @@
       "searchNode": "搜索节点...",
       "noGroupMatch": "未找到分组。",
       "noNodeMatch": "未找到节点。",
-      "pickGroupHint": "在左侧选择分组以查看其节点。"
+      "pickGroupHint": "在左侧选择分组以查看其节点。",
+      "sortLabel": "节点排序",
+      "sortDefault": "默认顺序",
+      "sortLatency": "按延迟",
+      "sortName": "按名称",
+      "hideDead": "隐藏失效",
+      "healthTitle": "存活 / 总节点数 · 最佳延迟",
+      "selectFastest": "选择最快",
+      "pingAllShort": "全部测速",
+      "fastest": "最快",
+      "density": "切换节点密度",
+      "densityCompact": "紧凑",
+      "densityComfortable": "宽松"
     },
     "rules": {
       "title": "规则",

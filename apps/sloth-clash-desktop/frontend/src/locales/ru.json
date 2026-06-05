@@ -163,7 +163,19 @@
       "searchNode": "Поиск нод...",
       "noGroupMatch": "Группы не найдены.",
       "noNodeMatch": "Ноды не найдены.",
-      "pickGroupHint": "Выберите группу слева, чтобы увидеть её ноды."
+      "pickGroupHint": "Выберите группу слева, чтобы увидеть её ноды.",
+      "sortLabel": "Сортировка нод",
+      "sortDefault": "По умолчанию",
+      "sortLatency": "По задержке",
+      "sortName": "По имени",
+      "hideDead": "Скрыть мёртвые",
+      "healthTitle": "Живых / всего нод · лучшая задержка",
+      "selectFastest": "Выбрать быстрейший",
+      "pingAllShort": "Пинг всех",
+      "fastest": "Быстрейший",
+      "density": "Плотность карточек",
+      "densityCompact": "Компактно",
+      "densityComfortable": "Просторно"
     },
     "rules": {
       "title": "Правила",

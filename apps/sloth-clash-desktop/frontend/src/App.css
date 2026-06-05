@@ -66,6 +66,9 @@
   --dur-base: 200ms;
   --dur-slow: 320ms;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* scrollbars — themed (bronze) instead of stark white */
+  --scrollbar-thumb: rgba(201, 168, 108, 0.3);
+  --scrollbar-thumb-hover: rgba(201, 168, 108, 0.5);
 
   background: radial-gradient(
     circle at 18% 10%,
@@ -244,12 +247,46 @@
   --text-muted: #6f6450;
   --hairline: rgba(70, 52, 28, 0.1);
   --hairline-strong: rgba(70, 52, 28, 0.16);
+  --scrollbar-thumb: rgba(147, 107, 56, 0.34);
+  --scrollbar-thumb-hover: rgba(147, 107, 56, 0.55);
   background: radial-gradient(
     circle at 18% 10%,
     #f2ebdc 0,
     #e9dec8 50%,
     #ddccb0 100%
   );
+}
+
+/* Themed scrollbars everywhere inside the app (WebView2 / Chromium) so they
+   blend with the palette instead of the stark default white bar. */
+.shell {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.shell ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shell ::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.shell ::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .shell[data-theme="light"] .nav {
@@ -3582,6 +3619,185 @@
   max-height: 94vh;
   min-height: min(84vh, 760px);
   overflow: auto;
+}
+
+/* === Edit rules — compact add-bar + two columns (rules-editor-rework) === */
+.rulesEditorModal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rulesEditorModal > .vergeModalHead,
+.rulesEditorModal > .modalFooter,
+.rulesEditorModal > .rulesAdvancedField {
+  flex: 0 0 auto;
+}
+
+.rulesEditorBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rulesAddBar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.shell[data-theme="light"] .rulesAddBar {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.rulesAddType {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 150px;
+  max-width: 190px;
+}
+
+.rulesAddContent {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+
+.rulesAddArrow {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.rulesAddPolicy {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 130px;
+  max-width: 180px;
+}
+
+.rulesAddPos {
+  flex: 0 0 auto;
+}
+
+.rulesAddBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.rulesCols {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 760px) {
+  .rulesCols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rulesCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rulesCol > .eyebrow {
+  flex: 0 0 auto;
+  margin: 0 0 var(--space-2);
+}
+
+.rulesList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-right: var(--space-1);
+}
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.12);
+  font-size: var(--font-size-sm);
+}
+
+.shell[data-theme="light"] .ruleRow {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.ruleRowDeleted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.ruleTypeChip {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(150, 150, 150, 0.14);
+  border: 1px solid rgba(150, 150, 150, 0.3);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ruleContent {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruleArrow {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.rulePolicy {
+  flex: 0 0 auto;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+}
+
+.rulePos {
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ruleRemove {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  line-height: 1.4;
+}
+
+.rulesYamlErr {
+  color: var(--danger);
 }
 
 .yamlModalBlurb {

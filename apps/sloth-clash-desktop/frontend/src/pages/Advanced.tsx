@@ -147,351 +147,360 @@ export function AdvancedPage({
       <p className="muted">{t('ui.advanced.lead')}</p>
 
       <div className="advancedGrid">
-        <div className="homeCard">
-          <h3 className="homeCardTitle">{t('ui.advanced.diagnostics')}</h3>
-          <div className="statusRow">
-            <span>{t('advanced.connection')}</span>
-            <strong>{String(connectionStatus || '—')}</strong>
+        <div className="advancedCol">
+          <div className="homeCard">
+            <h3 className="homeCardTitle">{t('ui.advanced.diagnostics')}</h3>
+            <div className="statusRow">
+              <span>{t('advanced.connection')}</span>
+              <strong>{String(connectionStatus || '—')}</strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.coreVersion')}</span>
+              <strong>{String(coreVersion || '—')}</strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.controller')}</span>
+              <strong className="monoTight">
+                {String(controllerAddr || '—')}
+              </strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.mixedPort')}</span>
+              <strong>{mixedPort || '—'}</strong>
+            </div>
+            <p className="muted small advancedStatusNote">
+              {t('ui.advanced.pathsMovedNote')}
+            </p>
           </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.coreVersion')}</span>
-            <strong>{String(coreVersion || '—')}</strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.controller')}</span>
-            <strong className="monoTight">
-              {String(controllerAddr || '—')}
-            </strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.mixedPort')}</span>
-            <strong>{mixedPort || '—'}</strong>
-          </div>
-          <p className="muted small advancedStatusNote">
-            {t('ui.advanced.pathsMovedNote')}
-          </p>
+
+          <CollapsibleCard
+            title={t('ui.advanced.connectivityTools')}
+            defaultOpen
+          >
+            <p className="muted small">{t('ui.advanced.connectivityLead')}</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() =>
+                  onConnectivityCheck(
+                    'google',
+                    'https://www.google.com/generate_204',
+                  )
+                }
+                disabled={connectivityBusy === 'google'}
+              >
+                Google
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() =>
+                  onConnectivityCheck(
+                    'youtube',
+                    'https://www.youtube.com/generate_204',
+                  )
+                }
+                disabled={connectivityBusy === 'youtube'}
+              >
+                YouTube
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() =>
+                  onConnectivityCheck('telegram', 'https://web.telegram.org')
+                }
+                disabled={connectivityBusy === 'telegram'}
+              >
+                Telegram
+              </button>
+            </div>
+            <div className="diagList">
+              <div className="statusRow">
+                <span>Google</span>
+                <strong>{connectivityResults.google ?? '—'}</strong>
+              </div>
+              <div className="statusRow">
+                <span>YouTube</span>
+                <strong>{connectivityResults.youtube ?? '—'}</strong>
+              </div>
+              <div className="statusRow">
+                <span>Telegram</span>
+                <strong>{connectivityResults.telegram ?? '—'}</strong>
+              </div>
+            </div>
+          </CollapsibleCard>
+
+          <CollapsibleCard
+            title={t('ui.advanced.deviceIdentity')}
+            className="advancedDeviceIdentityCard"
+          >
+            <p className="muted small">{t('ui.advanced.deviceIdentityLead')}</p>
+            <div
+              className="deviceIdentityHwidRow"
+              data-hwid-disabled={hwidEnabled ? undefined : 'true'}
+            >
+              <div className="deviceIdentityHwid monoTight">
+                {deviceIdentity?.hwid ?? '—'}
+              </div>
+              <div className="deviceIdentityActions">
+                <button
+                  type="button"
+                  className="btn btnCompact"
+                  disabled={!deviceIdentity?.hwid}
+                  onClick={onCopyHwid}
+                >
+                  {t('ui.advanced.copyHwid')}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btnCompact"
+                  disabled={!deviceIdentity}
+                  onClick={onCopyAllIdentity}
+                >
+                  {t('ui.advanced.copyAllIdentity')}
+                </button>
+              </div>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.hwidSendToggle')}</span>
+              <label className="hwidSendToggle">
+                <input
+                  type="checkbox"
+                  checked={hwidEnabled}
+                  disabled={hwidSaving}
+                  onChange={(e) => onToggleHwid(e.target.checked)}
+                />
+                <strong className="monoTight">
+                  {hwidEnabled
+                    ? t('ui.advanced.hwidSendOn')
+                    : t('ui.advanced.hwidSendOff')}
+                </strong>
+              </label>
+            </div>
+            {!hwidEnabled ? (
+              <p className="muted small hwidSendNote">
+                {t('ui.advanced.hwidSendOffNote')}
+              </p>
+            ) : null}
+            <div className="statusRow">
+              <span>{t('ui.advanced.identityDeviceOs')}</span>
+              <strong className="monoTight">
+                {deviceIdentity?.deviceOs ?? '—'}
+              </strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.identityOsVersion')}</span>
+              <strong className="monoTight">
+                {deviceIdentity?.osVersion ?? '—'}
+              </strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.identityDeviceModel')}</span>
+              <strong className="monoTight">
+                {deviceIdentity?.deviceModel ?? '—'}
+              </strong>
+            </div>
+            <div className="statusRow">
+              <span>{t('ui.advanced.identityAppVersion')}</span>
+              <strong className="monoTight">
+                {deviceIdentity?.appVersion ?? '—'}
+              </strong>
+            </div>
+          </CollapsibleCard>
         </div>
 
-        <CollapsibleCard title={t('ui.advanced.connectivityTools')}>
-          <p className="muted small">{t('ui.advanced.connectivityLead')}</p>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() =>
-                onConnectivityCheck(
-                  'google',
-                  'https://www.google.com/generate_204',
-                )
-              }
-              disabled={connectivityBusy === 'google'}
-            >
-              Google
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() =>
-                onConnectivityCheck(
-                  'youtube',
-                  'https://www.youtube.com/generate_204',
-                )
-              }
-              disabled={connectivityBusy === 'youtube'}
-            >
-              YouTube
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() =>
-                onConnectivityCheck('telegram', 'https://web.telegram.org')
-              }
-              disabled={connectivityBusy === 'telegram'}
-            >
-              Telegram
-            </button>
-          </div>
-          <div className="diagList">
-            <div className="statusRow">
-              <span>Google</span>
-              <strong>{connectivityResults.google ?? '—'}</strong>
-            </div>
-            <div className="statusRow">
-              <span>YouTube</span>
-              <strong>{connectivityResults.youtube ?? '—'}</strong>
-            </div>
-            <div className="statusRow">
-              <span>Telegram</span>
-              <strong>{connectivityResults.telegram ?? '—'}</strong>
-            </div>
-          </div>
-        </CollapsibleCard>
-
-        <CollapsibleCard
-          title={t('ui.advanced.deviceIdentity')}
-          className="advancedDeviceIdentityCard"
-        >
-          <p className="muted small">{t('ui.advanced.deviceIdentityLead')}</p>
-          <div
-            className="deviceIdentityHwidRow"
-            data-hwid-disabled={hwidEnabled ? undefined : 'true'}
+        <div className="advancedCol">
+          <CollapsibleCard
+            title={t('ui.advanced.runtimeTrace')}
+            className="advancedRuntimeTraceCard"
+            actions={
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={runtimeDiagEvents.length === 0}
+                onClick={(e) => {
+                  // Prevent the collapse toggle from firing when clicking Copy.
+                  e.stopPropagation()
+                  onCopyRuntimeTrace(serializeTrace(runtimeDiagEvents))
+                }}
+              >
+                {t('ui.advanced.runtimeTraceCopy')}
+              </button>
+            }
           >
-            <div className="deviceIdentityHwid monoTight">
-              {deviceIdentity?.hwid ?? '—'}
-            </div>
-            <div className="deviceIdentityActions">
-              <button
-                type="button"
-                className="btn btnCompact"
-                disabled={!deviceIdentity?.hwid}
-                onClick={onCopyHwid}
-              >
-                {t('ui.advanced.copyHwid')}
-              </button>
-              <button
-                type="button"
-                className="btn ghost btnCompact"
-                disabled={!deviceIdentity}
-                onClick={onCopyAllIdentity}
-              >
-                {t('ui.advanced.copyAllIdentity')}
-              </button>
-            </div>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.hwidSendToggle')}</span>
-            <label className="hwidSendToggle">
-              <input
-                type="checkbox"
-                checked={hwidEnabled}
-                disabled={hwidSaving}
-                onChange={(e) => onToggleHwid(e.target.checked)}
-              />
-              <strong className="monoTight">
-                {hwidEnabled
-                  ? t('ui.advanced.hwidSendOn')
-                  : t('ui.advanced.hwidSendOff')}
-              </strong>
-            </label>
-          </div>
-          {!hwidEnabled ? (
-            <p className="muted small hwidSendNote">
-              {t('ui.advanced.hwidSendOffNote')}
-            </p>
-          ) : null}
-          <div className="statusRow">
-            <span>{t('ui.advanced.identityDeviceOs')}</span>
-            <strong className="monoTight">
-              {deviceIdentity?.deviceOs ?? '—'}
-            </strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.identityOsVersion')}</span>
-            <strong className="monoTight">
-              {deviceIdentity?.osVersion ?? '—'}
-            </strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.identityDeviceModel')}</span>
-            <strong className="monoTight">
-              {deviceIdentity?.deviceModel ?? '—'}
-            </strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.identityAppVersion')}</span>
-            <strong className="monoTight">
-              {deviceIdentity?.appVersion ?? '—'}
-            </strong>
-          </div>
-        </CollapsibleCard>
-
-        <CollapsibleCard
-          title={t('ui.advanced.runtimeTrace')}
-          className="advancedRuntimeTraceCard"
-          actions={
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={runtimeDiagEvents.length === 0}
-              onClick={(e) => {
-                // Prevent the collapse toggle from firing when clicking Copy.
-                e.stopPropagation()
-                onCopyRuntimeTrace(serializeTrace(runtimeDiagEvents))
-              }}
-            >
-              {t('ui.advanced.runtimeTraceCopy')}
-            </button>
-          }
-        >
-          <p className="muted small">{t('ui.advanced.runtimeTraceLead')}</p>
-          {runtimeDiagEvents.length === 0 ? (
-            <p className="muted small">{t('ui.advanced.runtimeTraceEmpty')}</p>
-          ) : (
-            <div className="advancedRuntimeTraceList">
-              {runtimeDiagEvents
-                .slice(-TRACE_VISIBLE_LIMIT)
-                .reverse()
-                .map((ev) => (
-                  <div
-                    key={`${ev.ts}-${ev.category}-${ev.message ?? ''}`}
-                    className="advancedRuntimeTraceRow"
-                  >
-                    <span className="advancedRuntimeTraceTime">
-                      {formatTraceTimestamp(ev.ts)}
-                    </span>
-                    <span className="advancedRuntimeTraceCat">
-                      {ev.category}
-                    </span>
-                    {ev.message ? (
-                      <span className="advancedRuntimeTraceMsg">
-                        {ev.message}
+            <p className="muted small">{t('ui.advanced.runtimeTraceLead')}</p>
+            {runtimeDiagEvents.length === 0 ? (
+              <p className="muted small">
+                {t('ui.advanced.runtimeTraceEmpty')}
+              </p>
+            ) : (
+              <div className="advancedRuntimeTraceList">
+                {runtimeDiagEvents
+                  .slice(-TRACE_VISIBLE_LIMIT)
+                  .reverse()
+                  .map((ev) => (
+                    <div
+                      key={`${ev.ts}-${ev.category}-${ev.message ?? ''}`}
+                      className="advancedRuntimeTraceRow"
+                    >
+                      <span className="advancedRuntimeTraceTime">
+                        {formatTraceTimestamp(ev.ts)}
                       </span>
-                    ) : null}
-                  </div>
-                ))}
-            </div>
-          )}
-        </CollapsibleCard>
-
-        <CollapsibleCard title={t('ui.advanced.paths')}>
-          <p className="muted small">{t('ui.advanced.pathsLead')}</p>
-          <div className="advancedPathsGrid">
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.dataRoot}
-              onClick={() => onOpenPath(advancedPaths?.dataRoot ?? '')}
-            >
-              {t('ui.advanced.openDataRoot')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.runtimeDir}
-              onClick={() => onOpenPath(advancedPaths?.runtimeDir ?? '')}
-            >
-              {t('ui.advanced.openRuntimeDir')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.activeConfig}
-              onClick={() => onOpenPath(advancedPaths?.activeConfig ?? '')}
-            >
-              {t('ui.advanced.openActiveConfig')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.geoDir}
-              onClick={() => onOpenPath(advancedPaths?.geoDir ?? '')}
-            >
-              {t('ui.advanced.openGeoDir')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.profilesJson}
-              onClick={() => onOpenPath(advancedPaths?.profilesJson ?? '')}
-            >
-              {t('ui.advanced.openProfilesJson')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.prefsJson}
-              onClick={() => onOpenPath(advancedPaths?.prefsJson ?? '')}
-            >
-              {t('ui.advanced.openPrefsJson')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.debugLog}
-              onClick={() => onOpenPath(advancedPaths?.debugLog ?? '')}
-            >
-              {t('ui.advanced.openDebugLog')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={!advancedPaths?.serviceLog}
-              onClick={() => onOpenPath(advancedPaths?.serviceLog ?? '')}
-            >
-              {t('ui.advanced.openServiceLog')}
-            </button>
-          </div>
-        </CollapsibleCard>
-
-        <CollapsibleCard title={t('ui.advanced.geoStatus')}>
-          <p className="muted small">{t('ui.advanced.geoStatusLead')}</p>
-          {!advancedGeo?.geoIpPath && !advancedGeo?.geoSitePath ? (
-            <p className="muted small">{t('ui.advanced.geoNotExtracted')}</p>
-          ) : (
-            <>
-              <div className="statusRow">
-                <span>{t('ui.advanced.geoIpLabel')}</span>
-                <strong className="monoTight">
-                  {formatBytes(advancedGeo?.geoIpSize ?? 0)} ·{' '}
-                  {formatModified(advancedGeo?.geoIpModified ?? 0)}
-                </strong>
+                      <span className="advancedRuntimeTraceCat">
+                        {ev.category}
+                      </span>
+                      {ev.message ? (
+                        <span className="advancedRuntimeTraceMsg">
+                          {ev.message}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
               </div>
-              <div className="statusRow">
-                <span>{t('ui.advanced.geoSiteLabel')}</span>
-                <strong className="monoTight">
-                  {formatBytes(advancedGeo?.geoSiteSize ?? 0)} ·{' '}
-                  {formatModified(advancedGeo?.geoSiteModified ?? 0)}
-                </strong>
-              </div>
-            </>
-          )}
-        </CollapsibleCard>
+            )}
+          </CollapsibleCard>
 
-        <CollapsibleCard title={t('ui.advanced.tools')} defaultOpen>
-          <p className="muted small">{t('ui.advanced.toolsLead')}</p>
-          <div className="advancedPowerGrid">
-            <div className="advancedPowerRow">
+          <CollapsibleCard title={t('ui.advanced.paths')}>
+            <p className="muted small">{t('ui.advanced.pathsLead')}</p>
+            <div className="advancedPathsGrid">
               <button
                 type="button"
                 className="btn ghost btnCompact"
-                disabled={toolsBusy === 'restartCore'}
-                onClick={onRestartCore}
+                disabled={!advancedPaths?.dataRoot}
+                onClick={() => onOpenPath(advancedPaths?.dataRoot ?? '')}
               >
-                {t('ui.advanced.restartCore')}
+                {t('ui.advanced.openDataRoot')}
               </button>
-              <span className="muted small">
-                {t('ui.advanced.restartCoreHint')}
-              </span>
-            </div>
-            <div className="advancedPowerRow">
               <button
                 type="button"
                 className="btn ghost btnCompact"
-                disabled={toolsBusy === 'resetSubCache'}
-                onClick={onResetSubscriptionCache}
+                disabled={!advancedPaths?.runtimeDir}
+                onClick={() => onOpenPath(advancedPaths?.runtimeDir ?? '')}
               >
-                {t('ui.advanced.resetSubCache')}
+                {t('ui.advanced.openRuntimeDir')}
               </button>
-              <span className="muted small">
-                {t('ui.advanced.resetSubCacheHint')}
-              </span>
-            </div>
-            <div className="advancedPowerRow">
               <button
                 type="button"
                 className="btn ghost btnCompact"
-                disabled={toolsBusy === 'reextract'}
-                onClick={onReextractBundled}
+                disabled={!advancedPaths?.activeConfig}
+                onClick={() => onOpenPath(advancedPaths?.activeConfig ?? '')}
               >
-                {t('ui.advanced.reextractBundled')}
+                {t('ui.advanced.openActiveConfig')}
               </button>
-              <span className="muted small">
-                {t('ui.advanced.reextractBundledHint')}
-              </span>
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={!advancedPaths?.geoDir}
+                onClick={() => onOpenPath(advancedPaths?.geoDir ?? '')}
+              >
+                {t('ui.advanced.openGeoDir')}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={!advancedPaths?.profilesJson}
+                onClick={() => onOpenPath(advancedPaths?.profilesJson ?? '')}
+              >
+                {t('ui.advanced.openProfilesJson')}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={!advancedPaths?.prefsJson}
+                onClick={() => onOpenPath(advancedPaths?.prefsJson ?? '')}
+              >
+                {t('ui.advanced.openPrefsJson')}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={!advancedPaths?.debugLog}
+                onClick={() => onOpenPath(advancedPaths?.debugLog ?? '')}
+              >
+                {t('ui.advanced.openDebugLog')}
+              </button>
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={!advancedPaths?.serviceLog}
+                onClick={() => onOpenPath(advancedPaths?.serviceLog ?? '')}
+              >
+                {t('ui.advanced.openServiceLog')}
+              </button>
             </div>
-          </div>
-        </CollapsibleCard>
+          </CollapsibleCard>
+
+          <CollapsibleCard title={t('ui.advanced.geoStatus')}>
+            <p className="muted small">{t('ui.advanced.geoStatusLead')}</p>
+            {!advancedGeo?.geoIpPath && !advancedGeo?.geoSitePath ? (
+              <p className="muted small">{t('ui.advanced.geoNotExtracted')}</p>
+            ) : (
+              <>
+                <div className="statusRow">
+                  <span>{t('ui.advanced.geoIpLabel')}</span>
+                  <strong className="monoTight">
+                    {formatBytes(advancedGeo?.geoIpSize ?? 0)} ·{' '}
+                    {formatModified(advancedGeo?.geoIpModified ?? 0)}
+                  </strong>
+                </div>
+                <div className="statusRow">
+                  <span>{t('ui.advanced.geoSiteLabel')}</span>
+                  <strong className="monoTight">
+                    {formatBytes(advancedGeo?.geoSiteSize ?? 0)} ·{' '}
+                    {formatModified(advancedGeo?.geoSiteModified ?? 0)}
+                  </strong>
+                </div>
+              </>
+            )}
+          </CollapsibleCard>
+
+          <CollapsibleCard title={t('ui.advanced.tools')} defaultOpen>
+            <p className="muted small">{t('ui.advanced.toolsLead')}</p>
+            <div className="advancedPowerGrid">
+              <div className="advancedPowerRow">
+                <button
+                  type="button"
+                  className="btn ghost btnCompact"
+                  disabled={toolsBusy === 'restartCore'}
+                  onClick={onRestartCore}
+                >
+                  {t('ui.advanced.restartCore')}
+                </button>
+                <span className="muted small">
+                  {t('ui.advanced.restartCoreHint')}
+                </span>
+              </div>
+              <div className="advancedPowerRow">
+                <button
+                  type="button"
+                  className="btn ghost btnCompact"
+                  disabled={toolsBusy === 'resetSubCache'}
+                  onClick={onResetSubscriptionCache}
+                >
+                  {t('ui.advanced.resetSubCache')}
+                </button>
+                <span className="muted small">
+                  {t('ui.advanced.resetSubCacheHint')}
+                </span>
+              </div>
+              <div className="advancedPowerRow">
+                <button
+                  type="button"
+                  className="btn ghost btnCompact"
+                  disabled={toolsBusy === 'reextract'}
+                  onClick={onReextractBundled}
+                >
+                  {t('ui.advanced.reextractBundled')}
+                </button>
+                <span className="muted small">
+                  {t('ui.advanced.reextractBundledHint')}
+                </span>
+              </div>
+            </div>
+          </CollapsibleCard>
+        </div>
       </div>
 
       {error ? <p className="error">{friendlyErrorMessage(error)}</p> : null}

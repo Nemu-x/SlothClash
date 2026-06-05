@@ -2682,14 +2682,13 @@
 
 /* Masonry packing (like Settings) so every card flows into two balanced
    columns instead of a tall vertical stack — fits one screen (visual-polish). */
+/* Stable 2-column grid (not column-count masonry) so expanding a collapsible
+   card doesn't make the others jump between columns. */
 .advancedGrid {
-  column-count: 2;
-  column-gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.advancedGrid > * {
-  break-inside: avoid;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
 
@@ -2701,7 +2700,7 @@
 
 @media (max-width: 980px) {
   .advancedGrid {
-    column-count: 1;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4478,20 +4477,28 @@
 /* Masonry-style packing so cards fill each column by height instead of being
    locked to ragged grid rows (visual-polish: fixes the uneven-columns / dead
    space the user flagged). */
+/* Two explicit columns, each a tight flex stack: cards keep a fixed column
+   (no jumping when one grows) AND pack top-down with no inter-card gaps (unlike
+   a row-major grid). Columns may differ in length — that's fine. */
 .settingsGridCompact {
-  column-count: 2;
-  column-gap: var(--space-2);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
 
-.settingsGridCompact > .homeCard.settingsCardCompact {
-  break-inside: avoid;
-  margin-bottom: var(--space-2);
+.settingsCol,
+.advancedCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 @media (max-width: 720px) {
   .settingsGridCompact {
-    column-count: 1;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4501,7 +4508,7 @@
 }
 
 .settingsCardCompact {
-  padding: 8px 10px 8px;
+  padding: 6px 10px;
 }
 
 .settingsCardCompact .homeCardTitle {
@@ -4588,9 +4595,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: var(--font-size-xs);
+  gap: var(--space-3);
+  min-height: 22px;
+  padding: 1px 0;
+  font-size: var(--font-size-sm);
+}
+
+.settingsToggleRow > span:first-child {
+  min-width: 0;
 }
 
 .settingsToggleRow .trafficKnob {
@@ -4599,6 +4611,74 @@
   padding: 4px 10px;
   font-size: var(--font-size-xs);
   border-radius: 999px;
+}
+
+/* iOS-style switch toggle (Settings booleans). */
+.settingsSwitch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard);
+}
+
+.shell[data-theme="light"] .settingsSwitch {
+  background: rgba(74, 55, 30, 0.2);
+  border-color: rgba(74, 55, 30, 0.32);
+}
+
+/* On = sage green (same family as the Home connect button) — intuitive
+   "enabled", and more legible than bronze on the light theme. */
+.settingsSwitch.on {
+  background: #6f8f72;
+  border-color: #5d7a60;
+}
+
+.shell[data-theme="light"] .settingsSwitch.on {
+  background: #5f8567;
+  border-color: #527456;
+}
+
+.settingsSwitch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settingsSwitchKnob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f4efe6;
+  transform: translateY(-50%);
+  transition: left var(--dur-base) var(--ease-standard);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.settingsSwitch.on .settingsSwitchKnob {
+  left: 20px;
+}
+
+/* Section icons in card headers. */
+.settingsCardIcon {
+  margin-right: var(--space-2);
+  font-size: 0.95em;
+  opacity: 0.9;
+}
+
+.settingsUpToDate {
+  margin: 0;
+  color: var(--ok);
+  font-weight: var(--weight-medium);
 }
 
 .settingsMicroHint {

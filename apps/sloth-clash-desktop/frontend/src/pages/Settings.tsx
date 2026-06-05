@@ -9,6 +9,34 @@ import { friendlyErrorMessage } from '../utils/yaml'
 export type ThemeMode = 'dark' | 'light' | 'system'
 export type Lang = 'en' | 'ru' | 'zh'
 
+// iOS-style sliding switch for boolean settings (scoped to Settings; the Home
+// Proxy/TUN selector keeps its own .trafficKnob style).
+function SettingsSwitch({
+  checked,
+  disabled,
+  onToggle,
+  label,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onToggle: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      className={`settingsSwitch${checked ? ' on' : ''}`}
+      onClick={onToggle}
+    >
+      <span className="settingsSwitchKnob" aria-hidden />
+    </button>
+  )
+}
+
 export function SettingsPage({
   theme,
   lang,
@@ -98,349 +126,378 @@ export function SettingsPage({
       <p className="muted settingsPanelLead">{t('settings.lead')}</p>
 
       <div className="settingsGridCompact">
-        <div className="homeCard settingsCardCompact">
-          <h3 className="homeCardTitle">{t('settings.general')}</h3>
-          <label className="field">
-            <span className="fieldLab">{t('settings.theme')}</span>
-            <div className="segPill">
-              {(['system', 'dark', 'light'] as const).map((th) => (
-                <button
-                  key={th}
-                  type="button"
-                  className={theme === th ? 'pillOpt active' : 'pillOpt'}
-                  onClick={() => onSetTheme(th)}
-                >
-                  {th === 'system'
-                    ? t('settings.themeSystem')
-                    : th === 'dark'
-                      ? t('settings.themeDark')
-                      : t('settings.themeLight')}
-                </button>
-              ))}
+        <div className="settingsCol">
+          <div className="homeCard settingsCardCompact">
+            <h3 className="homeCardTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                ⚙️
+              </span>
+              {t('settings.general')}
+            </h3>
+            <label className="field">
+              <span className="fieldLab">{t('settings.theme')}</span>
+              <div className="segPill">
+                {(['system', 'dark', 'light'] as const).map((th) => (
+                  <button
+                    key={th}
+                    type="button"
+                    className={theme === th ? 'pillOpt active' : 'pillOpt'}
+                    onClick={() => onSetTheme(th)}
+                  >
+                    {th === 'system'
+                      ? t('settings.themeSystem')
+                      : th === 'dark'
+                        ? t('settings.themeDark')
+                        : t('settings.themeLight')}
+                  </button>
+                ))}
+              </div>
+            </label>
+            <label className="field">
+              <span className="fieldLab">{t('settings.language')}</span>
+              <select
+                className="selectModern"
+                value={lang}
+                onChange={(e) => onSetLang(e.target.value as Lang)}
+              >
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+                <option value="zh">简体中文</option>
+              </select>
+            </label>
+            <div className="settingsToggleRow">
+              <span>{t('settings.startMinimized')}</span>
+              <SettingsSwitch
+                checked={settings.startMinimized}
+                label={t('settings.startMinimized')}
+                onToggle={() =>
+                  onSetSetting('startMinimized', !settings.startMinimized)
+                }
+              />
             </div>
-          </label>
-          <label className="field">
-            <span className="fieldLab">{t('settings.language')}</span>
-            <select
-              className="selectModern"
-              value={lang}
-              onChange={(e) => onSetLang(e.target.value as Lang)}
-            >
-              <option value="en">English</option>
-              <option value="ru">Русский</option>
-              <option value="zh">简体中文</option>
-            </select>
-          </label>
-          <div className="settingsToggleRow">
-            <span>{t('settings.startMinimized')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.startMinimized ? 'on' : ''}`}
-              onClick={() =>
-                onSetSetting('startMinimized', !settings.startMinimized)
-              }
-            >
-              {settings.startMinimized ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-          <div className="settingsToggleRow">
-            <span>{t('settings.launchOnStartup')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.launchOnStartup ? 'on' : ''}`}
-              onClick={() => onSetLaunchOnStartup(!settings.launchOnStartup)}
-            >
-              {settings.launchOnStartup ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-          <div className="settingsToggleRow">
-            <span>{t('settings.closeToTray')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.closeToTray ? 'on' : ''}`}
-              disabled={!trayAvailable}
-              onClick={() =>
-                trayAvailable &&
-                onSetSetting('closeToTray', !settings.closeToTray)
-              }
-            >
-              {settings.closeToTray ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-        </div>
-
-        <div className="homeCard settingsCardCompact">
-          <h3 className="homeCardTitle">{t('settings.connection')}</h3>
-          <div className="settingsToggleRow">
-            <span>{t('settings.smartDns')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.dnsSmartFallback ? 'on' : ''}`}
-              onClick={() =>
-                onSetSetting('dnsSmartFallback', !settings.dnsSmartFallback)
-              }
-            >
-              {settings.dnsSmartFallback ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-          <div className="settingsToggleRow">
-            <span>{t('settings.ipv6Dns')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.dnsIpv6 ? 'on' : ''}`}
-              onClick={() => onSetSetting('dnsIpv6', !settings.dnsIpv6)}
-            >
-              {settings.dnsIpv6 ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-          <div className="settingsToggleRow">
-            <span>{t('settings.allowLanBinding')}</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.dnsAllowLan ? 'on' : ''}`}
-              onClick={() => onSetSetting('dnsAllowLan', !settings.dnsAllowLan)}
-            >
-              {settings.dnsAllowLan ? t('common.on') : t('common.off')}
-            </button>
-          </div>
-          <p className="muted settingsMicroHint">{t('settings.dnsHint')}</p>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={onInstallService}
-            >
-              {t('settings.installService')}
-            </button>
-            <button type="button" className="btn ghost" onClick={onEnsureTun}>
-              {t('settings.guidedTun')}
-            </button>
-          </div>
-        </div>
-
-        <div className="homeCard settingsCardCompact">
-          <h3 className="homeCardTitle">{t('settings.tun.title')}</h3>
-          <p className="muted settingsMicroHint">{t('settings.tun.hint')}</p>
-          <div className="settingsTunSummary">
-            <span className="settingsTunSummaryItem">
-              <span className="settingsTunSummaryLabel">
-                {t('settings.tun.stackLabel')}:
-              </span>
-              <span className="settingsTunSummaryValue">
-                {tunStackValue || t('settings.tun.inherit')}
-              </span>
-            </span>
-            <span className="settingsTunSummaryItem">
-              <span className="settingsTunSummaryLabel">
-                {t('settings.tun.autoRouteLabel')}:
-              </span>
-              <span className="settingsTunSummaryValue">
-                {tunPrefs.autoRoute === undefined
-                  ? t('settings.tun.inherit')
-                  : tunPrefs.autoRoute
-                    ? t('common.on')
-                    : t('common.off')}
-              </span>
-            </span>
-            <span className="settingsTunSummaryItem">
-              <span className="settingsTunSummaryLabel">
-                {t('settings.tun.snifferLabel')}:
-              </span>
-              <span className="settingsTunSummaryValue">
-                {trafficPrefs.snifferEnabled === undefined
-                  ? t('settings.tun.inherit')
-                  : trafficPrefs.snifferEnabled
-                    ? t('common.on')
-                    : t('common.off')}
-              </span>
-            </span>
-          </div>
-          <div className="settingsInlineActions">
-            <button type="button" className="btn" onClick={onShowTunModal}>
-              {t('settings.tun.configure')}
-            </button>
-          </div>
-        </div>
-
-        <div className="homeCard settingsCardCompact">
-          <h3 className="homeCardTitle">{t('settings.profilesUpdates')}</h3>
-          <label className="field">
-            <span className="fieldLab">Default auto-update interval (min)</span>
-            <input
-              className="input"
-              value={String(settings.defaultAutoUpdateMinutes)}
-              onChange={(e) =>
-                onSetSetting(
-                  'defaultAutoUpdateMinutes',
-                  Math.max(5, Number(e.target.value || 360)),
-                )
-              }
-              placeholder="360"
-            />
-          </label>
-          <div className="settingsToggleRow">
-            <span>Reconnect on manual active-profile update</span>
-            <button
-              type="button"
-              className={`trafficKnob ${settings.reconnectOnManualProfileUpdate ? 'on' : ''}`}
-              onClick={() =>
-                onSetSetting(
-                  'reconnectOnManualProfileUpdate',
-                  !settings.reconnectOnManualProfileUpdate,
-                )
-              }
-            >
-              {settings.reconnectOnManualProfileUpdate
-                ? t('common.yes')
-                : t('common.no')}
-            </button>
-          </div>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={settingsBusy}
-              onClick={onApplyDefaultAutoUpdate}
-            >
-              Apply defaults to profiles
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={settingsBusy}
-              onClick={onRefreshAllSubs}
-            >
-              Refresh all subscriptions
-            </button>
-          </div>
-        </div>
-
-        <div className="homeCard settingsCardCompact">
-          <h3 className="homeCardTitle">{t('settings.dataDiag')}</h3>
-          <label className="field">
-            <span className="fieldLab">{t('settings.logLevel')}</span>
-            <select
-              className="selectModern"
-              value={settings.logLevel}
-              onChange={(e) =>
-                onSetSetting(
-                  'logLevel',
-                  e.target.value as CompactSettings['logLevel'],
-                )
-              }
-            >
-              <option value="error">error</option>
-              <option value="warn">warn</option>
-              <option value="info">info</option>
-              <option value="debug">debug</option>
-            </select>
-          </label>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={settingsBusy}
-              onClick={onExportDiagnostics}
-            >
-              Export diagnostics bundle
-            </button>
-            <button type="button" className="btn ghost" onClick={onClearCache}>
-              Clear cache/temp
-            </button>
-          </div>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => onOpenResetModal('keep_profiles')}
-            >
-              Reset app settings
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => onOpenResetModal('with_profiles')}
-            >
-              Reset + remove profiles
-            </button>
-          </div>
-        </div>
-
-        <div className="homeCard settingsCardCompact settingsInfoDevCard">
-          <h3 className="homeCardTitle settingsInfoDevTitle">
-            {t('settings.info')}
-          </h3>
-          <div className="settingsInfoDevBody">
-            <div className="settingsKpiGrid">
-              <div className="settingsKpi">
-                <span>Core</span>
-                <strong title="Mihomo / embedded core">
-                  {state?.core?.version?.trim() ? state.core.version : '—'}
-                </strong>
-              </div>
-              <div className="settingsKpi">
-                <span>{t('settings.appVersionLabel')}</span>
-                <strong>
-                  {String(updateSnap?.currentVersion ?? '').trim()
-                    ? String(updateSnap.currentVersion)
-                    : ((import.meta.env.VITE_APP_VERSION as
-                        | string
-                        | undefined) ?? 'dev')}
-                </strong>
-              </div>
-              <div className="settingsKpi">
-                <span>Channel</span>
-                <strong>{updateSnap?.channel ?? 'stable'}</strong>
-              </div>
-              <div className="settingsKpi">
-                <span>Checked</span>
-                <strong>
-                  {updateSnap?.lastCheckedAt
-                    ? new Date(
-                        (updateSnap.lastCheckedAt as number) * 1000,
-                      ).toLocaleString()
-                    : 'Never'}
-                </strong>
-              </div>
+            <div className="settingsToggleRow">
+              <span>{t('settings.launchOnStartup')}</span>
+              <SettingsSwitch
+                checked={settings.launchOnStartup}
+                label={t('settings.launchOnStartup')}
+                onToggle={() => onSetLaunchOnStartup(!settings.launchOnStartup)}
+              />
             </div>
-            <div className="settingsInfoDevActions">
-              {updateSnap?.hasUpdate ? (
-                <p className="banner" role="status">
-                  {t('settings.updateAvailable', {
-                    version: String(updateSnap.latestVersion ?? ''),
-                  })}
-                </p>
-              ) : updateSnap?.lastCheckedAt && !updateSnap?.lastError ? (
-                <p className="muted small" role="status">
-                  {t('settings.upToDate')}
-                </p>
-              ) : null}
-              {updateSnap?.lastError ? (
-                <p className="error small">{String(updateSnap.lastError)}</p>
-              ) : null}
-              <div className="row settingsInfoDevBtnRow">
-                <button type="button" className="btn" onClick={onCheckUpdates}>
-                  {t('settings.checkUpdates')}
-                </button>
-                {updateSnap?.hasUpdate &&
-                String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+            <div className="settingsToggleRow">
+              <span>{t('settings.closeToTray')}</span>
+              <SettingsSwitch
+                checked={settings.closeToTray}
+                disabled={!trayAvailable}
+                label={t('settings.closeToTray')}
+                onToggle={() =>
+                  onSetSetting('closeToTray', !settings.closeToTray)
+                }
+              />
+            </div>
+          </div>
+
+          <div className="homeCard settingsCardCompact">
+            <h3 className="homeCardTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                🌐
+              </span>
+              {t('settings.connection')}
+            </h3>
+            <div className="settingsToggleRow">
+              <span>{t('settings.smartDns')}</span>
+              <SettingsSwitch
+                checked={settings.dnsSmartFallback}
+                label={t('settings.smartDns')}
+                onToggle={() =>
+                  onSetSetting('dnsSmartFallback', !settings.dnsSmartFallback)
+                }
+              />
+            </div>
+            <div className="settingsToggleRow">
+              <span>{t('settings.ipv6Dns')}</span>
+              <SettingsSwitch
+                checked={settings.dnsIpv6}
+                label={t('settings.ipv6Dns')}
+                onToggle={() => onSetSetting('dnsIpv6', !settings.dnsIpv6)}
+              />
+            </div>
+            <div className="settingsToggleRow">
+              <span>{t('settings.allowLanBinding')}</span>
+              <SettingsSwitch
+                checked={settings.dnsAllowLan}
+                label={t('settings.allowLanBinding')}
+                onToggle={() =>
+                  onSetSetting('dnsAllowLan', !settings.dnsAllowLan)
+                }
+              />
+            </div>
+            <p className="muted settingsMicroHint">{t('settings.dnsHint')}</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={onInstallService}
+              >
+                {t('settings.installService')}
+              </button>
+              <button type="button" className="btn ghost" onClick={onEnsureTun}>
+                {t('settings.guidedTun')}
+              </button>
+            </div>
+          </div>
+
+          <div className="homeCard settingsCardCompact">
+            <h3 className="homeCardTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                🛡️
+              </span>
+              {t('settings.tun.title')}
+            </h3>
+            <p className="muted settingsMicroHint">{t('settings.tun.hint')}</p>
+            <div className="settingsTunSummary">
+              <span className="settingsTunSummaryItem">
+                <span className="settingsTunSummaryLabel">
+                  {t('settings.tun.stackLabel')}:
+                </span>
+                <span className="settingsTunSummaryValue">
+                  {tunStackValue || t('settings.tun.inherit')}
+                </span>
+              </span>
+              <span className="settingsTunSummaryItem">
+                <span className="settingsTunSummaryLabel">
+                  {t('settings.tun.autoRouteLabel')}:
+                </span>
+                <span className="settingsTunSummaryValue">
+                  {tunPrefs.autoRoute === undefined
+                    ? t('settings.tun.inherit')
+                    : tunPrefs.autoRoute
+                      ? t('common.on')
+                      : t('common.off')}
+                </span>
+              </span>
+              <span className="settingsTunSummaryItem">
+                <span className="settingsTunSummaryLabel">
+                  {t('settings.tun.snifferLabel')}:
+                </span>
+                <span className="settingsTunSummaryValue">
+                  {trafficPrefs.snifferEnabled === undefined
+                    ? t('settings.tun.inherit')
+                    : trafficPrefs.snifferEnabled
+                      ? t('common.on')
+                      : t('common.off')}
+                </span>
+              </span>
+            </div>
+            <div className="settingsInlineActions">
+              <button type="button" className="btn" onClick={onShowTunModal}>
+                {t('settings.tun.configure')}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="settingsCol">
+          <div className="homeCard settingsCardCompact">
+            <h3 className="homeCardTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                🔄
+              </span>
+              {t('settings.profilesUpdates')}
+            </h3>
+            <label className="field">
+              <span className="fieldLab">
+                Default auto-update interval (min)
+              </span>
+              <input
+                className="input"
+                value={String(settings.defaultAutoUpdateMinutes)}
+                onChange={(e) =>
+                  onSetSetting(
+                    'defaultAutoUpdateMinutes',
+                    Math.max(5, Number(e.target.value || 360)),
+                  )
+                }
+                placeholder="360"
+              />
+            </label>
+            <div className="settingsToggleRow">
+              <span>Reconnect on manual active-profile update</span>
+              <SettingsSwitch
+                checked={settings.reconnectOnManualProfileUpdate}
+                label="Reconnect on manual active-profile update"
+                onToggle={() =>
+                  onSetSetting(
+                    'reconnectOnManualProfileUpdate',
+                    !settings.reconnectOnManualProfileUpdate,
+                  )
+                }
+              />
+            </div>
+            <div className="row">
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={settingsBusy}
+                onClick={onApplyDefaultAutoUpdate}
+              >
+                Apply defaults to profiles
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={settingsBusy}
+                onClick={onRefreshAllSubs}
+              >
+                Refresh all subscriptions
+              </button>
+            </div>
+          </div>
+
+          <div className="homeCard settingsCardCompact">
+            <h3 className="homeCardTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                🧰
+              </span>
+              {t('settings.dataDiag')}
+            </h3>
+            <label className="field">
+              <span className="fieldLab">{t('settings.logLevel')}</span>
+              <select
+                className="selectModern"
+                value={settings.logLevel}
+                onChange={(e) =>
+                  onSetSetting(
+                    'logLevel',
+                    e.target.value as CompactSettings['logLevel'],
+                  )
+                }
+              >
+                <option value="error">error</option>
+                <option value="warn">warn</option>
+                <option value="info">info</option>
+                <option value="debug">debug</option>
+              </select>
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={settingsBusy}
+                onClick={onExportDiagnostics}
+              >
+                Export diagnostics bundle
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={onClearCache}
+              >
+                Clear cache/temp
+              </button>
+            </div>
+            <div className="row">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => onOpenResetModal('keep_profiles')}
+              >
+                Reset app settings
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => onOpenResetModal('with_profiles')}
+              >
+                Reset + remove profiles
+              </button>
+            </div>
+          </div>
+
+          <div className="homeCard settingsCardCompact settingsInfoDevCard">
+            <h3 className="homeCardTitle settingsInfoDevTitle">
+              <span className="settingsCardIcon" aria-hidden>
+                ℹ️
+              </span>
+              {t('settings.info')}
+            </h3>
+            <div className="settingsInfoDevBody">
+              <div className="settingsKpiGrid">
+                <div className="settingsKpi">
+                  <span>Core</span>
+                  <strong title="Mihomo / embedded core">
+                    {state?.core?.version?.trim() ? state.core.version : '—'}
+                  </strong>
+                </div>
+                <div className="settingsKpi">
+                  <span>{t('settings.appVersionLabel')}</span>
+                  <strong>
+                    {String(updateSnap?.currentVersion ?? '').trim()
+                      ? String(updateSnap.currentVersion)
+                      : ((import.meta.env.VITE_APP_VERSION as
+                          | string
+                          | undefined) ?? 'dev')}
+                  </strong>
+                </div>
+                <div className="settingsKpi">
+                  <span>Channel</span>
+                  <strong>{updateSnap?.channel ?? 'stable'}</strong>
+                </div>
+                <div className="settingsKpi">
+                  <span>Checked</span>
+                  <strong>
+                    {updateSnap?.lastCheckedAt
+                      ? new Date(
+                          (updateSnap.lastCheckedAt as number) * 1000,
+                        ).toLocaleString()
+                      : 'Never'}
+                  </strong>
+                </div>
+              </div>
+              <div className="settingsInfoDevActions">
+                {updateSnap?.hasUpdate ? (
+                  <p className="banner" role="status">
+                    {t('settings.updateAvailable', {
+                      version: String(updateSnap.latestVersion ?? ''),
+                    })}
+                  </p>
+                ) : updateSnap?.lastCheckedAt && !updateSnap?.lastError ? (
+                  <p className="small settingsUpToDate" role="status">
+                    ✓ {t('settings.upToDate')}
+                  </p>
+                ) : null}
+                {updateSnap?.lastError ? (
+                  <p className="error small">{String(updateSnap.lastError)}</p>
+                ) : null}
+                <div className="row settingsInfoDevBtnRow">
                   <button
                     type="button"
-                    className="btn primary"
-                    onClick={onApplyUpdate}
+                    className="btn"
+                    onClick={onCheckUpdates}
                   >
-                    {t('settings.downloadInstaller')}
+                    {t('settings.checkUpdates')}
                   </button>
-                ) : null}
-                {String(updateSnap?.releaseUrl ?? '').trim() ? (
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    onClick={() => onBrowserOpen(String(updateSnap.releaseUrl))}
-                  >
-                    {t('settings.openReleasePage')}
-                  </button>
-                ) : null}
+                  {updateSnap?.hasUpdate &&
+                  String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={onApplyUpdate}
+                    >
+                      {t('settings.downloadInstaller')}
+                    </button>
+                  ) : null}
+                  {String(updateSnap?.releaseUrl ?? '').trim() ? (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() =>
+                        onBrowserOpen(String(updateSnap.releaseUrl))
+                      }
+                    >
+                      {t('settings.openReleasePage')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

@@ -163,7 +163,19 @@
       "searchNode": "Search nodes...",
       "noGroupMatch": "No groups match.",
       "noNodeMatch": "No nodes match.",
-      "pickGroupHint": "Pick a group on the left to see its nodes."
+      "pickGroupHint": "Pick a group on the left to see its nodes.",
+      "sortLabel": "Sort nodes",
+      "sortDefault": "Default order",
+      "sortLatency": "By latency",
+      "sortName": "By name",
+      "hideDead": "Hide dead",
+      "healthTitle": "Alive / total nodes · best latency",
+      "selectFastest": "Select fastest",
+      "pingAllShort": "Ping all",
+      "fastest": "Fastest",
+      "density": "Toggle node density",
+      "densityCompact": "Compact",
+      "densityComfortable": "Comfortable"
     },
     "rules": {
       "title": "Rules",

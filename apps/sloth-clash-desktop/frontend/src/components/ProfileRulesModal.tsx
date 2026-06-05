@@ -22,6 +22,52 @@ import type { ProfileModalTarget } from './ProfileMergeModal'
 type Mode = 'visual' | 'advanced'
 type RuleAppendTarget = 'prepend' | 'append'
 
+// One-line read/edit row used in both columns.
+function RuleLine({
+  ruleType,
+  content,
+  policy,
+  pos,
+  deleted,
+  actionLabel,
+  actionGlyph,
+  onAction,
+}: {
+  ruleType: string
+  content: string
+  policy: string
+  pos?: RuleAppendTarget
+  deleted?: boolean
+  actionLabel: string
+  actionGlyph: string
+  onAction: () => void
+}) {
+  return (
+    <div className={`ruleRow${deleted ? ' ruleRowDeleted' : ''}`}>
+      <span className="ruleTypeChip">{ruleType}</span>
+      <span className="ruleContent" title={content}>
+        {content || '—'}
+      </span>
+      <span className="ruleArrow" aria-hidden>
+        →
+      </span>
+      <span className="rulePolicy" title={policy}>
+        {policy}
+      </span>
+      {pos ? <span className="rulePos">{pos}</span> : null}
+      <button
+        type="button"
+        className="btn ghost ruleRemove"
+        aria-label={actionLabel}
+        title={actionLabel}
+        onClick={onAction}
+      >
+        {actionGlyph}
+      </button>
+    </div>
+  )
+}
+
 export function ProfileRulesModal({
   target,
   profiles,
@@ -37,9 +83,6 @@ export function ProfileRulesModal({
   onSaved: (banner: string) => void
   onError: (msg: string) => void
 }) {
-  // Drafts are derived from the active target on first mount.
-  // App.tsx passes `key={target?.id}` so a new target triggers a remount and
-  // these lazy initializers run again.
   const initialRaw = target ? rulesTemplateFromProfile(profiles, target.id) : ''
   const initialBuckets = useMemo(
     () => rulesBucketsFromMerge(initialRaw),
@@ -169,11 +212,7 @@ export function ProfileRulesModal({
   const removeAppendRow = (rowId: string) => {
     const next = appendRows.filter((x) => x.id !== rowId)
     setAppendRows(next)
-    const buckets = {
-      prepend: rows,
-      append: next,
-      delete: deletedBaseline,
-    }
+    const buckets = { prepend: rows, append: next, delete: deletedBaseline }
     setMergeDraft((prev) => applyRulesBucketsToMerge(prev, buckets))
     setAdvancedDraft(rulesBucketsToAdvancedYaml(buckets))
   }
@@ -184,11 +223,7 @@ export function ProfileRulesModal({
       ? deletedBaseline.filter((x) => x !== line)
       : [...deletedBaseline, line]
     setDeletedBaseline(nextDel)
-    const buckets = {
-      prepend: rows,
-      append: appendRows,
-      delete: nextDel,
-    }
+    const buckets = { prepend: rows, append: appendRows, delete: nextDel }
     setMergeDraft((prev) => applyRulesBucketsToMerge(prev, buckets))
     setAdvancedDraft(rulesBucketsToAdvancedYaml(buckets))
   }
@@ -214,6 +249,8 @@ export function ProfileRulesModal({
     }
   }
 
+  const hasCustom = rows.length > 0 || appendRows.length > 0
+
   return (
     <div
       className="modalOverlay"
@@ -222,7 +259,7 @@ export function ProfileRulesModal({
       onClick={onClose}
     >
       <div
-        className={`modalCard modalCardWide yamlModalCard vergeModal ${
+        className={`modalCard modalCardWide rulesEditorModal ${
           uiMode === 'advanced' ? 'modalCardFullscreen' : 'modalCardVisualTall'
         }`}
         role="dialog"
@@ -251,193 +288,158 @@ export function ProfileRulesModal({
             </button>
           </div>
         </div>
-        <div
-          className={`vergeSplit ${
-            uiMode === 'advanced' ? 'vergeSplitAdvanced' : ''
-          }`}
-        >
-          <div className="vergePane">
-            {uiMode === 'visual' ? (
-              <>
-                <label className="field modalField">
-                  <span className="fieldLab">Rule type</span>
-                  <select
-                    className="selectModern"
-                    value={formType}
-                    onChange={(e) => setFormType(e.target.value)}
-                  >
-                    {RULE_TYPE_OPTIONS.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field modalField">
-                  <span className="fieldLab">Rule content</span>
-                  <input
-                    className="input"
-                    value={formContent}
-                    onChange={(e) => setFormContent(e.target.value)}
-                    placeholder="google.com"
-                  />
-                </label>
-                <label className="field modalField">
-                  <span className="fieldLab">Proxy policy</span>
-                  <select
-                    className="selectModern"
-                    value={formPolicy}
-                    onChange={(e) => setFormPolicy(e.target.value)}
-                  >
-                    {policyOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="vergeRuleActions">
-                  <div className="segPill">
-                    <button
-                      type="button"
-                      className={`pillOpt ${appendTarget === 'prepend' ? 'active' : ''}`}
-                      onClick={() => setAppendTarget('prepend')}
-                    >
-                      Prepend
-                    </button>
-                    <button
-                      type="button"
-                      className={`pillOpt ${appendTarget === 'append' ? 'active' : ''}`}
-                      onClick={() => setAppendTarget('append')}
-                    >
-                      Append
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn primary vergeStackBtn"
-                    onClick={addRule}
-                  >
-                    Add rule
-                  </button>
+
+        {uiMode === 'advanced' ? (
+          <label className="field modalField rulesAdvancedField">
+            <span className="fieldLab">Advanced YAML</span>
+            <MonacoYamlEditor
+              className="vergePaneYaml modalMonacoWrap"
+              value={advancedDraft}
+              onChange={setAdvancedDraft}
+              height="56vh"
+            />
+            {advancedYamlErr ? (
+              <span className="rulesYamlErr small">
+                YAML error: {advancedYamlErr}
+              </span>
+            ) : null}
+          </label>
+        ) : (
+          <div className="rulesEditorBody">
+            <div className="rulesAddBar">
+              <select
+                className="selectModern selectInline rulesAddType"
+                value={formType}
+                onChange={(e) => setFormType(e.target.value)}
+                aria-label="Rule type"
+              >
+                {RULE_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input rulesAddContent"
+                value={formContent}
+                onChange={(e) => setFormContent(e.target.value)}
+                placeholder={
+                  formType === 'MATCH' ? '(no content)' : 'google.com'
+                }
+                disabled={formType === 'MATCH'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addRule()
+                }}
+              />
+              <span className="rulesAddArrow" aria-hidden>
+                →
+              </span>
+              <select
+                className="selectModern selectInline rulesAddPolicy"
+                value={formPolicy}
+                onChange={(e) => setFormPolicy(e.target.value)}
+                aria-label="Proxy policy"
+              >
+                {policyOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <div className="segPill rulesAddPos">
+                <button
+                  type="button"
+                  className={`pillOpt ${appendTarget === 'prepend' ? 'active' : ''}`}
+                  onClick={() => setAppendTarget('prepend')}
+                >
+                  Prepend
+                </button>
+                <button
+                  type="button"
+                  className={`pillOpt ${appendTarget === 'append' ? 'active' : ''}`}
+                  onClick={() => setAppendTarget('append')}
+                >
+                  Append
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn primary rulesAddBtn"
+                onClick={addRule}
+              >
+                + Add
+              </button>
+            </div>
+
+            <div className="rulesCols">
+              <div className="rulesCol">
+                <p className="eyebrow">Your rules</p>
+                <div className="rulesList">
+                  {!hasCustom ? (
+                    <p className="muted small">No custom rules yet.</p>
+                  ) : null}
+                  {rows.map((r) => (
+                    <RuleLine
+                      key={r.id}
+                      ruleType={r.ruleType}
+                      content={r.content}
+                      policy={r.policy}
+                      pos="prepend"
+                      actionLabel="Remove"
+                      actionGlyph="×"
+                      onAction={() => removeRow(r.id)}
+                    />
+                  ))}
+                  {appendRows.map((r) => (
+                    <RuleLine
+                      key={r.id}
+                      ruleType={r.ruleType}
+                      content={r.content}
+                      policy={r.policy}
+                      pos="append"
+                      actionLabel="Remove"
+                      actionGlyph="×"
+                      onAction={() => removeAppendRow(r.id)}
+                    />
+                  ))}
                 </div>
-              </>
-            ) : (
-              <label className="field modalField">
-                <span className="fieldLab">Advanced YAML</span>
-                <MonacoYamlEditor
-                  className="vergePaneYaml modalMonacoWrap"
-                  value={advancedDraft}
-                  onChange={setAdvancedDraft}
-                  height="52vh"
-                />
-                {advancedYamlErr ? (
-                  <span className="muted small" style={{ color: '#ff6b6b' }}>
-                    YAML error: {advancedYamlErr}
-                  </span>
-                ) : null}
-              </label>
-            )}
-          </div>
-          {uiMode === 'visual' ? (
-            <div className="vergePane vergePaneList">
-              <p className="eyebrow">subscription.rules</p>
-              <div className="vergeScrollList">
-                {baselineLoading ? (
-                  <p className="muted small">Loading subscription rules…</p>
-                ) : baselineError ? (
-                  <p className="muted small" style={{ color: '#ff6b6b' }}>
-                    {baselineError}
-                  </p>
-                ) : !baseline || baseline.length === 0 ? (
-                  <p className="muted small">No subscription rules detected.</p>
-                ) : (
-                  baseline.map((line, idx) => {
-                    const parsed = parseRuleLine(line, idx)
-                    const isDeleted = deletedBaseline.includes(line)
-                    return (
-                      <div
-                        key={parsed.id}
-                        className={`vergeCard vergeCardReadOnly ${
-                          isDeleted ? 'vergeCardDeleted' : ''
-                        }`}
-                      >
-                        <div>
-                          <div className="vergeCardTitle">
-                            {parsed.ruleType}
-                          </div>
-                          <div className="muted small">{parsed.content}</div>
-                          <div className="muted small">→ {parsed.policy}</div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label={isDeleted ? 'Restore' : 'Delete'}
-                          title={isDeleted ? 'Restore' : 'Delete'}
-                          onClick={() => toggleBaselineDelete(line)}
-                        >
-                          {isDeleted ? '↺' : '×'}
-                        </button>
-                      </div>
-                    )
-                  })
-                )}
               </div>
-              <p className="eyebrow" style={{ marginTop: 10 }}>
-                prepend.rules
-              </p>
-              <div className="vergeScrollList">
-                {rows.length === 0 ? (
-                  <p className="muted small">No custom prepend rules.</p>
-                ) : (
-                  rows.map((r) => (
-                    <div key={r.id} className="vergeCard">
-                      <div>
-                        <div className="vergeCardTitle">{r.ruleType}</div>
-                        <div className="muted small">{r.content}</div>
-                        <div className="muted small">→ {r.policy}</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost vergeTrash"
-                        aria-label="Remove"
-                        onClick={() => removeRow(r.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-              <p className="eyebrow" style={{ marginTop: 10 }}>
-                append.rules
-              </p>
-              <div className="vergeScrollList">
-                {appendRows.length === 0 ? (
-                  <p className="muted small">No custom append rules.</p>
-                ) : (
-                  appendRows.map((r) => (
-                    <div key={r.id} className="vergeCard">
-                      <div>
-                        <div className="vergeCardTitle">{r.ruleType}</div>
-                        <div className="muted small">{r.content}</div>
-                        <div className="muted small">→ {r.policy}</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost vergeTrash"
-                        aria-label="Remove"
-                        onClick={() => removeAppendRow(r.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
+
+              <div className="rulesCol">
+                <p className="eyebrow">Subscription · read-only</p>
+                <div className="rulesList">
+                  {baselineLoading ? (
+                    <p className="muted small">Loading subscription rules…</p>
+                  ) : baselineError ? (
+                    <p className="muted small rulesYamlErr">{baselineError}</p>
+                  ) : !baseline || baseline.length === 0 ? (
+                    <p className="muted small">
+                      No subscription rules detected.
+                    </p>
+                  ) : (
+                    baseline.map((line, idx) => {
+                      const parsed = parseRuleLine(line, idx)
+                      const isDeleted = deletedBaseline.includes(line)
+                      return (
+                        <RuleLine
+                          key={parsed.id}
+                          ruleType={parsed.ruleType}
+                          content={parsed.content}
+                          policy={parsed.policy}
+                          deleted={isDeleted}
+                          actionLabel={isDeleted ? 'Restore' : 'Delete'}
+                          actionGlyph={isDeleted ? '↺' : '×'}
+                          onAction={() => toggleBaselineDelete(line)}
+                        />
+                      )
+                    })
+                  )}
+                </div>
               </div>
             </div>
-          ) : null}
-        </div>
+          </div>
+        )}
+
         <div className="modalFooter">
           <button type="button" className="btn ghost" onClick={onClose}>
             Cancel

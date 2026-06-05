@@ -22,29 +22,30 @@
   /* === design tokens (visual-polish) ===
      Additive layer — mapped to the existing palette so the look is unchanged.
      New/refactored CSS should consume these instead of hard-coded values. */
-  /* spacing — 4px base step */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 32px;
+  /* spacing — rem-based (1rem = 16px at default root) so the whole UI scales
+     proportionally when window-scaling adjusts the root font-size. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
   /* radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
   --radius-pill: 999px;
   /* elevation */
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --elev-2: 0 4px 16px rgba(0, 0, 0, 0.35);
   --elev-3: 0 12px 40px rgba(0, 0, 0, 0.45);
-  /* typography scale */
-  --font-size-xs: 11px;
-  --font-size-sm: 13px;
-  --font-size-md: 15px;
-  --font-size-lg: 18px;
-  --font-size-xl: 24px;
+  /* typography scale (rem) */
+  --font-size-xs: 0.6875rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-md: 0.9375rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
   --leading-tight: 1.25;
   --leading-normal: 1.5;
   --weight-regular: 400;
@@ -145,7 +146,7 @@
 
 .titleBarTitle {
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--font-size-md);
   letter-spacing: 0.02em;
   line-height: 38px;
   display: flex;
@@ -231,20 +232,23 @@
 }
 
 .shell[data-theme="light"] {
-  color: #1c1b19;
-  --accent: #9a7340;
-  --accent-dim: rgba(154, 115, 64, 0.2);
-  --accent-muted: rgba(154, 115, 64, 0.38);
-  --panel: rgba(255, 255, 255, 0.96);
-  --panel-deep: rgba(248, 246, 243, 0.98);
-  --text-muted: #5e5a54;
-  --hairline: rgba(0, 0, 0, 0.09);
-  --hairline-strong: rgba(0, 0, 0, 0.12);
+  /* Milky-coffee (latte) light theme — the warm opposite of dark, not stark
+     white (visual-polish). */
+  color: #2b2317;
+  --accent: #936b38;
+  --accent-dim: rgba(147, 107, 56, 0.18);
+  --accent-muted: rgba(147, 107, 56, 0.34);
+  --panel: rgba(247, 240, 228, 0.96);
+  --panel-deep: rgba(238, 229, 213, 0.98);
+  --text: #2b2317;
+  --text-muted: #6f6450;
+  --hairline: rgba(70, 52, 28, 0.1);
+  --hairline-strong: rgba(70, 52, 28, 0.16);
   background: radial-gradient(
     circle at 18% 10%,
-    #fdfcfa 0,
-    #f4f1ec 50%,
-    #ebe6df 100%
+    #f2ebdc 0,
+    #e9dec8 50%,
+    #ddccb0 100%
   );
 }
 
@@ -295,8 +299,8 @@
 
 .shell[data-theme="light"] .input,
 .shell[data-theme="light"] .selectModern {
-  background: #ffffff;
-  color: #1c1b19;
+  background: #fdf9f0;
+  color: var(--text);
   border-color: var(--hairline-strong);
 }
 
@@ -306,17 +310,31 @@
 }
 
 .shell[data-theme="light"] .modalCard {
-  background: linear-gradient(165deg, #ffffff, #f4f0ea);
+  background: linear-gradient(165deg, #f7f0e3, #e9ddc8);
   border-color: var(--hairline-strong);
 }
 
 .shell[data-theme="light"] .vergeCard {
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(247, 240, 228, 0.7);
 }
 
 .shell[data-theme="light"] .ctxMenu {
-  background: #ffffff;
+  background: #f5ecdb;
   border-color: var(--hairline-strong);
+  box-shadow: 0 16px 40px rgba(60, 45, 25, 0.22);
+}
+
+.shell[data-theme="light"] .ctxTitle {
+  color: #2b2317;
+  border-bottom-color: var(--hairline);
+}
+
+.shell[data-theme="light"] .ctxItem {
+  color: #3a3120;
+}
+
+.shell[data-theme="light"] .ctxItem:hover:not(:disabled) {
+  background: rgba(74, 55, 30, 0.08);
 }
 
 .shell[data-theme="light"] .pillOpt {
@@ -326,6 +344,81 @@
 .shell[data-theme="light"] .trafficKnob {
   color: #45423d;
   background: rgba(0, 0, 0, 0.04);
+}
+
+/* Light theme: subtle/ghost-ish buttons used white washes that vanish on the
+   cream surface — give them a visible warm fill + readable text. */
+.shell[data-theme="light"] .btn.subtle {
+  background: rgba(70, 52, 28, 0.06);
+  border-color: var(--hairline-strong);
+  color: #3c3320;
+}
+
+.shell[data-theme="light"] .btn.subtle:hover {
+  background: rgba(70, 52, 28, 0.1);
+}
+
+/* Light theme: base buttons were dark (#3d3834 / ghost #3d2c3e) and read as
+   heavy dark blobs on the cream surface. Make them soft warm chips with dark
+   text; .primary keeps the bronze fill, .subtle keeps its own override above. */
+.shell[data-theme="light"] .btn {
+  background: rgba(74, 55, 30, 0.08);
+  color: #3a3120;
+}
+
+.shell[data-theme="light"] .btn:hover {
+  background: rgba(74, 55, 30, 0.14);
+}
+
+.shell[data-theme="light"] .btn.ghost {
+  background: rgba(74, 55, 30, 0.05);
+}
+
+.shell[data-theme="light"] .btn.ghost:hover {
+  background: rgba(74, 55, 30, 0.1);
+}
+
+.shell[data-theme="light"] .btn.primary {
+  background: #b9955a;
+  color: #2a2012;
+}
+
+.shell[data-theme="light"] .btn.primary:hover {
+  background: #c5a062;
+}
+
+.shell[data-theme="light"] .rulesSummaryChip {
+  background: rgba(74, 55, 30, 0.06);
+  color: #5f5340;
+}
+
+.shell[data-theme="light"] .homeSupportHeaderBtn {
+  background: rgba(147, 107, 56, 0.16);
+  border-color: var(--accent-muted);
+  color: #7a5828;
+}
+
+/* Light theme: dark popups / washed-out accent text → readable on cream. */
+.shell[data-theme="light"] .statusNodeMenuList {
+  background: rgba(247, 240, 228, 0.98);
+  border-color: var(--hairline-strong);
+  box-shadow: 0 14px 42px rgba(60, 45, 25, 0.22);
+}
+
+.shell[data-theme="light"] .rulesPolicyProxy {
+  color: #0f766e;
+}
+
+.shell[data-theme="light"] .proxyTypeChip {
+  background: rgba(34, 120, 70, 0.14);
+  border-color: rgba(34, 120, 70, 0.32);
+  color: #1f6b43;
+}
+
+.shell[data-theme="light"] .proxyCountChip {
+  background: rgba(147, 107, 56, 0.18);
+  border-color: rgba(147, 107, 56, 0.42);
+  color: #6e5025;
 }
 
 .shell[data-theme="light"] .titleBar {
@@ -429,7 +522,7 @@
 
 .brand {
   font-weight: 700;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   margin-bottom: 16px;
 }
 
@@ -492,7 +585,7 @@
 .compatSummary {
   cursor: pointer;
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: #e0dbd4;
 }
 
@@ -514,7 +607,7 @@
   margin: 0 0 12px;
   padding: 10px 12px;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: #efe8dc;
   background: rgba(201, 168, 108, 0.16);
@@ -536,7 +629,7 @@
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   margin: 0 0 6px;
 }
@@ -561,7 +654,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 15px;
+  font-size: var(--font-size-md);
   line-height: 1;
   cursor: help;
   color: #1a1816;
@@ -579,7 +672,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   line-height: 1;
   cursor: pointer;
   color: #eaf7ef;
@@ -670,7 +763,7 @@
 
 .sideLabel {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -702,7 +795,7 @@
   border-color: rgba(0, 0, 0, 0.1);
   box-shadow:
     inset 0 2px 8px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    inset 0 1px 0 rgba(255, 250, 240, 0.45);
 }
 
 .segmentGlider {
@@ -739,7 +832,7 @@
   padding: 7px 5px;
   border: 0;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -769,7 +862,7 @@
 }
 
 .homeTrafficHealth {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: rgba(230, 225, 215, 0.55);
   text-align: center;
@@ -786,7 +879,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: #b8c9b4;
   letter-spacing: 0.03em;
@@ -851,7 +944,7 @@
   border: 0;
   background: linear-gradient(145deg, #c9a86c, #8a6e42);
   color: #ffffff;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
@@ -920,10 +1013,8 @@
 }
 
 .monoTight {
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-align: right;
   max-width: 62%;
@@ -979,7 +1070,7 @@
   align-items: center;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   background: rgba(90, 184, 120, 0.15);
@@ -994,7 +1085,7 @@
   min-width: 19px;
   height: 19px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   background: rgba(201, 168, 108, 0.15);
   border: 1px solid rgba(201, 168, 108, 0.35);
@@ -1003,7 +1094,7 @@
 
 .proxyExpandBtn {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   border-radius: 8px;
 }
@@ -1021,7 +1112,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .proxyGroupToolbar {
@@ -1107,7 +1198,7 @@
 .proxyAutoGroupHint {
   grid-column: 1 / -1;
   margin: 0 0 4px 0;
-  font-size: 11.5px;
+  font-size: var(--font-size-xs);
   opacity: 0.8;
 }
 
@@ -1124,17 +1215,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   flex: 1;
 }
 
 .proxyFlagEmoji {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1;
 }
 
 .proxyFlagIso {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1;
   letter-spacing: 0.03em;
   color: var(--text-muted);
@@ -1159,7 +1250,7 @@
 .proxyDelayText {
   min-width: 44px;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
@@ -1180,7 +1271,7 @@
   background: rgba(0, 0, 0, 0.25);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   outline: none;
 }
 
@@ -1198,7 +1289,7 @@
 }
 
 .logsLevelChip {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.04em;
   padding: 4px 10px;
   border-radius: 999px;
@@ -1233,7 +1324,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -1243,12 +1334,29 @@
   margin: 0;
 }
 
+/* Proxies fills the viewport: header is fixed, the split grows and scrolls
+   internally so the page itself never scrolls (visual-polish UX fix). */
+.proxiesPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+
+.proxiesPanel > h2,
+.proxiesLead,
+.proxyToolbar {
+  flex: 0 0 auto;
+}
+
 .proxySplit {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;
-  gap: 12px;
-  margin-top: 12px;
-  min-height: 360px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .proxySplitSidebar {
@@ -1260,7 +1368,7 @@
   border-radius: 12px;
   padding: 8px;
   background: rgba(0, 0, 0, 0.18);
-  max-height: 70vh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1271,13 +1379,14 @@
 .proxySplitSearchRow .inputModern,
 .proxySplitNodeSearch {
   width: 100%;
+  box-sizing: border-box;
   padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--hairline);
   background: rgba(0, 0, 0, 0.25);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   outline: none;
 }
 
@@ -1339,7 +1448,7 @@
 
 .proxySplitGroupName {
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--font-size-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1352,7 +1461,7 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
@@ -1373,7 +1482,7 @@
   padding: 12px;
   background: rgba(0, 0, 0, 0.12);
   min-width: 0;
-  max-height: 70vh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1421,12 +1530,12 @@
 
 .proxyDelayText.proxyDelayFail {
   color: #ff8d8d;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.02em;
 }
 
 .proxyNodeTag {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1;
   padding: 2px 5px;
   border-radius: 999px;
@@ -1447,12 +1556,12 @@
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   white-space: nowrap;
 }
 
 .proxyGroupFlag {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   line-height: 1;
 }
 
@@ -1478,7 +1587,7 @@
 }
 
 .serviceIssueText {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.35;
   margin: 0;
 }
@@ -1526,7 +1635,7 @@
 
 .segLabel {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin-bottom: 8px;
 }
@@ -1564,7 +1673,7 @@
   gap: 14px 22px;
   align-items: stretch;
   max-width: 720px;
-  margin: 14px auto 0;
+  margin: var(--space-2) auto 0;
   padding: 0 6px;
 }
 
@@ -1602,7 +1711,7 @@
   appearance: none;
   margin: 0;
   padding: 2px 26px 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.2;
   min-height: 26px;
   max-height: 28px;
@@ -1621,7 +1730,7 @@
   .homeStatusGrid
   .statusRowNode
   button.statusNodeMenuTrigger.selectModern.selectInline.selectCompact {
-  background-color: #ffffff;
+  background-color: #fdf9f0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23585048' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.25 6 7.75 9.5 4.25'/%3E%3C/svg%3E");
 }
 
@@ -1661,9 +1770,9 @@
 .homeSubscriptionExtras {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
   max-width: 720px;
-  margin: 16px auto 0;
+  margin: var(--space-2) auto 0;
   padding: 0 6px;
 }
 
@@ -1676,7 +1785,7 @@
 
 .homeSubscriptionCardTitle {
   margin: 0 0 6px 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1685,7 +1794,7 @@
 
 .homeSubscriptionAnnounce {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1725,7 +1834,7 @@
 }
 
 .homeSupportLinkText {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   word-break: break-all;
   min-width: 0;
   color: #e8dfd0;
@@ -1783,13 +1892,13 @@
 .statusCardCompact .exitGeoText {
   min-width: 0;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.3;
   font-weight: 600;
 }
 
 .statusCardCompact .exitIpCompact {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 500;
   letter-spacing: -0.02em;
   max-width: 100%;
@@ -1812,7 +1921,7 @@
 }
 
 .statusCardCompact .speedChip {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1840,12 +1949,12 @@
 
 .statusCardCompact .statusRow > span:first-child {
   flex: 0 0 86px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
 .statusCardCompact .statusRow strong {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
@@ -1886,7 +1995,7 @@
 }
 
 .selectCompact {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   line-height: 1.25;
   max-width: 100%;
@@ -1976,7 +2085,10 @@
 
 .statusNodeMenuList {
   position: absolute;
-  top: calc(100% + 3px);
+  /* Opens upward: this menu sits low in the Home status card, so opening down
+     pushed past the viewport and forced a page scroll (visual-polish fix). */
+  bottom: calc(100% + 3px);
+  top: auto;
   right: 0;
   left: auto;
   margin: 0;
@@ -1993,9 +2105,7 @@
   box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-  font-family:
-    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 .statusNodeMenuList::-webkit-scrollbar {
@@ -2014,7 +2124,7 @@
   padding: 3px 5px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.15;
 }
 
@@ -2070,13 +2180,13 @@
 
 .btnCompact {
   padding: 5px 11px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   border-radius: 10px;
   white-space: nowrap;
 }
 
 .selectInline {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 8px 10px;
 }
 
@@ -2230,7 +2340,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   min-width: 0;
 }
@@ -2241,7 +2351,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   opacity: 0.92;
 }
 
@@ -2252,7 +2362,7 @@
 }
 
 .profileTrafficPair {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   color: #b8d8be;
   opacity: 0.95;
@@ -2270,7 +2380,7 @@
 }
 
 .profileTypeChip {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   text-transform: lowercase;
   padding: 2px 7px;
   border-radius: 999px;
@@ -2335,7 +2445,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--font-size-md);
   color: var(--accent);
   background: rgba(201, 168, 108, 0.1);
   border: 1px solid rgba(201, 168, 108, 0.22);
@@ -2347,20 +2457,20 @@
 
 .profileTrafficHint {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: #b8d8be;
   opacity: 0.92;
 }
 
 .profileTitle {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   line-height: 1.25;
 }
 
 .profileMeta {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -2396,7 +2506,7 @@
 }
 
 .profileRefreshBtn {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   border-radius: 8px;
 }
@@ -2414,7 +2524,7 @@
   border: 1px solid var(--hairline-strong);
   border-radius: 999px;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: rgba(0, 0, 0, 0.2);
 }
@@ -2448,7 +2558,7 @@
 
 .advancedPanel > p.muted {
   margin: 0 0 8px 0;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.35;
 }
 
@@ -2458,7 +2568,7 @@
 }
 
 .advancedPanel .homeCardTitle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   margin: 0 0 4px 0;
 }
 
@@ -2477,18 +2587,31 @@
 
 .advancedPanel .advancedGrid .btn.ghost {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
+/* Masonry packing (like Settings) so every card flows into two balanced
+   columns instead of a tall vertical stack — fits one screen (visual-polish). */
 .advancedGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 8px;
+  column-count: 2;
+  column-gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.advancedGrid > * {
+  break-inside: avoid;
+  margin-bottom: var(--space-2);
+}
+
+.advancedPanel .homeCard,
+.advancedPanel .collapsibleCard {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
 }
 
 @media (max-width: 980px) {
   .advancedGrid {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 }
 
@@ -2503,7 +2626,7 @@
 .advancedDeviceIdentityCard .deviceIdentityHwid {
   flex: 1;
   min-width: min(100%, 220px);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   word-break: break-all;
   padding: 6px 8px;
@@ -2574,7 +2697,7 @@
 
 .collapsibleCardChevron {
   display: inline-block;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   line-height: 1;
   color: var(--text-muted);
   transform: rotate(0deg);
@@ -2611,7 +2734,7 @@
 
 .advancedPathsGrid .btn {
   text-align: left;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .advancedPowerGrid {
@@ -2647,8 +2770,8 @@
   border-radius: 8px;
   padding: 6px 8px;
   background: rgba(0, 0, 0, 0.16);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   line-height: 1.5;
 }
 
@@ -2705,7 +2828,7 @@
   background: rgba(24, 23, 22, 0.96);
   backdrop-filter: blur(6px);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--font-size-sm);
   line-height: 1.35;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   animation: toastEnter 180ms ease-out;
@@ -2741,7 +2864,7 @@
 }
 
 .toastAction {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.04em;
   color: var(--accent);
   background: transparent;
@@ -2765,7 +2888,7 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   padding: 0;
 }
 
@@ -2778,7 +2901,7 @@
   align-items: center;
   padding: 6px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: #f2efe8;
   background: rgba(0, 0, 0, 0.35);
@@ -2787,21 +2910,21 @@
 
 .profileCardFoot .profileBadge {
   padding: 3px 8px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .profileCardFoot .profileClickHint {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .profileActivate {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   padding: 7px 14px;
   border-radius: 10px;
 }
 
 .profileClickHint {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -2813,7 +2936,7 @@
   color: #e8e4dc;
   overflow: auto;
   max-height: 320px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .homeCard {
@@ -2834,7 +2957,7 @@
 
 .homeCardTitle {
   margin: 0 0 6px;
-  font-size: 17px;
+  font-size: var(--font-size-lg);
 }
 
 .fieldGrid {
@@ -2860,17 +2983,18 @@
 }
 
 .fieldLab {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
 .input {
-  border-radius: 10px;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
   border: 1px solid var(--hairline-strong);
   background: rgba(12, 11, 10, 0.75);
   color: #f2efe8;
-  padding: 9px 11px;
-  font-size: 14px;
+  padding: 7px 11px;
+  font-size: var(--font-size-sm);
 }
 
 .input:focus {
@@ -2878,8 +3002,17 @@
   outline-offset: 1px;
 }
 
+/* Visible placeholders in both themes (browser default gray vanishes on cream). */
+.input::placeholder,
+.inputModern::placeholder,
+.proxySplitNodeSearch::placeholder,
+.selectModern::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 .small {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
 }
 
@@ -2908,12 +3041,12 @@
 .detailsBlock summary {
   cursor: pointer;
   color: #c9c3bb;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
   color: #d8d2c9;
 }
 
@@ -2935,7 +3068,7 @@
   border: 1px solid var(--hairline-strong);
   background: rgba(201, 168, 108, 0.1);
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
 }
@@ -3004,7 +3137,7 @@
   cursor: pointer;
   background: transparent;
   color: #d2cdc4;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .pillOpt.active {
@@ -3027,7 +3160,7 @@
   cursor: pointer;
   background: rgba(0, 0, 0, 0.18);
   color: #d2cdc4;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .trafficKnob.on {
@@ -3063,10 +3196,10 @@
 
 .proxyFocusGroup .selectModern {
   width: auto;
-  min-width: 200px;
-  max-width: 320px;
-  padding-top: var(--space-2);
-  padding-bottom: var(--space-2);
+  min-width: 150px;
+  max-width: 240px;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
 }
 
 .proxyToolbarActions {
@@ -3076,28 +3209,33 @@
   margin-left: auto;
 }
 
+/* Compact toolbar controls so the whole row fits on one line (no wrap). */
+.proxyToolbar .btn {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
 .policyHint {
   margin: 0 0 10px;
 }
 
 .selectModern {
+  /* Full-width like .input so form fields are a consistent size project-wide.
+     Context-specific widths (Proxies focus group, Home compact pickers) keep
+     their own narrower overrides. */
   width: 100%;
-  max-width: 420px;
-  border-radius: 12px;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
   border: 1px solid var(--hairline-strong);
   background: rgba(12, 11, 10, 0.75);
   color: #f2efe8;
-  padding: 10px 34px 10px 12px;
-  font-size: 14px;
-  font-family:
-    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-    sans-serif;
+  padding: 7px 32px 7px 11px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
 }
 
 .selectModern option {
-  font-family:
-    "Segoe UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 .modalOverlay {
@@ -3154,9 +3292,8 @@
   max-width: 100%;
   min-height: 260px;
   resize: vertical;
-  font-family:
-    ui-monospace, "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   box-sizing: border-box;
   overflow-x: auto;
@@ -3187,7 +3324,7 @@
 }
 
 .vergeToggle.btn {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 6px 12px;
   border-radius: 999px;
 }
@@ -3293,18 +3430,18 @@
 
 .vergeCardTitle {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 
 .vergeCardSub {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   word-break: break-word;
 }
 
 .vergeTrash {
   flex-shrink: 0;
   padding: 4px 10px;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   line-height: 1;
 }
 
@@ -3362,18 +3499,23 @@
 }
 
 .importModeTabs {
-  display: flex;
-  gap: 6px;
-  margin: 4px 0 14px;
+  display: inline-flex;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 var(--space-4);
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .importModeTabs .btn {
-  flex: 1;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-pill);
 }
 
 .importTextarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   resize: vertical;
   min-height: 160px;
@@ -3396,7 +3538,7 @@
 }
 
 .btnModalSecondary {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   padding: 8px 14px;
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.28);
@@ -3432,7 +3574,7 @@
 .ctxTitle {
   padding: 4px 12px 8px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: #eaf0f8;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -3445,7 +3587,7 @@
   background: transparent;
   color: #f2efe8;
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   cursor: pointer;
 }
 
@@ -3460,7 +3602,7 @@
 
 .ctxSection {
   padding: 8px 14px 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
@@ -3473,7 +3615,7 @@
 .ctxHint {
   margin: 0;
   padding: 6px 14px 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
@@ -3504,7 +3646,7 @@
 
 .onboardingStep {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -3552,13 +3694,13 @@
 
 .spotlightStep {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
 .spotlightTitle {
   margin: 0 0 8px;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
 }
 
 .spotlightBody {
@@ -3638,7 +3780,7 @@
   border-radius: 9px;
   background: #d97706;
   color: #fff;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   line-height: 1;
 }
@@ -3678,14 +3820,14 @@
   flex: 1;
   min-width: 0;
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ruleProviderMetaLine {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   line-height: 1.35;
   word-break: break-word;
@@ -3700,7 +3842,7 @@
 }
 
 .ruleProviderUpdated {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   opacity: 0.9;
   font-variant-numeric: tabular-nums;
@@ -3746,7 +3888,7 @@
 .rulesTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .rulesTable th,
@@ -3765,8 +3907,8 @@
 }
 
 .shell[data-theme="light"] .rulesTable th {
-  background: rgba(255, 255, 255, 0.95);
-  color: #4b5563;
+  background: rgba(238, 229, 213, 0.96);
+  color: #5a5142;
 }
 
 .rulesPayload {
@@ -3789,7 +3931,7 @@
 }
 
 .coreVer {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   text-align: right;
   max-width: 55%;
@@ -3813,19 +3955,26 @@
 
 .settingsPanelLead {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
+/* Masonry-style packing so cards fill each column by height instead of being
+   locked to ragged grid rows (visual-polish: fixes the uneven-columns / dead
+   space the user flagged). */
 .settingsGridCompact {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
+  column-count: 2;
+  column-gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.settingsGridCompact > .homeCard.settingsCardCompact {
+  break-inside: avoid;
+  margin-bottom: var(--space-2);
 }
 
 @media (max-width: 720px) {
   .settingsGridCompact {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 }
 
@@ -3839,7 +3988,7 @@
 }
 
 .settingsCardCompact .homeCardTitle {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   margin-bottom: 4px;
 }
 
@@ -3853,7 +4002,7 @@
 }
 
 .settingsCardCompact .fieldLab {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .settingsCardCompact .segPill {
@@ -3863,7 +4012,7 @@
 
 .settingsCardCompact .pillOpt {
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .settingsTunPillRow {
@@ -3876,7 +4025,7 @@
   flex-wrap: wrap;
   gap: 6px 12px;
   margin: 4px 0 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .settingsTunSummaryItem {
@@ -3924,20 +4073,20 @@
   justify-content: space-between;
   gap: 8px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .settingsToggleRow .trafficKnob {
   flex: 0 0 auto;
   min-width: 48px;
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   border-radius: 999px;
 }
 
 .settingsMicroHint {
   margin: 4px 0 0;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1.3;
   opacity: 0.85;
 }
@@ -3949,7 +4098,7 @@
 
 .settingsPanel .btn {
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   border-radius: 9px;
 }
 
@@ -3995,14 +4144,14 @@
 }
 
 .settingsKpi span {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .settingsKpi strong {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
   word-break: break-word;
 }

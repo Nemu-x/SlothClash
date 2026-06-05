@@ -93,7 +93,6 @@ export function AdvancedPage({
   coreVersion,
   controllerAddr,
   mixedPort,
-  profilePaths,
   deviceIdentity,
   connectivityBusy,
   connectivityResults,
@@ -106,8 +105,6 @@ export function AdvancedPage({
   onConnectivityCheck,
   onCopyHwid,
   onCopyAllIdentity,
-  onRefreshProxies,
-  onRefreshHomeInsight,
   onOpenPath,
   onRestartCore,
   onResetSubscriptionCache,
@@ -170,24 +167,12 @@ export function AdvancedPage({
             <span>{t('ui.advanced.mixedPort')}</span>
             <strong>{mixedPort || '—'}</strong>
           </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.runtimeDir')}</span>
-            <strong className="monoTight">
-              {String(profilePaths?.dataDir ?? '—')}
-            </strong>
-          </div>
-          <div className="statusRow">
-            <span>{t('ui.advanced.configFile')}</span>
-            <strong className="monoTight">
-              {String(profilePaths?.configPath ?? '—')}
-            </strong>
-          </div>
+          <p className="muted small advancedStatusNote">
+            {t('ui.advanced.pathsMovedNote')}
+          </p>
         </div>
 
-        <div className="homeCard">
-          <h3 className="homeCardTitle">
-            {t('ui.advanced.connectivityTools')}
-          </h3>
+        <CollapsibleCard title={t('ui.advanced.connectivityTools')}>
           <p className="muted small">{t('ui.advanced.connectivityLead')}</p>
           <div className="row">
             <button
@@ -241,7 +226,7 @@ export function AdvancedPage({
               <strong>{connectivityResults.telegram ?? '—'}</strong>
             </div>
           </div>
-        </div>
+        </CollapsibleCard>
 
         <CollapsibleCard
           title={t('ui.advanced.deviceIdentity')}
@@ -369,29 +354,6 @@ export function AdvancedPage({
           )}
         </CollapsibleCard>
 
-        <div className="homeCard">
-          <h3 className="homeCardTitle">{t('ui.advanced.maintenance')}</h3>
-          <p className="muted small">{t('ui.advanced.maintenanceLead')}</p>
-          <div className="row">
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={onRefreshProxies}
-              disabled={connectionStatus !== 'connected'}
-            >
-              {t('ui.advanced.refreshProxiesSnapshot')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={onRefreshHomeInsight}
-              disabled={connectionStatus !== 'connected'}
-            >
-              {t('ui.advanced.refreshHomeInsight')}
-            </button>
-          </div>
-        </div>
-
         <CollapsibleCard title={t('ui.advanced.paths')}>
           <p className="muted small">{t('ui.advanced.pathsLead')}</p>
           <div className="advancedPathsGrid">
@@ -484,23 +446,10 @@ export function AdvancedPage({
               </div>
             </>
           )}
-          <div className="row" style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="btn ghost btnCompact"
-              disabled={toolsBusy === 'reextract'}
-              onClick={onReextractBundled}
-            >
-              {t('ui.advanced.reextractBundled')}
-            </button>
-            <span className="muted small">
-              {t('ui.advanced.reextractBundledHint')}
-            </span>
-          </div>
         </CollapsibleCard>
 
-        <CollapsibleCard title={t('ui.advanced.powerTools')}>
-          <p className="muted small">{t('ui.advanced.powerToolsLead')}</p>
+        <CollapsibleCard title={t('ui.advanced.tools')} defaultOpen>
+          <p className="muted small">{t('ui.advanced.toolsLead')}</p>
           <div className="advancedPowerGrid">
             <div className="advancedPowerRow">
               <button
@@ -526,6 +475,19 @@ export function AdvancedPage({
               </button>
               <span className="muted small">
                 {t('ui.advanced.resetSubCacheHint')}
+              </span>
+            </div>
+            <div className="advancedPowerRow">
+              <button
+                type="button"
+                className="btn ghost btnCompact"
+                disabled={toolsBusy === 'reextract'}
+                onClick={onReextractBundled}
+              >
+                {t('ui.advanced.reextractBundled')}
+              </button>
+              <span className="muted small">
+                {t('ui.advanced.reextractBundledHint')}
               </span>
             </div>
           </div>

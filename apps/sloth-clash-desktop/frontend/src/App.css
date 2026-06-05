@@ -18,6 +18,54 @@
   --text-muted: #a39e96;
   --hairline: rgba(255, 255, 255, 0.1);
   --hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* === design tokens (visual-polish) ===
+     Additive layer — mapped to the existing palette so the look is unchanged.
+     New/refactored CSS should consume these instead of hard-coded values. */
+  /* spacing — 4px base step */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  /* radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  /* elevation */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --elev-3: 0 12px 40px rgba(0, 0, 0, 0.45);
+  /* typography scale */
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-md: 15px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  /* semantic roles over the existing palette */
+  --surface: var(--panel);
+  --surface-deep: var(--panel-deep);
+  --border: var(--hairline);
+  --border-strong: var(--hairline-strong);
+  --text: #f2efe8;
+  /* state colors, tuned to the bronze identity */
+  --ok: #7fb069;
+  --warn: #d9a441;
+  --danger: #d97356;
+  /* motion */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
   background: radial-gradient(
     circle at 18% 10%,
     #242220 0,
@@ -40,6 +88,19 @@
 
 .shell.navCollapsed {
   --nav-w: 72px;
+}
+
+/* Accessibility: honor reduced-motion — neutralize non-essential animation
+   and transitions when the OS requests it (visual-polish). */
+@media (prefers-reduced-motion: reduce) {
+  .shell *,
+  .shell *::before,
+  .shell *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .titleBar {
@@ -2977,6 +3038,42 @@
 
 .policyBlock {
   margin-top: 4px;
+}
+
+/* Proxies header — compact single-row toolbar (visual-polish) */
+.proxiesLead {
+  margin: var(--space-1) 0 var(--space-3);
+  max-width: 78ch;
+}
+
+.proxyToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.proxyFocusGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.proxyFocusGroup .selectModern {
+  width: auto;
+  min-width: 200px;
+  max-width: 320px;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.proxyToolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
 .policyHint {

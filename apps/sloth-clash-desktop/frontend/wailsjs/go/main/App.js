@@ -98,6 +98,10 @@ export function GetUpdateState() {
   return window['go']['main']['App']['GetUpdateState']()
 }
 
+export function ImportProfileFromText(arg1, arg2) {
+  return window['go']['main']['App']['ImportProfileFromText'](arg1, arg2)
+}
+
 export function ImportProfileFromURL(arg1, arg2) {
   return window['go']['main']['App']['ImportProfileFromURL'](arg1, arg2)
 }

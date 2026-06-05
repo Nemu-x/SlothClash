@@ -1,12 +1,22 @@
+:root {
+  /* Single source of truth for fonts (visual-polish). --font-sans keeps the
+     Nunito identity as the primary face and appends emoji fallbacks so flags /
+     emoji in proxy names render everywhere without a per-element override. */
+  --font-sans:
+    "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
 html,
 body,
 #root {
   margin: 0;
   min-height: 100%;
-  font-family:
-    "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 @font-face {

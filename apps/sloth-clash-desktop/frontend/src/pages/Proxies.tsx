@@ -81,25 +81,8 @@ export function ProxiesPage({
   return (
     <div className="panel proxiesPanel">
       <h2>{t('ui.proxies.title')}</h2>
-      <p className="muted">{t('ui.proxies.lead')}</p>
-      <div className="row">
-        <button
-          type="button"
-          className="btn"
-          disabled={connectionStatus !== 'connected'}
-          onClick={onRefreshProxies}
-        >
-          {t('ui.proxies.refreshGroups')}
-        </button>
-        <button
-          type="button"
-          className={showBuiltin ? 'btn' : 'btn ghost'}
-          onClick={onToggleShowBuiltin}
-        >
-          {t('ui.proxies.showBuiltin')}
-        </button>
-      </div>
-      <div className="proxyTopSwitches">
+      <p className="muted small proxiesLead">{t('ui.proxies.lead')}</p>
+      <div className="proxyToolbar">
         <div
           className="segmentInset segmentInset2 proxyModeInset"
           role="group"
@@ -137,25 +120,42 @@ export function ProxiesPage({
             {t('ui.common.global')}
           </button>
         </div>
-      </div>
-      <div className="segment modern policyBlock">
-        <span className="segLabel">{t('ui.proxies.focusGroup')}</span>
-        <select
-          className="selectModern"
-          value={activeGroup}
-          onChange={(e) => {
-            const v = e.target.value
-            if (!v) return
-            onSelectGroup(v)
-          }}
-        >
-          <option value="">—</option>
-          {visibleGroups.map((g: any) => (
-            <option key={g.name} value={g.name}>
-              {`${g.name} (${g.type})`}
-            </option>
-          ))}
-        </select>
+        <label className="proxyFocusGroup">
+          <span className="segLabel">{t('ui.proxies.focusGroup')}</span>
+          <select
+            className="selectModern"
+            value={activeGroup}
+            onChange={(e) => {
+              const v = e.target.value
+              if (!v) return
+              onSelectGroup(v)
+            }}
+          >
+            <option value="">—</option>
+            {visibleGroups.map((g: any) => (
+              <option key={g.name} value={g.name}>
+                {`${g.name} (${g.type})`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="proxyToolbarActions">
+          <button
+            type="button"
+            className="btn"
+            disabled={connectionStatus !== 'connected'}
+            onClick={onRefreshProxies}
+          >
+            {t('ui.proxies.refreshGroups')}
+          </button>
+          <button
+            type="button"
+            className={showBuiltin ? 'btn' : 'btn ghost'}
+            onClick={onToggleShowBuiltin}
+          >
+            {t('ui.proxies.showBuiltin')}
+          </button>
+        </div>
       </div>
       <ProxyGroupsSplit
         visibleGroups={visibleGroups}

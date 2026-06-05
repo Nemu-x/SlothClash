@@ -55,6 +55,11 @@ export function GetTunStatus(): Promise<main.ServiceState>
 
 export function GetUpdateState(): Promise<main.UpdateState>
 
+export function ImportProfileFromText(
+  arg1: string,
+  arg2: string,
+): Promise<main.AppState>
+
 export function ImportProfileFromURL(
   arg1: string,
   arg2: string,

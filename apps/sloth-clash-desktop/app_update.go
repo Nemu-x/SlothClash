@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -401,7 +400,7 @@ func (a *App) CheckForUpdates() UpdateState {
 //
 // Signature verification (cosign / ed25519) is left as a future addition —
 // the structure here is ready for it: insert the verify step between the
-// hash check and cmd.Start().
+// hash check and launchUpdateInstaller().
 func (a *App) ApplyUpdate() error {
 	if runtime.GOOS != "windows" {
 		return errors.New("in-app installer launch is only supported on Windows — open the release page from Settings")
@@ -464,13 +463,7 @@ func (a *App) ApplyUpdate() error {
 	a.traceEvent("update.teardown", "core+tun", 0, nil)
 	a.drainTunAndStopCore()
 
-	cmd := exec.Command(tmp)
-	if attr := hideWindowSysProcAttr(); attr != nil {
-		cmd.SysProcAttr = attr
-	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return launchUpdateInstaller(tmp)
 }
 
 func (a *App) downloadUpdateAsset(url, dest string) error {

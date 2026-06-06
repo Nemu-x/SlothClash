@@ -1,0 +1,49 @@
+# Security gating (audit finding F4): fail PRs/pushes on known vulnerabilities.
+#   - Go: govulncheck (only fails on vulns the code actually *calls*).
+#   - Frontend: pnpm audit on production deps (fail on high+).
+name: Security audit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - init/SlothClash
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-vuln:
+    name: govulncheck (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: apps/sloth-clash-desktop/go.sum
+      - name: govulncheck
+        working-directory: apps/sloth-clash-desktop
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  frontend-audit:
+    name: pnpm audit (frontend prod deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: pnpm audit (prod, fail on high+)
+        run: pnpm audit --prod --audit-level high

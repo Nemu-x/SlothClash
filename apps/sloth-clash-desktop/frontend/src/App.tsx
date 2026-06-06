@@ -263,6 +263,11 @@ function App() {
   // import / refresh — other identity headers remain.
   const [hwidEnabled, setHwidEnabled] = useState<boolean>(true)
   const [appUpdateEnabled, setAppUpdateEnabled] = useState<boolean>(true)
+  const [updateProgress, setUpdateProgress] = useState<{
+    downloaded: number
+    total: number
+    pct: number
+  } | null>(null)
   const [hwidSaving, setHwidSaving] = useState(false)
   const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
   const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
@@ -462,6 +467,21 @@ function App() {
     })
     return () => off()
   }, [invalidateUpdateState])
+
+  useEffect(() => {
+    const off = EventsOn('app:update:progress', (payload: unknown) => {
+      const p = payload as
+        | { downloaded?: number; total?: number; pct?: number }
+        | undefined
+      if (!p) return
+      setUpdateProgress({
+        downloaded: Number(p.downloaded ?? 0),
+        total: Number(p.total ?? 0),
+        pct: Number(p.pct ?? -1),
+      })
+    })
+    return () => off()
+  }, [])
 
   useEffect(() => {
     if (!spotlightOpen) return
@@ -1917,21 +1937,24 @@ function App() {
                   setError('')
                   try {
                     const ok = window.confirm(
-                      'Installer will start now and Sloth Clash will close to avoid file lock conflicts. Continue?',
+                      'The update will download, then the installer starts and Sloth Clash restarts to apply it. Continue?',
                     )
                     if (!ok) return
+                    setUpdateProgress({ downloaded: 0, total: 0, pct: 0 })
                     await ApplyUpdate()
                     // Give installer process a moment to initialize before we exit.
                     setTimeout(() => {
                       void Quit()
                     }, 350)
                   } catch (e: any) {
+                    setUpdateProgress(null)
                     setError(String(e))
                   }
                   await refresh()
                   invalidateUpdateState()
                 })()
               }
+              updateProgress={updateProgress}
               appUpdateEnabled={appUpdateEnabled}
               onToggleAppUpdate={(next: boolean) => {
                 setAppUpdateEnabled(next)

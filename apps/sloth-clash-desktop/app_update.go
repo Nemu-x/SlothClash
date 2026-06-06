@@ -36,6 +36,7 @@ var (
 type githubRelease struct {
 	TagName string        `json:"tag_name"`
 	HTMLURL string        `json:"html_url"`
+	Body    string        `json:"body"`
 	Assets  []githubAsset `json:"assets"`
 }
 
@@ -277,48 +278,50 @@ func hashFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func fetchLatestGitHubRelease() (tag, htmlURL, assetName, assetURL string, err error) {
+func fetchLatestGitHubRelease() (tag, htmlURL, notes, assetName, assetURL string, err error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
 
 	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet := string(body)
 		if len(snippet) > 200 {
 			snippet = snippet[:200]
 		}
-		return "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(snippet))
+		return "", "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(snippet))
 	}
 	var rel githubRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	tag = strings.TrimSpace(rel.TagName)
 	htmlURL = strings.TrimSpace(rel.HTMLURL)
+	notes = strings.TrimSpace(rel.Body)
 	assetName, assetURL = pickWindowsInstallerAsset(rel.Assets)
-	return tag, htmlURL, assetName, assetURL, nil
+	return tag, htmlURL, notes, assetName, assetURL, nil
 }
 
 func (a *App) runGitHubUpdateCheck() {
-	tag, htmlURL, assetName, assetURL, err := fetchLatestGitHubRelease()
+	tag, htmlURL, notes, assetName, assetURL, err := fetchLatestGitHubRelease()
 
 	a.mu.Lock()
 	a.update.LastCheckedAt = time.Now().Unix()
 	a.update.CurrentVersion = AppVersion
 	a.update.ReleaseURL = htmlURL
+	a.update.ReleaseNotes = notes
 	a.update.LatestVersion = stripV(tag)
 	a.update.AssetName = assetName
 	a.update.AssetDownloadURL = assetURL
@@ -412,7 +415,7 @@ func (a *App) ApplyUpdate() error {
 	}
 
 	tmp := filepath.Join(os.TempDir(), "SlothClash-desktop-update.exe")
-	if err := downloadUpdateAsset(url, tmp); err != nil {
+	if err := a.downloadUpdateAsset(url, tmp); err != nil {
 		return err
 	}
 
@@ -470,7 +473,7 @@ func (a *App) ApplyUpdate() error {
 	return cmd.Start()
 }
 
-func downloadUpdateAsset(url, dest string) error {
+func (a *App) downloadUpdateAsset(url, dest string) error {
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -491,10 +494,51 @@ func downloadUpdateAsset(url, dest string) error {
 		out.Close()
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
-	_, err = io.Copy(out, resp.Body)
-	cerr := out.Close()
-	if err != nil {
-		return err
+
+	// Stream with throttled progress events so the UI can show a download bar.
+	total := resp.ContentLength
+	a.emitUpdateProgress(0, total)
+	var downloaded int64
+	buf := make([]byte, 64*1024)
+	lastEmit := time.Now()
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				out.Close()
+				return werr
+			}
+			downloaded += int64(n)
+			if time.Since(lastEmit) >= 150*time.Millisecond {
+				a.emitUpdateProgress(downloaded, total)
+				lastEmit = time.Now()
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			out.Close()
+			return rerr
+		}
 	}
-	return cerr
+	a.emitUpdateProgress(downloaded, total)
+	return out.Close()
+}
+
+// emitUpdateProgress notifies the UI of download progress. pct is -1 when the
+// server did not report a content length.
+func (a *App) emitUpdateProgress(downloaded, total int64) {
+	if a.ctx == nil {
+		return
+	}
+	pct := -1.0
+	if total > 0 {
+		pct = float64(downloaded) / float64(total) * 100
+	}
+	wailsrt.EventsEmit(a.ctx, "app:update:progress", map[string]any{
+		"downloaded": downloaded,
+		"total":      total,
+		"pct":        pct,
+	})
 }

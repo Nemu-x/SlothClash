@@ -1,6 +1,7 @@
 module SlothClashDesktop
 
 go 1.23.0
+toolchain go1.26.4
 
 require (
 	github.com/Microsoft/go-winio v0.6.2

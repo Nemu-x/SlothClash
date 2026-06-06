@@ -1,4 +1,4 @@
-## Unreleased
+## Sloth Clash desktop `0.6.0` — 2026-06-06
 
 ### English
 

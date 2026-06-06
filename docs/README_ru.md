@@ -31,8 +31,32 @@
 
 - Профили, прокси, правила и сценарии merge / скриптов в интерфейсе  
 - Встраивание ядра Mihomo (stable и опционально alpha через prebuild)  
+- Режимы трафика **Proxy** / **TUN** в один клик с живым статусом подключения  
+- Визуальный + YAML редактор правил, монитор соединений и панель диагностики  
+- Подписанные, fail-closed **встроенные обновления** (Windows) с запуском установщика через UAC  
 - Установщик сервиса Windows и раскладка sidecar под упаковку Wails  
 - Схема deep link `slothclash://` (см. `wails.json`)
+
+## Скриншоты
+
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/home.png" alt="Главная — подключение, режим, трафик, статус" /><br /><sub><b>Главная</b> — подключение, режим Rule/Global, трафик Proxy/TUN, статус и скорость</sub></td>
+    <td width="50%"><img src="screenshots/profiles.png" alt="Профили — подписки" /><br /><sub><b>Профили</b> — импорт и управление подписками, трафик, авто-обновление</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/proxies.png" alt="Прокси — группы selector и url-test" /><br /><sub><b>Прокси</b> — группы selector / url-test с задержкой и поиском</sub></td>
+    <td width="50%"><img src="screenshots/connections.png" alt="Соединения — живой трафик" /><br /><sub><b>Соединения</b> — живой трафик по процессам, правило, отдача/приём</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/rules.png" alt="Правила — таблица маршрутизации" /><br /><sub><b>Правила</b> — полная таблица маршрутизации с фильтрами по типу/политике</sub></td>
+    <td width="50%"><img src="screenshots/edit_rules.png" alt="Редактор правил — визуальный и YAML" /><br /><sub><b>Редактор правил</b> — визуальный режим + Advanced (YAML), база подписки read-only</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/advanced.png" alt="Дополнительно — диагностика и инструменты" /><br /><sub><b>Дополнительно</b> — диагностика, проверки связи, инструменты восстановления</sub></td>
+    <td width="50%"><img src="screenshots/settings.png" alt="Настройки — рантайм, обновления, диагностика" /><br /><sub><b>Настройки</b> — тема, язык, подключение, обновления и диагностика</sub></td>
+  </tr>
+</table>
 
 ## Сборки
 
@@ -41,7 +65,7 @@
 
 ## Сборка локально
 
-Нужны: **Go 1.23+**, **Node 20+**, **pnpm**, Wails v2.
+Нужны: **Go 1.25+**, **Node 20+**, **pnpm**, Wails v2.
 
 ```bash
 pnpm install
@@ -58,6 +82,19 @@ GitHub Actions: `.github/workflows/desktop-artifacts.yml` — матрица п�
 ## Участие
 
 См. [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Поддержать проект
+
+Sloth Clash бесплатен и распространяется под **GPL-3.0**. Если он вам полезен — крипто-донат помогает продолжать разработку и выпускать релизы. Спасибо! 🦥
+
+| Актив | Адрес |
+| --- | --- |
+| **USDT** (TRC20) | `TPACN1kJRm2FnFF1cSqYtBnJwAmZ3qGMni` |
+| **USDT** (Polygon / MATIC) | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
+| **BTC** | `bc1qkkcgpqym967k2x73al6f7fpvkx52q4rzkut3we` |
+| **ETH** | `0xD9333e859Fb74D885d22E27568589de61E4433b5` |
+
+> Проверьте сеть перед отправкой — перевод в неверной сети вернуть нельзя.
 
 ## Благодарности
 

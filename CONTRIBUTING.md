@@ -10,7 +10,7 @@ UI strings live in flat JSON files per language. For where to edit and how to ke
 
 | Tool | Notes |
 | --- | --- |
-| **Go** | 1.23+ ([go.dev/dl](https://go.dev/dl)); on `PATH` for `wails` / CI. |
+| **Go** | 1.25+ ([go.dev/dl](https://go.dev/dl)); on `PATH` for `wails` / CI. Matches `go.mod` (`go 1.25`, toolchain 1.26.x). |
 | **Node.js** | 20+ |
 | **pnpm** | `corepack enable` then use repo `packageManager` (see `package.json`). |
 | **Wails v2** | Invoked via `node scripts/wails.mjs` (downloads the CLI with `go run`); global install optional. |
@@ -83,5 +83,9 @@ Go code: `cd apps/sloth-clash-desktop && go vet ./...` (and `gofmt` as you prefe
 4. Signed commits are welcome but not required unless maintainers ask.
 
 CI: [.github/workflows/desktop-artifacts.yml](.github/workflows/desktop-artifacts.yml) builds Windows (with NSIS via Chocolatey), macOS, and Linux artifacts on tag `v*` or manual **workflow_dispatch**.
+
+## Releases & signed updates
+
+Cutting a release and managing the in-app update signing key (minisign) is documented in **[docs/UPDATES.md](docs/UPDATES.md)**. In short: bump `apps/sloth-clash-desktop/version.go` **and** `wails.json` `productVersion` together, push a non-prerelease tag `vX.Y.Z`, and CI publishes the installers plus a signed `SHA256SUMS`. The updater is **fail-closed**: unsigned or tampered artifacts are refused.
 
 Thank you for contributing.

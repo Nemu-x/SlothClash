@@ -9,4 +9,6 @@ func launchUpdateInstaller(path, params string) error {
 	return errors.New("in-app installer launch is only supported on Windows — open the release page from Settings")
 }
 
+func windowsUpdateInstallerArgs() string { return "" }
+
 func scheduleProcessExitForUpdateHandoff() {}

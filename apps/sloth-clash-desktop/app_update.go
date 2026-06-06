@@ -350,9 +350,14 @@ func (a *App) emitUpdateEvent() {
 }
 
 func (a *App) updateCheckLoop(ctx context.Context) {
+	// The loop stays alive even when auto-check is disabled so toggling it back
+	// on in Settings takes effect without an app restart — we just skip the
+	// actual GitHub call while it's off. Manual CheckForUpdates is unaffected.
 	select {
 	case <-time.After(50 * time.Second):
-		a.runGitHubUpdateCheck()
+		if currentDesktopPrefs().AppUpdate.IsAutoCheckEnabled() {
+			a.runGitHubUpdateCheck()
+		}
 	case <-ctx.Done():
 		return
 	}
@@ -363,7 +368,9 @@ func (a *App) updateCheckLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.runGitHubUpdateCheck()
+			if currentDesktopPrefs().AppUpdate.IsAutoCheckEnabled() {
+				a.runGitHubUpdateCheck()
+			}
 		}
 	}
 }

@@ -110,6 +110,10 @@ export function RestartCore(): Promise<void>
 
 export function SelectProxyGroup(arg1: string): Promise<main.AppState>
 
+export function SetAppAutoUpdateEnabled(
+  arg1: boolean,
+): Promise<main.DesktopPrefs>
+
 export function SetCloseToTrayPreference(arg1: boolean): Promise<main.AppState>
 
 export function SetHwidEnabled(arg1: boolean): Promise<main.DesktopPrefs>

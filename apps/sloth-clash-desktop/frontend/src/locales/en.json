@@ -54,6 +54,7 @@
     "logLevel": "Log level",
     "info": "Info",
     "checkUpdates": "Check for updates",
+    "autoUpdate": "Automatic updates",
     "stableChannel": "Stable channel",
     "appVersionLabel": "App version",
     "updateAvailable": "Update available: {{version}}",

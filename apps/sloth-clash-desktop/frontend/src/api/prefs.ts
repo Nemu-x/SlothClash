@@ -8,6 +8,7 @@ export {
   GetPreferredLanguage,
   GetTrayAvailability,
   OnWindowBecameVisible,
+  SetAppAutoUpdateEnabled,
   SetCloseToTrayPreference,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,

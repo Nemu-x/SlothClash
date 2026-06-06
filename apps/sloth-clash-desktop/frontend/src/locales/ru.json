@@ -54,6 +54,7 @@
     "logLevel": "Уровень лога",
     "info": "Сведения",
     "checkUpdates": "Проверить обновления",
+    "autoUpdate": "Автообновление приложения",
     "stableChannel": "Стабильный канал",
     "appVersionLabel": "Версия приложения",
     "updateAvailable": "Доступно обновление: {{version}}",

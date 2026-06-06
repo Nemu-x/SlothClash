@@ -54,6 +54,7 @@
     "logLevel": "日志级别",
     "info": "信息",
     "checkUpdates": "检查更新",
+    "autoUpdate": "自动更新应用",
     "stableChannel": "稳定通道",
     "appVersionLabel": "应用版本",
     "updateAvailable": "有可用更新：{{version}}",

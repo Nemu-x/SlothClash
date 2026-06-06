@@ -65,6 +65,8 @@ export function SettingsPage({
   onOpenResetModal,
   onCheckUpdates,
   onApplyUpdate,
+  appUpdateEnabled,
+  onToggleAppUpdate,
 }: {
   theme: ThemeMode
   lang: Lang
@@ -96,6 +98,8 @@ export function SettingsPage({
   onOpenResetModal: (mode: SettingsResetMode) => void
   onCheckUpdates: () => void
   onApplyUpdate: () => void
+  appUpdateEnabled: boolean
+  onToggleAppUpdate: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -454,6 +458,14 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="settingsInfoDevActions">
+                <div className="settingsToggleRow">
+                  <span>{t('settings.autoUpdate')}</span>
+                  <SettingsSwitch
+                    checked={appUpdateEnabled}
+                    label={t('settings.autoUpdate')}
+                    onToggle={() => onToggleAppUpdate(!appUpdateEnabled)}
+                  />
+                </div>
                 {updateSnap?.hasUpdate ? (
                   <p className="banner" role="status">
                     {t('settings.updateAvailable', {

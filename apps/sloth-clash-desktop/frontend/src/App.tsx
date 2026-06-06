@@ -36,6 +36,7 @@ import {
   GetPreferredLanguage,
   GetTrayAvailability,
   OnWindowBecameVisible,
+  SetAppAutoUpdateEnabled,
   SetCloseToTrayPreference,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
@@ -261,6 +262,7 @@ function App() {
   // `true` here. Setting this to false omits the x-hwid header on subscription
   // import / refresh — other identity headers remain.
   const [hwidEnabled, setHwidEnabled] = useState<boolean>(true)
+  const [appUpdateEnabled, setAppUpdateEnabled] = useState<boolean>(true)
   const [hwidSaving, setHwidSaving] = useState(false)
   const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
   const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
@@ -427,6 +429,9 @@ function App() {
         // toggle off.
         const rawHwid = prefs?.privacy?.hwidEnabled
         setHwidEnabled(rawHwid === false ? false : true)
+        // AppUpdate.autoCheckEnabled is *bool too: undefined/null → default on.
+        const rawAppUpd = (prefs as any)?.appUpdate?.autoCheckEnabled
+        setAppUpdateEnabled(rawAppUpd === false ? false : true)
       } catch {
         /* ignore: prefs API unavailable */
       }
@@ -1927,6 +1932,16 @@ function App() {
                   invalidateUpdateState()
                 })()
               }
+              appUpdateEnabled={appUpdateEnabled}
+              onToggleAppUpdate={(next: boolean) => {
+                setAppUpdateEnabled(next)
+                void SetAppAutoUpdateEnabled(next)
+                  .then((prefs: any) => {
+                    const raw = prefs?.appUpdate?.autoCheckEnabled
+                    setAppUpdateEnabled(raw === false ? false : true)
+                  })
+                  .catch(() => setAppUpdateEnabled(!next))
+              }}
             />
           </Suspense>
         ) : null}

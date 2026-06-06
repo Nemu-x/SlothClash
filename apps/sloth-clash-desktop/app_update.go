@@ -151,76 +151,116 @@ func parseChecksumsFile(body []byte) map[string]string {
 	return out
 }
 
-// fetchExpectedSHA256 grabs the release's checksums file (if any) and
-// returns the digest for `installerName`. Returns ("", nil) when the release
-// ships no checksums file at all — the caller decides whether to allow the
-// update without verification (controlled by SLOTH_ALLOW_UNVERIFIED_UPDATE).
-func fetchExpectedSHA256(installerName string) (string, error) {
-	if strings.TrimSpace(installerName) == "" {
-		return "", nil
-	}
-	tag, _, _, _, err := fetchLatestGitHubRelease()
-	if err != nil {
-		return "", fmt.Errorf("look up release: %w", err)
-	}
-	if strings.TrimSpace(tag) == "" {
-		return "", nil
-	}
-	// Re-fetch release JSON to scan all assets (the cached pick returned only
-	// the installer; we want the checksums asset too).
+// fetchReleaseAssets returns the asset list of the latest GitHub release.
+func fetchReleaseAssets() ([]githubAsset, error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
 	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GitHub API %s", resp.Status)
 	}
 	var rel githubRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return "", err
+		return nil, err
 	}
-	_, csURL := pickChecksumsAsset(rel.Assets)
-	if csURL == "" {
-		return "", nil
-	}
-	csReq, err := http.NewRequest(http.MethodGet, csURL, nil)
+	return rel.Assets, nil
+}
+
+// downloadAssetBytes fetches a (small) release asset into memory.
+func downloadAssetBytes(url string, limit int64) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	csReq.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
-	csResp, err := githubAPIHTTPClient.Do(csReq)
+	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
+	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer csResp.Body.Close()
-	if csResp.StatusCode < 200 || csResp.StatusCode >= 300 {
-		return "", fmt.Errorf("checksums download failed: %s", csResp.Status)
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download failed: %s", resp.Status)
 	}
-	csBody, err := io.ReadAll(csResp.Body)
-	if err != nil {
-		return "", err
-	}
-	table := parseChecksumsFile(csBody)
-	if h, ok := table[installerName]; ok {
-		return h, nil
-	}
-	// Some checksum files use just the basename without paths; fallback to
-	// case-insensitive scan in case publisher renamed the installer asset.
-	for name, digest := range table {
-		if strings.EqualFold(name, installerName) {
-			return digest, nil
+	return io.ReadAll(io.LimitReader(resp.Body, limit))
+}
+
+// pickSignatureAsset locates the minisign signature published for the checksums
+// file (SHA256SUMS.minisig / SHA256SUMS.sig, or any *.minisig).
+func pickSignatureAsset(assets []githubAsset) (name, url string) {
+	for _, as := range assets {
+		switch strings.ToLower(strings.TrimSpace(as.Name)) {
+		case "sha256sums.minisig", "sha256sums.sig", "checksums.txt.minisig":
+			return as.Name, as.DownloadURL
 		}
 	}
-	return "", fmt.Errorf("checksums file did not list %q", installerName)
+	for _, as := range assets {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(as.Name)), ".minisig") {
+			return as.Name, as.DownloadURL
+		}
+	}
+	return "", ""
+}
+
+// resolveInstallerDigest fetches the release's checksums file and, if present,
+// its minisign signature; verifies the signature against the embedded trusted
+// keys; and returns the expected installer digest.
+//
+//   - verified=true only when a signature was present AND verified.
+//   - A present-but-invalid signature is a hard error (an attack signal).
+//   - No checksums file → ("", false, nil): the caller's fail-closed policy
+//     decides whether to proceed (see ApplyUpdate).
+func (a *App) resolveInstallerDigest(installerName string) (digest string, verified bool, err error) {
+	if strings.TrimSpace(installerName) == "" {
+		return "", false, nil
+	}
+	assets, err := fetchReleaseAssets()
+	if err != nil {
+		return "", false, fmt.Errorf("look up release: %w", err)
+	}
+	_, csURL := pickChecksumsAsset(assets)
+	if csURL == "" {
+		return "", false, nil
+	}
+	csBody, err := downloadAssetBytes(csURL, 1*1024*1024)
+	if err != nil {
+		return "", false, fmt.Errorf("download checksums: %w", err)
+	}
+
+	_, sigURL := pickSignatureAsset(assets)
+	if sigURL != "" {
+		sigBody, err := downloadAssetBytes(sigURL, 64*1024)
+		if err != nil {
+			return "", false, fmt.Errorf("download signature: %w", err)
+		}
+		if err := verifyMinisign(csBody, sigBody, trustedUpdateKeys); err != nil {
+			return "", false, fmt.Errorf("checksums signature verification failed: %w", err)
+		}
+		verified = true
+	}
+
+	table := parseChecksumsFile(csBody)
+	if h, ok := table[installerName]; ok {
+		return h, verified, nil
+	}
+	for name, d := range table {
+		if strings.EqualFold(name, installerName) {
+			return d, verified, nil
+		}
+	}
+	return "", verified, fmt.Errorf("checksums file did not list %q", installerName)
 }
 
 // hashFileSHA256 returns the lowercase hex SHA-256 digest of the file at path.
@@ -369,37 +409,43 @@ func (a *App) ApplyUpdate() error {
 		return err
 	}
 
-	expectedHash, hashErr := fetchExpectedSHA256(installerName)
-	if hashErr != nil {
+	// Verify the release is authentic before launching anything. Secure by
+	// default (fail-closed): require a checksums file signed by a trusted minisign
+	// key, then verify the downloaded installer's digest against it. The
+	// SLOTH_ALLOW_UNVERIFIED_UPDATE=1 escape hatch (local testing only) downgrades
+	// to best-effort. A present-but-invalid signature is always refused.
+	allowUnverified := strings.EqualFold(strings.TrimSpace(os.Getenv("SLOTH_ALLOW_UNVERIFIED_UPDATE")), "1")
+	digest, verified, vErr := a.resolveInstallerDigest(installerName)
+	if vErr != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("could not fetch expected checksum: %w", hashErr)
+		return fmt.Errorf("refusing to launch update: %w", vErr)
 	}
-	if expectedHash != "" {
+	if !verified && !allowUnverified {
+		_ = os.Remove(tmp)
+		return errors.New("refusing to launch update: release is not signed by a trusted key — set SLOTH_ALLOW_UNVERIFIED_UPDATE=1 to override (local testing only)")
+	}
+	if digest != "" {
 		gotHash, err := hashFileSHA256(tmp)
 		if err != nil {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("could not hash downloaded installer: %w", err)
 		}
-		if !strings.EqualFold(gotHash, expectedHash) {
+		if !strings.EqualFold(gotHash, digest) {
 			_ = os.Remove(tmp)
 			return fmt.Errorf(
 				"installer integrity check failed: expected sha256=%s, got %s — refusing to launch",
-				expectedHash, gotHash,
+				digest, gotHash,
 			)
 		}
-		a.traceEvent("update.verify.sha256", "ok", 0, map[string]any{
-			"asset": installerName,
-		})
-	} else {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("SLOTH_REQUIRE_VERIFIED_UPDATE")), "1") {
-			_ = os.Remove(tmp)
-			return errors.New("release ships no checksums file and SLOTH_REQUIRE_VERIFIED_UPDATE=1 is set — refusing to launch")
-		}
-		a.traceEvent("update.verify.sha256", "skip", 0, map[string]any{
-			"asset":  installerName,
-			"reason": "no checksums file published",
-		})
+	} else if !allowUnverified {
+		_ = os.Remove(tmp)
+		return errors.New("refusing to launch update: no checksum found for the installer")
 	}
+	a.traceEvent("update.verify", "ok", 0, map[string]any{
+		"asset":    installerName,
+		"signed":   verified,
+		"digested": digest != "",
+	})
 
 	// Tear down the core + TUN before handing off to the installer. The installer
 	// kills this process to replace it, bypassing the normal shutdown() path; without

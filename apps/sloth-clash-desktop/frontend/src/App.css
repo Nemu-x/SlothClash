@@ -4681,6 +4681,76 @@
   font-weight: var(--weight-medium);
 }
 
+/* Update changelog ("What's new") */
+.settingsChangelog {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.shell[data-theme="light"] .settingsChangelog {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.settingsChangelog > summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.settingsChangelogBody {
+  margin: var(--space-2) 0 0;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Update download progress */
+.updateProgress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.updateProgressTrack {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.shell[data-theme="light"] .updateProgressTrack {
+  background: rgba(74, 55, 30, 0.14);
+}
+
+.updateProgressBar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+.updateProgressBar.indeterminate {
+  width: 40%;
+  animation: updateProgressSlide 1.1s var(--ease-standard) infinite;
+}
+
+@keyframes updateProgressSlide {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
 .settingsMicroHint {
   margin: 4px 0 0;
   font-size: var(--font-size-xs);

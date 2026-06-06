@@ -68,12 +68,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
           if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
+          # Raw installer .exe — the in-app updater downloads this directly (must
+          # contain "installer" + "amd64" so pickWindowsInstallerAsset matches).
+          Copy-Item $installer.FullName "dist/SlothClash-windows-amd64-installer-${{ github.ref_name }}.exe" -Force
           Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip" -Force
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-amd64
-          path: dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip
+          path: |
+            dist/SlothClash-windows-amd64-installer-${{ github.ref_name }}.exe
+            dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip
 
   windows-arm64:
     runs-on: windows-latest
@@ -130,13 +135,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
           if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
+          Copy-Item $installer.FullName "dist/SlothClash-windows-arm64-installer-${{ github.ref_name }}.exe" -Force
           Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip" -Force
 
       - uses: actions/upload-artifact@v4
         if: steps.pack_windows_arm64.outcome == 'success'
         with:
           name: release-windows-arm64
-          path: dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip
+          path: |
+            dist/SlothClash-windows-arm64-installer-${{ github.ref_name }}.exe
+            dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip
 
   darwin-arm64:
     runs-on: macos-14
@@ -283,10 +291,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      MINISIGN_SIGN_PASSWORD: ${{ secrets.MINISIGN_SIGN_PASSWORD }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+
+      - name: Generate SHA256SUMS (by asset basename)
+        shell: bash
+        run: |
+          cd dist
+          : > SHA256SUMS
+          while IFS= read -r f; do
+            d=$(sha256sum "$f" | cut -d' ' -f1)
+            echo "$d  $(basename "$f")" >> SHA256SUMS
+          done < <(find . -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' \) | sort)
+          echo "----- SHA256SUMS -----"; cat SHA256SUMS
+
+      - name: Sign SHA256SUMS with minisign
+        if: ${{ env.MINISIGN_SECRET_KEY != '' }}
+        shell: bash
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          printf '%s\n' "$MINISIGN_SIGN_PASSWORD" | minisign -S -s minisign.key -m dist/SHA256SUMS
+          rm -f minisign.key
+          test -f dist/SHA256SUMS.minisig && echo "signed OK"
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -296,6 +328,9 @@ jobs:
           overwrite_files: true
           fail_on_unmatched_files: false
           files: |
+            dist/**/*.exe
             dist/**/*.zip
             dist/**/*.tar.gz
             dist/**/*.dmg
+            dist/SHA256SUMS
+            dist/SHA256SUMS.minisig

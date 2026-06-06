@@ -33,9 +33,10 @@ type TrafficSettings struct {
 
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
 type DesktopPrefs struct {
-	TUN     TunSettings     `json:"tun"`
-	Traffic TrafficSettings `json:"traffic"`
-	Privacy PrivacySettings `json:"privacy"`
+	TUN       TunSettings       `json:"tun"`
+	Traffic   TrafficSettings   `json:"traffic"`
+	Privacy   PrivacySettings   `json:"privacy"`
+	AppUpdate AppUpdateSettings `json:"appUpdate"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -62,6 +63,24 @@ func (p PrivacySettings) IsHwidEnabled() bool {
 		return true
 	}
 	return *p.HwidEnabled
+}
+
+// AppUpdateSettings controls the app's own auto-update checker (distinct from
+// per-profile subscription auto-update).
+type AppUpdateSettings struct {
+	// AutoCheckEnabled gates the background update check. nil OR true → enabled
+	// (default); false → no background check (the manual "Check for updates"
+	// button still works).
+	AutoCheckEnabled *bool `json:"autoCheckEnabled,omitempty"`
+}
+
+// IsAutoCheckEnabled returns true when the background update check should run.
+// The default (nil pointer or absent field on disk) is true.
+func (s AppUpdateSettings) IsAutoCheckEnabled() bool {
+	if s.AutoCheckEnabled == nil {
+		return true
+	}
+	return *s.AutoCheckEnabled
 }
 
 const slothPrefsFile = "prefs.json"
@@ -216,6 +235,20 @@ func (a *App) SetHwidEnabled(enabled bool) DesktopPrefs {
 	v := enabled
 	prefsMu.Lock()
 	prefsCurrent.Privacy.HwidEnabled = &v
+	snapshot := prefsCurrent
+	_ = saveDesktopPrefsLocked(snapshot)
+	prefsMu.Unlock()
+	return snapshot
+}
+
+// SetAppAutoUpdateEnabled toggles the background app update checker. Persisted
+// to prefs.json and honored by updateCheckLoop without a restart (the manual
+// "Check for updates" action is unaffected).
+func (a *App) SetAppAutoUpdateEnabled(enabled bool) DesktopPrefs {
+	_ = a
+	v := enabled
+	prefsMu.Lock()
+	prefsCurrent.AppUpdate.AutoCheckEnabled = &v
 	snapshot := prefsCurrent
 	_ = saveDesktopPrefsLocked(snapshot)
 	prefsMu.Unlock()

@@ -159,6 +159,7 @@ type UpdateState struct {
 	CurrentVersion   string `json:"currentVersion,omitempty"`
 	LatestVersion    string `json:"latestVersion,omitempty"`
 	ReleaseURL       string `json:"releaseUrl,omitempty"`
+	ReleaseNotes     string `json:"releaseNotes,omitempty"`
 	AssetName        string `json:"assetName,omitempty"`
 	AssetDownloadURL string `json:"assetDownloadUrl,omitempty"`
 	LastError        string `json:"lastError,omitempty"`

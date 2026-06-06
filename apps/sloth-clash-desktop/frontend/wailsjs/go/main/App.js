@@ -182,6 +182,10 @@ export function SelectProxyGroup(arg1) {
   return window['go']['main']['App']['SelectProxyGroup'](arg1)
 }
 
+export function SetAppAutoUpdateEnabled(arg1) {
+  return window['go']['main']['App']['SetAppAutoUpdateEnabled'](arg1)
+}
+
 export function SetCloseToTrayPreference(arg1) {
   return window['go']['main']['App']['SetCloseToTrayPreference'](arg1)
 }

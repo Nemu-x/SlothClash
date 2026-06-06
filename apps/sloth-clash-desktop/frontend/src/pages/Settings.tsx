@@ -65,6 +65,9 @@ export function SettingsPage({
   onOpenResetModal,
   onCheckUpdates,
   onApplyUpdate,
+  updateProgress,
+  appUpdateEnabled,
+  onToggleAppUpdate,
 }: {
   theme: ThemeMode
   lang: Lang
@@ -96,6 +99,9 @@ export function SettingsPage({
   onOpenResetModal: (mode: SettingsResetMode) => void
   onCheckUpdates: () => void
   onApplyUpdate: () => void
+  updateProgress: { downloaded: number; total: number; pct: number } | null
+  appUpdateEnabled: boolean
+  onToggleAppUpdate: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -454,6 +460,14 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="settingsInfoDevActions">
+                <div className="settingsToggleRow">
+                  <span>{t('settings.autoUpdate')}</span>
+                  <SettingsSwitch
+                    checked={appUpdateEnabled}
+                    label={t('settings.autoUpdate')}
+                    onToggle={() => onToggleAppUpdate(!appUpdateEnabled)}
+                  />
+                </div>
                 {updateSnap?.hasUpdate ? (
                   <p className="banner" role="status">
                     {t('settings.updateAvailable', {
@@ -468,6 +482,47 @@ export function SettingsPage({
                 {updateSnap?.lastError ? (
                   <p className="error small">{String(updateSnap.lastError)}</p>
                 ) : null}
+                {updateSnap?.hasUpdate &&
+                !String(updateSnap?.assetDownloadUrl ?? '').trim() ? (
+                  <p className="muted small">
+                    {t('settings.updatePlatformNote')}
+                  </p>
+                ) : null}
+                {updateSnap?.hasUpdate &&
+                String(updateSnap?.releaseNotes ?? '').trim() ? (
+                  <details className="settingsChangelog">
+                    <summary>{t('settings.whatsNew')}</summary>
+                    <pre className="settingsChangelogBody">
+                      {String(updateSnap.releaseNotes)}
+                    </pre>
+                  </details>
+                ) : null}
+                {updateProgress ? (
+                  <div className="updateProgress">
+                    <div className="updateProgressTrack">
+                      <div
+                        className={`updateProgressBar${updateProgress.pct < 0 ? ' indeterminate' : ''}`}
+                        style={
+                          updateProgress.pct >= 0
+                            ? {
+                                width: `${Math.min(100, Math.max(0, updateProgress.pct))}%`,
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
+                    <span className="muted small">
+                      {updateProgress.pct >= 100
+                        ? t('settings.updateStarting')
+                        : t('settings.updateDownloading', {
+                            pct:
+                              updateProgress.pct >= 0
+                                ? Math.round(updateProgress.pct)
+                                : '…',
+                          })}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="row settingsInfoDevBtnRow">
                   <button
                     type="button"
@@ -481,6 +536,7 @@ export function SettingsPage({
                     <button
                       type="button"
                       className="btn primary"
+                      disabled={Boolean(updateProgress)}
                       onClick={onApplyUpdate}
                     >
                       {t('settings.downloadInstaller')}

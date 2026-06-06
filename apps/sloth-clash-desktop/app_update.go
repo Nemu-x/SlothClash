@@ -36,6 +36,7 @@ var (
 type githubRelease struct {
 	TagName string        `json:"tag_name"`
 	HTMLURL string        `json:"html_url"`
+	Body    string        `json:"body"`
 	Assets  []githubAsset `json:"assets"`
 }
 
@@ -151,76 +152,116 @@ func parseChecksumsFile(body []byte) map[string]string {
 	return out
 }
 
-// fetchExpectedSHA256 grabs the release's checksums file (if any) and
-// returns the digest for `installerName`. Returns ("", nil) when the release
-// ships no checksums file at all — the caller decides whether to allow the
-// update without verification (controlled by SLOTH_ALLOW_UNVERIFIED_UPDATE).
-func fetchExpectedSHA256(installerName string) (string, error) {
-	if strings.TrimSpace(installerName) == "" {
-		return "", nil
-	}
-	tag, _, _, _, err := fetchLatestGitHubRelease()
-	if err != nil {
-		return "", fmt.Errorf("look up release: %w", err)
-	}
-	if strings.TrimSpace(tag) == "" {
-		return "", nil
-	}
-	// Re-fetch release JSON to scan all assets (the cached pick returned only
-	// the installer; we want the checksums asset too).
+// fetchReleaseAssets returns the asset list of the latest GitHub release.
+func fetchReleaseAssets() ([]githubAsset, error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
 	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GitHub API %s", resp.Status)
 	}
 	var rel githubRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return "", err
+		return nil, err
 	}
-	_, csURL := pickChecksumsAsset(rel.Assets)
-	if csURL == "" {
-		return "", nil
-	}
-	csReq, err := http.NewRequest(http.MethodGet, csURL, nil)
+	return rel.Assets, nil
+}
+
+// downloadAssetBytes fetches a (small) release asset into memory.
+func downloadAssetBytes(url string, limit int64) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	csReq.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
-	csResp, err := githubAPIHTTPClient.Do(csReq)
+	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
+	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer csResp.Body.Close()
-	if csResp.StatusCode < 200 || csResp.StatusCode >= 300 {
-		return "", fmt.Errorf("checksums download failed: %s", csResp.Status)
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download failed: %s", resp.Status)
 	}
-	csBody, err := io.ReadAll(csResp.Body)
-	if err != nil {
-		return "", err
-	}
-	table := parseChecksumsFile(csBody)
-	if h, ok := table[installerName]; ok {
-		return h, nil
-	}
-	// Some checksum files use just the basename without paths; fallback to
-	// case-insensitive scan in case publisher renamed the installer asset.
-	for name, digest := range table {
-		if strings.EqualFold(name, installerName) {
-			return digest, nil
+	return io.ReadAll(io.LimitReader(resp.Body, limit))
+}
+
+// pickSignatureAsset locates the minisign signature published for the checksums
+// file (SHA256SUMS.minisig / SHA256SUMS.sig, or any *.minisig).
+func pickSignatureAsset(assets []githubAsset) (name, url string) {
+	for _, as := range assets {
+		switch strings.ToLower(strings.TrimSpace(as.Name)) {
+		case "sha256sums.minisig", "sha256sums.sig", "checksums.txt.minisig":
+			return as.Name, as.DownloadURL
 		}
 	}
-	return "", fmt.Errorf("checksums file did not list %q", installerName)
+	for _, as := range assets {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(as.Name)), ".minisig") {
+			return as.Name, as.DownloadURL
+		}
+	}
+	return "", ""
+}
+
+// resolveInstallerDigest fetches the release's checksums file and, if present,
+// its minisign signature; verifies the signature against the embedded trusted
+// keys; and returns the expected installer digest.
+//
+//   - verified=true only when a signature was present AND verified.
+//   - A present-but-invalid signature is a hard error (an attack signal).
+//   - No checksums file → ("", false, nil): the caller's fail-closed policy
+//     decides whether to proceed (see ApplyUpdate).
+func (a *App) resolveInstallerDigest(installerName string) (digest string, verified bool, err error) {
+	if strings.TrimSpace(installerName) == "" {
+		return "", false, nil
+	}
+	assets, err := fetchReleaseAssets()
+	if err != nil {
+		return "", false, fmt.Errorf("look up release: %w", err)
+	}
+	_, csURL := pickChecksumsAsset(assets)
+	if csURL == "" {
+		return "", false, nil
+	}
+	csBody, err := downloadAssetBytes(csURL, 1*1024*1024)
+	if err != nil {
+		return "", false, fmt.Errorf("download checksums: %w", err)
+	}
+
+	_, sigURL := pickSignatureAsset(assets)
+	if sigURL != "" {
+		sigBody, err := downloadAssetBytes(sigURL, 64*1024)
+		if err != nil {
+			return "", false, fmt.Errorf("download signature: %w", err)
+		}
+		if err := verifyMinisign(csBody, sigBody, trustedUpdateKeys); err != nil {
+			return "", false, fmt.Errorf("checksums signature verification failed: %w", err)
+		}
+		verified = true
+	}
+
+	table := parseChecksumsFile(csBody)
+	if h, ok := table[installerName]; ok {
+		return h, verified, nil
+	}
+	for name, d := range table {
+		if strings.EqualFold(name, installerName) {
+			return d, verified, nil
+		}
+	}
+	return "", verified, fmt.Errorf("checksums file did not list %q", installerName)
 }
 
 // hashFileSHA256 returns the lowercase hex SHA-256 digest of the file at path.
@@ -237,48 +278,50 @@ func hashFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func fetchLatestGitHubRelease() (tag, htmlURL, assetName, assetURL string, err error) {
+func fetchLatestGitHubRelease() (tag, htmlURL, notes, assetName, assetURL string, err error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SlothClashDesktop/"+AppVersion)
 
 	resp, err := githubAPIHTTPClient.Do(req)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet := string(body)
 		if len(snippet) > 200 {
 			snippet = snippet[:200]
 		}
-		return "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(snippet))
+		return "", "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(snippet))
 	}
 	var rel githubRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	tag = strings.TrimSpace(rel.TagName)
 	htmlURL = strings.TrimSpace(rel.HTMLURL)
+	notes = strings.TrimSpace(rel.Body)
 	assetName, assetURL = pickWindowsInstallerAsset(rel.Assets)
-	return tag, htmlURL, assetName, assetURL, nil
+	return tag, htmlURL, notes, assetName, assetURL, nil
 }
 
 func (a *App) runGitHubUpdateCheck() {
-	tag, htmlURL, assetName, assetURL, err := fetchLatestGitHubRelease()
+	tag, htmlURL, notes, assetName, assetURL, err := fetchLatestGitHubRelease()
 
 	a.mu.Lock()
 	a.update.LastCheckedAt = time.Now().Unix()
 	a.update.CurrentVersion = AppVersion
 	a.update.ReleaseURL = htmlURL
+	a.update.ReleaseNotes = notes
 	a.update.LatestVersion = stripV(tag)
 	a.update.AssetName = assetName
 	a.update.AssetDownloadURL = assetURL
@@ -310,9 +353,14 @@ func (a *App) emitUpdateEvent() {
 }
 
 func (a *App) updateCheckLoop(ctx context.Context) {
+	// The loop stays alive even when auto-check is disabled so toggling it back
+	// on in Settings takes effect without an app restart — we just skip the
+	// actual GitHub call while it's off. Manual CheckForUpdates is unaffected.
 	select {
 	case <-time.After(50 * time.Second):
-		a.runGitHubUpdateCheck()
+		if currentDesktopPrefs().AppUpdate.IsAutoCheckEnabled() {
+			a.runGitHubUpdateCheck()
+		}
 	case <-ctx.Done():
 		return
 	}
@@ -323,7 +371,9 @@ func (a *App) updateCheckLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.runGitHubUpdateCheck()
+			if currentDesktopPrefs().AppUpdate.IsAutoCheckEnabled() {
+				a.runGitHubUpdateCheck()
+			}
 		}
 	}
 }
@@ -365,41 +415,47 @@ func (a *App) ApplyUpdate() error {
 	}
 
 	tmp := filepath.Join(os.TempDir(), "SlothClash-desktop-update.exe")
-	if err := downloadUpdateAsset(url, tmp); err != nil {
+	if err := a.downloadUpdateAsset(url, tmp); err != nil {
 		return err
 	}
 
-	expectedHash, hashErr := fetchExpectedSHA256(installerName)
-	if hashErr != nil {
+	// Verify the release is authentic before launching anything. Secure by
+	// default (fail-closed): require a checksums file signed by a trusted minisign
+	// key, then verify the downloaded installer's digest against it. The
+	// SLOTH_ALLOW_UNVERIFIED_UPDATE=1 escape hatch (local testing only) downgrades
+	// to best-effort. A present-but-invalid signature is always refused.
+	allowUnverified := strings.EqualFold(strings.TrimSpace(os.Getenv("SLOTH_ALLOW_UNVERIFIED_UPDATE")), "1")
+	digest, verified, vErr := a.resolveInstallerDigest(installerName)
+	if vErr != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("could not fetch expected checksum: %w", hashErr)
+		return fmt.Errorf("refusing to launch update: %w", vErr)
 	}
-	if expectedHash != "" {
+	if !verified && !allowUnverified {
+		_ = os.Remove(tmp)
+		return errors.New("refusing to launch update: release is not signed by a trusted key — set SLOTH_ALLOW_UNVERIFIED_UPDATE=1 to override (local testing only)")
+	}
+	if digest != "" {
 		gotHash, err := hashFileSHA256(tmp)
 		if err != nil {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("could not hash downloaded installer: %w", err)
 		}
-		if !strings.EqualFold(gotHash, expectedHash) {
+		if !strings.EqualFold(gotHash, digest) {
 			_ = os.Remove(tmp)
 			return fmt.Errorf(
 				"installer integrity check failed: expected sha256=%s, got %s — refusing to launch",
-				expectedHash, gotHash,
+				digest, gotHash,
 			)
 		}
-		a.traceEvent("update.verify.sha256", "ok", 0, map[string]any{
-			"asset": installerName,
-		})
-	} else {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("SLOTH_REQUIRE_VERIFIED_UPDATE")), "1") {
-			_ = os.Remove(tmp)
-			return errors.New("release ships no checksums file and SLOTH_REQUIRE_VERIFIED_UPDATE=1 is set — refusing to launch")
-		}
-		a.traceEvent("update.verify.sha256", "skip", 0, map[string]any{
-			"asset":  installerName,
-			"reason": "no checksums file published",
-		})
+	} else if !allowUnverified {
+		_ = os.Remove(tmp)
+		return errors.New("refusing to launch update: no checksum found for the installer")
 	}
+	a.traceEvent("update.verify", "ok", 0, map[string]any{
+		"asset":    installerName,
+		"signed":   verified,
+		"digested": digest != "",
+	})
 
 	// Tear down the core + TUN before handing off to the installer. The installer
 	// kills this process to replace it, bypassing the normal shutdown() path; without
@@ -417,7 +473,7 @@ func (a *App) ApplyUpdate() error {
 	return cmd.Start()
 }
 
-func downloadUpdateAsset(url, dest string) error {
+func (a *App) downloadUpdateAsset(url, dest string) error {
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -438,10 +494,51 @@ func downloadUpdateAsset(url, dest string) error {
 		out.Close()
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
-	_, err = io.Copy(out, resp.Body)
-	cerr := out.Close()
-	if err != nil {
-		return err
+
+	// Stream with throttled progress events so the UI can show a download bar.
+	total := resp.ContentLength
+	a.emitUpdateProgress(0, total)
+	var downloaded int64
+	buf := make([]byte, 64*1024)
+	lastEmit := time.Now()
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				out.Close()
+				return werr
+			}
+			downloaded += int64(n)
+			if time.Since(lastEmit) >= 150*time.Millisecond {
+				a.emitUpdateProgress(downloaded, total)
+				lastEmit = time.Now()
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			out.Close()
+			return rerr
+		}
 	}
-	return cerr
+	a.emitUpdateProgress(downloaded, total)
+	return out.Close()
+}
+
+// emitUpdateProgress notifies the UI of download progress. pct is -1 when the
+// server did not report a content length.
+func (a *App) emitUpdateProgress(downloaded, total int64) {
+	if a.ctx == nil {
+		return
+	}
+	pct := -1.0
+	if total > 0 {
+		pct = float64(downloaded) / float64(total) * 100
+	}
+	wailsrt.EventsEmit(a.ctx, "app:update:progress", map[string]any{
+		"downloaded": downloaded,
+		"total":      total,
+		"pct":        pct,
+	})
 }

@@ -199,11 +199,23 @@ func (a *App) shutdown(ctx context.Context) {
 	// makes the tray "flicker" away while the app is still running.
 	a.connectGen.Add(1)
 
-	// Before we tear down Mihomo, ask it to disable TUN via PATCH /configs.
-	// Without this step the process is killed while TUN is still bound, which
-	// on macOS can leave the utun adapter in an "on" zombie state that the UI
-	// cannot reliably clean up next launch. On Windows the same PATCH lets
-	// wintun unwind cleanly instead of relying on abrupt process teardown.
+	a.drainTunAndStopCore()
+}
+
+// tunDrainSettle is how long we wait after asking mihomo to disable TUN before
+// killing the core, giving it time to fully remove the wintun/utun adapter.
+const tunDrainSettle = 1200 * time.Millisecond
+
+// drainTunAndStopCore disables TUN via the core (so the wintun/utun adapter
+// unwinds cleanly) and then stops the core. Used on graceful shutdown and before
+// an in-app update launches the installer.
+//
+// Without the TUN drain the process is killed while TUN is still bound, which on
+// macOS can leave the utun adapter in an "on" zombie state and on Windows leaves
+// wintun up. The in-app updater's installer kills this process to replace it,
+// bypassing shutdown(); if the core (and its TUN adapter) survive the update, the
+// next launch's first Connect hits an already-up TUN. See fix-tun-teardown-on-update.
+func (a *App) drainTunAndStopCore() {
 	a.mu.RLock()
 	listen := a.effectiveCoreEndpointLocked()
 	secret := a.coreSecret
@@ -213,6 +225,11 @@ func (a *App) shutdown(ctx context.Context) {
 		dctx, dcancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = coreSetTunEnabledAt(dctx, listen, secret, false)
 		dcancel()
+		// Let mihomo actually remove the wintun/utun adapter before we kill the
+		// core. Without this settle the kill interrupts adapter teardown and the
+		// device lingers (the "Meta" adapter stays up in Network Connections),
+		// which trips the next launch's first Connect after a fast in-app update.
+		time.Sleep(tunDrainSettle)
 	}
 
 	a.mu.Lock()

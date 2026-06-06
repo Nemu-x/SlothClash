@@ -24,12 +24,12 @@ const (
 	githubOwner = "Nemu-x"
 	githubRepo  = "SlothClash"
 
-	githubAPIHTTPTimeout   = 45 * time.Second
+	githubAPIHTTPTimeout  = 45 * time.Second
 	updateDownloadTimeout = 60 * time.Minute
 )
 
 var (
-	githubAPIHTTPClient       = &http.Client{Timeout: githubAPIHTTPTimeout}
+	githubAPIHTTPClient      = &http.Client{Timeout: githubAPIHTTPTimeout}
 	updateDownloadHTTPClient = &http.Client{Timeout: updateDownloadTimeout}
 )
 
@@ -400,6 +400,13 @@ func (a *App) ApplyUpdate() error {
 			"reason": "no checksums file published",
 		})
 	}
+
+	// Tear down the core + TUN before handing off to the installer. The installer
+	// kills this process to replace it, bypassing the normal shutdown() path; without
+	// this the core (and its wintun adapter) survive the update and the next launch's
+	// first Connect hits an already-up TUN. See fix-tun-teardown-on-update.
+	a.traceEvent("update.teardown", "core+tun", 0, nil)
+	a.drainTunAndStopCore()
 
 	cmd := exec.Command(tmp)
 	if attr := hideWindowSysProcAttr(); attr != nil {

@@ -83,7 +83,28 @@ func remoteIsNewer(remoteTag, localVer string) bool {
 	return r3 > l3
 }
 
+func windowsInstallerArchToken() string {
+	switch runtime.GOARCH {
+	case "arm64":
+		return "arm64"
+	default:
+		// amd64 build runs on Windows x64 and on ARM64 via x64 emulation.
+		return "amd64"
+	}
+}
+
 func pickWindowsInstallerAsset(assets []githubAsset) (name, url string) {
+	arch := windowsInstallerArchToken()
+	for _, as := range assets {
+		n := strings.ToLower(as.Name)
+		if !strings.HasSuffix(n, ".exe") {
+			continue
+		}
+		if strings.Contains(n, "installer") && strings.Contains(n, arch) {
+			return as.Name, as.DownloadURL
+		}
+	}
+	// Legacy fallback when release assets omit the arch token we expect.
 	for _, as := range assets {
 		n := strings.ToLower(as.Name)
 		if !strings.HasSuffix(n, ".exe") {
@@ -463,7 +484,15 @@ func (a *App) ApplyUpdate() error {
 	a.traceEvent("update.teardown", "core+tun", 0, nil)
 	a.drainTunAndStopCore()
 
-	return launchUpdateInstaller(tmp)
+	if err := launchUpdateInstaller(tmp, windowsUpdateInstallerArgs()); err != nil {
+		return err
+	}
+	// Exit promptly so the elevated NSIS installer is not fighting this process
+	// (and any WebView2/mihomo children) for file locks. ShellExecute returns as
+	// soon as the UAC prompt is shown; the installer starts only after the user
+	// accepts, so a graceful Quit() from the frontend is too late and too slow.
+	scheduleProcessExitForUpdateHandoff()
+	return nil
 }
 
 func (a *App) downloadUpdateAsset(url, dest string) error {

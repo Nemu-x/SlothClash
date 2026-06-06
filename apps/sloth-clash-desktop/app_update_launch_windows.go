@@ -4,10 +4,35 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
+
+// windowsUpdateInstallerArgs returns NSIS command-line switches for an in-place
+// upgrade into the directory of the running binary. /D= must be last and unquoted.
+func windowsUpdateInstallerArgs() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	instDir := strings.TrimSpace(filepath.Dir(exe))
+	if instDir == "" {
+		return ""
+	}
+	return "/D=" + instDir
+}
+
+func scheduleProcessExitForUpdateHandoff() {
+	go func() {
+		// Brief window for ShellExecute + Wails RPC to flush; then hard-exit.
+		time.Sleep(250 * time.Millisecond)
+		os.Exit(0)
+	}()
+}
 
 var (
 	shell32Update           = syscall.NewLazyDLL("shell32.dll")
@@ -17,7 +42,8 @@ var (
 // launchUpdateInstaller starts the verified NSIS installer with UAC elevation.
 // exec.Command (CreateProcess) cannot trigger elevation; ShellExecute with
 // verb "runas" shows the standard Windows consent prompt.
-func launchUpdateInstaller(path string) error {
+// params may include NSIS switches such as /S or /D=<instDir> (see NSIS docs).
+func launchUpdateInstaller(path, params string) error {
 	verb, err := syscall.UTF16PtrFromString("runas")
 	if err != nil {
 		return fmt.Errorf("prepare elevation verb: %w", err)
@@ -30,6 +56,14 @@ func launchUpdateInstaller(path string) error {
 	if err != nil {
 		return fmt.Errorf("prepare installer directory: %w", err)
 	}
+	var paramPtr uintptr
+	if strings.TrimSpace(params) != "" {
+		p, err := syscall.UTF16PtrFromString(params)
+		if err != nil {
+			return fmt.Errorf("prepare installer params: %w", err)
+		}
+		paramPtr = uintptr(unsafe.Pointer(p))
+	}
 
 	// SW_SHOWNORMAL — the installer UI should be visible after UAC.
 	const showNormal = 1
@@ -37,7 +71,7 @@ func launchUpdateInstaller(path string) error {
 		0,
 		uintptr(unsafe.Pointer(verb)),
 		uintptr(unsafe.Pointer(exe)),
-		0,
+		paramPtr,
 		uintptr(unsafe.Pointer(dir)),
 		showNormal,
 	)

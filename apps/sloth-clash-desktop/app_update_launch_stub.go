@@ -4,7 +4,9 @@ package main
 
 import "errors"
 
-func launchUpdateInstaller(path string) error {
-	_ = path
+func launchUpdateInstaller(path, params string) error {
+	_, _ = path, params
 	return errors.New("in-app installer launch is only supported on Windows — open the release page from Settings")
 }
+
+func scheduleProcessExitForUpdateHandoff() {}

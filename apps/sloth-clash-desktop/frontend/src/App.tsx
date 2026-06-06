@@ -58,7 +58,7 @@ import {
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
 import { UpdateRuleProvider } from './api/rules'
-import { BrowserOpenURL, EventsOn, Quit, WindowHide } from './api/runtime'
+import { BrowserOpenURL, EventsOn, WindowHide } from './api/runtime'
 import { InstallService, RefreshSlothServiceStatus } from './api/service'
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
@@ -1950,10 +1950,8 @@ function App() {
                     if (!ok) return
                     setUpdateProgress({ downloaded: 0, total: 0, pct: 0 })
                     await ApplyUpdate()
-                    // Give installer process a moment to initialize before we exit.
-                    setTimeout(() => {
-                      void Quit()
-                    }, 350)
+                    // Backend exits the process after handing off to the installer.
+                    return
                   } catch (e: any) {
                     setUpdateProgress(null)
                     setError(String(e))

@@ -40,5 +40,8 @@ if (-not (Test-Path -LiteralPath $dst)) {
     exit 2
 }
 
-$p = Start-Process -FilePath $dst -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
+# /passive (not /quiet) so Microsoft's own redist installer shows its progress
+# UI while it runs — otherwise the NSIS installer's progress bar just sits frozen
+# during the install and looks hung to the user.
+$p = Start-Process -FilePath $dst -ArgumentList '/install', '/passive', '/norestart' -Wait -PassThru
 exit $p.ExitCode

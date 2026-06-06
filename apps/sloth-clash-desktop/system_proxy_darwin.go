@@ -138,7 +138,7 @@ func setDarwinSystemProxy(host string, port int, enable bool) error {
 		return nil
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf(strings.Join(errs, "; "))
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -231,7 +231,7 @@ func restoreDarwinSystemProxySnapshot(snapshot map[string]SystemProxyServiceSnap
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf(strings.Join(errs, "; "))
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }

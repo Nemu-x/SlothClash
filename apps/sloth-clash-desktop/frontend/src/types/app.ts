@@ -64,4 +64,6 @@ export type CompactSettings = {
   logLevel: 'error' | 'warn' | 'info' | 'debug'
   defaultAutoUpdateMinutes: number
   reconnectOnManualProfileUpdate: boolean
+  /** UI zoom factor applied via CSS `zoom` on the document root (1 = 100%). */
+  uiScale: number
 }

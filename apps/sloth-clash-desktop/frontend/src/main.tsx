@@ -7,6 +7,10 @@ import './style.css'
 import App from './App'
 import i18n from './i18n'
 import { queryClient } from './queryClient'
+import { applyUiScale, loadCompactSettings } from './utils/settings'
+
+// Apply the persisted UI zoom before first paint so there's no resize flash.
+applyUiScale(loadCompactSettings().uiScale)
 
 const container = document.getElementById('root')
 

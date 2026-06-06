@@ -24,6 +24,7 @@
     "themeDark": "Тёмная",
     "themeLight": "Светлая",
     "language": "Язык",
+    "uiScale": "Масштаб интерфейса",
     "startMinimized": "Запуск свёрнутым",
     "launchOnStartup": "Автозапуск",
     "closeToTray": "Закрывать в трей (иначе выход)",

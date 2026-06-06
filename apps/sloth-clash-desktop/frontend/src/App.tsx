@@ -123,7 +123,11 @@ import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { CompactSettings, ImportModalReason, Screen } from './types/app'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from './utils/proxyNames'
-import { DEFAULT_SETTINGS, loadCompactSettings } from './utils/settings'
+import {
+  applyUiScale,
+  DEFAULT_SETTINGS,
+  loadCompactSettings,
+} from './utils/settings'
 import { yamlValidationError } from './utils/yaml'
 
 function App() {
@@ -811,6 +815,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(LS_SETTINGS, JSON.stringify(settings))
   }, [settings])
+
+  useEffect(() => {
+    applyUiScale(settings.uiScale)
+  }, [settings.uiScale])
 
   useEffect(() => {
     let cancelled = false

@@ -24,6 +24,7 @@
     "themeDark": "Dark",
     "themeLight": "Light",
     "language": "Language",
+    "uiScale": "Interface scale",
     "startMinimized": "Start minimized",
     "launchOnStartup": "Launch on startup",
     "closeToTray": "Close to tray (else quit)",

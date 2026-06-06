@@ -4,6 +4,7 @@ import type { main } from '../api/models'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_REPO_URL } from '../constants'
 import type { CompactSettings } from '../types/app'
+import { UI_SCALE_OPTIONS } from '../utils/settings'
 import { friendlyErrorMessage } from '../utils/yaml'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
@@ -169,6 +170,22 @@ export function SettingsPage({
                 <option value="en">English</option>
                 <option value="ru">Русский</option>
                 <option value="zh">简体中文</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="fieldLab">{t('settings.uiScale')}</span>
+              <select
+                className="selectModern"
+                value={String(settings.uiScale)}
+                onChange={(e) =>
+                  onSetSetting('uiScale', Number(e.target.value))
+                }
+              >
+                {UI_SCALE_OPTIONS.map((s) => (
+                  <option key={s} value={String(s)}>
+                    {Math.round(s * 100)}%
+                  </option>
+                ))}
               </select>
             </label>
             <div className="settingsToggleRow">

@@ -56,13 +56,22 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
-	// Force a random free port for the internal DNS listener regardless of what the
-	// subscription / merge template prescribed. A hard-coded port (e.g. `:1053`) is
-	// routinely taken by other Clash-family clients / ad blockers / corporate DNS
-	// proxies on user machines, which leaves mihomo without a DNS server and breaks
-	// fake-ip resolution silently ("VPN works but websites fail"). The port is internal
-	// to mihomo (dns-hijack redirects TUN :53 to it), so any free port works.
-	dns["listen"] = "127.0.0.1:0"
+	// DNS listener bind. Two independent concerns:
+	//   1. Port: a hard-coded port (e.g. `:1053`) is routinely taken by other
+	//      Clash-family clients / ad blockers / corporate DNS proxies, which
+	//      leaves mihomo without a DNS server. A random free port (":0") avoids
+	//      that. The port is internal — dns-hijack knows mihomo's own port.
+	//   2. Bind address: it MUST be all-interfaces (0.0.0.0), NOT loopback-only
+	//      (127.0.0.1). Under TUN, `dns-hijack: any:53` redirects queries to this
+	//      listener via the tun adapter; a loopback-only bind is unreachable from
+	//      that path on many Windows setups, so DNS silently dies under TUN while
+	//      system-proxy mode (no hijack) keeps working. clash-verge-rev binds
+	//      `:1053` (= 0.0.0.0) for exactly this reason.
+	// Only fill a default when the config/extended-config did not set one, so an
+	// explicit `dns.listen` (e.g. for debugging) is honoured instead of clobbered.
+	if v, ok := dns["listen"].(string); !ok || strings.TrimSpace(v) == "" {
+		dns["listen"] = "0.0.0.0:0"
+	}
 	if _, ok := dns["enhanced-mode"]; !ok {
 		dns["enhanced-mode"] = "fake-ip"
 	}

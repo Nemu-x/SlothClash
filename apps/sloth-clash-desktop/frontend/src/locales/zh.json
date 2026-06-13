@@ -65,7 +65,13 @@
     "updateAvailable": "有可用更新：{{version}}",
     "upToDate": "已是最新版本。",
     "downloadInstaller": "下载并安装更新",
-    "openReleasePage": "打开发布页"
+    "openReleasePage": "打开发布页",
+    "resetModal": {
+      "title": "重置应用设置",
+      "keepProfilesBody": "重置界面设置和本地默认值，但保留配置？",
+      "withProfilesBody": "重置设置并从此设备删除所有配置？",
+      "reset": "重置"
+    }
   },
   "tour": {
     "back": "上一步",
@@ -150,7 +156,97 @@
       "refreshSubscription": "刷新订阅",
       "localNoUrl": "本地 / 无 URL",
       "active": "当前使用",
-      "activate": "设为当前"
+      "activate": "设为当前",
+      "contextMenu": {
+        "updateNow": "立即更新配置",
+        "editInfo": "编辑信息",
+        "copySubscriptionUrl": "复制订阅 URL",
+        "rules": "规则",
+        "deleteProfile": "删除配置",
+        "advanced": "高级",
+        "extendConfig": "扩展配置",
+        "proxyGroups": "代理分组",
+        "editFile": "编辑文件"
+      },
+      "importModal": {
+        "tabUrl": "订阅 URL",
+        "tabPaste": "粘贴 / 文件",
+        "subscriptionUrl": "订阅 URL",
+        "configOrLinks": "配置或分享链接",
+        "detectYaml": "Clash YAML 配置",
+        "detectLinksSingular": "{{count}} 条分享链接",
+        "detectLinksPlural": "{{count}} 条分享链接",
+        "detectLinksBase64Singular": "{{count}} 条分享链接 (base64)",
+        "detectLinksBase64Plural": "{{count}} 条分享链接 (base64)",
+        "detectUnknown": "无法识别 — 需要 Clash YAML 或 vless:// / vmess:// / ss:// / trojan:// 链接",
+        "pastePlaceholder": "粘贴 mihomo/Clash config.yaml，\n或分享链接 — 每行一条：\nvless://…\nvmess://…\ntrojan://…",
+        "displayName": "显示名称",
+        "namePlaceholderUrl": "留空 = 使用服务端 Profile-Title",
+        "namePlaceholderPaste": "留空 = “本地配置”",
+        "pasteFromClipboard": "从剪贴板粘贴",
+        "loadFromFile": "从文件加载…"
+      },
+      "editInfo": {
+        "title": "编辑配置信息",
+        "blurb": "显示名称与订阅链接。URL 留空则保持当前链接不变。",
+        "name": "名称",
+        "subscriptionUrl": "订阅 URL",
+        "urlPlaceholder": "留空以保持当前链接",
+        "autoUpdate": "自动更新",
+        "intervalMinutes": "间隔（分钟）",
+        "copyUrl": "复制 URL",
+        "copyName": "复制名称"
+      },
+      "fileModal": {
+        "title": "编辑配置文件",
+        "loadedConfig": "· 已加载 config.yaml",
+        "readErrorLead": "读取：{{error}} — 仍可粘贴 YAML 并保存以创建文件。",
+        "copyPath": "复制路径"
+      },
+      "mergeModal": {
+        "title": "配置合并模板",
+        "blurbLead": "顶层键会合并到拉取的配置中；",
+        "blurbTail": "用于 rules、proxy-groups 与 provider maps。Sloth 写入",
+        "mergeYaml": "· merge YAML",
+        "resetScaffold": "重置模板"
+      },
+      "proxyModal": {
+        "title": "编辑代理分组",
+        "groupName": "分组名称",
+        "groupType": "分组类型",
+        "useProviders": "使用提供者（逗号分隔）",
+        "healthcheckUrl": "健康检查 URL",
+        "interval": "间隔",
+        "timeout": "超时",
+        "maxFailedTimes": "最大失败次数",
+        "lazy": "Lazy",
+        "addGroup": "添加分组",
+        "loadingGroups": "正在加载订阅分组…",
+        "noGroupsDetected": "未检测到订阅分组。",
+        "noGroupsYet": "尚无分组。",
+        "noAppendGroups": "无 append 分组。",
+        "useLabel": "use: {{value}}",
+        "fixYamlBeforeVisual": "切换到 Visual 前请先修复代理 advanced YAML。",
+        "savedBanner": "代理分组已保存到 merge 模板。"
+      },
+      "rulesModal": {
+        "title": "编辑规则",
+        "ruleTypeAria": "规则类型",
+        "noContentPlaceholder": "（无内容）",
+        "policyAria": "代理策略",
+        "yourRules": "你的规则",
+        "noCustomRules": "尚无自定义规则。",
+        "subscriptionReadOnly": "订阅 · 只读",
+        "loadingRules": "正在加载订阅规则…",
+        "noRulesDetected": "未检测到订阅规则。",
+        "fixYamlBeforeVisual": "切换到 Visual 前请先修复规则 advanced YAML。",
+        "savedBanner": "规则已保存到 merge 模板。"
+      },
+      "deleteModal": {
+        "title": "删除配置",
+        "bodyPrefix": "从本设备移除",
+        "bodySuffix": "？这不会取消远程订阅。"
+      }
     },
     "proxies": {
       "title": "代理",
@@ -305,6 +401,21 @@
     "no": "否",
     "close": "关闭",
     "show": "显示",
-    "hide": "隐藏"
+    "hide": "隐藏",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "reset": "重置",
+    "import": "导入",
+    "remove": "移除",
+    "restore": "恢复",
+    "optional": "（可选）",
+    "yamlError": "YAML 错误：{{error}}",
+    "visual": "Visual",
+    "advancedYamlTab": "Advanced (YAML)",
+    "advancedYaml": "Advanced YAML",
+    "prepend": "Prepend",
+    "append": "Append",
+    "addShort": "+ 添加"
   }
 }

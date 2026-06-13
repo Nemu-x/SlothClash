@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export type SettingsResetMode = 'keep_profiles' | 'with_profiles'
 
 export function SettingsResetModal({
@@ -9,6 +11,7 @@ export function SettingsResetModal({
   onClose: () => void
   onConfirm: (withProfiles: boolean) => void
 }) {
+  const { t } = useTranslation()
   if (!mode) return null
   return (
     <div
@@ -25,24 +28,24 @@ export function SettingsResetModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="resetSettingsTitle" className="modalTitle">
-          Reset app settings
+          {t('settings.resetModal.title')}
         </h3>
         <p className="muted small">
           {mode === 'with_profiles'
-            ? 'Reset settings and delete all profiles from this device?'
-            : 'Reset UI settings and local defaults, but keep profiles?'}
+            ? t('settings.resetModal.withProfilesBody')
+            : t('settings.resetModal.keepProfilesBody')}
         </p>
         <div className="modalFooter">
           <div className="modalFooterRight" style={{ width: '100%' }}>
             <button type="button" className="btn ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               className="btn primary"
               onClick={() => onConfirm(mode === 'with_profiles')}
             >
-              Reset
+              {t('settings.resetModal.reset')}
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   GetProfileRulesBaseline,
@@ -83,6 +84,7 @@ export function ProfileRulesModal({
   onSaved: (banner: string) => void
   onError: (msg: string) => void
 }) {
+  const { t } = useTranslation()
   const initialRaw = target ? rulesTemplateFromProfile(profiles, target.id) : ''
   const initialBuckets = useMemo(
     () => rulesBucketsFromMerge(initialRaw),
@@ -159,7 +161,7 @@ export function ProfileRulesModal({
 
   const onSwitchToVisual = () => {
     if (advancedYamlErr) {
-      onError('Fix rules advanced YAML before switching to Visual mode.')
+      onError(t('ui.profiles.rulesModal.fixYamlBeforeVisual'))
       return
     }
     setUiMode('visual')
@@ -243,7 +245,7 @@ export function ProfileRulesModal({
           )
     try {
       await SetProfileRulesTemplate(target.id, body)
-      onSaved('Rules saved into merge template.')
+      onSaved(t('ui.profiles.rulesModal.savedBanner'))
     } catch (e: any) {
       onError(String(e))
     }
@@ -269,7 +271,7 @@ export function ProfileRulesModal({
       >
         <div className="vergeModalHead">
           <h3 id="rulesEdTitle" className="modalTitle vergeModalTitle">
-            Edit rules
+            {t('ui.profiles.rulesModal.title')}
           </h3>
           <div className="vergeToggleRow">
             <button
@@ -277,21 +279,21 @@ export function ProfileRulesModal({
               className={`btn vergeToggle ${uiMode === 'visual' ? 'primary' : 'ghost'}`}
               onClick={onSwitchToVisual}
             >
-              Visual
+              {t('common.visual')}
             </button>
             <button
               type="button"
               className={`btn vergeToggle ${uiMode === 'advanced' ? 'primary' : 'ghost'}`}
               onClick={() => setUiMode('advanced')}
             >
-              Advanced (YAML)
+              {t('common.advancedYamlTab')}
             </button>
           </div>
         </div>
 
         {uiMode === 'advanced' ? (
           <label className="field modalField rulesAdvancedField">
-            <span className="fieldLab">Advanced YAML</span>
+            <span className="fieldLab">{t('common.advancedYaml')}</span>
             <MonacoYamlEditor
               className="vergePaneYaml modalMonacoWrap"
               value={advancedDraft}
@@ -300,7 +302,7 @@ export function ProfileRulesModal({
             />
             {advancedYamlErr ? (
               <span className="rulesYamlErr small">
-                YAML error: {advancedYamlErr}
+                {t('common.yamlError', { error: advancedYamlErr })}
               </span>
             ) : null}
           </label>
@@ -311,7 +313,7 @@ export function ProfileRulesModal({
                 className="selectModern selectInline rulesAddType"
                 value={formType}
                 onChange={(e) => setFormType(e.target.value)}
-                aria-label="Rule type"
+                aria-label={t('ui.profiles.rulesModal.ruleTypeAria')}
               >
                 {RULE_TYPE_OPTIONS.map((type) => (
                   <option key={type} value={type}>
@@ -324,7 +326,9 @@ export function ProfileRulesModal({
                 value={formContent}
                 onChange={(e) => setFormContent(e.target.value)}
                 placeholder={
-                  formType === 'MATCH' ? '(no content)' : 'google.com'
+                  formType === 'MATCH'
+                    ? t('ui.profiles.rulesModal.noContentPlaceholder')
+                    : 'google.com'
                 }
                 disabled={formType === 'MATCH'}
                 onKeyDown={(e) => {
@@ -338,7 +342,7 @@ export function ProfileRulesModal({
                 className="selectModern selectInline rulesAddPolicy"
                 value={formPolicy}
                 onChange={(e) => setFormPolicy(e.target.value)}
-                aria-label="Proxy policy"
+                aria-label={t('ui.profiles.rulesModal.policyAria')}
               >
                 {policyOptions.map((opt) => (
                   <option key={opt} value={opt}>
@@ -352,14 +356,14 @@ export function ProfileRulesModal({
                   className={`pillOpt ${appendTarget === 'prepend' ? 'active' : ''}`}
                   onClick={() => setAppendTarget('prepend')}
                 >
-                  Prepend
+                  {t('common.prepend')}
                 </button>
                 <button
                   type="button"
                   className={`pillOpt ${appendTarget === 'append' ? 'active' : ''}`}
                   onClick={() => setAppendTarget('append')}
                 >
-                  Append
+                  {t('common.append')}
                 </button>
               </div>
               <button
@@ -367,16 +371,20 @@ export function ProfileRulesModal({
                 className="btn primary rulesAddBtn"
                 onClick={addRule}
               >
-                + Add
+                {t('common.addShort')}
               </button>
             </div>
 
             <div className="rulesCols">
               <div className="rulesCol">
-                <p className="eyebrow">Your rules</p>
+                <p className="eyebrow">
+                  {t('ui.profiles.rulesModal.yourRules')}
+                </p>
                 <div className="rulesList">
                   {!hasCustom ? (
-                    <p className="muted small">No custom rules yet.</p>
+                    <p className="muted small">
+                      {t('ui.profiles.rulesModal.noCustomRules')}
+                    </p>
                   ) : null}
                   {rows.map((r) => (
                     <RuleLine
@@ -385,7 +393,7 @@ export function ProfileRulesModal({
                       content={r.content}
                       policy={r.policy}
                       pos="prepend"
-                      actionLabel="Remove"
+                      actionLabel={t('common.remove')}
                       actionGlyph="×"
                       onAction={() => removeRow(r.id)}
                     />
@@ -397,7 +405,7 @@ export function ProfileRulesModal({
                       content={r.content}
                       policy={r.policy}
                       pos="append"
-                      actionLabel="Remove"
+                      actionLabel={t('common.remove')}
                       actionGlyph="×"
                       onAction={() => removeAppendRow(r.id)}
                     />
@@ -406,15 +414,19 @@ export function ProfileRulesModal({
               </div>
 
               <div className="rulesCol">
-                <p className="eyebrow">Subscription · read-only</p>
+                <p className="eyebrow">
+                  {t('ui.profiles.rulesModal.subscriptionReadOnly')}
+                </p>
                 <div className="rulesList">
                   {baselineLoading ? (
-                    <p className="muted small">Loading subscription rules…</p>
+                    <p className="muted small">
+                      {t('ui.profiles.rulesModal.loadingRules')}
+                    </p>
                   ) : baselineError ? (
                     <p className="muted small rulesYamlErr">{baselineError}</p>
                   ) : !baseline || baseline.length === 0 ? (
                     <p className="muted small">
-                      No subscription rules detected.
+                      {t('ui.profiles.rulesModal.noRulesDetected')}
                     </p>
                   ) : (
                     baseline.map((line, idx) => {
@@ -427,7 +439,9 @@ export function ProfileRulesModal({
                           content={parsed.content}
                           policy={parsed.policy}
                           deleted={isDeleted}
-                          actionLabel={isDeleted ? 'Restore' : 'Delete'}
+                          actionLabel={
+                            isDeleted ? t('common.restore') : t('common.delete')
+                          }
                           actionGlyph={isDeleted ? '↺' : '×'}
                           onAction={() => toggleBaselineDelete(line)}
                         />
@@ -442,7 +456,7 @@ export function ProfileRulesModal({
 
         <div className="modalFooter">
           <button type="button" className="btn ghost" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <div className="modalFooterRight">
             <button
@@ -451,7 +465,7 @@ export function ProfileRulesModal({
               disabled={uiMode === 'advanced' && Boolean(advancedYamlErr)}
               onClick={() => void save()}
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

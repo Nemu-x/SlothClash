@@ -65,7 +65,13 @@
     "updateAvailable": "Update available: {{version}}",
     "upToDate": "You are on the latest release.",
     "downloadInstaller": "Download & install update",
-    "openReleasePage": "Open release page"
+    "openReleasePage": "Open release page",
+    "resetModal": {
+      "title": "Reset app settings",
+      "keepProfilesBody": "Reset UI settings and local defaults, but keep profiles?",
+      "withProfilesBody": "Reset settings and delete all profiles from this device?",
+      "reset": "Reset"
+    }
   },
   "tour": {
     "back": "Back",
@@ -150,7 +156,97 @@
       "refreshSubscription": "Refresh subscription",
       "localNoUrl": "Local / no URL",
       "active": "Active",
-      "activate": "Activate"
+      "activate": "Activate",
+      "contextMenu": {
+        "updateNow": "Update profile now",
+        "editInfo": "Edit info",
+        "copySubscriptionUrl": "Copy subscription URL",
+        "rules": "Rules",
+        "deleteProfile": "Delete profile",
+        "advanced": "Advanced",
+        "extendConfig": "Extend config",
+        "proxyGroups": "Proxy groups",
+        "editFile": "Edit file"
+      },
+      "importModal": {
+        "tabUrl": "Subscription URL",
+        "tabPaste": "Paste / File",
+        "subscriptionUrl": "Subscription URL",
+        "configOrLinks": "Config or share links",
+        "detectYaml": "Clash YAML config",
+        "detectLinksSingular": "{{count}} share link",
+        "detectLinksPlural": "{{count}} share links",
+        "detectLinksBase64Singular": "{{count}} share link (base64)",
+        "detectLinksBase64Plural": "{{count}} share links (base64)",
+        "detectUnknown": "Unrecognized — expecting Clash YAML or vless:// / vmess:// / ss:// / trojan:// links",
+        "pastePlaceholder": "Paste a mihomo/Clash config.yaml,\nor share links — one per line:\nvless://…\nvmess://…\ntrojan://…",
+        "displayName": "Display name",
+        "namePlaceholderUrl": "Empty = use Profile-Title from server",
+        "namePlaceholderPaste": "Empty = \"Local config\"",
+        "pasteFromClipboard": "Paste from clipboard",
+        "loadFromFile": "Load from file…"
+      },
+      "editInfo": {
+        "title": "Edit profile info",
+        "blurb": "Display name and subscription link. Leave the URL field empty to keep the current link unchanged.",
+        "name": "Name",
+        "subscriptionUrl": "Subscription URL",
+        "urlPlaceholder": "Leave empty to keep current",
+        "autoUpdate": "Auto-update",
+        "intervalMinutes": "Interval (minutes)",
+        "copyUrl": "Copy URL",
+        "copyName": "Copy name"
+      },
+      "fileModal": {
+        "title": "Edit configuration file",
+        "loadedConfig": "· loaded config.yaml",
+        "readErrorLead": "Read: {{error}} — you can still paste YAML and save to create the file.",
+        "copyPath": "Copy path"
+      },
+      "mergeModal": {
+        "title": "Profile merge template",
+        "blurbLead": "Top-level keys merge into the fetched profile;",
+        "blurbTail": "for rules, proxy-groups, and provider maps. Applied whenever Sloth writes",
+        "mergeYaml": "· merge YAML",
+        "resetScaffold": "Reset scaffold"
+      },
+      "proxyModal": {
+        "title": "Edit proxy groups",
+        "groupName": "Group name",
+        "groupType": "Group type",
+        "useProviders": "Use providers (comma-separated)",
+        "healthcheckUrl": "Healthcheck URL",
+        "interval": "Interval",
+        "timeout": "Timeout",
+        "maxFailedTimes": "Max failed times",
+        "lazy": "Lazy",
+        "addGroup": "Add group",
+        "loadingGroups": "Loading subscription groups…",
+        "noGroupsDetected": "No subscription groups detected.",
+        "noGroupsYet": "No groups yet.",
+        "noAppendGroups": "No append groups.",
+        "useLabel": "use: {{value}}",
+        "fixYamlBeforeVisual": "Fix proxy advanced YAML before switching to Visual mode.",
+        "savedBanner": "Proxy groups saved into merge template."
+      },
+      "rulesModal": {
+        "title": "Edit rules",
+        "ruleTypeAria": "Rule type",
+        "noContentPlaceholder": "(no content)",
+        "policyAria": "Proxy policy",
+        "yourRules": "Your rules",
+        "noCustomRules": "No custom rules yet.",
+        "subscriptionReadOnly": "Subscription · read-only",
+        "loadingRules": "Loading subscription rules…",
+        "noRulesDetected": "No subscription rules detected.",
+        "fixYamlBeforeVisual": "Fix rules advanced YAML before switching to Visual mode.",
+        "savedBanner": "Rules saved into merge template."
+      },
+      "deleteModal": {
+        "title": "Delete profile",
+        "bodyPrefix": "Remove",
+        "bodySuffix": "from this device? This does not cancel a remote subscription."
+      }
     },
     "proxies": {
       "title": "Proxies",
@@ -305,6 +401,21 @@
     "no": "No",
     "close": "Close",
     "show": "Show",
-    "hide": "Hide"
+    "hide": "Hide",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "reset": "Reset",
+    "import": "Import",
+    "remove": "Remove",
+    "restore": "Restore",
+    "optional": "(optional)",
+    "yamlError": "YAML error: {{error}}",
+    "visual": "Visual",
+    "advancedYamlTab": "Advanced (YAML)",
+    "advancedYaml": "Advanced YAML",
+    "prepend": "Prepend",
+    "append": "Append",
+    "addShort": "+ Add"
   }
 }

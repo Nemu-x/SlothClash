@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { MonacoYamlEditor } from '../MonacoYamlEditor'
 
 import type { ProfileModalTarget } from './ProfileMergeModal'
@@ -23,6 +25,7 @@ export function ProfileFileModal({
   onClose: () => void
   onSave: (id: string) => void
 }) {
+  const { t } = useTranslation()
   if (!target) return null
   return (
     <div
@@ -40,19 +43,21 @@ export function ProfileFileModal({
       >
         <div className="vergeModalHead">
           <h3 id="editFileTitle" className="modalTitle vergeModalTitle">
-            Edit configuration file
+            {t('ui.profiles.fileModal.title')}
           </h3>
         </div>
         <p className="muted small mono tight">{path}</p>
         {loadError ? (
           <p className="muted small tight">
-            Read: {loadError} — you can still paste YAML and save to create the
-            file.
+            {t('ui.profiles.fileModal.readErrorLead', { error: loadError })}
           </p>
         ) : null}
         <label className="field modalField">
           <span className="fieldLab">
-            {target.name} <span className="optional">· loaded config.yaml</span>
+            {target.name}{' '}
+            <span className="optional">
+              {t('ui.profiles.fileModal.loadedConfig')}
+            </span>
           </span>
           <MonacoYamlEditor
             className="modalMonacoWrap"
@@ -62,7 +67,7 @@ export function ProfileFileModal({
           />
           {yamlError ? (
             <span className="muted small" style={{ color: '#ff6b6b' }}>
-              YAML error: {yamlError}
+              {t('common.yamlError', { error: yamlError })}
             </span>
           ) : null}
         </label>
@@ -73,11 +78,11 @@ export function ProfileFileModal({
             disabled={!path}
             onClick={() => onCopyPath(path)}
           >
-            Copy path
+            {t('ui.profiles.fileModal.copyPath')}
           </button>
           <div className="modalFooterRight">
             <button type="button" className="btn ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -85,7 +90,7 @@ export function ProfileFileModal({
               disabled={Boolean(yamlError)}
               onClick={() => onSave(target.id)}
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

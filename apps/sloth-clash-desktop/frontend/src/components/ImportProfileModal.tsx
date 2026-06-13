@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export type ImportMode = 'url' | 'paste'
 
@@ -25,26 +26,41 @@ function tryBase64(s: string): string {
 
 type Detection = { kind: 'yaml' | 'links' | 'unknown'; label: string }
 
-function detect(raw: string): Detection | null {
-  const t = raw.trim()
-  if (!t) return null
-  if (looksLikeYaml(t)) return { kind: 'yaml', label: 'Clash YAML config' }
-  const n = countLinks(t)
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string
+
+function detect(raw: string, t: TranslateFn): Detection | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (looksLikeYaml(trimmed))
+    return { kind: 'yaml', label: t('ui.profiles.importModal.detectYaml') }
+  const n = countLinks(trimmed)
   if (n > 0)
-    return { kind: 'links', label: `${n} share link${n > 1 ? 's' : ''}` }
-  const dec = tryBase64(t)
+    return {
+      kind: 'links',
+      label: t(
+        n > 1
+          ? 'ui.profiles.importModal.detectLinksPlural'
+          : 'ui.profiles.importModal.detectLinksSingular',
+        { count: n },
+      ),
+    }
+  const dec = tryBase64(trimmed)
   if (dec) {
     const m = countLinks(dec)
     if (m > 0)
       return {
         kind: 'links',
-        label: `${m} share link${m > 1 ? 's' : ''} (base64)`,
+        label: t(
+          m > 1
+            ? 'ui.profiles.importModal.detectLinksBase64Plural'
+            : 'ui.profiles.importModal.detectLinksBase64Singular',
+          { count: m },
+        ),
       }
   }
   return {
     kind: 'unknown',
-    label:
-      'Unrecognized — expecting Clash YAML or vless:// / vmess:// / ss:// / trojan:// links',
+    label: t('ui.profiles.importModal.detectUnknown'),
   }
 }
 
@@ -81,10 +97,11 @@ export function ImportProfileModal({
   onClose: () => void
   onSubmit: () => void
 }) {
+  const { t } = useTranslation()
   const fileRef = useRef<HTMLInputElement>(null)
   if (!open) return null
 
-  const detection = mode === 'paste' ? detect(content) : null
+  const detection = mode === 'paste' ? detect(content, t) : null
   const canSubmit =
     !busy &&
     (mode === 'url'
@@ -119,7 +136,7 @@ export function ImportProfileModal({
             className={mode === 'url' ? 'btn' : 'btn ghost'}
             onClick={() => onModeChange('url')}
           >
-            Subscription URL
+            {t('ui.profiles.importModal.tabUrl')}
           </button>
           <button
             type="button"
@@ -128,13 +145,15 @@ export function ImportProfileModal({
             className={mode === 'paste' ? 'btn' : 'btn ghost'}
             onClick={() => onModeChange('paste')}
           >
-            Paste / File
+            {t('ui.profiles.importModal.tabPaste')}
           </button>
         </div>
 
         {mode === 'url' ? (
           <label className="field modalField">
-            <span className="fieldLab">Subscription URL</span>
+            <span className="fieldLab">
+              {t('ui.profiles.importModal.subscriptionUrl')}
+            </span>
             <input
               className="input"
               value={url}
@@ -145,7 +164,7 @@ export function ImportProfileModal({
         ) : (
           <label className="field modalField">
             <span className="fieldLab">
-              Config or share links
+              {t('ui.profiles.importModal.configOrLinks')}
               {detection ? (
                 <span className={`importDetect importDetect-${detection.kind}`}>
                   {' '}
@@ -159,16 +178,15 @@ export function ImportProfileModal({
               rows={10}
               spellCheck={false}
               onChange={(e) => onContentChange(e.target.value)}
-              placeholder={
-                'Paste a mihomo/Clash config.yaml,\nor share links — one per line:\nvless://…\nvmess://…\ntrojan://…'
-              }
+              placeholder={t('ui.profiles.importModal.pastePlaceholder')}
             />
           </label>
         )}
 
         <label className="field modalField">
           <span className="fieldLab">
-            Display name <span className="optional">(optional)</span>
+            {t('ui.profiles.importModal.displayName')}{' '}
+            <span className="optional">{t('common.optional')}</span>
           </span>
           <input
             className="input"
@@ -176,8 +194,8 @@ export function ImportProfileModal({
             onChange={(e) => onNameChange(e.target.value)}
             placeholder={
               mode === 'url'
-                ? 'Empty = use Profile-Title from server'
-                : 'Empty = "Local config"'
+                ? t('ui.profiles.importModal.namePlaceholderUrl')
+                : t('ui.profiles.importModal.namePlaceholderPaste')
             }
           />
         </label>
@@ -189,7 +207,7 @@ export function ImportProfileModal({
               className="btn btnModalSecondary"
               onClick={onPasteFromClipboard}
             >
-              Paste from clipboard
+              {t('ui.profiles.importModal.pasteFromClipboard')}
             </button>
             {mode === 'paste' ? (
               <>
@@ -198,7 +216,7 @@ export function ImportProfileModal({
                   className="btn btnModalSecondary"
                   onClick={() => fileRef.current?.click()}
                 >
-                  Load from file…
+                  {t('ui.profiles.importModal.loadFromFile')}
                 </button>
                 <input
                   ref={fileRef}
@@ -220,7 +238,7 @@ export function ImportProfileModal({
               disabled={busy}
               onClick={onClose}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -228,7 +246,7 @@ export function ImportProfileModal({
               disabled={!canSubmit}
               onClick={onSubmit}
             >
-              Import
+              {t('common.import')}
             </button>
           </div>
         </div>

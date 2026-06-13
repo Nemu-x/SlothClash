@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export type DeleteProfileTarget = { id: string; name: string }
 
 export function DeleteProfileModal({
@@ -9,6 +11,7 @@ export function DeleteProfileModal({
   onClose: () => void
   onConfirm: (id: string) => void
 }) {
+  const { t } = useTranslation()
   if (!target) return null
   return (
     <div
@@ -25,23 +28,24 @@ export function DeleteProfileModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="deleteProfileTitle" className="modalTitle">
-          Delete profile
+          {t('ui.profiles.deleteModal.title')}
         </h3>
         <p className="muted small">
-          Remove <strong>{target.name}</strong> from this device? This does not
-          cancel a remote subscription.
+          {t('ui.profiles.deleteModal.bodyPrefix')}{' '}
+          <strong>{target.name}</strong>{' '}
+          {t('ui.profiles.deleteModal.bodySuffix')}
         </p>
         <div className="modalFooter">
           <div className="modalFooterRight" style={{ width: '100%' }}>
             <button type="button" className="btn ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               className="btn primary"
               onClick={() => onConfirm(target.id)}
             >
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         </div>

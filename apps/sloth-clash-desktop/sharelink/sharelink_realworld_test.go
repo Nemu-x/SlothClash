@@ -90,6 +90,27 @@ func TestRealWorldVlessPacketEncodingXudp(t *testing.T) {
 	wantField(t, p, "packet-encoding", "xudp")
 }
 
+// ss with an IPv6 literal server (SIP002). The naive host:port splitter used
+// to mangle the address; net.SplitHostPort handles the brackets.
+func TestRealWorldSSIPv6SIP002(t *testing.T) {
+	link := "ss://" + b64("aes-256-gcm:secretpass") + "@[2001:db8::1]:8388#v6"
+	p := mustParse(t, link)
+	wantField(t, p, "server", "2001:db8::1")
+	wantField(t, p, "port", 8388)
+	wantField(t, p, "cipher", "aes-256-gcm")
+	wantField(t, p, "password", "secretpass")
+}
+
+// ss password containing ':' must survive (method is the token before the
+// FIRST colon; the rest is the password). Guards against a regression to a
+// last-colon split.
+func TestRealWorldSSPasswordWithColon(t *testing.T) {
+	link := "ss://" + b64("aes-256-gcm:pa:ss:word") + "@h.example.com:8388#c"
+	p := mustParse(t, link)
+	wantField(t, p, "cipher", "aes-256-gcm")
+	wantField(t, p, "password", "pa:ss:word")
+}
+
 // vmess with JSON boolean tls + sni. PASSES because the sni branch sets
 // tls=true — NOT because we handle the bool. The pure bool-without-sni case is
 // a known minor gap (rare: real tls nodes carry sni). Kept to lock in the

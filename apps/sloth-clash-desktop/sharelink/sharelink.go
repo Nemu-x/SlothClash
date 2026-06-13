@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -584,12 +585,16 @@ func splitEq(s string) (string, string) {
 }
 
 func splitHostPort(s string) (string, int) {
-	h, p, found := strings.Cut(s, ":")
-	if !found {
-		return s, 0
+	// net.SplitHostPort handles IPv6 literals (`[2001:db8::1]:8388` → host
+	// `2001:db8::1`, port 8388) as well as `host:port`. A naive Cut on the
+	// first ':' would mangle IPv6 servers in legacy/SIP002 ss links.
+	if h, p, err := net.SplitHostPort(s); err == nil {
+		port, _ := strconv.Atoi(p)
+		return h, port
 	}
-	port, _ := strconv.Atoi(p)
-	return h, port
+	// No port present (or unparseable) — strip any brackets and report port 0
+	// so the caller's "missing server/port" guard fires.
+	return strings.Trim(s, "[]"), 0
 }
 
 func splitCSV(s string) []string {

@@ -58,13 +58,9 @@ func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 	if !found {
 		return ProfileRulesBaseline{LastError: "profile not found"}
 	}
-	if strings.TrimSpace(target.URL) == "" {
-		return ProfileRulesBaseline{LastError: "profile has no subscription url"}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	body, err := fetchSubscriptionBody(ctx, target.URL)
+	body, err := a.loadProfileSubscriptionBody(ctx, target)
 	if err != nil {
 		return ProfileRulesBaseline{LastError: err.Error()}
 	}
@@ -137,13 +133,9 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 	if !found {
 		return ProfileProxyGroupsBaseline{LastError: "profile not found"}
 	}
-	if strings.TrimSpace(target.URL) == "" {
-		return ProfileProxyGroupsBaseline{LastError: "profile has no subscription url"}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	body, err := fetchSubscriptionBody(ctx, target.URL)
+	body, err := a.loadProfileSubscriptionBody(ctx, target)
 	if err != nil {
 		return ProfileProxyGroupsBaseline{LastError: err.Error()}
 	}
@@ -238,7 +230,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 	if !found {
 		return errors.New("profile not found")
 	}
-	if strings.TrimSpace(target.URL) == "" {
+	if strings.TrimSpace(target.URL) == "" && !profileHasLocalConfig(target) {
 		return errors.New("profile has no subscription url")
 	}
 	if traffic != "proxy" && traffic != "tun" {
@@ -403,7 +395,7 @@ func (a *App) reloadActiveProfileConfig() error {
 	if !found {
 		return nil
 	}
-	if strings.TrimSpace(target.URL) == "" {
+	if strings.TrimSpace(target.URL) == "" && !profileHasLocalConfig(target) {
 		return errors.New("profile has no subscription url")
 	}
 
@@ -428,6 +420,39 @@ func (a *App) reloadActiveProfileConfig() error {
 //     and merges it without restarting. Because the YAML reflects the caller's
 //     intent verbatim, tun.enable is stable across reloads that preserve the
 //     intent, so there is no PATCH-driven wintun flap.
+// profileHasLocalConfig reports whether a profile supplies its own config
+// WITHOUT a subscription URL: a local/imported profile (Type "local" — its body
+// is seeded into the subscription body cache at import, see ImportProfileFromText)
+// or one with a hand-edited on-disk config.yaml (SkipAutoConfig). Such profiles
+// must NOT be rejected by the "needs a subscription URL" guards — the runtime
+// pipeline (tryWriteMergedFullProfile → cache-first) builds their config from the
+// cached body / on-disk file, no network involved. (See architecture/core-lifecycle.md #1.)
+func profileHasLocalConfig(p Profile) bool {
+	return strings.EqualFold(strings.TrimSpace(p.Type), "local") || p.SkipAutoConfig
+}
+
+// loadProfileSubscriptionBody returns the subscription body used to build the
+// read-only baseline views (rules / proxy-groups editors): the seeded on-disk
+// body cache for local profiles (Type "local", no URL), or a fresh network
+// fetch for URL-backed profiles. Keeps local profiles first-class in the editors.
+func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byte, error) {
+	if strings.TrimSpace(p.URL) == "" {
+		if !profileHasLocalConfig(p) {
+			return nil, errors.New("profile has no subscription url")
+		}
+		root, err := slothDataRoot()
+		if err != nil {
+			return nil, err
+		}
+		body := readSubscriptionBodyCache(filepath.Join(root, "runtime", p.ID))
+		if len(body) == 0 {
+			return nil, errors.New("local profile has no cached config body")
+		}
+		return body, nil
+	}
+	return fetchSubscriptionBody(ctx, p.URL)
+}
+
 func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool) error {
 	return a.applyRuntimeConfigWithGen(profile, traffic, enableTun, 0)
 }
@@ -450,7 +475,7 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 		_ = applyStart
 		_ = traceFields
 	}()
-	if strings.TrimSpace(profile.URL) == "" {
+	if strings.TrimSpace(profile.URL) == "" && !profileHasLocalConfig(profile) {
 		return errors.New("profile has no subscription url")
 	}
 	if traffic != "proxy" && traffic != "tun" {

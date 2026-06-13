@@ -1070,7 +1070,7 @@ func (a *App) forceRestartCoreForProfile(profile Profile, gen uint64, enableTun 
 // to be connected) so the core boots in the final state without a follow-up
 // PATCH flip — exactly how clash-verge-rev's start_core works.
 func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) error {
-	if strings.TrimSpace(profile.URL) == "" {
+	if strings.TrimSpace(profile.URL) == "" && !profileHasLocalConfig(profile) {
 		return errors.New("active profile has no subscription URL")
 	}
 

@@ -150,6 +150,11 @@ func parseVless(link string) (Proxy, error) {
 	if flow := q.Get("flow"); flow != "" {
 		p["flow"] = flow
 	}
+	// packet-encoding (xudp/packetaddr) — our nodes set xudp; without it UDP
+	// over the proxy degrades vs the YAML profile.
+	if pe := q.Get("packetEncoding"); pe != "" {
+		p["packet-encoding"] = pe
+	}
 	security := q.Get("security")
 	if security == "tls" || security == "reality" || q.Get("sni") != "" {
 		p["tls"] = true
@@ -447,6 +452,33 @@ func applyTransport(p Proxy, network string, q url.Values) {
 	case "grpc":
 		if sn := q.Get("serviceName"); sn != "" {
 			p["grpc-opts"] = map[string]any{"grpc-service-name": sn}
+		}
+	case "xhttp":
+		// XHTTP (a.k.a. SplitHTTP) — heavily used by our own nodes. Without
+		// mapping these opts the proxy parses but cannot connect.
+		xo := map[string]any{}
+		if path := q.Get("path"); path != "" {
+			xo["path"] = path
+		}
+		if mode := q.Get("mode"); mode != "" {
+			xo["mode"] = mode
+		}
+		if host := q.Get("host"); host != "" {
+			xo["host"] = host
+		}
+		if len(xo) > 0 {
+			p["xhttp-opts"] = xo
+		}
+	case "h2":
+		h2 := map[string]any{}
+		if path := q.Get("path"); path != "" {
+			h2["path"] = path
+		}
+		if host := q.Get("host"); host != "" {
+			h2["host"] = splitCSV(host) // mihomo h2-opts.host is a list
+		}
+		if len(h2) > 0 {
+			p["h2-opts"] = h2
 		}
 	}
 }

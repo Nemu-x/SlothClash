@@ -9,7 +9,7 @@ import (
 
 const tunDefaultDNSYAML = `dns:
   enable: true
-  listen: 0.0.0.0:1053
+  listen: ":1053"
   ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip
@@ -56,20 +56,17 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
-	// DNS listener default: match clash-verge-rev / the Clash ecosystem verbatim
-	// — all-interfaces, fixed port 1053 (`0.0.0.0:1053` ≡ verge's `:1053`). The
-	// bind address MUST be all-interfaces, NOT loopback-only (127.0.0.1): under
-	// TUN, `dns-hijack: any:53` redirects queries to this listener via the tun
-	// adapter, and a loopback-only bind is unreachable from that path on many
-	// Windows setups, so DNS silently dies under TUN while system-proxy mode (no
-	// hijack) keeps working — that was the original bug. We previously used a
-	// random port (":0") to dodge port conflicts, but two Clash clients are never
-	// run at once, and matching the ecosystem's known-good 1053 maximises parity
-	// with the upstream config that provably works on users' machines.
+	// DNS listener default: byte-for-byte parity with clash-verge-rev — `:1053`
+	// (all interfaces, IPv4+IPv6, fixed port 1053). Parity is deliberate: verge's
+	// generated config works flawlessly in the field, so every divergence on our
+	// side is a latent bug — the original loopback-only `127.0.0.1:0` bind proved
+	// it (unreachable for TUN `dns-hijack: any:53`, DNS died under TUN while
+	// system-proxy kept working). A random port was a divergence solving a
+	// non-problem (two Clash clients never run at once), so we dropped it.
 	// Only fill a default when the config/extended-config did not set one, so an
 	// explicit `dns.listen` is honoured instead of clobbered.
 	if v, ok := dns["listen"].(string); !ok || strings.TrimSpace(v) == "" {
-		dns["listen"] = "0.0.0.0:1053"
+		dns["listen"] = ":1053"
 	}
 	if _, ok := dns["enhanced-mode"]; !ok {
 		dns["enhanced-mode"] = "fake-ip"

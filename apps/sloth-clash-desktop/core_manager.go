@@ -525,7 +525,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate s
 		// "connected" apps but no working resolution / routing.
 		cfg.WriteString(`dns:
   enable: true
-  listen: 0.0.0.0:1053
+  listen: ":1053"
   ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip

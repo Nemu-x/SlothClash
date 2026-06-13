@@ -11,8 +11,9 @@ func TestEnsureDefaultDNSForTunListenDefault(t *testing.T) {
 	m := map[string]any{"dns": map[string]any{"enable": true}}
 	ensureDefaultDNSForTun(m)
 	dns := m["dns"].(map[string]any)
-	if dns["listen"] != "0.0.0.0:1053" {
-		t.Fatalf("listen default = %v, want 0.0.0.0:1053", dns["listen"])
+	// Byte-for-byte parity with clash-verge-rev: ":1053" (all interfaces).
+	if dns["listen"] != ":1053" {
+		t.Fatalf("listen default = %v, want :1053", dns["listen"])
 	}
 }
 

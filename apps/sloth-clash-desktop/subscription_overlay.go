@@ -9,7 +9,7 @@ import (
 
 const tunDefaultDNSYAML = `dns:
   enable: true
-  listen: 127.0.0.1:0
+  listen: ":1053"
   ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip
@@ -56,21 +56,17 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
-	// DNS listener bind. Two independent concerns:
-	//   1. Port: a hard-coded port (e.g. `:1053`) is routinely taken by other
-	//      Clash-family clients / ad blockers / corporate DNS proxies, which
-	//      leaves mihomo without a DNS server. A random free port (":0") avoids
-	//      that. The port is internal — dns-hijack knows mihomo's own port.
-	//   2. Bind address: it MUST be all-interfaces (0.0.0.0), NOT loopback-only
-	//      (127.0.0.1). Under TUN, `dns-hijack: any:53` redirects queries to this
-	//      listener via the tun adapter; a loopback-only bind is unreachable from
-	//      that path on many Windows setups, so DNS silently dies under TUN while
-	//      system-proxy mode (no hijack) keeps working. clash-verge-rev binds
-	//      `:1053` (= 0.0.0.0) for exactly this reason.
+	// DNS listener default: byte-for-byte parity with clash-verge-rev — `:1053`
+	// (all interfaces, IPv4+IPv6, fixed port 1053). Parity is deliberate: verge's
+	// generated config works flawlessly in the field, so every divergence on our
+	// side is a latent bug — the original loopback-only `127.0.0.1:0` bind proved
+	// it (unreachable for TUN `dns-hijack: any:53`, DNS died under TUN while
+	// system-proxy kept working). A random port was a divergence solving a
+	// non-problem (two Clash clients never run at once), so we dropped it.
 	// Only fill a default when the config/extended-config did not set one, so an
-	// explicit `dns.listen` (e.g. for debugging) is honoured instead of clobbered.
+	// explicit `dns.listen` is honoured instead of clobbered.
 	if v, ok := dns["listen"].(string); !ok || strings.TrimSpace(v) == "" {
-		dns["listen"] = "0.0.0.0:0"
+		dns["listen"] = ":1053"
 	}
 	if _, ok := dns["enhanced-mode"]; !ok {
 		dns["enhanced-mode"] = "fake-ip"

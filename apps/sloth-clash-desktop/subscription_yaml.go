@@ -231,35 +231,45 @@ func marshalRuntimeYAML(v any) ([]byte, error) {
 }
 
 func parseClashDocToMap(b []byte) (map[string]any, error) {
+	m, _, err := parseClashDocToMapReport(b)
+	return m, err
+}
+
+// parseClashDocToMapReport is parseClashDocToMap plus the list of share-link
+// lines it could NOT convert (unsupported scheme / malformed). Import paths use
+// it to report "imported N, skipped M" instead of silently dropping nodes. The
+// skipped list is only populated on the share-link branch; Clash-YAML / base64
+// inputs return nil (no per-line concept).
+func parseClashDocToMapReport(b []byte) (map[string]any, []string, error) {
 	b = bytes.TrimSpace(b)
 	if len(b) == 0 {
-		return nil, errors.New("empty subscription body")
+		return nil, nil, errors.New("empty subscription body")
 	}
 	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
 
 	var m map[string]any
 	err := yaml.Unmarshal(b, &m)
 	if err == nil && len(m) > 0 {
-		return m, nil
+		return m, nil, nil
 	}
 	if dec, derr := decodeBase64Flexible(strings.TrimSpace(string(b))); derr == nil && len(dec) > 0 {
 		dec = bytes.TrimSpace(dec)
 		dec = bytes.TrimPrefix(dec, []byte{0xEF, 0xBB, 0xBF})
 		var m2 map[string]any
 		if err2 := yaml.Unmarshal(dec, &m2); err2 == nil && len(m2) > 0 {
-			return m2, nil
+			return m2, nil, nil
 		}
 	}
 	// Not Clash YAML (plain or base64). Try a V2Ray-style share-link list
 	// (vless://, vmess://, ss://, trojan://, hysteria2://, tuic://) — single
 	// link, newline list, or base64 envelope — and synthesize a runnable config.
-	if doc, ok := shareLinksToClashMap(string(b)); ok {
-		return doc, nil
+	if doc, skipped, ok := shareLinksToClashMap(string(b)); ok {
+		return doc, skipped, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return nil, errors.New("invalid clash yaml mapping")
+	return nil, nil, errors.New("invalid clash yaml mapping")
 }
 
 // shareLinksToClashMap converts proxy share links into a minimal but complete
@@ -267,15 +277,15 @@ func parseClashDocToMap(b []byte) (map[string]any, error) {
 // (all nodes + DIRECT), and a catch-all rule. Returns ok=false if no supported
 // link is found. Having proxy-groups + rules makes the result a "full profile"
 // so the normal merge pipeline handles ports/TUN/overlay uniformly.
-func shareLinksToClashMap(text string) (map[string]any, bool) {
-	proxies, _ := sharelink.ParseMany(text)
+func shareLinksToClashMap(text string) (map[string]any, []string, bool) {
+	proxies, skipped := sharelink.ParseMany(text)
 	if len(proxies) == 0 {
 		if dec := sharelink.DecodeBase64Block(text); dec != "" {
-			proxies, _ = sharelink.ParseMany(dec)
+			proxies, skipped = sharelink.ParseMany(dec)
 		}
 	}
 	if len(proxies) == 0 {
-		return nil, false
+		return nil, skipped, false
 	}
 	rawProxies := make([]any, 0, len(proxies))
 	groupProxies := make([]any, 0, len(proxies)+1)
@@ -290,7 +300,7 @@ func shareLinksToClashMap(text string) (map[string]any, bool) {
 			map[string]any{"name": "PROXY", "type": "select", "proxies": groupProxies},
 		},
 		"rules": []any{"MATCH,PROXY"},
-	}, true
+	}, skipped, true
 }
 
 // subscriptionDocIsFullProfile reports whether the downloaded document should be used as the

@@ -763,11 +763,16 @@ func (a *App) ImportProfileFromText(name string, content string) (AppState, erro
 	}
 	// Validate up front: it must parse as a Clash doc, base64-Clash, or a
 	// supported share-link list. parseClashDocToMap covers all three.
-	if doc, perr := parseClashDocToMap([]byte(content)); perr != nil || len(doc) == 0 {
+	doc, skipped, perr := parseClashDocToMapReport([]byte(content))
+	if perr != nil || len(doc) == 0 {
 		if perr != nil {
 			return a.GetAppState(), fmt.Errorf("not a valid config or supported share link: %w", perr)
 		}
 		return a.GetAppState(), errors.New("not a valid config or supported share link")
+	}
+	importedCount := 0
+	if px, ok := doc["proxies"].([]any); ok {
+		importedCount = len(px)
 	}
 
 	finalName := strings.TrimSpace(name)
@@ -799,6 +804,15 @@ func (a *App) ImportProfileFromText(name string, content string) (AppState, erro
 	a.state.Profile.Profiles = a.profiles
 	if a.state.Profile.ActiveProfileID == "" {
 		a.state.Profile.ActiveProfileID = p.ID
+	}
+	// Surface partial imports instead of silently dropping nodes: a V2Ray list
+	// with unsupported schemes / malformed links keeps the good nodes and tells
+	// the user how many were skipped. (Frontend can render this as a toast.)
+	if len(skipped) > 0 {
+		a.state.Connection.LastWarning = fmt.Sprintf(
+			"Imported %d node(s); skipped %d unsupported or invalid share link(s).",
+			importedCount, len(skipped),
+		)
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {

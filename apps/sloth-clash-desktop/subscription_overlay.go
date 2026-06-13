@@ -9,7 +9,7 @@ import (
 
 const tunDefaultDNSYAML = `dns:
   enable: true
-  listen: 127.0.0.1:0
+  listen: 0.0.0.0:1053
   ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip
@@ -56,21 +56,20 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
-	// DNS listener bind. Two independent concerns:
-	//   1. Port: a hard-coded port (e.g. `:1053`) is routinely taken by other
-	//      Clash-family clients / ad blockers / corporate DNS proxies, which
-	//      leaves mihomo without a DNS server. A random free port (":0") avoids
-	//      that. The port is internal — dns-hijack knows mihomo's own port.
-	//   2. Bind address: it MUST be all-interfaces (0.0.0.0), NOT loopback-only
-	//      (127.0.0.1). Under TUN, `dns-hijack: any:53` redirects queries to this
-	//      listener via the tun adapter; a loopback-only bind is unreachable from
-	//      that path on many Windows setups, so DNS silently dies under TUN while
-	//      system-proxy mode (no hijack) keeps working. clash-verge-rev binds
-	//      `:1053` (= 0.0.0.0) for exactly this reason.
+	// DNS listener default: match clash-verge-rev / the Clash ecosystem verbatim
+	// — all-interfaces, fixed port 1053 (`0.0.0.0:1053` ≡ verge's `:1053`). The
+	// bind address MUST be all-interfaces, NOT loopback-only (127.0.0.1): under
+	// TUN, `dns-hijack: any:53` redirects queries to this listener via the tun
+	// adapter, and a loopback-only bind is unreachable from that path on many
+	// Windows setups, so DNS silently dies under TUN while system-proxy mode (no
+	// hijack) keeps working — that was the original bug. We previously used a
+	// random port (":0") to dodge port conflicts, but two Clash clients are never
+	// run at once, and matching the ecosystem's known-good 1053 maximises parity
+	// with the upstream config that provably works on users' machines.
 	// Only fill a default when the config/extended-config did not set one, so an
-	// explicit `dns.listen` (e.g. for debugging) is honoured instead of clobbered.
+	// explicit `dns.listen` is honoured instead of clobbered.
 	if v, ok := dns["listen"].(string); !ok || strings.TrimSpace(v) == "" {
-		dns["listen"] = "0.0.0.0:0"
+		dns["listen"] = "0.0.0.0:1053"
 	}
 	if _, ok := dns["enhanced-mode"]; !ok {
 		dns["enhanced-mode"] = "fake-ip"

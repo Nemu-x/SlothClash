@@ -65,7 +65,13 @@
     "updateAvailable": "Доступно обновление: {{version}}",
     "upToDate": "Установлена последняя версия.",
     "downloadInstaller": "Скачать и установить",
-    "openReleasePage": "Страница релиза"
+    "openReleasePage": "Страница релиза",
+    "resetModal": {
+      "title": "Сброс настроек приложения",
+      "keepProfilesBody": "Сбросить настройки интерфейса и локальные значения по умолчанию, но сохранить профили?",
+      "withProfilesBody": "Сбросить настройки и удалить все профили с этого устройства?",
+      "reset": "Сбросить"
+    }
   },
   "tour": {
     "back": "Назад",
@@ -150,7 +156,97 @@
       "refreshSubscription": "Обновить подписку",
       "localNoUrl": "Локальный / без URL",
       "active": "Активен",
-      "activate": "Активировать"
+      "activate": "Активировать",
+      "contextMenu": {
+        "updateNow": "Обновить профиль сейчас",
+        "editInfo": "Изменить сведения",
+        "copySubscriptionUrl": "Копировать URL подписки",
+        "rules": "Правила",
+        "deleteProfile": "Удалить профиль",
+        "advanced": "Дополнительно",
+        "extendConfig": "Расширить конфиг",
+        "proxyGroups": "Группы прокси",
+        "editFile": "Редактировать файл"
+      },
+      "importModal": {
+        "tabUrl": "URL подписки",
+        "tabPaste": "Вставка / файл",
+        "subscriptionUrl": "URL подписки",
+        "configOrLinks": "Конфиг или share-ссылки",
+        "detectYaml": "Clash YAML конфиг",
+        "detectLinksSingular": "{{count}} share-ссылка",
+        "detectLinksPlural": "{{count}} share-ссылок",
+        "detectLinksBase64Singular": "{{count}} share-ссылка (base64)",
+        "detectLinksBase64Plural": "{{count}} share-ссылок (base64)",
+        "detectUnknown": "Не распознано — ожидается Clash YAML или ссылки vless:// / vmess:// / ss:// / trojan://",
+        "pastePlaceholder": "Вставьте mihomo/Clash config.yaml\nили share-ссылки — по одной на строку:\nvless://…\nvmess://…\ntrojan://…",
+        "displayName": "Отображаемое имя",
+        "namePlaceholderUrl": "Пусто = использовать Profile-Title с сервера",
+        "namePlaceholderPaste": "Пусто = «Локальный конфиг»",
+        "pasteFromClipboard": "Вставить из буфера",
+        "loadFromFile": "Загрузить из файла…"
+      },
+      "editInfo": {
+        "title": "Изменить сведения профиля",
+        "blurb": "Отображаемое имя и ссылка подписки. Оставьте поле URL пустым, чтобы сохранить текущую ссылку.",
+        "name": "Имя",
+        "subscriptionUrl": "URL подписки",
+        "urlPlaceholder": "Оставьте пустым, чтобы сохранить текущий",
+        "autoUpdate": "Автообновление",
+        "intervalMinutes": "Интервал (минуты)",
+        "copyUrl": "Копировать URL",
+        "copyName": "Копировать имя"
+      },
+      "fileModal": {
+        "title": "Редактировать файл конфигурации",
+        "loadedConfig": "· загружен config.yaml",
+        "readErrorLead": "Чтение: {{error}} — можно вставить YAML и сохранить, чтобы создать файл.",
+        "copyPath": "Копировать путь"
+      },
+      "mergeModal": {
+        "title": "Шаблон merge профиля",
+        "blurbLead": "Ключи верхнего уровня объединяются с загруженным профилем;",
+        "blurbTail": "для rules, proxy-groups и provider maps. Применяется при каждой записи Sloth в",
+        "mergeYaml": "· merge YAML",
+        "resetScaffold": "Сбросить шаблон"
+      },
+      "proxyModal": {
+        "title": "Редактировать группы прокси",
+        "groupName": "Имя группы",
+        "groupType": "Тип группы",
+        "useProviders": "Провайдеры (через запятую)",
+        "healthcheckUrl": "URL проверки",
+        "interval": "Интервал",
+        "timeout": "Таймаут",
+        "maxFailedTimes": "Макс. неудач",
+        "lazy": "Lazy",
+        "addGroup": "Добавить группу",
+        "loadingGroups": "Загрузка групп подписки…",
+        "noGroupsDetected": "Группы подписки не обнаружены.",
+        "noGroupsYet": "Групп пока нет.",
+        "noAppendGroups": "Нет append-групп.",
+        "useLabel": "use: {{value}}",
+        "fixYamlBeforeVisual": "Исправьте advanced YAML прокси перед переключением в Visual режим.",
+        "savedBanner": "Группы прокси сохранены в merge-шаблон."
+      },
+      "rulesModal": {
+        "title": "Редактировать правила",
+        "ruleTypeAria": "Тип правила",
+        "noContentPlaceholder": "(без содержимого)",
+        "policyAria": "Политика прокси",
+        "yourRules": "Ваши правила",
+        "noCustomRules": "Пользовательских правил пока нет.",
+        "subscriptionReadOnly": "Подписка · только чтение",
+        "loadingRules": "Загрузка правил подписки…",
+        "noRulesDetected": "Правила подписки не обнаружены.",
+        "fixYamlBeforeVisual": "Исправьте advanced YAML правил перед переключением в Visual режим.",
+        "savedBanner": "Правила сохранены в merge-шаблон."
+      },
+      "deleteModal": {
+        "title": "Удалить профиль",
+        "bodyPrefix": "Удалить",
+        "bodySuffix": "с этого устройства? Это не отменяет удалённую подписку."
+      }
     },
     "proxies": {
       "title": "Прокси",
@@ -305,6 +401,21 @@
     "no": "Нет",
     "close": "Закрыть",
     "show": "Показать",
-    "hide": "Скрыть"
+    "hide": "Скрыть",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "delete": "Удалить",
+    "reset": "Сбросить",
+    "import": "Импорт",
+    "remove": "Убрать",
+    "restore": "Восстановить",
+    "optional": "(необязательно)",
+    "yamlError": "Ошибка YAML: {{error}}",
+    "visual": "Visual",
+    "advancedYamlTab": "Advanced (YAML)",
+    "advancedYaml": "Advanced YAML",
+    "prepend": "Prepend",
+    "append": "Append",
+    "addShort": "+ Добавить"
   }
 }

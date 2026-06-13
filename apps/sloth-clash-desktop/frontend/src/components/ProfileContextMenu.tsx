@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export type ProfileMenuTarget = {
   id: string
@@ -32,6 +33,7 @@ export function ProfileContextMenu({
   onOpenProxyGroups: (id: string, name: string) => void
   onOpenEditFile: (id: string, name: string) => void
 }) {
+  const { t } = useTranslation()
   // Hooks must run unconditionally — declare them before the early return.
   const menuRef = useRef<HTMLDivElement | null>(null)
   // Position is initialised to the click coordinates and then clamped against
@@ -96,7 +98,7 @@ export function ProfileContextMenu({
         disabled={!hasUrl}
         onClick={() => onUpdate(target.id)}
       >
-        Update profile now
+        {t('ui.profiles.contextMenu.updateNow')}
       </button>
       <button
         type="button"
@@ -105,7 +107,7 @@ export function ProfileContextMenu({
           onEditInfo(target.id, target.name, String(profile?.url ?? ''))
         }
       >
-        Edit info
+        {t('ui.profiles.contextMenu.editInfo')}
       </button>
       <button
         type="button"
@@ -113,43 +115,43 @@ export function ProfileContextMenu({
         disabled={!hasUrl}
         onClick={() => onCopyUrl(String(profile?.url ?? ''))}
       >
-        Copy subscription URL
+        {t('ui.profiles.contextMenu.copySubscriptionUrl')}
       </button>
       <button
         type="button"
         className="ctxItem"
         onClick={() => onOpenRules(target.id, target.name)}
       >
-        Rules
+        {t('ui.profiles.contextMenu.rules')}
       </button>
       <button
         type="button"
         className="ctxItem"
         onClick={() => onDelete(target.id, target.name)}
       >
-        Delete profile
+        {t('ui.profiles.contextMenu.deleteProfile')}
       </button>
-      <div className="ctxSection">Advanced</div>
+      <div className="ctxSection">{t('ui.profiles.contextMenu.advanced')}</div>
       <button
         type="button"
         className="ctxItem ctxItemSub"
         onClick={() => onOpenExtendConfig(target.id, target.name)}
       >
-        Extend config
+        {t('ui.profiles.contextMenu.extendConfig')}
       </button>
       <button
         type="button"
         className="ctxItem ctxItemSub"
         onClick={() => onOpenProxyGroups(target.id, target.name)}
       >
-        Proxy groups
+        {t('ui.profiles.contextMenu.proxyGroups')}
       </button>
       <button
         type="button"
         className="ctxItem ctxItemSub"
         onClick={() => onOpenEditFile(target.id, target.name)}
       >
-        Edit file
+        {t('ui.profiles.contextMenu.editFile')}
       </button>
     </div>
   )

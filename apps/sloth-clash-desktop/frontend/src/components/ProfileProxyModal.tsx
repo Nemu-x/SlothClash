@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   GetProfileProxyGroupsBaseline,
@@ -34,6 +35,7 @@ export function ProfileProxyModal({
   onSaved: (banner: string) => void
   onError: (msg: string) => void
 }) {
+  const { t } = useTranslation()
   // Drafts are derived from the active target on first mount.
   // App.tsx passes `key={target?.id}` so a new target triggers a remount and
   // these lazy initializers run again — no setState-in-effect chain needed.
@@ -180,7 +182,7 @@ export function ProfileProxyModal({
 
   const onSwitchToVisual = () => {
     if (advancedYamlErr) {
-      onError('Fix proxy advanced YAML before switching to Visual mode.')
+      onError(t('ui.profiles.proxyModal.fixYamlBeforeVisual'))
       return
     }
     setUiMode('visual')
@@ -206,7 +208,7 @@ export function ProfileProxyModal({
     if (body == null) return
     try {
       await SetProfileProxyTemplate(target.id, body)
-      onSaved('Proxy groups saved into merge template.')
+      onSaved(t('ui.profiles.proxyModal.savedBanner'))
     } catch (e: any) {
       onError(String(e))
     }
@@ -230,7 +232,7 @@ export function ProfileProxyModal({
       >
         <div className="vergeModalHead">
           <h3 id="pgTitle" className="modalTitle vergeModalTitle">
-            Edit proxy groups
+            {t('ui.profiles.proxyModal.title')}
           </h3>
           <div className="vergeToggleRow">
             <button
@@ -238,14 +240,14 @@ export function ProfileProxyModal({
               className={`btn vergeToggle ${uiMode === 'visual' ? 'primary' : 'ghost'}`}
               onClick={onSwitchToVisual}
             >
-              Visual
+              {t('common.visual')}
             </button>
             <button
               type="button"
               className={`btn vergeToggle ${uiMode === 'advanced' ? 'primary' : 'ghost'}`}
               onClick={() => setUiMode('advanced')}
             >
-              Advanced (YAML)
+              {t('common.advancedYamlTab')}
             </button>
           </div>
         </div>
@@ -258,7 +260,9 @@ export function ProfileProxyModal({
             {uiMode === 'visual' ? (
               <>
                 <label className="field modalField">
-                  <span className="fieldLab">Group name</span>
+                  <span className="fieldLab">
+                    {t('ui.profiles.proxyModal.groupName')}
+                  </span>
                   <input
                     className="input"
                     value={pgName}
@@ -267,7 +271,9 @@ export function ProfileProxyModal({
                   />
                 </label>
                 <label className="field modalField">
-                  <span className="fieldLab">Group type</span>
+                  <span className="fieldLab">
+                    {t('ui.profiles.proxyModal.groupType')}
+                  </span>
                   <select
                     className="selectModern"
                     value={pgType}
@@ -281,7 +287,7 @@ export function ProfileProxyModal({
                 </label>
                 <label className="field modalField">
                   <span className="fieldLab">
-                    Use providers (comma-separated)
+                    {t('ui.profiles.proxyModal.useProviders')}
                   </span>
                   <input
                     className="input"
@@ -291,7 +297,9 @@ export function ProfileProxyModal({
                   />
                 </label>
                 <label className="field modalField">
-                  <span className="fieldLab">Healthcheck URL</span>
+                  <span className="fieldLab">
+                    {t('ui.profiles.proxyModal.healthcheckUrl')}
+                  </span>
                   <input
                     className="input"
                     value={pgUrl}
@@ -301,7 +309,9 @@ export function ProfileProxyModal({
                 </label>
                 <div className="fieldGrid">
                   <label className="field modalField">
-                    <span className="fieldLab">Interval</span>
+                    <span className="fieldLab">
+                      {t('ui.profiles.proxyModal.interval')}
+                    </span>
                     <input
                       className="input"
                       value={pgInterval}
@@ -309,7 +319,9 @@ export function ProfileProxyModal({
                     />
                   </label>
                   <label className="field modalField">
-                    <span className="fieldLab">Timeout</span>
+                    <span className="fieldLab">
+                      {t('ui.profiles.proxyModal.timeout')}
+                    </span>
                     <input
                       className="input"
                       value={pgTimeout}
@@ -319,7 +331,9 @@ export function ProfileProxyModal({
                 </div>
                 <div className="fieldGrid">
                   <label className="field modalField">
-                    <span className="fieldLab">Max failed times</span>
+                    <span className="fieldLab">
+                      {t('ui.profiles.proxyModal.maxFailedTimes')}
+                    </span>
                     <input
                       className="input"
                       value={pgMaxFailed}
@@ -327,13 +341,15 @@ export function ProfileProxyModal({
                     />
                   </label>
                   <label className="field modalField">
-                    <span className="fieldLab">Lazy</span>
+                    <span className="fieldLab">
+                      {t('ui.profiles.proxyModal.lazy')}
+                    </span>
                     <button
                       type="button"
                       className={`trafficKnob ${pgLazy ? 'on' : ''}`}
                       onClick={() => setPgLazy((v) => !v)}
                     >
-                      {pgLazy ? 'On' : 'Off'}
+                      {pgLazy ? t('common.on') : t('common.off')}
                     </button>
                   </label>
                 </div>
@@ -342,7 +358,7 @@ export function ProfileProxyModal({
                   className="btn primary vergeStackBtn"
                   onClick={addGroup}
                 >
-                  Add group
+                  {t('ui.profiles.proxyModal.addGroup')}
                 </button>
                 <div className="segPill">
                   <button
@@ -350,20 +366,20 @@ export function ProfileProxyModal({
                     className={`pillOpt ${appendTarget === 'prepend' ? 'active' : ''}`}
                     onClick={() => setAppendTarget('prepend')}
                   >
-                    Prepend
+                    {t('common.prepend')}
                   </button>
                   <button
                     type="button"
                     className={`pillOpt ${appendTarget === 'append' ? 'active' : ''}`}
                     onClick={() => setAppendTarget('append')}
                   >
-                    Append
+                    {t('common.append')}
                   </button>
                 </div>
               </>
             ) : (
               <label className="field modalField">
-                <span className="fieldLab">Advanced YAML</span>
+                <span className="fieldLab">{t('common.advancedYaml')}</span>
                 <MonacoYamlEditor
                   className="vergePaneYaml modalMonacoWrap"
                   value={advancedDraft}
@@ -372,7 +388,7 @@ export function ProfileProxyModal({
                 />
                 {advancedYamlErr ? (
                   <span className="muted small" style={{ color: '#ff6b6b' }}>
-                    YAML error: {advancedYamlErr}
+                    {t('common.yamlError', { error: advancedYamlErr })}
                   </span>
                 ) : null}
               </label>
@@ -383,14 +399,16 @@ export function ProfileProxyModal({
               <p className="eyebrow">subscription.proxy-groups</p>
               <div className="vergeScrollList">
                 {baselineLoading ? (
-                  <p className="muted small">Loading subscription groups…</p>
+                  <p className="muted small">
+                    {t('ui.profiles.proxyModal.loadingGroups')}
+                  </p>
                 ) : baselineError ? (
                   <p className="muted small" style={{ color: '#ff6b6b' }}>
                     {baselineError}
                   </p>
                 ) : !baseline || baseline.length === 0 ? (
                   <p className="muted small">
-                    No subscription groups detected.
+                    {t('ui.profiles.proxyModal.noGroupsDetected')}
                   </p>
                 ) : (
                   baseline.map((gm, idx) => {
@@ -408,14 +426,20 @@ export function ProfileProxyModal({
                           <div className="vergeCardTitle">{row.name}</div>
                           <div className="muted small">{row.type}</div>
                           <div className="muted small vergeCardSub">
-                            use: {row.use || '—'}
+                            {t('ui.profiles.proxyModal.useLabel', {
+                              value: row.use || '—',
+                            })}
                           </div>
                         </div>
                         <button
                           type="button"
                           className="btn ghost vergeTrash"
-                          aria-label={isDeleted ? 'Restore' : 'Delete'}
-                          title={isDeleted ? 'Restore' : 'Delete'}
+                          aria-label={
+                            isDeleted ? t('common.restore') : t('common.delete')
+                          }
+                          title={
+                            isDeleted ? t('common.restore') : t('common.delete')
+                          }
                           onClick={() => toggleBaselineDelete(row.name)}
                         >
                           {isDeleted ? '↺' : '×'}
@@ -430,7 +454,9 @@ export function ProfileProxyModal({
               </p>
               <div className="vergeScrollList">
                 {rows.length === 0 ? (
-                  <p className="muted small">No groups yet.</p>
+                  <p className="muted small">
+                    {t('ui.profiles.proxyModal.noGroupsYet')}
+                  </p>
                 ) : (
                   rows.map((r) => (
                     <div key={r.id} className="vergeCard">
@@ -438,13 +464,15 @@ export function ProfileProxyModal({
                         <div className="vergeCardTitle">{r.name}</div>
                         <div className="muted small">{r.type}</div>
                         <div className="muted small vergeCardSub">
-                          use: {r.use || '—'}
+                          {t('ui.profiles.proxyModal.useLabel', {
+                            value: r.use || '—',
+                          })}
                         </div>
                       </div>
                       <button
                         type="button"
                         className="btn ghost vergeTrash"
-                        aria-label="Remove"
+                        aria-label={t('common.remove')}
                         onClick={() => removeRow(r.id)}
                       >
                         ×
@@ -458,7 +486,9 @@ export function ProfileProxyModal({
               </p>
               <div className="vergeScrollList">
                 {appendRows.length === 0 ? (
-                  <p className="muted small">No append groups.</p>
+                  <p className="muted small">
+                    {t('ui.profiles.proxyModal.noAppendGroups')}
+                  </p>
                 ) : (
                   appendRows.map((r) => (
                     <div key={r.id} className="vergeCard">
@@ -466,13 +496,15 @@ export function ProfileProxyModal({
                         <div className="vergeCardTitle">{r.name}</div>
                         <div className="muted small">{r.type}</div>
                         <div className="muted small vergeCardSub">
-                          use: {r.use || '—'}
+                          {t('ui.profiles.proxyModal.useLabel', {
+                            value: r.use || '—',
+                          })}
                         </div>
                       </div>
                       <button
                         type="button"
                         className="btn ghost vergeTrash"
-                        aria-label="Remove"
+                        aria-label={t('common.remove')}
                         onClick={() => removeAppendRow(r.id)}
                       >
                         ×
@@ -486,7 +518,7 @@ export function ProfileProxyModal({
         </div>
         <div className="modalFooter">
           <button type="button" className="btn ghost" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <div className="modalFooterRight">
             <button
@@ -495,7 +527,7 @@ export function ProfileProxyModal({
               disabled={uiMode === 'advanced' && Boolean(advancedYamlErr)}
               onClick={() => void save()}
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

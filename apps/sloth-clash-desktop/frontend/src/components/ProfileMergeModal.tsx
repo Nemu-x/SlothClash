@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { MonacoYamlEditor } from '../MonacoYamlEditor'
 
 export type ProfileModalTarget = { id: string; name: string }
@@ -19,6 +21,7 @@ export function ProfileMergeModal({
   onClose: () => void
   onSave: (id: string) => void
 }) {
+  const { t } = useTranslation()
   if (!target) return null
   return (
     <div
@@ -36,20 +39,23 @@ export function ProfileMergeModal({
       >
         <div className="vergeModalHead">
           <h3 id="mergeTplTitle" className="modalTitle vergeModalTitle">
-            Profile merge template
+            {t('ui.profiles.mergeModal.title')}
           </h3>
         </div>
         <p className="muted small yamlModalBlurb">
-          Top-level keys merge into the fetched profile;{' '}
+          {t('ui.profiles.mergeModal.blurbLead')}{' '}
           <code className="code">prepend</code> /{' '}
           <code className="code">append</code> /{' '}
-          <code className="code">delete</code> for rules, proxy-groups, and
-          provider maps. Applied whenever Sloth writes{' '}
+          <code className="code">delete</code>{' '}
+          {t('ui.profiles.mergeModal.blurbTail')}{' '}
           <code className="code">config.yaml</code>.
         </p>
         <label className="field modalField">
           <span className="fieldLab">
-            {target.name} <span className="optional">· merge YAML</span>
+            {target.name}{' '}
+            <span className="optional">
+              {t('ui.profiles.mergeModal.mergeYaml')}
+            </span>
           </span>
           <MonacoYamlEditor
             className="modalMonacoWrap"
@@ -59,7 +65,7 @@ export function ProfileMergeModal({
           />
           {yamlError ? (
             <span className="muted small" style={{ color: '#ff6b6b' }}>
-              YAML error: {yamlError}
+              {t('common.yamlError', { error: yamlError })}
             </span>
           ) : null}
         </label>
@@ -69,11 +75,11 @@ export function ProfileMergeModal({
             className="btn btnModalSecondary"
             onClick={onResetScaffold}
           >
-            Reset scaffold
+            {t('ui.profiles.mergeModal.resetScaffold')}
           </button>
           <div className="modalFooterRight">
             <button type="button" className="btn ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -81,7 +87,7 @@ export function ProfileMergeModal({
               disabled={Boolean(yamlError)}
               onClick={() => onSave(target.id)}
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

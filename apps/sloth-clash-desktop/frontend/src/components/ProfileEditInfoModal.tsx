@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export type ProfileEditInfoTarget = { id: string; name: string; url: string }
 
 export function ProfileEditInfoModal({
@@ -29,6 +31,7 @@ export function ProfileEditInfoModal({
   onClose: () => void
   onSave: (id: string) => void
 }) {
+  const { t } = useTranslation()
   if (!target) return null
   return (
     <div
@@ -45,14 +48,11 @@ export function ProfileEditInfoModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="editInfoTitle" className="modalTitle">
-          Edit profile info
+          {t('ui.profiles.editInfo.title')}
         </h3>
-        <p className="muted small">
-          Display name and subscription link. Leave the URL field empty to keep
-          the current link unchanged.
-        </p>
+        <p className="muted small">{t('ui.profiles.editInfo.blurb')}</p>
         <label className="field modalField">
-          <span className="fieldLab">Name</span>
+          <span className="fieldLab">{t('ui.profiles.editInfo.name')}</span>
           <input
             className="input"
             value={name}
@@ -61,27 +61,33 @@ export function ProfileEditInfoModal({
           />
         </label>
         <label className="field modalField">
-          <span className="fieldLab">Subscription URL</span>
+          <span className="fieldLab">
+            {t('ui.profiles.editInfo.subscriptionUrl')}
+          </span>
           <input
             className="input"
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
-            placeholder="Leave empty to keep current"
+            placeholder={t('ui.profiles.editInfo.urlPlaceholder')}
           />
         </label>
         <div className="fieldGrid">
           <label className="field modalField">
-            <span className="fieldLab">Auto-update</span>
+            <span className="fieldLab">
+              {t('ui.profiles.editInfo.autoUpdate')}
+            </span>
             <button
               type="button"
               className={`trafficKnob ${autoEnabled ? 'on' : ''}`}
               onClick={onAutoEnabledToggle}
             >
-              {autoEnabled ? 'On' : 'Off'}
+              {autoEnabled ? t('common.on') : t('common.off')}
             </button>
           </label>
           <label className="field modalField">
-            <span className="fieldLab">Interval (minutes)</span>
+            <span className="fieldLab">
+              {t('ui.profiles.editInfo.intervalMinutes')}
+            </span>
             <input
               className="input"
               value={autoInterval}
@@ -97,7 +103,7 @@ export function ProfileEditInfoModal({
             disabled={!url.trim()}
             onClick={() => onCopyUrl(url.trim())}
           >
-            Copy URL
+            {t('ui.profiles.editInfo.copyUrl')}
           </button>
           <button
             type="button"
@@ -105,13 +111,13 @@ export function ProfileEditInfoModal({
             disabled={!name.trim()}
             onClick={() => onCopyName(name.trim())}
           >
-            Copy name
+            {t('ui.profiles.editInfo.copyName')}
           </button>
         </div>
         <div className="modalFooter">
           <div className="modalFooterRight" style={{ width: '100%' }}>
             <button type="button" className="btn ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -119,7 +125,7 @@ export function ProfileEditInfoModal({
               disabled={!name.trim()}
               onClick={() => onSave(target.id)}
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

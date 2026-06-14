@@ -7,10 +7,33 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows/registry"
 )
+
+// WinINet proxy-refresh: writing the HKCU Internet Settings registry keys is not
+// enough — WinINet (and the system proxy used by most apps) caches the config
+// until it's told to reload. clash-verge-rev (and every Windows sysproxy tool)
+// calls InternetSetOption after writing. Without it, a proxy change only takes
+// effect after a network change / app restart / opening Internet Options.
+var (
+	procInternetSetOptionW = syscall.NewLazyDLL("wininet.dll").NewProc("InternetSetOptionW")
+)
+
+const (
+	internetOptionRefresh         = 37 // INTERNET_OPTION_REFRESH
+	internetOptionSettingsChanged = 39 // INTERNET_OPTION_SETTINGS_CHANGED
+)
+
+// notifyWindowsProxyChanged flushes the WinINet proxy config so an HKCU proxy
+// change takes effect immediately. Best-effort: both options take a NULL handle
+// and empty buffer; failure is non-fatal (the registry is still correct).
+func notifyWindowsProxyChanged() {
+	_, _, _ = procInternetSetOptionW.Call(0, uintptr(internetOptionSettingsChanged), 0, 0)
+	_, _, _ = procInternetSetOptionW.Call(0, uintptr(internetOptionRefresh), 0, 0)
+}
 
 // Mirrors clash-verge-rev Windows default bypass so localhost callbacks and
 // local/LAN resources don't get sent into loopback proxy recursion.
@@ -242,6 +265,7 @@ func setWindowsUserProxy(server string, enable bool) error {
 		}
 		_ = k.DeleteValue("ProxyServer")
 		_ = k.DeleteValue("ProxyOverride")
+		notifyWindowsProxyChanged()
 		return nil
 	}
 	if err := k.SetStringValue("ProxyServer", server); err != nil {
@@ -250,7 +274,11 @@ func setWindowsUserProxy(server string, enable bool) error {
 	if err := k.SetStringValue("ProxyOverride", windowsDefaultProxyBypass); err != nil {
 		return err
 	}
-	return k.SetDWordValue("ProxyEnable", 1)
+	if err := k.SetDWordValue("ProxyEnable", 1); err != nil {
+		return err
+	}
+	notifyWindowsProxyChanged()
+	return nil
 }
 
 func clearStaleLoopbackUserProxy() error {
@@ -278,6 +306,7 @@ func clearStaleLoopbackUserProxy() error {
 		return err
 	}
 	_ = k.DeleteValue("ProxyServer")
+	notifyWindowsProxyChanged()
 	return nil
 }
 

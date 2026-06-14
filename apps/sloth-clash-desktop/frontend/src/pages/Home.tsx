@@ -236,7 +236,7 @@ export function HomePage({
             <div
               className="segmentInset segmentInset2"
               role="group"
-              aria-label="Routing mode"
+              aria-label={t('ui.home.routingModeAria')}
             >
               <div
                 className="segmentGlider"
@@ -306,7 +306,7 @@ export function HomePage({
             <div
               className="segmentInset segmentInset2"
               role="group"
-              aria-label="Traffic mode"
+              aria-label={t('ui.home.trafficModeAria')}
             >
               <div
                 className="segmentGlider"
@@ -319,7 +319,7 @@ export function HomePage({
               />
               <button
                 type="button"
-                title="System proxy — HTTP/S via OS settings"
+                title={t('ui.home.systemProxyTitle')}
                 className={
                   displayTraffic === 'proxy'
                     ? 'segmentInsetBtn isOn'
@@ -331,7 +331,7 @@ export function HomePage({
               </button>
               <button
                 type="button"
-                title="TUN — virtual adapter"
+                title={t('ui.home.tunTitle')}
                 className={
                   displayTraffic === 'tun'
                     ? 'segmentInsetBtn isOn'
@@ -410,7 +410,7 @@ export function HomePage({
                 <div className="statusNodePick">
                   <select
                     className="selectModern selectInline selectCompact"
-                    aria-label="Active proxy group"
+                    aria-label={t('ui.home.activeProxyGroupAria')}
                     value={String(state?.proxy?.activeGroup ?? '')}
                     onChange={(e) => {
                       const v = e.target.value
@@ -546,7 +546,7 @@ export function HomePage({
 
         <div className="statusCard statusCardCompact">
           <div className="statusRow">
-            <span>Latency</span>
+            <span>{t('ui.home.insightLatency')}</span>
             <strong
               title={
                 (state?.insight?.nodeLatencyMs ?? 0) <= 0 &&
@@ -633,7 +633,7 @@ export function HomePage({
             </div>
           </div>
           <div className="statusRow">
-            <span>Speed</span>
+            <span>{t('ui.home.insightSpeed')}</span>
             <div
               className="statusRowValue speedRow"
               title={state?.insight?.trafficError || undefined}

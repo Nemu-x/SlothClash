@@ -66,6 +66,11 @@
     "upToDate": "You are on the latest release.",
     "downloadInstaller": "Download & install update",
     "openReleasePage": "Open release page",
+    "openGithubRepo": "Open GitHub repository",
+    "reconnectOnManualProfileUpdate": "Reconnect on manual active-profile update",
+    "coreTitle": "Mihomo / embedded core",
+    "updateChannelLabel": "Channel",
+    "lastCheckedLabel": "Checked",
     "resetModal": {
       "title": "Reset app settings",
       "keepProfilesBody": "Reset UI settings and local defaults, but keep profiles?",
@@ -133,6 +138,11 @@
       "healthDegradedHint": "Connected, but something is not fully healthy (see warnings below). Traffic may still work.",
       "healthBrokenHint": "Session is in a broken state (often a failed mode switch or reload). Check the message below, try Disconnect, or switch traffic mode.",
       "traffic": "Traffic",
+      "routingModeAria": "Routing mode",
+      "trafficModeAria": "Traffic mode",
+      "systemProxyTitle": "System proxy — HTTP/S via OS settings",
+      "tunTitle": "TUN — virtual adapter",
+      "activeProxyGroupAria": "Active proxy group",
       "service": "Service",
       "serviceStoppedHint": "IPC service is installed but not running (TUN may be unavailable).",
       "serviceRetry": "Recheck",
@@ -147,7 +157,9 @@
       "supportShort": "Support",
       "subscriptionAnnouncement": "Announcement",
       "insightExit": "Exit",
-      "insightDirect": "Direct"
+      "insightDirect": "Direct",
+      "insightLatency": "Latency",
+      "insightSpeed": "Speed"
     },
     "profiles": {
       "title": "Profiles",
@@ -251,6 +263,7 @@
     "proxies": {
       "title": "Proxies",
       "lead": "Selectors and url-test groups from the running Sloth core. Connect on Home first, then refresh if the list is empty while the subscription loads.",
+      "proxyModeAria": "Proxy mode",
       "refreshGroups": "Refresh groups",
       "autoPick": "Auto-pick safe group",
       "ping": "Ping",
@@ -400,6 +413,7 @@
     "yes": "Yes",
     "no": "No",
     "close": "Close",
+    "dismiss": "Dismiss",
     "show": "Show",
     "hide": "Hide",
     "cancel": "Cancel",

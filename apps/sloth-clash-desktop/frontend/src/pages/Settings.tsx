@@ -112,8 +112,8 @@ export function SettingsPage({
         <button
           type="button"
           className="settingsGithubBtn settingsGithubTopBtn"
-          title="Open GitHub repository"
-          aria-label="Open GitHub repository"
+          title={t('settings.openGithubRepo')}
+          aria-label={t('settings.openGithubRepo')}
           onClick={() => onBrowserOpen(APP_REPO_URL)}
         >
           <svg
@@ -344,10 +344,10 @@ export function SettingsPage({
               />
             </label>
             <div className="settingsToggleRow">
-              <span>Reconnect on manual active-profile update</span>
+              <span>{t('settings.reconnectOnManualProfileUpdate')}</span>
               <SettingsSwitch
                 checked={settings.reconnectOnManualProfileUpdate}
-                label="Reconnect on manual active-profile update"
+                label={t('settings.reconnectOnManualProfileUpdate')}
                 onToggle={() =>
                   onSetSetting(
                     'reconnectOnManualProfileUpdate',
@@ -447,7 +447,7 @@ export function SettingsPage({
               <div className="settingsKpiGrid">
                 <div className="settingsKpi">
                   <span>Core</span>
-                  <strong title="Mihomo / embedded core">
+                  <strong title={t('settings.coreTitle')}>
                     {state?.core?.version?.trim() ? state.core.version : '—'}
                   </strong>
                 </div>
@@ -462,11 +462,11 @@ export function SettingsPage({
                   </strong>
                 </div>
                 <div className="settingsKpi">
-                  <span>Channel</span>
+                  <span>{t('settings.updateChannelLabel')}</span>
                   <strong>{updateSnap?.channel ?? 'stable'}</strong>
                 </div>
                 <div className="settingsKpi">
-                  <span>Checked</span>
+                  <span>{t('settings.lastCheckedLabel')}</span>
                   <strong>
                     {updateSnap?.lastCheckedAt
                       ? new Date(

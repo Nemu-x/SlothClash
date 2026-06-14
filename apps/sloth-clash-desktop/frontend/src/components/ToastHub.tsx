@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import type { Toast } from '../hooks/useToasts'
 
 type Props = {
@@ -11,29 +13,30 @@ type Props = {
  * shown is the most recent.
  */
 export function ToastHub({ toasts, onDismiss }: Props) {
+  const { t } = useTranslation()
   if (toasts.length === 0) return null
   return (
     <div className="toastHub" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast toast-${t.kind}`}>
-          <span className="toastMsg">{t.message}</span>
-          {t.actionLabel ? (
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast toast-${toast.kind}`}>
+          <span className="toastMsg">{toast.message}</span>
+          {toast.actionLabel ? (
             <button
               type="button"
               className="toastAction"
               onClick={() => {
-                t.onAction?.()
-                onDismiss(t.id)
+                toast.onAction?.()
+                onDismiss(toast.id)
               }}
             >
-              {t.actionLabel}
+              {toast.actionLabel}
             </button>
           ) : null}
           <button
             type="button"
             className="toastClose"
-            onClick={() => onDismiss(t.id)}
-            aria-label="Dismiss"
+            onClick={() => onDismiss(toast.id)}
+            aria-label={t('common.dismiss')}
           >
             ×
           </button>

@@ -156,7 +156,7 @@ export function ProxiesPage({
         <div
           className="segmentInset segmentInset2 proxyModeInset"
           role="group"
-          aria-label="Proxy mode"
+          aria-label={t('ui.proxies.proxyModeAria')}
         >
           <div
             className="segmentGlider"

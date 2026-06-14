@@ -66,6 +66,11 @@
     "upToDate": "已是最新版本。",
     "downloadInstaller": "下载并安装更新",
     "openReleasePage": "打开发布页",
+    "openGithubRepo": "打开 GitHub 仓库",
+    "reconnectOnManualProfileUpdate": "手动更新活动配置时重新连接",
+    "coreTitle": "Mihomo / 内置核心",
+    "updateChannelLabel": "通道",
+    "lastCheckedLabel": "上次检查",
     "resetModal": {
       "title": "重置应用设置",
       "keepProfilesBody": "重置界面设置和本地默认值，但保留配置？",
@@ -133,6 +138,11 @@
       "healthDegradedHint": "已连接，但存在非致命问题（见下方警告）。通常仍可上网。",
       "healthBrokenHint": "会话处于异常状态（常见为模式切换或重载失败）。请查看下方说明，尝试断开连接或切换流量模式。",
       "traffic": "流量",
+      "routingModeAria": "路由模式",
+      "trafficModeAria": "流量模式",
+      "systemProxyTitle": "系统代理 — 通过操作系统设置的 HTTP/S",
+      "tunTitle": "TUN — 虚拟网卡",
+      "activeProxyGroupAria": "当前代理组",
       "service": "服务",
       "serviceStoppedHint": "已安装 IPC 服务但未运行（TUN 可能不可用）。",
       "serviceRetry": "重新检测",
@@ -147,7 +157,9 @@
       "supportShort": "支持",
       "subscriptionAnnouncement": "公告",
       "insightExit": "出口",
-      "insightDirect": "直连"
+      "insightDirect": "直连",
+      "insightLatency": "延迟",
+      "insightSpeed": "速度"
     },
     "profiles": {
       "title": "配置",
@@ -251,6 +263,7 @@
     "proxies": {
       "title": "代理",
       "lead": "显示运行中 Sloth 内核的选择器与 url-test 分组。先在首页连接，若订阅加载期间列表为空可稍后刷新。",
+      "proxyModeAria": "代理模式",
       "refreshGroups": "刷新分组",
       "autoPick": "自动选择安全分组",
       "ping": "测速",
@@ -400,6 +413,7 @@
     "yes": "是",
     "no": "否",
     "close": "关闭",
+    "dismiss": "关闭",
     "show": "显示",
     "hide": "隐藏",
     "cancel": "取消",

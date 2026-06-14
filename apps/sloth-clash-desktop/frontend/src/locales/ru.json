@@ -66,6 +66,11 @@
     "upToDate": "Установлена последняя версия.",
     "downloadInstaller": "Скачать и установить",
     "openReleasePage": "Страница релиза",
+    "openGithubRepo": "Открыть репозиторий на GitHub",
+    "reconnectOnManualProfileUpdate": "Переподключаться при ручном обновлении активного профиля",
+    "coreTitle": "Mihomo / встроенное ядро",
+    "updateChannelLabel": "Канал",
+    "lastCheckedLabel": "Проверено",
     "resetModal": {
       "title": "Сброс настроек приложения",
       "keepProfilesBody": "Сбросить настройки интерфейса и локальные значения по умолчанию, но сохранить профили?",
@@ -133,6 +138,11 @@
       "healthDegradedHint": "Подключено, но есть предупреждения ниже — часть функций может работать не идеально.",
       "healthBrokenHint": "Сессия в некорректном состоянии (часто не удалось применить режим или reload). См. текст ниже, нажмите Отключить или смените режим трафика.",
       "traffic": "Трафик",
+      "routingModeAria": "Режим маршрутизации",
+      "trafficModeAria": "Режим трафика",
+      "systemProxyTitle": "Системный прокси — HTTP/S через настройки ОС",
+      "tunTitle": "TUN — виртуальный адаптер",
+      "activeProxyGroupAria": "Активная прокси-группа",
       "service": "Сервис",
       "serviceStoppedHint": "Сервис установлен, но не запущен (TUN может быть недоступен).",
       "serviceRetry": "Проверить снова",
@@ -147,7 +157,9 @@
       "supportShort": "Поддержка",
       "subscriptionAnnouncement": "Объявление",
       "insightExit": "Выход",
-      "insightDirect": "Напрямую"
+      "insightDirect": "Напрямую",
+      "insightLatency": "Задержка",
+      "insightSpeed": "Скорость"
     },
     "profiles": {
       "title": "Профили",
@@ -251,6 +263,7 @@
     "proxies": {
       "title": "Прокси",
       "lead": "Селекторы и url-test группы из запущенного ядра Sloth. Сначала подключитесь на Главной, затем нажмите обновление, если список пока пустой.",
+      "proxyModeAria": "Режим прокси",
       "refreshGroups": "Обновить группы",
       "autoPick": "Автовыбор безопасной группы",
       "ping": "Пинг",
@@ -400,6 +413,7 @@
     "yes": "Да",
     "no": "Нет",
     "close": "Закрыть",
+    "dismiss": "Скрыть",
     "show": "Показать",
     "hide": "Скрыть",
     "cancel": "Отмена",

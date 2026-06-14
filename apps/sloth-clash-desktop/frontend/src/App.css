@@ -2641,29 +2641,48 @@
   margin-top: 8px;
 }
 
+/* Advanced panel typography — aligned with settingsPanel / visual-polish tokens */
+.advancedPanel {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+}
+
 .advancedPanel h2 {
-  font-size: 1.2rem;
-  margin: 0 0 4px 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-1) 0;
 }
 
 .advancedPanel > p.muted {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-2) 0;
   font-size: var(--font-size-sm);
-  line-height: 1.35;
+  line-height: var(--leading-normal);
 }
 
-.advancedPanel .homeCard {
-  margin: 6px 0;
-  padding: 8px 10px;
-}
-
-.advancedPanel .homeCardTitle {
-  font-size: var(--font-size-xs);
-  margin: 0 0 4px 0;
+.advancedPanel .homeCardTitle,
+.advancedPanel .collapsibleCard .homeCardTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-1) 0;
 }
 
 .advancedPanel .advancedGrid .statusRow {
-  padding: 4px 0;
+  padding: var(--space-1) 0;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.advancedPanel .advancedGrid .statusRow > span:first-child {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.advancedPanel .advancedGrid .statusRow strong {
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .advancedPanel .advancedGrid .diagList {
@@ -2675,9 +2694,10 @@
   flex-wrap: wrap;
 }
 
-.advancedPanel .advancedGrid .btn.ghost {
-  padding: 4px 10px;
-  font-size: var(--font-size-sm);
+.advancedPanel .advancedGrid .btn.ghost,
+.advancedPanel .btnCompact {
+  padding: 5px 10px;
+  font-size: var(--font-size-xs);
 }
 
 /* Masonry packing (like Settings) so every card flows into two balanced
@@ -2715,14 +2735,15 @@
 .advancedDeviceIdentityCard .deviceIdentityHwid {
   flex: 1;
   min-width: min(100%, 220px);
+  font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.35;
+  line-height: var(--leading-normal);
   word-break: break-all;
   padding: 6px 8px;
   border-radius: 10px;
   border: 1px solid var(--hairline-strong);
   background: rgba(0, 0, 0, 0.22);
-  color: #e8dfd0;
+  color: var(--text);
 }
 
 .advancedDeviceIdentityCard .deviceIdentityActions {
@@ -2786,7 +2807,7 @@
 
 .collapsibleCardChevron {
   display: inline-block;
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
   line-height: 1;
   color: var(--text-muted);
   transform: rotate(0deg);
@@ -2810,7 +2831,11 @@
   margin-top: 8px;
 }
 
-.collapsibleCard .homeCardTitle {
+.advancedPanel .collapsibleCardActions .muted.small {
+  font-size: var(--font-size-xs);
+}
+
+.advancedPanel .collapsibleCard .homeCardTitle {
   margin: 0;
 }
 
@@ -2823,7 +2848,7 @@
 
 .advancedPathsGrid .btn {
   text-align: left;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
 }
 
 .advancedPowerGrid {
@@ -2844,6 +2869,11 @@
   flex-shrink: 0;
 }
 
+.advancedPowerRow .muted.small {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-normal);
+}
+
 .advancedRuntimeTraceHeader {
   display: flex;
   justify-content: space-between;
@@ -2861,7 +2891,7 @@
   background: rgba(0, 0, 0, 0.16);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 .advancedRuntimeTraceRow {

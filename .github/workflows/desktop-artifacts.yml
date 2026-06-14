@@ -70,15 +70,15 @@ jobs:
           if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
           # Raw installer .exe — the in-app updater downloads this directly (must
           # contain "installer" + "amd64" so pickWindowsInstallerAsset matches).
-          Copy-Item $installer.FullName "dist/SlothClash-windows-amd64-installer-${{ github.ref_name }}.exe" -Force
-          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip" -Force
+          Copy-Item $installer.FullName "dist/SlothClash-windows-amd64-installer.exe" -Force
+          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-amd64-installer.zip" -Force
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-amd64
           path: |
-            dist/SlothClash-windows-amd64-installer-${{ github.ref_name }}.exe
-            dist/sloth-clash-windows-amd64-installer-${{ github.ref_name }}.zip
+            dist/SlothClash-windows-amd64-installer.exe
+            dist/sloth-clash-windows-amd64-installer.zip
 
   windows-arm64:
     runs-on: windows-latest
@@ -135,16 +135,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
           if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
-          Copy-Item $installer.FullName "dist/SlothClash-windows-arm64-installer-${{ github.ref_name }}.exe" -Force
-          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip" -Force
+          Copy-Item $installer.FullName "dist/SlothClash-windows-arm64-installer.exe" -Force
+          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-arm64-installer.zip" -Force
 
       - uses: actions/upload-artifact@v4
         if: steps.pack_windows_arm64.outcome == 'success'
         with:
           name: release-windows-arm64
           path: |
-            dist/SlothClash-windows-arm64-installer-${{ github.ref_name }}.exe
-            dist/sloth-clash-windows-arm64-installer-${{ github.ref_name }}.zip
+            dist/SlothClash-windows-arm64-installer.exe
+            dist/sloth-clash-windows-arm64-installer.zip
 
   darwin-arm64:
     runs-on: macos-14
@@ -273,12 +273,12 @@ jobs:
       - name: Pack Linux artifact (preserve executable bits)
         run: |
           mkdir -p dist
-          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-linux-amd64-${GITHUB_REF_NAME}.tar.gz" .
+          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-linux-amd64.tar.gz" .
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-amd64
-          path: dist/sloth-clash-linux-amd64-${{ github.ref_name }}.tar.gz
+          path: dist/sloth-clash-linux-amd64.tar.gz
 
   release:
     if: startsWith(github.ref, 'refs/tags/')

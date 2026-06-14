@@ -78,6 +78,12 @@ pnpm run wails:dev           # or: pnpm run wails:build
 
 GitHub Actions: `.github/workflows/desktop-artifacts.yml` (Windows, Linux, macOS arm64 + Release) and `.github/workflows/desktop-artifacts-darwin-amd64.yml` (macOS Intel — same tag, adds zip to the same Release).
 
+## Security
+
+Sloth Clash ships **fail-closed, cryptographically verified updates**: the in-app updater verifies a **minisign (ed25519)** signature over `SHA256SUMS` against a public key embedded in the binary, then checks the installer's SHA-256 before launching — anything unsigned or tampered is refused (see [docs/UPDATES.md](./docs/UPDATES.md)). CI runs `govulncheck` + `pnpm audit` on every change, the mihomo core is pinned for reproducible builds, and the project is GPL-3.0 / fully auditable. The privileged helper that manages the core/TUN requires a one-time elevation to install, then runs without further prompts.
+
+To report a vulnerability, see [SECURITY.md](./SECURITY.md) (use GitHub private vulnerability reporting — please don't open public issues for security bugs).
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).

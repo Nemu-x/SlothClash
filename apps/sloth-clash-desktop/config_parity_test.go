@@ -72,7 +72,8 @@ func TestConfigParitySubscriptionBlocksPreserved(t *testing.T) {
 
 	d := dnsMap(t, m)
 
-	// DNS listen: default to :1053 (verge parity), never loopback.
+	// DNS listen: default :1053 (all interfaces, real fixed port — verge parity).
+	// Loopback breaks TUN dns-hijack; an ephemeral :0 listen did not work for users.
 	if d["listen"] != ":1053" {
 		t.Errorf("dns.listen = %v, want :1053", d["listen"])
 	}

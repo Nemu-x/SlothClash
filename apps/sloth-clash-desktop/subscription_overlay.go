@@ -56,15 +56,16 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if _, ok := dns["enable"]; !ok {
 		dns["enable"] = true
 	}
-	// DNS listener default: byte-for-byte parity with clash-verge-rev — `:1053`
-	// (all interfaces, IPv4+IPv6, fixed port 1053). Parity is deliberate: verge's
-	// generated config works flawlessly in the field, so every divergence on our
-	// side is a latent bug — the original loopback-only `127.0.0.1:0` bind proved
-	// it (unreachable for TUN `dns-hijack: any:53`, DNS died under TUN while
-	// system-proxy kept working). A random port was a divergence solving a
-	// non-problem (two Clash clients never run at once), so we dropped it.
-	// Only fill a default when the config/extended-config did not set one, so an
-	// explicit `dns.listen` is honoured instead of clobbered.
+	// DNS listener default: `:1053` (all interfaces, a REAL fixed port) — matches
+	// clash-verge-rev, which works reliably in the field. Hard requirements learned
+	// from real users:
+	//   - NOT loopback-only (`127.0.0.1`): unreachable for TUN `dns-hijack: any:53`
+	//     on Windows → DNS dies under TUN while system-proxy keeps working.
+	//   - A REAL fixed port, NOT `:0`/ephemeral: a `0.0.0.0:0` listen did NOT work
+	//     for a user (no resolution), while verge's `:1053` worked instantly.
+	// We only fill this DEFAULT when the subscription/extended config did not set
+	// its own `dns.listen`. An explicit value (e.g. the subscription's own `:1053`)
+	// is honoured, never clobbered — same as verge.
 	if v, ok := dns["listen"].(string); !ok || strings.TrimSpace(v) == "" {
 		dns["listen"] = ":1053"
 	}

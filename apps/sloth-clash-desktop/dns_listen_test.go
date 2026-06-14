@@ -11,7 +11,8 @@ func TestEnsureDefaultDNSForTunListenDefault(t *testing.T) {
 	m := map[string]any{"dns": map[string]any{"enable": true}}
 	ensureDefaultDNSForTun(m)
 	dns := m["dns"].(map[string]any)
-	// Byte-for-byte parity with clash-verge-rev: ":1053" (all interfaces).
+	// Default :1053 (all interfaces, real fixed port — verge parity). Loopback
+	// breaks TUN dns-hijack; an ephemeral :0 listen did not work for users.
 	if dns["listen"] != ":1053" {
 		t.Fatalf("listen default = %v, want :1053", dns["listen"])
 	}

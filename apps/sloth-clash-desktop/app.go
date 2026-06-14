@@ -153,7 +153,8 @@ func (a *App) bootActiveProfileCoreInBackground() {
 	// Connect() will bring TUN up via applyRuntimeConfig+PUT /configs force-reload
 	// (matches clash-verge-rev's init path: start_core with current verge state,
 	// then toggle_tun_mode goes through update_config → reload_config).
-	if err := a.ensureCoreForProfile(profile, 0, false); err != nil {
+	coldStarted, err := a.ensureCoreForProfileEx(profile, 0, false)
+	if err != nil {
 		debugLog(
 			"startup",
 			"H1",
@@ -166,10 +167,17 @@ func (a *App) bootActiveProfileCoreInBackground() {
 		)
 		return
 	}
-	// If a core survived an unclean OS shutdown (or was already started by the
-	// service), ensureCoreForProfile may early-return without touching tun.enable.
-	// Force a runtime YAML sync with enableTun=false so UI "disconnected" and
-	// actual network state stay aligned on startup.
+	// Only sync the runtime config when the core was REUSED (survived an unclean
+	// OS shutdown / was already started by the service) — there its actual TUN
+	// state may not match "disconnected", so we force tun.enable=false to realign.
+	// A FRESH cold start already loaded the generated YAML (tun.enable=false baked
+	// in by startEmbeddedCore), so re-applying it here would just trigger a second
+	// full provider re-pull for no behaviour change — the redundant pull that made
+	// Connect drag on heavy/unhealthy-provider profiles. Mirrors runConnectJob's
+	// own cold-start skip.
+	if coldStarted {
+		return
+	}
 	if err := a.applyRuntimeConfig(profile, traffic, false); err != nil {
 		debugLog(
 			"startup",

@@ -406,22 +406,22 @@ func (a *App) CheckForUpdates() UpdateState {
 	return a.update
 }
 
-// ApplyUpdate downloads the latest Windows installer asset (if any), verifies
-// its SHA-256 against the release's checksums file, and launches it to
-// upgrade in place.
+// ApplyUpdate downloads the latest Windows installer asset, verifies it, and
+// launches it to upgrade in place. It is **fail-closed (secure by default):**
 //
-// Verification rules:
-//   - If a SHA256SUMS / checksums.txt is published with the release: the
-//     downloaded installer's digest MUST match. Mismatch deletes the temp
-//     file and aborts — no installer launch.
-//   - If no checksums file is published: by default the update still runs
-//     (legacy releases shipped without it). Operators who want strict
-//     verification can set SLOTH_REQUIRE_VERIFIED_UPDATE=1 to refuse such
-//     releases.
+//  1. Download the installer to a temp file.
+//  2. Fetch the release's checksums file + its minisign signature; verify the
+//     signature against the trusted public key(s) embedded in the binary
+//     (`verifyMinisign` in resolveInstallerDigest). A present-but-invalid
+//     signature is a hard error.
+//  3. Verify the downloaded installer's SHA-256 against the (now-authenticated)
+//     checksums. Any mismatch deletes the temp file and aborts — no launch.
+//  4. Only then tear down the core/TUN and launch the installer.
 //
-// Signature verification (cosign / ed25519) is left as a future addition —
-// the structure here is ready for it: insert the verify step between the
-// hash check and launchUpdateInstaller().
+// If the release is NOT signed by a trusted key, the update is REFUSED unless
+// `SLOTH_ALLOW_UNVERIFIED_UPDATE=1` is set (local testing only). This closes
+// audit findings F1/F8. (Signature verification is implemented here, not a
+// future TODO.)
 func (a *App) ApplyUpdate() error {
 	if runtime.GOOS != "windows" {
 		return errors.New("in-app installer launch is only supported on Windows — open the release page from Settings")

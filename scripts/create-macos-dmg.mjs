@@ -149,7 +149,30 @@ function main() {
     )
   }
   styleMountedDmg(volumeName, appName, fs.existsSync(dmgBg))
-  execFileSync('hdiutil', ['detach', device], { stdio: 'inherit' })
+  // hdiutil detach transiently fails with "Resource busy" on CI runners when
+  // Spotlight (mds) / Finder is still holding the freshly-styled volume. Retry
+  // with a short wait, escalating to -force, instead of failing the whole job.
+  {
+    let detached = false
+    for (let attempt = 0; attempt < 4 && !detached; attempt++) {
+      try {
+        const args =
+          attempt === 0 ? ['detach', device] : ['detach', device, '-force']
+        execFileSync('hdiutil', args, { stdio: 'inherit' })
+        detached = true
+      } catch (err) {
+        if (attempt === 3) throw err
+        console.warn(
+          `[create-macos-dmg] hdiutil detach attempt ${attempt + 1} failed (likely "Resource busy"); waiting then retrying with -force...`,
+        )
+        try {
+          execFileSync('sleep', ['2'], { stdio: 'inherit' })
+        } catch {
+          /* sleep is best-effort */
+        }
+      }
+    }
+  }
   execFileSync(
     'hdiutil',
     [

@@ -3829,6 +3829,60 @@
   color: var(--danger);
 }
 
+/* === Edit proxy groups — form left, baseline lists right (proxy-groups-modal-redesign) === */
+.proxyEditorCols {
+  align-items: stretch;
+}
+
+.proxyFormCol {
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+}
+
+.shell[data-theme="light"] .proxyFormCol {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.proxyFormCol > .eyebrow {
+  margin: 0 0 var(--space-1);
+}
+
+.proxyAddPos {
+  align-self: flex-start;
+}
+
+.proxyAddBtn {
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.proxyListsCol {
+  gap: var(--space-2);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.proxyListBlock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.proxyListBlock > .eyebrow {
+  margin: 0 0 var(--space-1);
+}
+
+.proxyListBlock > .rulesList {
+  flex: 0 1 auto;
+  max-height: 200px;
+  min-height: 64px;
+}
+
 .yamlModalBlurb {
   margin-top: 0;
 }

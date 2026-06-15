@@ -22,6 +22,59 @@ import type { ProfileModalTarget } from './ProfileMergeModal'
 type Mode = 'visual' | 'advanced'
 type AppendTarget = 'prepend' | 'append'
 
+const GROUP_TYPE_OPTIONS = [
+  'select',
+  'url-test',
+  'fallback',
+  'load-balance',
+] as const
+
+// One-line read/edit row used in baseline and custom group lists.
+function GroupLine({
+  name,
+  groupType,
+  use,
+  pos,
+  deleted,
+  actionLabel,
+  actionGlyph,
+  onAction,
+}: {
+  name: string
+  groupType: string
+  use: string
+  pos?: AppendTarget
+  deleted?: boolean
+  actionLabel: string
+  actionGlyph: string
+  onAction: () => void
+}) {
+  const { t } = useTranslation()
+  const useLabel = use.trim() || '—'
+
+  return (
+    <div className={`ruleRow${deleted ? ' ruleRowDeleted' : ''}`}>
+      <span className="ruleTypeChip">{groupType}</span>
+      <span className="ruleContent" title={name}>
+        {name || '—'}
+      </span>
+      <span className="rulePolicy" title={useLabel}>
+        {t('ui.profiles.proxyModal.useLabel', { value: useLabel })}
+      </span>
+      {pos ? <span className="rulePos">{pos}</span> : null}
+      <button
+        type="button"
+        className="btn ghost ruleRemove"
+        aria-label={actionLabel}
+        title={actionLabel}
+        onClick={onAction}
+      >
+        {actionGlyph}
+      </button>
+    </div>
+  )
+}
+
 export function ProfileProxyModal({
   target,
   profiles,
@@ -36,9 +89,6 @@ export function ProfileProxyModal({
   onError: (msg: string) => void
 }) {
   const { t } = useTranslation()
-  // Drafts are derived from the active target on first mount.
-  // App.tsx passes `key={target?.id}` so a new target triggers a remount and
-  // these lazy initializers run again — no setState-in-effect chain needed.
   const initialRaw = target ? proxyTemplateFromProfile(profiles, target.id) : ''
   const initialBuckets = useMemo(
     () => proxyBucketsFromMerge(initialRaw),
@@ -186,25 +236,28 @@ export function ProfileProxyModal({
       return
     }
     setUiMode('visual')
-    const b = proxyBucketsFromAdvancedYaml(advancedDraft)
-    setRows(b.prepend)
-    setAppendRows(b.append)
-    setDeleted(b.delete)
+    const buckets =
+      uiMode === 'advanced'
+        ? proxyBucketsFromAdvancedYaml(advancedDraft)
+        : proxyBucketsFromMerge(mergeDraft)
+    setRows(buckets.prepend)
+    setAppendRows(buckets.append)
+    setDeleted(buckets.delete)
   }
 
   const save = async () => {
-    let body: string | null
-    if (uiMode === 'visual') {
-      body = applyProxyBucketsToMerge(mergeDraft, {
-        prepend: rows,
-        append: appendRows,
-        delete: deleted,
-      })
-    } else {
-      if (advancedYamlErr) return
-      const buckets = proxyBucketsFromAdvancedYaml(advancedDraft)
-      body = applyProxyBucketsToMerge(mergeDraft, buckets)
-    }
+    if (uiMode === 'advanced' && advancedYamlErr) return
+    const body =
+      uiMode === 'visual'
+        ? applyProxyBucketsToMerge(mergeDraft, {
+            prepend: rows,
+            append: appendRows,
+            delete: deleted,
+          })
+        : applyProxyBucketsToMerge(
+            mergeDraft,
+            proxyBucketsFromAdvancedYaml(advancedDraft),
+          )
     if (body == null) return
     try {
       await SetProfileProxyTemplate(target.id, body)
@@ -222,8 +275,8 @@ export function ProfileProxyModal({
       onClick={onClose}
     >
       <div
-        className={`modalCard modalCardWide yamlModalCard vergeModal ${
-          uiMode === 'advanced' ? 'modalCardFullscreen' : ''
+        className={`modalCard modalCardWide rulesEditorModal ${
+          uiMode === 'advanced' ? 'modalCardFullscreen' : 'modalCardVisualTall'
         }`}
         role="dialog"
         aria-modal="true"
@@ -251,14 +304,29 @@ export function ProfileProxyModal({
             </button>
           </div>
         </div>
-        <div
-          className={`vergeSplit ${
-            uiMode === 'advanced' ? 'vergeSplitAdvanced' : ''
-          }`}
-        >
-          <div className="vergePane">
-            {uiMode === 'visual' ? (
-              <>
+
+        {uiMode === 'advanced' ? (
+          <label className="field modalField rulesAdvancedField">
+            <span className="fieldLab">{t('common.advancedYaml')}</span>
+            <MonacoYamlEditor
+              className="vergePaneYaml modalMonacoWrap"
+              value={advancedDraft}
+              onChange={setAdvancedDraft}
+              height="56vh"
+            />
+            {advancedYamlErr ? (
+              <span className="rulesYamlErr small">
+                {t('common.yamlError', { error: advancedYamlErr })}
+              </span>
+            ) : null}
+          </label>
+        ) : (
+          <div className="rulesEditorBody">
+            <div className="rulesCols proxyEditorCols">
+              <div className="rulesCol proxyFormCol">
+                <p className="eyebrow">
+                  {t('ui.profiles.proxyModal.addGroup')}
+                </p>
                 <label className="field modalField">
                   <span className="fieldLab">
                     {t('ui.profiles.proxyModal.groupName')}
@@ -267,7 +335,10 @@ export function ProfileProxyModal({
                     className="input"
                     value={pgName}
                     onChange={(e) => setPgName(e.target.value)}
-                    placeholder="MainGroup"
+                    placeholder={t(
+                      'ui.profiles.proxyModal.groupNamePlaceholder',
+                    )}
+                    aria-label={t('ui.profiles.proxyModal.groupNameAria')}
                   />
                 </label>
                 <label className="field modalField">
@@ -278,11 +349,13 @@ export function ProfileProxyModal({
                     className="selectModern"
                     value={pgType}
                     onChange={(e) => setPgType(e.target.value)}
+                    aria-label={t('ui.profiles.proxyModal.groupTypeAria')}
                   >
-                    <option value="select">select</option>
-                    <option value="url-test">url-test</option>
-                    <option value="fallback">fallback</option>
-                    <option value="load-balance">load-balance</option>
+                    {GROUP_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="field modalField">
@@ -293,7 +366,9 @@ export function ProfileProxyModal({
                     className="input"
                     value={pgUse}
                     onChange={(e) => setPgUse(e.target.value)}
-                    placeholder="sub1, my-provider"
+                    placeholder={t(
+                      'ui.profiles.proxyModal.useProvidersPlaceholder',
+                    )}
                   />
                 </label>
                 <label className="field modalField">
@@ -304,7 +379,9 @@ export function ProfileProxyModal({
                     className="input"
                     value={pgUrl}
                     onChange={(e) => setPgUrl(e.target.value)}
-                    placeholder="http://www.gstatic.com/generate_204"
+                    placeholder={t(
+                      'ui.profiles.proxyModal.healthcheckUrlPlaceholder',
+                    )}
                   />
                 </label>
                 <div className="fieldGrid">
@@ -348,19 +425,13 @@ export function ProfileProxyModal({
                       type="button"
                       className={`trafficKnob ${pgLazy ? 'on' : ''}`}
                       onClick={() => setPgLazy((v) => !v)}
+                      aria-label={t('ui.profiles.proxyModal.lazy')}
                     >
                       {pgLazy ? t('common.on') : t('common.off')}
                     </button>
                   </label>
                 </div>
-                <button
-                  type="button"
-                  className="btn primary vergeStackBtn"
-                  onClick={addGroup}
-                >
-                  {t('ui.profiles.proxyModal.addGroup')}
-                </button>
-                <div className="segPill">
+                <div className="segPill proxyAddPos">
                   <button
                     type="button"
                     className={`pillOpt ${appendTarget === 'prepend' ? 'active' : ''}`}
@@ -376,146 +447,115 @@ export function ProfileProxyModal({
                     {t('common.append')}
                   </button>
                 </div>
-              </>
-            ) : (
-              <label className="field modalField">
-                <span className="fieldLab">{t('common.advancedYaml')}</span>
-                <MonacoYamlEditor
-                  className="vergePaneYaml modalMonacoWrap"
-                  value={advancedDraft}
-                  onChange={setAdvancedDraft}
-                  height="52vh"
-                />
-                {advancedYamlErr ? (
-                  <span className="muted small" style={{ color: '#ff6b6b' }}>
-                    {t('common.yamlError', { error: advancedYamlErr })}
-                  </span>
-                ) : null}
-              </label>
-            )}
-          </div>
-          {uiMode === 'visual' ? (
-            <div className="vergePane vergePaneList">
-              <p className="eyebrow">subscription.proxy-groups</p>
-              <div className="vergeScrollList">
-                {baselineLoading ? (
-                  <p className="muted small">
-                    {t('ui.profiles.proxyModal.loadingGroups')}
-                  </p>
-                ) : baselineError ? (
-                  <p className="muted small" style={{ color: '#ff6b6b' }}>
-                    {baselineError}
-                  </p>
-                ) : !baseline || baseline.length === 0 ? (
-                  <p className="muted small">
-                    {t('ui.profiles.proxyModal.noGroupsDetected')}
-                  </p>
-                ) : (
-                  baseline.map((gm, idx) => {
-                    const row = proxyGroupObjToRow(gm as any, idx)
-                    if (!row) return null
-                    const isDeleted = deleted.includes(row.name)
-                    return (
-                      <div
-                        key={row.id}
-                        className={`vergeCard vergeCardReadOnly ${
-                          isDeleted ? 'vergeCardDeleted' : ''
-                        }`}
-                      >
-                        <div>
-                          <div className="vergeCardTitle">{row.name}</div>
-                          <div className="muted small">{row.type}</div>
-                          <div className="muted small vergeCardSub">
-                            {t('ui.profiles.proxyModal.useLabel', {
-                              value: row.use || '—',
-                            })}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn ghost vergeTrash"
-                          aria-label={
-                            isDeleted ? t('common.restore') : t('common.delete')
-                          }
-                          title={
-                            isDeleted ? t('common.restore') : t('common.delete')
-                          }
-                          onClick={() => toggleBaselineDelete(row.name)}
-                        >
-                          {isDeleted ? '↺' : '×'}
-                        </button>
-                      </div>
-                    )
-                  })
-                )}
+                <button
+                  type="button"
+                  className="btn primary proxyAddBtn"
+                  onClick={addGroup}
+                >
+                  {t('common.addShort')}
+                </button>
               </div>
-              <p className="eyebrow" style={{ marginTop: 10 }}>
-                prepend.proxy-groups
-              </p>
-              <div className="vergeScrollList">
-                {rows.length === 0 ? (
-                  <p className="muted small">
-                    {t('ui.profiles.proxyModal.noGroupsYet')}
+
+              <div className="rulesCol proxyListsCol">
+                <div className="proxyListBlock">
+                  <p className="eyebrow">
+                    {t('ui.profiles.proxyModal.subscriptionSection')}
                   </p>
-                ) : (
-                  rows.map((r) => (
-                    <div key={r.id} className="vergeCard">
-                      <div>
-                        <div className="vergeCardTitle">{r.name}</div>
-                        <div className="muted small">{r.type}</div>
-                        <div className="muted small vergeCardSub">
-                          {t('ui.profiles.proxyModal.useLabel', {
-                            value: r.use || '—',
-                          })}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost vergeTrash"
-                        aria-label={t('common.remove')}
-                        onClick={() => removeRow(r.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-              <p className="eyebrow" style={{ marginTop: 10 }}>
-                append.proxy-groups
-              </p>
-              <div className="vergeScrollList">
-                {appendRows.length === 0 ? (
-                  <p className="muted small">
-                    {t('ui.profiles.proxyModal.noAppendGroups')}
+                  <div className="rulesList">
+                    {baselineLoading ? (
+                      <p className="muted small">
+                        {t('ui.profiles.proxyModal.loadingGroups')}
+                      </p>
+                    ) : baselineError ? (
+                      <p className="muted small rulesYamlErr">
+                        {baselineError}
+                      </p>
+                    ) : !baseline || baseline.length === 0 ? (
+                      <p className="muted small">
+                        {t('ui.profiles.proxyModal.noGroupsDetected')}
+                      </p>
+                    ) : (
+                      baseline.map((gm, idx) => {
+                        const row = proxyGroupObjToRow(gm as any, idx)
+                        if (!row) return null
+                        const isDeleted = deleted.includes(row.name)
+                        return (
+                          <GroupLine
+                            key={row.id}
+                            name={row.name}
+                            groupType={row.type}
+                            use={row.use}
+                            deleted={isDeleted}
+                            actionLabel={
+                              isDeleted
+                                ? t('common.restore')
+                                : t('common.delete')
+                            }
+                            actionGlyph={isDeleted ? '↺' : '×'}
+                            onAction={() => toggleBaselineDelete(row.name)}
+                          />
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="proxyListBlock">
+                  <p className="eyebrow">
+                    {t('ui.profiles.proxyModal.prependSection')}
                   </p>
-                ) : (
-                  appendRows.map((r) => (
-                    <div key={r.id} className="vergeCard">
-                      <div>
-                        <div className="vergeCardTitle">{r.name}</div>
-                        <div className="muted small">{r.type}</div>
-                        <div className="muted small vergeCardSub">
-                          {t('ui.profiles.proxyModal.useLabel', {
-                            value: r.use || '—',
-                          })}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost vergeTrash"
-                        aria-label={t('common.remove')}
-                        onClick={() => removeAppendRow(r.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
+                  <div className="rulesList">
+                    {rows.length === 0 ? (
+                      <p className="muted small">
+                        {t('ui.profiles.proxyModal.noGroupsYet')}
+                      </p>
+                    ) : (
+                      rows.map((r) => (
+                        <GroupLine
+                          key={r.id}
+                          name={r.name}
+                          groupType={r.type}
+                          use={r.use}
+                          pos="prepend"
+                          actionLabel={t('common.remove')}
+                          actionGlyph="×"
+                          onAction={() => removeRow(r.id)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="proxyListBlock">
+                  <p className="eyebrow">
+                    {t('ui.profiles.proxyModal.appendSection')}
+                  </p>
+                  <div className="rulesList">
+                    {appendRows.length === 0 ? (
+                      <p className="muted small">
+                        {t('ui.profiles.proxyModal.noAppendGroups')}
+                      </p>
+                    ) : (
+                      appendRows.map((r) => (
+                        <GroupLine
+                          key={r.id}
+                          name={r.name}
+                          groupType={r.type}
+                          use={r.use}
+                          pos="append"
+                          actionLabel={t('common.remove')}
+                          actionGlyph="×"
+                          onAction={() => removeAppendRow(r.id)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          ) : null}
-        </div>
+          </div>
+        )}
+
         <div className="modalFooter">
           <button type="button" className="btn ghost" onClick={onClose}>
             {t('common.cancel')}

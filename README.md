@@ -59,7 +59,17 @@ Sloth Clash is a **GPL-3.0** GUI around **Mihomo** (Clash Meta). This repository
 
 ## Downloads
 
-Releases for **this app**: [SlothClash releases](https://github.com/Nemu-x/SlothClash/releases) (when published).  
+**Latest release — direct downloads** (always point to the newest version):
+
+| Platform | Download |
+| --- | --- |
+| Windows (x64) | [SlothClash-windows-amd64-installer.exe](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-windows-amd64-installer.exe) |
+| Windows (ARM64) | [SlothClash-windows-arm64-installer.exe](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-windows-arm64-installer.exe) |
+| macOS (Apple Silicon) | [SlothClash-macOS-arm64.dmg](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-macOS-arm64.dmg) |
+| macOS (Intel) | [SlothClash-macOS-x64.dmg](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-macOS-x64.dmg) |
+| Linux (x64) | [sloth-clash-linux-amd64.tar.gz](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.tar.gz) |
+
+All releases & changelog: [SlothClash releases](https://github.com/Nemu-x/SlothClash/releases). Verify integrity against [`SHA256SUMS`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS) (signed — [`SHA256SUMS.minisig`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS.minisig)).  
 Service binaries used at build time: [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases).
 
 ## Build (local)

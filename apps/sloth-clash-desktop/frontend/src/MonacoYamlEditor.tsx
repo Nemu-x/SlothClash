@@ -34,12 +34,29 @@ export function MonacoYamlEditor({
           wordWrap: 'off',
           renderWhitespace: 'selection',
           mouseStyle: 'text',
+          // Render find / suggest / hover overlays in a fixed layer attached to
+          // <body> instead of inside the editor DOM. In a modal this avoids
+          // clipping AND keeps the find-widget (Ctrl+F) input out of the
+          // editor's mouseup handler below, so the user can actually type in it.
+          fixedOverflowWidgets: true,
         }}
         onMount={(editor: any, monaco: any) => {
           const dom = editor.getDomNode()
           if (dom) {
-            const ensureFocus = () => {
-              // On some WebView builds focus is lost on mouseup; re-focus editor text area.
+            const ensureFocus = (e: MouseEvent) => {
+              // On some WebView builds focus is lost on mouseup; re-focus the
+              // editor text area. BUT do NOT steal focus from Monaco's own
+              // widgets (find/replace box, suggest, hover) — clicking into the
+              // Ctrl+F search field must keep its focus so the user can type.
+              const target = e.target as HTMLElement | null
+              if (
+                target &&
+                target.closest(
+                  '.find-widget, .suggest-widget, .monaco-inputbox, .monaco-hover',
+                )
+              ) {
+                return
+              }
               requestAnimationFrame(() => editor.focus())
             }
             dom.addEventListener('mouseup', ensureFocus, true)

@@ -94,13 +94,21 @@ func TestConfigParitySubscriptionBlocksPreserved(t *testing.T) {
 		t.Errorf("respect-rules = %v, want true (preserved)", d["respect-rules"])
 	}
 
-	// TUN: subscription block preserved; only enable is overwritten to intent.
+	// TUN: we force the hardened tun base OVER the subscription. The input ships
+	// stack: mixed + strict-route: true; both must be overridden. strict-route
+	// MUST be false — a subscription strict-route: true loops the core's own
+	// DNS/proxy traffic back into the TUN under the system service and kills
+	// proxy-node resolution (only DIRECT survives). Locked here so it can never
+	// regress.
 	tun, ok := m["tun"].(map[string]any)
 	if !ok {
 		t.Fatalf("tun block missing: %#v", m["tun"])
 	}
-	if tun["stack"] != "mixed" {
-		t.Errorf("tun.stack = %v, want mixed (preserved from subscription)", tun["stack"])
+	if tun["strict-route"] != false {
+		t.Errorf("tun.strict-route = %v, want false (forced over subscription)", tun["strict-route"])
+	}
+	if tun["stack"] != "gvisor" {
+		t.Errorf("tun.stack = %v, want gvisor (forced over subscription)", tun["stack"])
 	}
 	if tun["enable"] != true {
 		t.Errorf("tun.enable = %v, want true (overwritten to traffic intent)", tun["enable"])

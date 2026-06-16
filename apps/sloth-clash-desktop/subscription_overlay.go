@@ -121,25 +121,25 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	m["dns"] = dns
 }
 
-// ensureTunOverlayForTraffic installs or hardens the TUN block in the generated
+// ensureTunOverlayForTraffic installs and hardens the TUN block in the generated
 // runtime config. The enableTun argument is written verbatim to tun.enable, so
 // callers are expected to pass the effective user intent (connected && traffic=="tun").
-// This mirrors clash-verge-rev's enhance::tun::use_tun + IClashTemp::template():
 //
-//   - If the subscription or extended config already ships a `tun:` block we
-//     trust its stack / auto-route / dns-hijack / mtu values verbatim (same as
-//     Verge Rev's `append!` semantics in the template).
-//   - If no `tun:` block is present we install the default template (gvisor,
-//     auto-route, strict-route=false, dns-hijack=[any:53]).
-//   - Only `tun.enable` is overwritten every time, so PUT /configs?force=true
-//     stays idempotent across hot reloads.
+// We OVERWRITE a hardened base set (stack=gvisor, auto-route, auto-detect-interface,
+// strict-route=false, dns-hijack=[any:53]) on top of whatever the subscription
+// ships — we do NOT trust the subscription's tun verbatim. A subscription can ship
+// tun options that break routing/egress; most importantly strict-route=true, which
+// forces the core's own DNS/proxy traffic back into the TUN under the system-service
+// core and kills proxy-node resolution (only DIRECT survives — proven in the field).
+// Keys the subscription adds beyond the base (route-exclude-address, mtu, device)
+// are preserved, and the user can still override any field via Settings → TUN
+// (applyUserTunOverlay runs after this). tun.enable is set every time so
+// PUT /configs?force=true stays idempotent across hot reloads.
 //
-// Previously this function forced stack=system and added tcp://any:53 on
-// Windows. That hurt UDP-heavy traffic (games) because Mihomo's kernel stack
-// is more sensitive to wintun ring-buffer pressure than gvisor, and the extra
-// TCP hijack caused double-handling of DNS. Both have been removed to track
-// upstream verbatim — users who need a different stack can override through
-// the subscription / extended config / Settings → TUN UI.
+// History: this used to trust the subscription's tun verbatim and overwrite only
+// tun.enable, which let strict-route=true through and caused the dead-proxy bug;
+// and before that it forced stack=system + tcp://any:53, which hurt UDP-heavy
+// traffic on wintun. Both are gone.
 func ensureTunOverlayForTraffic(m map[string]any, enableTun bool) {
 	rawTun, has := m["tun"].(map[string]any)
 	if !has || rawTun == nil {
@@ -150,19 +150,23 @@ func ensureTunOverlayForTraffic(m map[string]any, enableTun bool) {
 		}
 	}
 
-	rawTun["enable"] = enableTun
-	// Force strict-route OFF, overriding whatever the subscription shipped. This
-	// matches clash-verge-rev, whose base tun template overwrites the
-	// subscription's tun fields (its default strict-route is false). A
-	// subscription with strict-route: true breaks ALL proxied traffic when the
-	// core runs under our SYSTEM / session-0 service: strict-route forces the
-	// core's OWN outbound (upstream DNS + proxy-node dials) back through the TUN,
-	// so proxy nodes never resolve ("couldn't find ip") and only DIRECT works —
-	// while verge (strict-route: false) resolves fine. Proven on a real user
-	// machine: flipping this to false fixes it. A user who really wants strict
-	// routing can still set it via Settings → TUN (applyUserTunOverlay runs after
-	// this and wins).
+	// Overwrite the whole hardened tun base over whatever the subscription ships,
+	// so no subscription can ship a tun option that breaks routing/egress. Most
+	// critically strict-route MUST stay false: a subscription shipping
+	// strict-route: true forces the core's OWN outbound (upstream DNS + proxy-node
+	// dials) back into the TUN when the core runs under our SYSTEM/session-0
+	// service, so proxy nodes never resolve ("couldn't find ip") and only DIRECT
+	// works — proven on a real user machine. stack=gvisor is the reliable
+	// userspace stack and our default; system/mixed can stall on wintun under UDP
+	// load. Extra keys the subscription adds (route-exclude-address, mtu, device)
+	// are preserved. Users can still override any of these via Settings → TUN
+	// (applyUserTunOverlay runs after this and wins).
+	rawTun["stack"] = "gvisor"
+	rawTun["auto-route"] = true
+	rawTun["auto-detect-interface"] = true
 	rawTun["strict-route"] = false
+	rawTun["dns-hijack"] = []string{"any:53"}
+	rawTun["enable"] = enableTun
 	m["tun"] = rawTun
 }
 

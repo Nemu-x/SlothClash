@@ -151,6 +151,18 @@ func ensureTunOverlayForTraffic(m map[string]any, enableTun bool) {
 	}
 
 	rawTun["enable"] = enableTun
+	// Force strict-route OFF, overriding whatever the subscription shipped. This
+	// matches clash-verge-rev, whose base tun template overwrites the
+	// subscription's tun fields (its default strict-route is false). A
+	// subscription with strict-route: true breaks ALL proxied traffic when the
+	// core runs under our SYSTEM / session-0 service: strict-route forces the
+	// core's OWN outbound (upstream DNS + proxy-node dials) back through the TUN,
+	// so proxy nodes never resolve ("couldn't find ip") and only DIRECT works —
+	// while verge (strict-route: false) resolves fine. Proven on a real user
+	// machine: flipping this to false fixes it. A user who really wants strict
+	// routing can still set it via Settings → TUN (applyUserTunOverlay runs after
+	// this and wins).
+	rawTun["strict-route"] = false
 	m["tun"] = rawTun
 }
 

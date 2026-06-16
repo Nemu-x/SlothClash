@@ -346,6 +346,18 @@ export namespace main {
       return a
     }
   }
+  export class AppUpdateSettings {
+    autoCheckEnabled?: boolean
+
+    static createFrom(source: any = {}) {
+      return new AppUpdateSettings(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.autoCheckEnabled = source['autoCheckEnabled']
+    }
+  }
   export class ConnectionMeta {
     network?: string
     type?: string
@@ -515,6 +527,7 @@ export namespace main {
     tun: TunSettings
     traffic: TrafficSettings
     privacy: PrivacySettings
+    appUpdate: AppUpdateSettings
     lang?: string
 
     static createFrom(source: any = {}) {
@@ -526,6 +539,10 @@ export namespace main {
       this.tun = this.convertValues(source['tun'], TunSettings)
       this.traffic = this.convertValues(source['traffic'], TrafficSettings)
       this.privacy = this.convertValues(source['privacy'], PrivacySettings)
+      this.appUpdate = this.convertValues(
+        source['appUpdate'],
+        AppUpdateSettings,
+      )
       this.lang = source['lang']
     }
 
@@ -737,6 +754,7 @@ export namespace main {
     currentVersion?: string
     latestVersion?: string
     releaseUrl?: string
+    releaseNotes?: string
     assetName?: string
     assetDownloadUrl?: string
     lastError?: string
@@ -753,6 +771,7 @@ export namespace main {
       this.currentVersion = source['currentVersion']
       this.latestVersion = source['latestVersion']
       this.releaseUrl = source['releaseUrl']
+      this.releaseNotes = source['releaseNotes']
       this.assetName = source['assetName']
       this.assetDownloadUrl = source['assetDownloadUrl']
       this.lastError = source['lastError']

@@ -1,0 +1,61 @@
+name: SignPath test sign
+
+# Manual-only plumbing test for the SignPath signing pipeline. Does NOT release
+# anything: it builds a tiny Windows PE, submits it to SignPath under the
+# test-signing policy (test cert — Windows does NOT trust it, expected), and
+# uploads the signed result as a CI-run artifact you can download and inspect.
+# Once this works end-to-end we wire the same step into desktop-artifacts.yml
+# and flip signing-policy-slug to release-signing.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test-sign:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Build a tiny Windows PE to sign
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          'package main', 'func main() { println("SlothClash SignPath plumbing test") }' | Set-Content -Encoding ascii hello.go
+          go env -w GOOS=windows GOARCH=amd64
+          go build -o build/slothclash-signtest.exe hello.go
+          Get-Item build/slothclash-signtest.exe | Select-Object Name,Length
+
+      - name: Upload UNSIGNED artifact
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: build/slothclash-signtest.exe
+
+      - name: Submit to SignPath (test-signing)
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: '3717f257-09ac-492c-bc51-7ed0e5b47a01'
+          project-slug: 'SlothClash'
+          signing-policy-slug: 'test-signing'
+          # artifact-configuration-slug omitted on purpose -> uses the DEFAULT
+          # config ("Initial version": pe-file / authenticode). Set it explicitly
+          # later if we add more configs.
+          github-artifact-id: '${{ steps.unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed'
+
+      - name: Upload SIGNED artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-exe
+          path: signed/

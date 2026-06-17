@@ -72,7 +72,6 @@ jobs:
           # Raw installer .exe — the in-app updater downloads this directly (must
           # contain "installer" + "amd64" so pickWindowsInstallerAsset matches).
           Copy-Item $installer.FullName "dist/SlothClash-windows-amd64-installer.exe" -Force
-          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-amd64-installer.zip" -Force
 
       # --- SignPath code signing (Windows amd64) ---
       # Gated on repo variable SIGNPATH_SIGNING_POLICY: empty = no signing (ship
@@ -106,16 +105,12 @@ jobs:
           $signed = Get-ChildItem -Recurse -Path signed-amd64 -Filter "*.exe" | Select-Object -First 1
           if (-not $signed) { throw "Signed installer not found under signed-amd64" }
           Copy-Item $signed.FullName "dist/SlothClash-windows-amd64-installer.exe" -Force
-          Remove-Item "dist/sloth-clash-windows-amd64-installer.zip" -Force -ErrorAction SilentlyContinue
-          Compress-Archive -Path "dist/SlothClash-windows-amd64-installer.exe" -DestinationPath "dist/sloth-clash-windows-amd64-installer.zip" -Force
           Write-Host "amd64 installer replaced with SignPath-signed build"
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-amd64
-          path: |
-            dist/SlothClash-windows-amd64-installer.exe
-            dist/sloth-clash-windows-amd64-installer.zip
+          path: dist/SlothClash-windows-amd64-installer.exe
 
   windows-arm64:
     runs-on: windows-latest
@@ -173,7 +168,6 @@ jobs:
           $installer = Get-ChildItem "apps/sloth-clash-desktop/build/bin" -Filter "*-installer.exe" | Select-Object -First 1
           if (-not $installer) { throw "Windows installer .exe not found in build/bin" }
           Copy-Item $installer.FullName "dist/SlothClash-windows-arm64-installer.exe" -Force
-          Compress-Archive -Path $installer.FullName -DestinationPath "dist/sloth-clash-windows-arm64-installer.zip" -Force
 
       # --- SignPath code signing (Windows arm64) --- same gating as amd64, plus
       # only when the arm64 build/pack actually succeeded (it is best-effort).
@@ -204,17 +198,13 @@ jobs:
           $signed = Get-ChildItem -Recurse -Path signed-arm64 -Filter "*.exe" | Select-Object -First 1
           if (-not $signed) { throw "Signed installer not found under signed-arm64" }
           Copy-Item $signed.FullName "dist/SlothClash-windows-arm64-installer.exe" -Force
-          Remove-Item "dist/sloth-clash-windows-arm64-installer.zip" -Force -ErrorAction SilentlyContinue
-          Compress-Archive -Path "dist/SlothClash-windows-arm64-installer.exe" -DestinationPath "dist/sloth-clash-windows-arm64-installer.zip" -Force
           Write-Host "arm64 installer replaced with SignPath-signed build"
 
       - uses: actions/upload-artifact@v4
         if: steps.pack_windows_arm64.outcome == 'success'
         with:
           name: release-windows-arm64
-          path: |
-            dist/SlothClash-windows-arm64-installer.exe
-            dist/sloth-clash-windows-arm64-installer.zip
+          path: dist/SlothClash-windows-arm64-installer.exe
 
   darwin-arm64:
     runs-on: macos-14
@@ -402,7 +392,6 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             dist/**/*.exe
-            dist/**/*.zip
             dist/**/*.tar.gz
             dist/**/*.dmg
             dist/SHA256SUMS

@@ -350,7 +350,13 @@ function ruleRowsFromAny(raw: unknown): RuleRow[] {
 }
 
 function rowToRuleLine(r: RuleRow): string {
-  const head = `${r.ruleType.trim()},${r.content.trim()},${r.policy.trim()}`
+  const type = r.ruleType.trim()
+  const content = r.content.trim()
+  const policy = r.policy.trim()
+  // MATCH (and any content-less rule type) is "TYPE,POLICY" with NO middle
+  // field. Joining an empty content would emit "MATCH,,DIRECT" (double comma),
+  // which Mihomo rejects. Drop the empty content segment in that case.
+  const head = content ? `${type},${content},${policy}` : `${type},${policy}`
   const options = Array.isArray(r.options)
     ? r.options.map((x) => String(x).trim()).filter(Boolean)
     : []

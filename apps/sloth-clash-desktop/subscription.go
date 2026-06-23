@@ -505,19 +505,19 @@ func buildMieruSubscriptionYAML(norm string) ([]byte, error) {
 			proxy["multiplexing"] = v
 		}
 	}
-	// Mihomo requires `transport`. Order: explicit ?transport= wins; else if
-	// ?udp is a truthy flag use UDP (matches ?udp / ?udp=true); else TCP.
+	// `transport` is mieru's wire protocol to the server (TCP/UDP); `udp`
+	// independently controls relaying the app's UDP traffic over that tunnel.
+	// They are NOT linked: mieru's documented mihomo config is `transport: TCP`
+	// + `udp: true`. Mihomo requires transport, so default it to TCP; never
+	// derive it from udp.
 	if _, ok := proxy["transport"]; !ok {
-		if u, okb := proxy["udp"].(bool); okb && u {
-			proxy["transport"] = "UDP"
-		} else {
-			proxy["transport"] = "TCP"
-		}
+		proxy["transport"] = "TCP"
 	}
-	if tr, _ := proxy["transport"].(string); strings.EqualFold(strings.TrimSpace(tr), "UDP") {
-		if _, has := proxy["udp"]; !has {
-			proxy["udp"] = true
-		}
+	// Relay the app's UDP by default. Without `udp: true` mieru carries TCP
+	// fine but drops UDP apps (e.g. voice/QUIC), which looks like "chat works,
+	// calls die". Matches mieru's official mihomo example and other clients.
+	if _, ok := proxy["udp"]; !ok {
+		proxy["udp"] = true
 	}
 	groupName := "mieru-manual"
 	doc := map[string]any{

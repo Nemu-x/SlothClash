@@ -37,8 +37,16 @@ func TestBuildMieruSubscriptionYAMLSimple(t *testing.T) {
 	if p0["transport"] != "TCP" {
 		t.Fatalf("expected default transport TCP, got %#v", p0["transport"])
 	}
+	// UDP relay must default ON so UDP apps (voice/QUIC) work, matching mieru's
+	// documented mihomo config (transport: TCP + udp: true).
+	if u, ok := p0["udp"].(bool); !ok || !u {
+		t.Fatalf("expected udp true by default, got %#v", p0["udp"])
+	}
 }
 
+// ?udp= controls the app-UDP relay only; it must NOT change the wire transport
+// (which stays TCP unless ?transport= says otherwise). mieru's documented
+// mihomo config is transport: TCP + udp: true together.
 func TestBuildMieruSubscriptionYAMLUDPFromQuery(t *testing.T) {
 	t.Parallel()
 	raw := "mieru://u:p@192.0.2.3:9000?udp=true"
@@ -56,11 +64,11 @@ func TestBuildMieruSubscriptionYAMLUDPFromQuery(t *testing.T) {
 	}
 	proxies, _ := doc["proxies"].([]any)
 	p0, _ := proxies[0].(map[string]any)
-	if p0["transport"] != "UDP" {
-		t.Fatalf("expected UDP from ?udp=true, got %#v", p0["transport"])
+	if p0["transport"] != "TCP" {
+		t.Fatalf("expected transport TCP (udp must not flip it), got %#v", p0["transport"])
 	}
 	if u, ok := p0["udp"].(bool); !ok || !u {
-		t.Fatalf("expected udp true with UDP transport, got %#v", p0["udp"])
+		t.Fatalf("expected udp true, got %#v", p0["udp"])
 	}
 }
 
@@ -81,8 +89,63 @@ func TestBuildMieruSubscriptionYAMLUDPBareUdpQuery(t *testing.T) {
 	}
 	proxies, _ := doc["proxies"].([]any)
 	p0, _ := proxies[0].(map[string]any)
+	if p0["transport"] != "TCP" {
+		t.Fatalf("expected transport TCP for bare ?udp, got %#v", p0["transport"])
+	}
+	if u, ok := p0["udp"].(bool); !ok || !u {
+		t.Fatalf("expected udp true for bare ?udp, got %#v", p0["udp"])
+	}
+}
+
+// Explicit ?transport=UDP sets the wire transport; udp relay still defaults on.
+func TestBuildMieruSubscriptionYAMLExplicitUDPTransport(t *testing.T) {
+	t.Parallel()
+	raw := "mieru://u:p@192.0.2.5:9000?transport=UDP"
+	norm, err := normalizeSubscriptionURL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := buildMieruSubscriptionYAML(norm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	proxies, _ := doc["proxies"].([]any)
+	p0, _ := proxies[0].(map[string]any)
 	if p0["transport"] != "UDP" {
-		t.Fatalf("expected UDP for bare ?udp, got %#v", p0["transport"])
+		t.Fatalf("expected explicit transport UDP, got %#v", p0["transport"])
+	}
+	if u, ok := p0["udp"].(bool); !ok || !u {
+		t.Fatalf("expected udp true by default, got %#v", p0["udp"])
+	}
+}
+
+// ?udp=false explicitly disables the app-UDP relay (transport stays TCP).
+func TestBuildMieruSubscriptionYAMLUDPDisabled(t *testing.T) {
+	t.Parallel()
+	raw := "mieru://u:p@192.0.2.6:9000?udp=false"
+	norm, err := normalizeSubscriptionURL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := buildMieruSubscriptionYAML(norm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	proxies, _ := doc["proxies"].([]any)
+	p0, _ := proxies[0].(map[string]any)
+	if p0["transport"] != "TCP" {
+		t.Fatalf("expected transport TCP, got %#v", p0["transport"])
+	}
+	if u, ok := p0["udp"].(bool); !ok || u {
+		t.Fatalf("expected udp false when ?udp=false, got %#v", p0["udp"])
 	}
 }
 

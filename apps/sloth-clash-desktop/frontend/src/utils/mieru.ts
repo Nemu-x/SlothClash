@@ -139,10 +139,16 @@ export function URI_MIERU(line: string): IProxyMieruConfig {
     }
   }
 
+  // `transport` is mieru's wire protocol to the server (TCP/UDP); `udp`
+  // independently controls relaying the app's UDP traffic over that tunnel.
+  // They are NOT linked: mieru's documented mihomo config is transport: TCP
+  // + udp: true. Default transport to TCP; never derive it from udp.
   if (!proxy.transport) {
-    proxy.transport = proxy.udp === true ? 'UDP' : 'TCP'
+    proxy.transport = 'TCP'
   }
-  if (proxy.transport === 'UDP' && proxy.udp === undefined) {
+  // Relay the app's UDP by default. Without it mieru carries TCP fine but drops
+  // UDP apps (e.g. voice/QUIC) -> "chat works, calls die".
+  if (proxy.udp === undefined) {
     proxy.udp = true
   }
 

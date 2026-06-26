@@ -1,6 +1,7 @@
-import { type CSSProperties, type Ref } from 'react'
+import { type CSSProperties, type Ref, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyTunDiagnostics } from '../api/diagnostics'
 import type { main } from '../api/models'
 import { FlagMark } from '../components/FlagMark'
 import { formatSpeedKbps } from '../utils/format'
@@ -109,6 +110,17 @@ export function HomePage({
   onToggleActiveNodeOpen: () => void
 }) {
   const { t } = useTranslation()
+  const [diagCopied, setDiagCopied] = useState(false)
+  const onCopyDiagnostics = async () => {
+    try {
+      const text = await CopyTunDiagnostics()
+      await navigator.clipboard.writeText(text)
+      setDiagCopied(true)
+      setTimeout(() => setDiagCopied(false), 2000)
+    } catch {
+      // clipboard or binding unavailable — ignore; the connection error itself stays visible
+    }
+  }
   const connectionStatus = state?.connection?.status ?? ''
   const lastConnectionError =
     connectionStatus === 'error'
@@ -663,7 +675,19 @@ export function HomePage({
       ) : null}
 
       {errorLines.length ? (
-        <p className="error">{errorLines.join(' · ')}</p>
+        <div className="error homeConnError">
+          <p>{errorLines.join(' · ')}</p>
+          <button
+            type="button"
+            className="btn btnCompact subtle"
+            onClick={onCopyDiagnostics}
+            title={t('ui.home.copyDiagnosticsHint')}
+          >
+            {diagCopied
+              ? t('ui.home.diagnosticsCopied')
+              : t('ui.home.copyDiagnostics')}
+          </button>
+        </div>
       ) : null}
     </div>
   )

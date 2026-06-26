@@ -22,6 +22,10 @@ export function Connect() {
   return window['go']['main']['App']['Connect']()
 }
 
+export function CopyTunDiagnostics() {
+  return window['go']['main']['App']['CopyTunDiagnostics']()
+}
+
 export function DeleteProfile(arg1) {
   return window['go']['main']['App']['DeleteProfile'](arg1)
 }

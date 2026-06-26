@@ -160,6 +160,27 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 		return
 	}
 
+	// TUN mode only: the core API answering does NOT prove the wintun/utun
+	// adapter came up (Mihomo logs the bring-up error AFTER the API is
+	// reachable). Verify out-of-band and, on failure, recover via a full core
+	// restart before we dare report "connected". Without this we report a false
+	// "connected" while nothing routes. See architecture/tun-bringup-reliability.md.
+	if enableTun {
+		if err := a.ensureTunUpWithRetry(active, gen); err != nil {
+			if errors.Is(err, errConnectAborted) {
+				a.traceEvent("pipeline.connect.aborted", "skip", 0, map[string]any{
+					"gen": gen, "where": "tun_verify",
+				})
+				return
+			}
+			a.traceEvent("pipeline.connect.tun_verify", "fail", 0, map[string]any{
+				"gen": gen, "error": err.Error(),
+			})
+			a.finishConnectJobFailed(gen, err)
+			return
+		}
+	}
+
 	// Treat "core is listening with the desired intent applied" as connected
 	// immediately; /proxies warmup runs in the background below.
 	a.finishConnectJobOK(gen)

@@ -30,10 +30,13 @@ const (
 	tunVerifyFailed                         // bring-up error seen
 )
 
-// Authoritative Mihomo log markers. Failure is checked first because the error
-// line ("Start TUN listening error: ...") also contains the success substring.
+// Authoritative Mihomo log markers (verified against MetaCubeX/mihomo
+// listener/listener.go::ReCreateTun): success logs "[TUN] Tun adapter listening
+// at: <addr>" (line 533); failure logs "Start TUN listening error: <err>" (509),
+// whose detail typically includes "configure tun interface: ...". Matched
+// case-insensitively. Note: success and failure substrings do NOT overlap.
 const (
-	tunSuccessMarker    = "start tun listening"
+	tunSuccessMarker    = "tun adapter listening at"
 	tunFailErrorMarker  = "start tun listening error"
 	tunFailConfigMarker = "configure tun interface"
 )
@@ -102,16 +105,26 @@ func io_ReadAllLimited(f *os.File, limit int64) ([]byte, error) {
 	return buf[:n], nil
 }
 
-// verifyTunBringUp polls the per-profile core.log for up to timeout, returning
-// as soon as a definitive up/failed marker appears. On a persistent unknown it
-// uses the OS adapter cross-check before giving up (a slow log flush should not
-// look like a failure when the adapter is in fact present).
-func verifyTunBringUp(profileID string, timeout time.Duration) tunVerifyResult {
+// verifyTunBringUp decides whether the TUN adapter came up, optimised for a
+// fast happy path. The FAILURE marker is the authoritative signal: Mihomo logs
+// "Start TUN listening error: ..." synchronously when the adapter fails, so by
+// the time the core API is reachable a real failure is essentially always
+// already logged. We therefore do NOT wait for the success line (which lags the
+// controller coming up by a second or two and was the source of a multi-second
+// connect delay): we watch only a short grace window for the failure marker and,
+// absent one, report up. A success marker short-circuits to up immediately.
+func verifyTunBringUp(profileID string, grace time.Duration) tunVerifyResult {
+	// Test hook: there is no way to reproduce a real wintun failure on a healthy
+	// machine, so allow forcing the failure path to validate verify -> retry ->
+	// truthful-failure -> diagnostics end-to-end. Off unless explicitly set.
+	if os.Getenv("SLOTH_TUN_FORCE_FAIL") == "1" {
+		return tunVerifyFailed
+	}
 	logPath, err := coreLogPathForProfile(profileID)
 	if err != nil {
-		return tunVerifyUnknown
+		return tunVerifyUp // can't locate the log: do not block the connect
 	}
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(grace)
 	for {
 		switch scanTunBringUpLog(readFileTail(logPath, 64*1024)) {
 		case tunVerifyUp:
@@ -120,15 +133,11 @@ func verifyTunBringUp(profileID string, timeout time.Duration) tunVerifyResult {
 			return tunVerifyFailed
 		}
 		if time.Now().After(deadline) {
-			break
+			// No failure within the grace window => the adapter is coming up.
+			return tunVerifyUp
 		}
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
-	// Log was silent within the window: trust the OS if the adapter is present.
-	if osHasTunAdapter() {
-		return tunVerifyUp
-	}
-	return tunVerifyUnknown
 }
 
 // osHasTunAdapter is a best-effort cross-check: is a Mihomo TUN adapter present
@@ -164,14 +173,16 @@ func osHasTunAdapter() bool {
 // the adapter could not be brought up within the budget.
 func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	const (
-		verifyWindow = 6 * time.Second
-		maxRestarts  = 2
-		backoff      = time.Second
+		// Short grace: a real bring-up error is logged synchronously, so we only
+		// need a brief window to rule it out. Keeps a healthy TUN connect fast.
+		verifyGrace = 1200 * time.Millisecond
+		maxRestarts = 2
+		backoff     = time.Second
 	)
 	if a.connectGen.Load() != gen {
 		return errConnectAborted
 	}
-	if verifyTunBringUp(profile.ID, verifyWindow) == tunVerifyUp {
+	if verifyTunBringUp(profile.ID, verifyGrace) == tunVerifyUp {
 		return nil
 	}
 	for attempt := 1; attempt <= maxRestarts; attempt++ {
@@ -189,7 +200,7 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 		}
 		if err != nil {
 			a.traceEvent("pipeline.connect.tun_restart", "fail", 0, map[string]any{"gen": gen, "attempt": attempt, "error": err.Error()})
-		} else if verifyTunBringUp(profile.ID, verifyWindow) == tunVerifyUp {
+		} else if verifyTunBringUp(profile.ID, verifyGrace) == tunVerifyUp {
 			a.traceEvent("pipeline.connect.tun_restart", "ok", 0, map[string]any{"gen": gen, "attempt": attempt})
 			return nil
 		}

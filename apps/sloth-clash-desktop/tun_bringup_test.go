@@ -11,7 +11,7 @@ func TestScanTunBringUpLog(t *testing.T) {
 	}{
 		{
 			name: "success",
-			log: "time=\"...\" level=info msg=\"Start TUN listening at: Meta([198.18.0.1/30])\"\n" +
+			log: "time=\"...\" level=info msg=\"[TUN] Tun adapter listening at: Meta([198.18.0.1/30])\"\n" +
 				"time=\"...\" level=info msg=\"DNS server listening at: :1053\"",
 			want: tunVerifyUp,
 		},
@@ -34,12 +34,12 @@ func TestScanTunBringUpLog(t *testing.T) {
 		{
 			name: "transient-error-then-success",
 			log: "level=error msg=\"Start TUN listening error: configure tun interface: in use\"\n" +
-				"level=info msg=\"Start TUN listening at: Meta([198.18.0.1/30])\"",
+				"level=info msg=\"[TUN] Tun adapter listening at: Meta([198.18.0.1/30])\"",
 			want: tunVerifyUp,
 		},
 		{
 			name: "success-then-later-failure",
-			log: "level=info msg=\"Start TUN listening at: Meta\"\n" +
+			log: "level=info msg=\"[TUN] Tun adapter listening at: Meta\"\n" +
 				"level=error msg=\"Start TUN listening error: operation not permitted\"",
 			want: tunVerifyFailed,
 		},

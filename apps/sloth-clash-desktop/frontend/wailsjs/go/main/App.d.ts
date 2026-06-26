@@ -13,6 +13,8 @@ export function CloseAllConnections(): Promise<void>
 
 export function Connect(): Promise<main.AppState>
 
+export function CopyTunDiagnostics(): Promise<string>
+
 export function DeleteProfile(arg1: string): Promise<main.AppState>
 
 export function Disconnect(): Promise<main.AppState>

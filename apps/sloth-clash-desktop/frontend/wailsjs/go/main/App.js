@@ -18,6 +18,50 @@ export function CloseAllConnections() {
   return window['go']['main']['App']['CloseAllConnections']()
 }
 
+export function CompanionDiscover() {
+  return window['go']['main']['App']['CompanionDiscover']()
+}
+
+export function CompanionListAgents() {
+  return window['go']['main']['App']['CompanionListAgents']()
+}
+
+export function CompanionPairByString(arg1) {
+  return window['go']['main']['App']['CompanionPairByString'](arg1)
+}
+
+export function CompanionPairByPin(arg1, arg2) {
+  return window['go']['main']['App']['CompanionPairByPin'](arg1, arg2)
+}
+
+export function CompanionStatus(arg1) {
+  return window['go']['main']['App']['CompanionStatus'](arg1)
+}
+
+export function CompanionPower(arg1, arg2) {
+  return window['go']['main']['App']['CompanionPower'](arg1, arg2)
+}
+
+export function CompanionShareSubscription(arg1) {
+  return window['go']['main']['App']['CompanionShareSubscription'](arg1)
+}
+
+export function CompanionRename(arg1, arg2) {
+  return window['go']['main']['App']['CompanionRename'](arg1, arg2)
+}
+
+export function CompanionUnpair(arg1) {
+  return window['go']['main']['App']['CompanionUnpair'](arg1)
+}
+
+export function CompanionStartDiscovery() {
+  return window['go']['main']['App']['CompanionStartDiscovery']()
+}
+
+export function CompanionStopDiscovery() {
+  return window['go']['main']['App']['CompanionStopDiscovery']()
+}
+
 export function Connect() {
   return window['go']['main']['App']['Connect']()
 }

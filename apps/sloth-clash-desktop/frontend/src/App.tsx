@@ -109,6 +109,9 @@ const AdvancedPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import('./pages/Connections').then((m) => ({ default: m.ConnectionsPage })),
 )
+const DevicesPage = lazy(() =>
+  import('./pages/Devices').then((m) => ({ default: m.DevicesPage })),
+)
 const LogsPage = lazy(() =>
   import('./pages/Logs').then((m) => ({ default: m.LogsPage })),
 )
@@ -1722,6 +1725,12 @@ function App() {
               serviceLog={serviceLog}
               onRefresh={() => void refreshRuntimeLog()}
             />
+          </Suspense>
+        ) : null}
+
+        {screen === 'devices' ? (
+          <Suspense fallback={<div className="panel" />}>
+            <DevicesPage />
           </Suspense>
         ) : null}
 

@@ -795,3 +795,72 @@ export namespace options {
     }
   }
 }
+
+export namespace companion {
+  export class AgentInfo {
+    deviceId: string
+    name: string
+    app: string
+    ver: number
+    fp: string
+    host: string
+    port: number
+    paired: boolean
+    reachable: boolean
+    supported: boolean
+
+    static createFrom(source: any = {}) {
+      return new AgentInfo(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.deviceId = source['deviceId']
+      this.name = source['name']
+      this.app = source['app']
+      this.ver = source['ver']
+      this.fp = source['fp']
+      this.host = source['host']
+      this.port = source['port']
+      this.paired = source['paired']
+      this.reachable = source['reachable']
+      this.supported = source['supported']
+    }
+  }
+  export class StatusView {
+    deviceId: string
+    name: string
+    app: string
+    ver: number
+    power: string
+    capabilities: string[]
+
+    static createFrom(source: any = {}) {
+      return new StatusView(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.deviceId = source['deviceId']
+      this.name = source['name']
+      this.app = source['app']
+      this.ver = source['ver']
+      this.power = source['power']
+      this.capabilities = source['capabilities']
+    }
+  }
+  export class PowerResult {
+    ok: boolean
+    power: string
+
+    static createFrom(source: any = {}) {
+      return new PowerResult(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.ok = source['ok']
+      this.power = source['power']
+    }
+  }
+}

@@ -3,6 +3,7 @@ import type { ComponentType, SVGProps } from 'react'
 import {
   IconAdvanced,
   IconConnections,
+  IconDevices,
   IconHome,
   IconLogs,
   IconProfiles,
@@ -23,6 +24,7 @@ export const NAV_DEFS: {
   { id: 'connections', labelKey: 'nav.connections', Icon: IconConnections },
   { id: 'rules', labelKey: 'nav.rules', Icon: IconRules },
   { id: 'logs', labelKey: 'nav.logs', Icon: IconLogs },
+  { id: 'devices', labelKey: 'nav.devices', Icon: IconDevices },
   { id: 'advanced', labelKey: 'nav.advanced', Icon: IconAdvanced },
   { id: 'settings', labelKey: 'nav.settings', Icon: IconSettings },
 ]

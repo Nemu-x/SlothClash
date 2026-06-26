@@ -2,6 +2,7 @@
  *  page tools (path inspector, geo status, restart-core / reset-cache /
  *  re-extract). */
 export {
+  CopyTunDiagnostics,
   GetAdvancedGeoStatus,
   GetAdvancedPaths,
   GetRuntimeDiagEvents,

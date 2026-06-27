@@ -68,6 +68,7 @@
     "downloadInstaller": "下载并安装更新",
     "openReleasePage": "打开发布页",
     "openGithubRepo": "打开 GitHub 仓库",
+    "openTelegram": "打开 Telegram 群组",
     "reconnectOnManualProfileUpdate": "手动更新活动配置时重新连接",
     "coreTitle": "Mihomo / 内置核心",
     "updateChannelLabel": "通道",

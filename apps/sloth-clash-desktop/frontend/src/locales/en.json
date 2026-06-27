@@ -68,6 +68,7 @@
     "downloadInstaller": "Download & install update",
     "openReleasePage": "Open release page",
     "openGithubRepo": "Open GitHub repository",
+    "openTelegram": "Open Telegram group",
     "reconnectOnManualProfileUpdate": "Reconnect on manual active-profile update",
     "coreTitle": "Mihomo / embedded core",
     "updateChannelLabel": "Channel",

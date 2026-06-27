@@ -4,6 +4,7 @@ export const LS_NAV_COLLAPSED = 'sloth-nav-collapsed-v1'
 export const LS_SETTINGS = 'sloth-settings-v1'
 
 export const APP_REPO_URL = 'https://github.com/Nemu-x/SlothClash'
+export const APP_TELEGRAM_URL = 'https://t.me/nemux_dev'
 
 // Full mihomo (Clash.Meta) rule-type set, grouped: domain / IP / source-IP /
 // port / process / inbound / misc / rule-set & logical / MATCH last.

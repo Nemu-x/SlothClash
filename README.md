@@ -13,6 +13,8 @@
   ·
   <a href="./Changelog.md">Changelog</a>
   ·
+  <a href="https://t.me/nemux_dev">Telegram</a>
+  ·
   <a href="#support-the-project">Support</a>
 </p>
 

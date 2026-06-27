@@ -385,7 +385,7 @@ export function SettingsPage({
                 disabled={settingsBusy}
                 onClick={onApplyDefaultAutoUpdate}
               >
-                Apply defaults to profiles
+                {t('settings.applyDefaultsToProfiles')}
               </button>
               <button
                 type="button"
@@ -393,7 +393,7 @@ export function SettingsPage({
                 disabled={settingsBusy}
                 onClick={onRefreshAllSubs}
               >
-                Refresh all subscriptions
+                {t('settings.refreshAllSubs')}
               </button>
             </div>
           </div>
@@ -430,14 +430,14 @@ export function SettingsPage({
                 disabled={settingsBusy}
                 onClick={onExportDiagnostics}
               >
-                Export diagnostics bundle
+                {t('settings.exportDiagnostics')}
               </button>
               <button
                 type="button"
                 className="btn ghost"
                 onClick={onClearCache}
               >
-                Clear cache/temp
+                {t('settings.clearCache')}
               </button>
             </div>
             <div className="row">
@@ -446,14 +446,14 @@ export function SettingsPage({
                 className="btn ghost"
                 onClick={() => onOpenResetModal('keep_profiles')}
               >
-                Reset app settings
+                {t('settings.resetAppSettings')}
               </button>
               <button
                 type="button"
                 className="btn ghost"
                 onClick={() => onOpenResetModal('with_profiles')}
               >
-                Reset + remove profiles
+                {t('settings.resetRemoveProfiles')}
               </button>
             </div>
           </div>

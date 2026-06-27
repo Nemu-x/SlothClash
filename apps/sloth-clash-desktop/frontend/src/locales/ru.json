@@ -28,6 +28,7 @@
     "uiScale": "Масштаб интерфейса",
     "startMinimized": "Запуск свёрнутым",
     "launchOnStartup": "Автозапуск",
+    "autoConnectOnStartup": "Авто-подключение при запуске",
     "closeToTray": "Закрывать в трей (иначе выход)",
     "connection": "Подключение",
     "smartDns": "Умный DNS fallback",

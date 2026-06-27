@@ -229,6 +229,19 @@ export function SettingsPage({
               />
             </div>
             <div className="settingsToggleRow">
+              <span>{t('settings.autoConnectOnStartup')}</span>
+              <SettingsSwitch
+                checked={settings.autoConnectOnStartup}
+                label={t('settings.autoConnectOnStartup')}
+                onToggle={() =>
+                  onSetSetting(
+                    'autoConnectOnStartup',
+                    !settings.autoConnectOnStartup,
+                  )
+                }
+              />
+            </div>
+            <div className="settingsToggleRow">
               <span>{t('settings.closeToTray')}</span>
               <SettingsSwitch
                 checked={settings.closeToTray}

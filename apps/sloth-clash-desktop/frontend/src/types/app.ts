@@ -58,6 +58,7 @@ export type ConnectionsOverview = {
 export type CompactSettings = {
   startMinimized: boolean
   launchOnStartup: boolean
+  autoConnectOnStartup: boolean
   closeToTray: boolean
   dnsSmartFallback: boolean
   dnsIpv6: boolean

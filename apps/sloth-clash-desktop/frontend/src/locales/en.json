@@ -28,6 +28,7 @@
     "uiScale": "Interface scale",
     "startMinimized": "Start minimized",
     "launchOnStartup": "Launch on startup",
+    "autoConnectOnStartup": "Auto-connect on startup",
     "closeToTray": "Close to tray (else quit)",
     "connection": "Connection",
     "smartDns": "Smart DNS fallback",

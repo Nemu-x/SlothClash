@@ -28,6 +28,7 @@
     "uiScale": "界面缩放",
     "startMinimized": "启动时最小化",
     "launchOnStartup": "开机启动",
+    "autoConnectOnStartup": "启动时自动连接",
     "closeToTray": "关闭到托盘（否则退出）",
     "connection": "连接",
     "smartDns": "智能 DNS 回退",

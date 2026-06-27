@@ -5070,3 +5070,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+.settingsTopActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

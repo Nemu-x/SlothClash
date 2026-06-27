@@ -68,6 +68,7 @@
     "downloadInstaller": "Скачать и установить",
     "openReleasePage": "Страница релиза",
     "openGithubRepo": "Открыть репозиторий на GitHub",
+    "openTelegram": "Открыть Telegram-группу",
     "reconnectOnManualProfileUpdate": "Переподключаться при ручном обновлении активного профиля",
     "coreTitle": "Mihomo / встроенное ядро",
     "updateChannelLabel": "Канал",

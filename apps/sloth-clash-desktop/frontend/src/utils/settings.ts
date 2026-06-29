@@ -4,6 +4,7 @@ import type { CompactSettings } from '../types/app'
 export const DEFAULT_SETTINGS: CompactSettings = {
   startMinimized: false,
   launchOnStartup: false,
+  autoConnectOnStartup: false,
   closeToTray: true,
   dnsSmartFallback: true,
   dnsIpv6: false,

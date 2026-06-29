@@ -41,7 +41,6 @@ import {
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetUiLanguage,
-  StartedMinimized,
 } from './api/prefs'
 import {
   ActivateProfile,
@@ -419,13 +418,12 @@ function App() {
       } catch {
         /* ignore: registry not available (non-Windows / permission denied) */
       }
-      try {
-        const launchedHidden = await StartedMinimized()
-        if (launchedHidden || settings.startMinimized) {
-          WindowHide()
-        }
-      } catch {
-        if (settings.startMinimized) WindowHide()
+      // Honour ONLY the user's "Start minimized" preference. The autostart Run
+      // key launches the app with --minimized, but that flag must NOT override
+      // the setting — it used to force the window to the tray on every boot even
+      // when "Start minimized" was off, so the app ran headless.
+      if (settings.startMinimized) {
+        WindowHide()
       }
       try {
         const prefs = await GetDesktopPrefs()
@@ -1515,6 +1513,25 @@ function App() {
     }
     await refresh()
   }
+
+  // Auto-connect on startup (opt-in). Once, when enabled and an active profile
+  // exists and we are not already connecting/connected, bring the connection up
+  // in the last-active traffic mode. Reuses connectAction so it shares all the
+  // usual guards + error toasts.
+  const autoConnectFiredRef = useRef(false)
+  useEffect(() => {
+    if (autoConnectFiredRef.current) return
+    if (!settings.autoConnectOnStartup) return
+    if (!hasActiveProfile) return
+    const status = state?.connection?.status
+    if (status === 'connected' || status === 'connecting') return
+    autoConnectFiredRef.current = true
+    void connectAction()
+  }, [
+    settings.autoConnectOnStartup,
+    hasActiveProfile,
+    state?.connection?.status,
+  ])
 
   const refreshRuleProviderOne = useCallback(
     async (name: string) => {

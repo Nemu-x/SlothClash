@@ -1,9 +1,9 @@
 # nfpm config: one source of truth for deb / rpm / archlinux packages.
 # Run from the REPO ROOT: nfpm package -f apps/sloth-clash-desktop/build/linux/nfpm.yaml -p <deb|rpm|archlinux>
-# Version comes from the NFPM_VERSION env var (set by CI; arch gets a
+# Arch comes from NFPM_ARCH (amd64|arm64); version from the NFPM_VERSION env var (set by CI; arch gets a
 # pacman-safe variant since pkgver forbids '-' and '~').
 name: sloth-clash
-arch: amd64
+arch: ${NFPM_ARCH}
 platform: linux
 version: ${NFPM_VERSION}
 section: net

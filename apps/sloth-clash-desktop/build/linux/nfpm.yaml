@@ -1,0 +1,41 @@
+# nfpm config: one source of truth for deb / rpm / archlinux packages.
+# Run from the REPO ROOT: nfpm package -f apps/sloth-clash-desktop/build/linux/nfpm.yaml -p <deb|rpm|archlinux>
+# Version comes from the NFPM_VERSION env var (set by CI; arch gets a
+# pacman-safe variant since pkgver forbids '-' and '~').
+name: sloth-clash
+arch: amd64
+platform: linux
+version: ${NFPM_VERSION}
+section: net
+priority: optional
+maintainer: Nemu-x <Nemu-x@users.noreply.github.com>
+vendor: Nemu-x
+homepage: https://github.com/Nemu-x/SlothClash
+license: GPL-3.0
+description: |
+  Clash Meta (Mihomo) desktop client.
+  TUN/system-proxy GUI with subscriptions, rules and proxy-group management.
+contents:
+  - src: apps/sloth-clash-desktop/build/bin/sloth-clash-desktop
+    dst: /usr/bin/sloth-clash-desktop
+    file_info:
+      mode: 0755
+  - src: apps/sloth-clash-desktop/build/linux/sloth-clash.desktop
+    dst: /usr/share/applications/sloth-clash.desktop
+  - src: apps/sloth-clash-desktop/build/appicon.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/sloth-clash.png
+scripts:
+  postinstall: apps/sloth-clash-desktop/build/linux/postinstall.sh
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+  rpm:
+    depends:
+      - gtk3
+      - webkit2gtk4.1
+  archlinux:
+    depends:
+      - gtk3
+      - webkit2gtk-4.1

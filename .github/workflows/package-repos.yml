@@ -105,22 +105,8 @@ jobs:
 
       - name: Landing page
         run: |
-          cat > site/index.html <<'EOF'
-          <!doctype html><meta charset="utf-8"><title>SlothClash packages</title>
-          <body style="font-family:sans-serif;max-width:720px;margin:40px auto;line-height:1.5">
-          <h1>SlothClash Linux package repositories</h1>
-          <h2>Debian / Ubuntu (apt)</h2>
-          <pre>curl -fsSL https://nemu-x.github.io/SlothClash/apt/key.gpg | sudo tee /usr/share/keyrings/slothclash.gpg &gt;/dev/null
-          echo "deb [signed-by=/usr/share/keyrings/slothclash.gpg] https://nemu-x.github.io/SlothClash/apt ./" | sudo tee /etc/apt/sources.list.d/slothclash.list
-          sudo apt update &amp;&amp; sudo apt install sloth-clash</pre>
-          <h2>Fedora / openSUSE (dnf)</h2>
-          <pre>sudo dnf config-manager --add-repo https://nemu-x.github.io/SlothClash/rpm/slothclash.repo
-          sudo dnf install sloth-clash</pre>
-          <h2>Arch Linux</h2>
-          <pre>sudo pacman -U https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.pkg.tar.zst</pre>
-          <p><a href="https://github.com/Nemu-x/SlothClash">GitHub repository</a></p>
-          </body>
-          EOF
+          cp docs/readmelogo.png site/logo.png
+          python3 packaging/site/generate.py --out site
 
       - uses: actions/upload-pages-artifact@v3
         with:

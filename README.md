@@ -69,7 +69,18 @@ Sloth Clash is a **GPL-3.0** GUI around **Mihomo** (Clash Meta). This repository
 | Windows (ARM64) | [SlothClash-windows-arm64-installer.exe](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-windows-arm64-installer.exe) |
 | macOS (Apple Silicon) | [SlothClash-macOS-arm64.dmg](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-macOS-arm64.dmg) |
 | macOS (Intel) | [SlothClash-macOS-x64.dmg](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-macOS-x64.dmg) |
-| Linux (x64) | [sloth-clash-linux-amd64.tar.gz](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.tar.gz) |
+| Linux (x64, AppImage) | [SlothClash-linux-amd64.AppImage](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-linux-amd64.AppImage) |
+| Linux (x64, deb) | [sloth-clash-linux-amd64.deb](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.deb) |
+| Linux (x64, rpm) | [sloth-clash-linux-amd64.rpm](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.rpm) |
+| Linux (x64, Arch) | [sloth-clash-linux-amd64.pkg.tar.zst](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.pkg.tar.zst) |
+| Linux (x64, tar.gz) | [sloth-clash-linux-amd64.tar.gz](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.tar.gz) |
+| Linux (ARM64, AppImage) | [SlothClash-linux-arm64.AppImage](https://github.com/Nemu-x/SlothClash/releases/latest/download/SlothClash-linux-arm64.AppImage) |
+| Linux (ARM64, deb) | [sloth-clash-linux-arm64.deb](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.deb) |
+| Linux (ARM64, rpm) | [sloth-clash-linux-arm64.rpm](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.rpm) |
+| Linux (ARM64, Arch) | [sloth-clash-linux-arm64.pkg.tar.zst](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.pkg.tar.zst) |
+| Linux (ARM64, tar.gz) | [sloth-clash-linux-arm64.tar.gz](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.tar.gz) |
+
+Linux packages install a menu entry, the app icon, and the `slothclash://` link handler; the AppImage and tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro.
 
 All releases & changelog: [SlothClash releases](https://github.com/Nemu-x/SlothClash/releases). Verify integrity against [`SHA256SUMS`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS) (signed — [`SHA256SUMS.minisig`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS.minisig)).  
 Service binaries used at build time: [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases).

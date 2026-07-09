@@ -1708,11 +1708,6 @@ func truncateString(s string, maxRunes int) string {
 	return string(r[:maxRunes]) + "\n…(truncated)"
 }
 
-func isUnsafeGroup(name string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(name))
-	return upper == "REJECT" || upper == "DIRECT"
-}
-
 func extractEmbeddedDir(bundle embed.FS, prefix string, dest string) error {
 	return fs.WalkDir(bundle, prefix, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

@@ -81,7 +81,7 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 	}
 	out, qerr := qcmd.CombinedOutput()
 	if qerr != nil {
-		return fmt.Errorf("Sloth IPC service pipe not reachable (%v); is `%s` installed and running? (sc query: %w)\n%s", err, slothWindowsSCMService, qerr, strings.TrimSpace(string(out)))
+		return fmt.Errorf("sloth IPC service pipe not reachable (%v); is `%s` installed and running? (sc query: %w)\n%s", err, slothWindowsSCMService, qerr, strings.TrimSpace(string(out)))
 	}
 	lower := strings.ToLower(string(out))
 	if !strings.Contains(lower, "running") {
@@ -96,7 +96,7 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 	defer rcancel()
 	c2, err2 := winio.DialPipeContext(rctx, slothWindowsServicePipe)
 	if err2 != nil {
-		return fmt.Errorf("Sloth IPC pipe still unreachable after attempting to start `%s`: %w (original dial: %v)", slothWindowsSCMService, err2, err)
+		return fmt.Errorf("sloth IPC pipe still unreachable after attempting to start `%s`: %w (original dial: %v)", slothWindowsSCMService, err2, err)
 	}
 	_ = c2.Close()
 	return nil

@@ -36,6 +36,14 @@ jobs:
       - name: Run required PR test gate
         run: pnpm run test:required
 
+      - name: Go race detector (linux only; needs cgo)
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: apps/sloth-clash-desktop
+        env:
+          CGO_ENABLED: '1'
+          SLOTH_OFFLINE: '1'
+        run: go test -race ./... -count=1
+
       - name: PR guidance on failure
         if: failure()
         shell: bash

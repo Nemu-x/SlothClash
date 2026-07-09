@@ -5,56 +5,6 @@ import (
 	"strings"
 )
 
-// ensureGlobalProxyGroup prepends a GLOBAL selector when missing so PATCH mode global +
-// PUT /proxies/GLOBAL works (many published profiles omit an explicit GLOBAL group).
-func ensureGlobalProxyGroup(m map[string]any) {
-	raw, ok := m["proxy-groups"]
-	if !ok || raw == nil {
-		return
-	}
-	arr, ok := raw.([]any)
-	if !ok || len(arr) == 0 {
-		return
-	}
-	for _, g := range arr {
-		gm, ok := g.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := gm["name"].(string)
-		if strings.EqualFold(strings.TrimSpace(name), "GLOBAL") {
-			return
-		}
-	}
-
-	seen := map[string]bool{"DIRECT": true, "REJECT": true}
-	outNames := []string{"DIRECT", "REJECT"}
-	for _, g := range arr {
-		gm, ok := g.(map[string]any)
-		if !ok {
-			continue
-		}
-		n, _ := gm["name"].(string)
-		// Preserve the group name verbatim (trailing/leading whitespace included)
-		// so GLOBAL's reference matches the group's declared name byte-for-byte.
-		trimmed := strings.TrimSpace(n)
-		if trimmed == "" || strings.EqualFold(trimmed, "GLOBAL") {
-			continue
-		}
-		if !seen[n] {
-			seen[n] = true
-			outNames = append(outNames, n)
-		}
-	}
-
-	global := map[string]any{
-		"name":    "GLOBAL",
-		"type":    "select",
-		"proxies": outNames,
-	}
-	m["proxy-groups"] = append([]any{global}, arr...)
-}
-
 func validateRulePoliciesExist(m map[string]any) error {
 	known := map[string]bool{
 		"DIRECT":      true,

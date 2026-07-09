@@ -121,21 +121,6 @@ func (a *App) PeekSubscriptionFromURL(raw string) (SubscriptionPeek, error) {
 	return peekSubscription(context.Background(), raw)
 }
 
-func resolveSubscriptionName(ctx context.Context, nameHint, raw string) (finalName string, peek SubscriptionPeek, err error) {
-	peek, err = peekSubscription(ctx, raw)
-	if err != nil {
-		return "", peek, err
-	}
-	hint := strings.TrimSpace(nameHint)
-	if hint != "" {
-		return hint, peek, nil
-	}
-	if strings.TrimSpace(peek.SuggestedName) != "" {
-		return strings.TrimSpace(peek.SuggestedName), peek, nil
-	}
-	return "Subscription", peek, nil
-}
-
 func hostFromSubscriptionURL(norm string) string {
 	u, err := url.Parse(norm)
 	if err != nil || u.Hostname() == "" {

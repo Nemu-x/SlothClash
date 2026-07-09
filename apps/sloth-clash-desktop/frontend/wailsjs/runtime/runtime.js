@@ -9,200 +9,200 @@ The electron alternative for Go
 */
 
 export function LogPrint(message) {
-    window.runtime.LogPrint(message);
+  window.runtime.LogPrint(message)
 }
 
 export function LogTrace(message) {
-    window.runtime.LogTrace(message);
+  window.runtime.LogTrace(message)
 }
 
 export function LogDebug(message) {
-    window.runtime.LogDebug(message);
+  window.runtime.LogDebug(message)
 }
 
 export function LogInfo(message) {
-    window.runtime.LogInfo(message);
+  window.runtime.LogInfo(message)
 }
 
 export function LogWarning(message) {
-    window.runtime.LogWarning(message);
+  window.runtime.LogWarning(message)
 }
 
 export function LogError(message) {
-    window.runtime.LogError(message);
+  window.runtime.LogError(message)
 }
 
 export function LogFatal(message) {
-    window.runtime.LogFatal(message);
+  window.runtime.LogFatal(message)
 }
 
 export function EventsOnMultiple(eventName, callback, maxCallbacks) {
-    return window.runtime.EventsOnMultiple(eventName, callback, maxCallbacks);
+  return window.runtime.EventsOnMultiple(eventName, callback, maxCallbacks)
 }
 
 export function EventsOn(eventName, callback) {
-    return EventsOnMultiple(eventName, callback, -1);
+  return EventsOnMultiple(eventName, callback, -1)
 }
 
 export function EventsOff(eventName, ...additionalEventNames) {
-    return window.runtime.EventsOff(eventName, ...additionalEventNames);
+  return window.runtime.EventsOff(eventName, ...additionalEventNames)
 }
 
 export function EventsOffAll() {
-  return window.runtime.EventsOffAll();
+  return window.runtime.EventsOffAll()
 }
 
 export function EventsOnce(eventName, callback) {
-    return EventsOnMultiple(eventName, callback, 1);
+  return EventsOnMultiple(eventName, callback, 1)
 }
 
 export function EventsEmit(eventName) {
-    let args = [eventName].slice.call(arguments);
-    return window.runtime.EventsEmit.apply(null, args);
+  let args = [eventName].slice.call(arguments)
+  return window.runtime.EventsEmit.apply(null, args)
 }
 
 export function WindowReload() {
-    window.runtime.WindowReload();
+  window.runtime.WindowReload()
 }
 
 export function WindowReloadApp() {
-    window.runtime.WindowReloadApp();
+  window.runtime.WindowReloadApp()
 }
 
 export function WindowSetAlwaysOnTop(b) {
-    window.runtime.WindowSetAlwaysOnTop(b);
+  window.runtime.WindowSetAlwaysOnTop(b)
 }
 
 export function WindowSetSystemDefaultTheme() {
-    window.runtime.WindowSetSystemDefaultTheme();
+  window.runtime.WindowSetSystemDefaultTheme()
 }
 
 export function WindowSetLightTheme() {
-    window.runtime.WindowSetLightTheme();
+  window.runtime.WindowSetLightTheme()
 }
 
 export function WindowSetDarkTheme() {
-    window.runtime.WindowSetDarkTheme();
+  window.runtime.WindowSetDarkTheme()
 }
 
 export function WindowCenter() {
-    window.runtime.WindowCenter();
+  window.runtime.WindowCenter()
 }
 
 export function WindowSetTitle(title) {
-    window.runtime.WindowSetTitle(title);
+  window.runtime.WindowSetTitle(title)
 }
 
 export function WindowFullscreen() {
-    window.runtime.WindowFullscreen();
+  window.runtime.WindowFullscreen()
 }
 
 export function WindowUnfullscreen() {
-    window.runtime.WindowUnfullscreen();
+  window.runtime.WindowUnfullscreen()
 }
 
 export function WindowIsFullscreen() {
-    return window.runtime.WindowIsFullscreen();
+  return window.runtime.WindowIsFullscreen()
 }
 
 export function WindowGetSize() {
-    return window.runtime.WindowGetSize();
+  return window.runtime.WindowGetSize()
 }
 
 export function WindowSetSize(width, height) {
-    window.runtime.WindowSetSize(width, height);
+  window.runtime.WindowSetSize(width, height)
 }
 
 export function WindowSetMaxSize(width, height) {
-    window.runtime.WindowSetMaxSize(width, height);
+  window.runtime.WindowSetMaxSize(width, height)
 }
 
 export function WindowSetMinSize(width, height) {
-    window.runtime.WindowSetMinSize(width, height);
+  window.runtime.WindowSetMinSize(width, height)
 }
 
 export function WindowSetPosition(x, y) {
-    window.runtime.WindowSetPosition(x, y);
+  window.runtime.WindowSetPosition(x, y)
 }
 
 export function WindowGetPosition() {
-    return window.runtime.WindowGetPosition();
+  return window.runtime.WindowGetPosition()
 }
 
 export function WindowHide() {
-    window.runtime.WindowHide();
+  window.runtime.WindowHide()
 }
 
 export function WindowShow() {
-    window.runtime.WindowShow();
+  window.runtime.WindowShow()
 }
 
 export function WindowMaximise() {
-    window.runtime.WindowMaximise();
+  window.runtime.WindowMaximise()
 }
 
 export function WindowToggleMaximise() {
-    window.runtime.WindowToggleMaximise();
+  window.runtime.WindowToggleMaximise()
 }
 
 export function WindowUnmaximise() {
-    window.runtime.WindowUnmaximise();
+  window.runtime.WindowUnmaximise()
 }
 
 export function WindowIsMaximised() {
-    return window.runtime.WindowIsMaximised();
+  return window.runtime.WindowIsMaximised()
 }
 
 export function WindowMinimise() {
-    window.runtime.WindowMinimise();
+  window.runtime.WindowMinimise()
 }
 
 export function WindowUnminimise() {
-    window.runtime.WindowUnminimise();
+  window.runtime.WindowUnminimise()
 }
 
 export function WindowSetBackgroundColour(R, G, B, A) {
-    window.runtime.WindowSetBackgroundColour(R, G, B, A);
+  window.runtime.WindowSetBackgroundColour(R, G, B, A)
 }
 
 export function ScreenGetAll() {
-    return window.runtime.ScreenGetAll();
+  return window.runtime.ScreenGetAll()
 }
 
 export function WindowIsMinimised() {
-    return window.runtime.WindowIsMinimised();
+  return window.runtime.WindowIsMinimised()
 }
 
 export function WindowIsNormal() {
-    return window.runtime.WindowIsNormal();
+  return window.runtime.WindowIsNormal()
 }
 
 export function BrowserOpenURL(url) {
-    window.runtime.BrowserOpenURL(url);
+  window.runtime.BrowserOpenURL(url)
 }
 
 export function Environment() {
-    return window.runtime.Environment();
+  return window.runtime.Environment()
 }
 
 export function Quit() {
-    window.runtime.Quit();
+  window.runtime.Quit()
 }
 
 export function Hide() {
-    window.runtime.Hide();
+  window.runtime.Hide()
 }
 
 export function Show() {
-    window.runtime.Show();
+  window.runtime.Show()
 }
 
 export function ClipboardGetText() {
-    return window.runtime.ClipboardGetText();
+  return window.runtime.ClipboardGetText()
 }
 
 export function ClipboardSetText(text) {
-    return window.runtime.ClipboardSetText(text);
+  return window.runtime.ClipboardSetText(text)
 }
 
 /**
@@ -223,76 +223,76 @@ export function ClipboardSetText(text) {
  * @param {boolean} [useDropTarget=true] - Only call the callback when the drop finished on an element that has the drop target style. (--wails-drop-target)
  */
 export function OnFileDrop(callback, useDropTarget) {
-    return window.runtime.OnFileDrop(callback, useDropTarget);
+  return window.runtime.OnFileDrop(callback, useDropTarget)
 }
 
 /**
  * OnFileDropOff removes the drag and drop listeners and handlers.
  */
 export function OnFileDropOff() {
-    return window.runtime.OnFileDropOff();
+  return window.runtime.OnFileDropOff()
 }
 
 export function CanResolveFilePaths() {
-    return window.runtime.CanResolveFilePaths();
+  return window.runtime.CanResolveFilePaths()
 }
 
 export function ResolveFilePaths(files) {
-    return window.runtime.ResolveFilePaths(files);
+  return window.runtime.ResolveFilePaths(files)
 }
 
 export function InitializeNotifications() {
-    return window.runtime.InitializeNotifications();
+  return window.runtime.InitializeNotifications()
 }
 
 export function CleanupNotifications() {
-    return window.runtime.CleanupNotifications();
+  return window.runtime.CleanupNotifications()
 }
 
 export function IsNotificationAvailable() {
-    return window.runtime.IsNotificationAvailable();
+  return window.runtime.IsNotificationAvailable()
 }
 
 export function RequestNotificationAuthorization() {
-    return window.runtime.RequestNotificationAuthorization();
+  return window.runtime.RequestNotificationAuthorization()
 }
 
 export function CheckNotificationAuthorization() {
-    return window.runtime.CheckNotificationAuthorization();
+  return window.runtime.CheckNotificationAuthorization()
 }
 
 export function SendNotification(options) {
-    return window.runtime.SendNotification(options);
+  return window.runtime.SendNotification(options)
 }
 
 export function SendNotificationWithActions(options) {
-    return window.runtime.SendNotificationWithActions(options);
+  return window.runtime.SendNotificationWithActions(options)
 }
 
 export function RegisterNotificationCategory(category) {
-    return window.runtime.RegisterNotificationCategory(category);
+  return window.runtime.RegisterNotificationCategory(category)
 }
 
 export function RemoveNotificationCategory(categoryId) {
-    return window.runtime.RemoveNotificationCategory(categoryId);
+  return window.runtime.RemoveNotificationCategory(categoryId)
 }
 
 export function RemoveAllPendingNotifications() {
-    return window.runtime.RemoveAllPendingNotifications();
+  return window.runtime.RemoveAllPendingNotifications()
 }
 
 export function RemovePendingNotification(identifier) {
-    return window.runtime.RemovePendingNotification(identifier);
+  return window.runtime.RemovePendingNotification(identifier)
 }
 
 export function RemoveAllDeliveredNotifications() {
-    return window.runtime.RemoveAllDeliveredNotifications();
+  return window.runtime.RemoveAllDeliveredNotifications()
 }
 
 export function RemoveDeliveredNotification(identifier) {
-    return window.runtime.RemoveDeliveredNotification(identifier);
+  return window.runtime.RemoveDeliveredNotification(identifier)
 }
 
 export function RemoveNotification(identifier) {
-    return window.runtime.RemoveNotification(identifier);
+  return window.runtime.RemoveNotification(identifier)
 }

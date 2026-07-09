@@ -367,34 +367,6 @@ func parseTrafficLine(line []byte) (up int, down int, ok bool) {
 	return int(u), int(d), true
 }
 
-func parseTrafficSnapshot(b []byte) (up int, down int, ok bool) {
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return 0, 0, false
-	}
-	if u, d, ok := parseTrafficLine(b); ok {
-		return u, d, true
-	}
-	var lastU, lastD int
-	var found bool
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		}
-		if u, d, ok := parseTrafficLine([]byte(line)); ok {
-			lastU, lastD, found = u, d, true
-		}
-	}
-	if found {
-		return lastU, lastD, true
-	}
-	return 0, 0, false
-}
-
 // fetchMihomoTraffic reads GET /traffic (kbps up/down).
 // mihomo streams one JSON object per second forever; reading the full body would block until the
 // HTTP context deadline. We only consume the first complete line(s) and close the response.

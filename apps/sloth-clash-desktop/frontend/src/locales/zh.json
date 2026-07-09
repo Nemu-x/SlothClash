@@ -464,6 +464,29 @@
       "geoIpLabel": "geoip.dat",
       "geoSiteLabel": "geosite.dat",
       "geoNotExtracted": "尚未解包 — 请先连接一次以初始化。"
+    },
+    "toasts": {
+      "profileAddedFromLink": "已通过链接添加配置“{{name}}”。",
+      "subAddedFromLink": "已通过链接添加订阅。",
+      "subAddFromLinkFailed": "无法通过链接添加订阅。",
+      "coreRestarting": "内核已退出 — 正在自动重启...",
+      "connRecovered": "连接已恢复。",
+      "coreNoRecover": "内核无法自动恢复。",
+      "retry": "重试",
+      "logs": "日志",
+      "connectFailed": "连接失败。",
+      "connectTooLong": "连接耗时过长。正在重置界面 — 请查看日志后重试。",
+      "noSubsToRefresh": "没有可刷新的订阅配置。",
+      "refreshedSubs": "已刷新 {{count}} 个订阅配置。",
+      "noProfilesYet": "暂无可更新的配置。",
+      "diagExported": "诊断包已导出。",
+      "uiCacheCleared": "临时界面/缓存状态已清除。",
+      "clipboardReadFail": "无法读取剪贴板 — 请手动粘贴。",
+      "configPathCopied": "配置路径已复制。",
+      "urlCopied": "订阅 URL 已复制。",
+      "nameCopied": "名称已复制。",
+      "resetRemoved": "重置完成（已删除配置）。",
+      "resetKept": "重置完成（已保留配置）。"
     }
   },
   "common": {

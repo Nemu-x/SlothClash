@@ -176,7 +176,7 @@ func (a *App) refreshDueProfiles() {
 		}
 		enabled := p.AutoUpdateEnabled
 		// Backward compatibility: old profiles (without the new field) default to enabled.
-		if p.AutoUpdateEnabled == false && p.AutoUpdateIntervalMinutes == 0 {
+		if !p.AutoUpdateEnabled && p.AutoUpdateIntervalMinutes == 0 {
 			enabled = true
 		}
 		if !enabled {

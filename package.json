@@ -33,7 +33,8 @@
     "lint:fix": "eslint -c eslint.config.ts --max-warnings=0 --cache --cache-location .eslintcache --fix apps/sloth-clash-desktop/frontend/src",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "typecheck": "pnpm exec tsc --noEmit -p apps/sloth-clash-desktop/frontend/tsconfig.json"
+    "bindings": "node scripts/wails.mjs generate module && pnpm exec biome format --write apps/sloth-clash-desktop/frontend/wailsjs/go apps/sloth-clash-desktop/frontend/wailsjs/runtime",
+    "typecheck": "pnpm run bindings && pnpm exec tsc --noEmit -p apps/sloth-clash-desktop/frontend/tsconfig.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

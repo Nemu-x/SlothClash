@@ -464,6 +464,29 @@
       "geoIpLabel": "geoip.dat",
       "geoSiteLabel": "geosite.dat",
       "geoNotExtracted": "Not extracted yet — Connect once to provision."
+    },
+    "toasts": {
+      "profileAddedFromLink": "Profile “{{name}}” added from link.",
+      "subAddedFromLink": "Subscription added from link.",
+      "subAddFromLinkFailed": "Could not add subscription from link.",
+      "coreRestarting": "Core exited — auto-restarting...",
+      "connRecovered": "Connection recovered.",
+      "coreNoRecover": "Core could not recover automatically.",
+      "retry": "Retry",
+      "logs": "Logs",
+      "connectFailed": "Connect failed.",
+      "connectTooLong": "Connection is taking unusually long. Forcing UI reset — check Logs and try again.",
+      "noSubsToRefresh": "No subscription profiles to refresh.",
+      "refreshedSubs": "Refreshed {{count}} subscription profile(s).",
+      "noProfilesYet": "No profiles to update yet.",
+      "diagExported": "Diagnostics bundle exported.",
+      "uiCacheCleared": "Temporary UI/cache state cleared.",
+      "clipboardReadFail": "Could not read clipboard — paste manually.",
+      "configPathCopied": "Config path copied.",
+      "urlCopied": "Subscription URL copied.",
+      "nameCopied": "Name copied.",
+      "resetRemoved": "Settings reset complete (profiles removed).",
+      "resetKept": "Settings reset complete (profiles preserved)."
     }
   },
   "common": {

@@ -528,15 +528,13 @@ function App() {
       if (p?.success) {
         setError('')
         const n = p.profileName
-          ? `Profile “${p.profileName}” added from link.`
-          : 'Subscription added from link.'
+          ? t('ui.toasts.profileAddedFromLink', { name: p.profileName })
+          : t('ui.toasts.subAddedFromLink')
         pushToast({ kind: 'success', message: n })
       } else {
         pushToast({
           kind: 'error',
-          message: String(
-            p?.message ?? 'Could not add subscription from link.',
-          ),
+          message: String(p?.message ?? t('ui.toasts.subAddFromLinkFailed')),
           durationMs: 0,
         })
       }
@@ -558,17 +556,17 @@ function App() {
       const detail = String(state?.connection?.lastError ?? '').trim()
       pushToast({
         kind: 'warn',
-        message: detail || 'Core exited — auto-restarting...',
+        message: detail || t('ui.toasts.coreRestarting'),
       })
     } else if (prev === 'reconnecting' && cur === 'connected') {
-      pushToast({ kind: 'success', message: 'Connection recovered.' })
+      pushToast({ kind: 'success', message: t('ui.toasts.connRecovered') })
     } else if (prev === 'reconnecting' && cur === 'error') {
       pushToast({
         kind: 'error',
         message:
           String(state?.connection?.lastError ?? '') ||
-          'Core could not recover automatically.',
-        actionLabel: 'Retry',
+          t('ui.toasts.coreNoRecover'),
+        actionLabel: t('ui.toasts.retry'),
         onAction: () => {
           void run(() => Connect())
         },
@@ -581,8 +579,9 @@ function App() {
       pushToast({
         kind: 'error',
         message:
-          String(state?.connection?.lastError ?? '') || 'Connect failed.',
-        actionLabel: 'Logs',
+          String(state?.connection?.lastError ?? '') ||
+          t('ui.toasts.connectFailed'),
+        actionLabel: t('ui.toasts.logs'),
         onAction: () => setScreen('advanced'),
         durationMs: 0,
       })
@@ -631,8 +630,7 @@ function App() {
     const giveUp = window.setTimeout(() => {
       pushToast({
         kind: 'warn',
-        message:
-          'Connection is taking unusually long. Forcing UI reset — check Logs and try again.',
+        message: t('ui.toasts.connectTooLong'),
         durationMs: 8_000,
       })
       setConnectBusy(false)
@@ -1010,7 +1008,7 @@ function App() {
     const profiles = state?.profile?.profiles ?? []
     const subs = profiles.filter((p: any) => String(p?.url ?? '').trim())
     if (subs.length === 0) {
-      setTunBanner('No subscription profiles to refresh.')
+      setTunBanner(t('ui.toasts.noSubsToRefresh'))
       return
     }
     setSettingsBusy(true)
@@ -1019,7 +1017,7 @@ function App() {
       for (const p of subs) {
         await RefreshProfileSubscription(String(p.id))
       }
-      setTunBanner(`Refreshed ${subs.length} subscription profile(s).`)
+      setTunBanner(t('ui.toasts.refreshedSubs', { count: subs.length }))
     } catch (e: any) {
       setError(String(e))
     } finally {
@@ -1032,7 +1030,7 @@ function App() {
     if (settingsBusy) return
     const profiles = state?.profile?.profiles ?? []
     if (profiles.length === 0) {
-      setTunBanner('No profiles to update yet.')
+      setTunBanner(t('ui.toasts.noProfilesYet'))
       return
     }
     const interval = Math.max(
@@ -1088,7 +1086,7 @@ function App() {
       a.download = `sloth-diagnostics-${stamp}.json`
       a.click()
       URL.revokeObjectURL(url)
-      setTunBanner('Diagnostics bundle exported.')
+      setTunBanner(t('ui.toasts.diagExported'))
     } catch (e: any) {
       setError(String(e))
     } finally {
@@ -1101,7 +1099,7 @@ function App() {
     setSpotlightStep(0)
     setSpotlightOpen(true)
     setScreen('home')
-    setTunBanner('Temporary UI/cache state cleared.')
+    setTunBanner(t('ui.toasts.uiCacheCleared'))
   }
 
   const resetAppSettings = async (withProfiles: boolean) => {
@@ -1125,9 +1123,7 @@ function App() {
         }
       }
       setTunBanner(
-        withProfiles
-          ? 'Settings reset complete (profiles removed).'
-          : 'Settings reset complete (profiles preserved).',
+        withProfiles ? t('ui.toasts.resetRemoved') : t('ui.toasts.resetKept'),
       )
     } catch (e: any) {
       setError(String(e))
@@ -1430,7 +1426,7 @@ function App() {
       if (importMode === 'paste') setImportContent(text)
       else setImportUrl(text.trim())
     } catch {
-      setError('Could not read clipboard — paste manually.')
+      setError(t('ui.toasts.clipboardReadFail'))
     }
   }
 
@@ -1515,7 +1511,7 @@ function App() {
       pushToast({
         kind: 'error',
         message: msg,
-        actionLabel: 'Logs',
+        actionLabel: t('ui.toasts.logs'),
         onAction: () => setScreen('advanced'),
         durationMs: 0,
       })
@@ -2063,7 +2059,7 @@ function App() {
         onCopyPath={(path) => {
           if (path) {
             void navigator.clipboard.writeText(path)
-            setTunBanner('Config path copied.')
+            setTunBanner(t('ui.toasts.configPathCopied'))
           }
         }}
         onClose={() => setProfileFileModal(null)}
@@ -2133,13 +2129,13 @@ function App() {
         onCopyUrl={(url) => {
           if (url) {
             void navigator.clipboard.writeText(url)
-            setTunBanner('Subscription URL copied.')
+            setTunBanner(t('ui.toasts.urlCopied'))
           }
         }}
         onCopyName={(name) => {
           if (name) {
             void navigator.clipboard.writeText(name)
-            setTunBanner('Name copied.')
+            setTunBanner(t('ui.toasts.nameCopied'))
           }
         }}
         onClose={() => setProfileEditInfo(null)}
@@ -2197,7 +2193,7 @@ function App() {
         onCopyUrl={(url) => {
           if (url) {
             void navigator.clipboard.writeText(url)
-            setTunBanner('Subscription URL copied.')
+            setTunBanner(t('ui.toasts.urlCopied'))
           }
           setProfileMenu(null)
         }}

@@ -151,6 +151,7 @@ func stopServiceRobust(name string, prevStartFromQC string) error {
 		_ = err
 
 		deadline := time.Now().Add(stopWait)
+	waitLoop:
 		for time.Now().Before(deadline) {
 			st, ok := queryServiceState(name)
 			if !ok {
@@ -168,8 +169,9 @@ func stopServiceRobust(name string, prevStartFromQC string) error {
 				time.Sleep(400 * time.Millisecond)
 				continue
 			case "RUNNING":
-				// Still running after a stop attempt; retry outer loop.
-				break
+				// Still running after a stop attempt; re-issue the stop
+				// (outer attempts loop) instead of idling out the deadline.
+				break waitLoop
 			}
 			time.Sleep(400 * time.Millisecond)
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -118,6 +119,22 @@ func (a *App) attemptCoreAutoRestart(profileID, traffic string) {
 				"error":     err.Error(),
 			})
 			continue
+		}
+		if enableTun {
+			// Same out-of-band adapter verification the Connect pipeline uses —
+			// without it a recovery could reintroduce the false-"connected"
+			// dead-adapter state (audit finding C1). Superseded → stop quietly.
+			if err := a.ensureTunUpWithRetry(active, a.connectGen.Load()); err != nil {
+				if errors.Is(err, errConnectAborted) {
+					return
+				}
+				a.traceEvent("core.autorestart.tun_verify_failed", "fail", 0, map[string]any{
+					"profileId": profileID,
+					"attempt":   attempt,
+					"error":     err.Error(),
+				})
+				continue
+			}
 		}
 
 		// Success — flip status back to connected. Mirror what

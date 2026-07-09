@@ -58,7 +58,7 @@ func (a *App) runRuntimeSupervisorLoop(ctx context.Context) {
 			gap := time.Since(lastTick)
 			if gap > 75*time.Second {
 				a.appendRuntimeDiag("network.resume", fmt.Sprintf("gap=%s", gap.Round(time.Second)))
-				a.runNetworkResumePass()
+				a.runNetworkResumePass(&restartInProgress)
 				// A resume pass already probed/handled the core; don't double-count.
 				coreFails = 0
 			}
@@ -126,7 +126,7 @@ func (a *App) runCoreHealthWatch(consecutiveFails int, restartInProgress *atomic
 	return 0
 }
 
-func (a *App) runNetworkResumePass() {
+func (a *App) runNetworkResumePass(restartInProgress *atomic.Bool) {
 	gen := a.connectGen.Load()
 	a.mu.RLock()
 	if strings.TrimSpace(a.state.Connection.Status) != "connected" {
@@ -136,6 +136,7 @@ func (a *App) runNetworkResumePass() {
 	listen := a.effectiveCoreEndpointLocked()
 	secret := a.coreSecret
 	traffic := strings.TrimSpace(a.state.Traffic)
+	profileID := strings.TrimSpace(a.coreActiveProfileID)
 	a.mu.RUnlock()
 	if strings.TrimSpace(listen) == "" {
 		return
@@ -151,6 +152,32 @@ func (a *App) runNetworkResumePass() {
 		}
 		a.mu.Unlock()
 		a.emitAppStateChanged()
+		return
+	}
+	// Sleep/resume is a classic wintun killer: the controller API answers while
+	// the adapter is gone (audit finding C2). Verify the adapter and run the
+	// standard bounded recovery (which re-verifies TUN on success, see C1).
+	if traffic == "tun" && !osHasTunAdapter() {
+		if a.connectGen.Load() != gen || profileID == "" {
+			return
+		}
+		if !restartInProgress.CompareAndSwap(false, true) {
+			return
+		}
+		a.mu.Lock()
+		a.state.Core.Running = false
+		a.state.Core.Lifecycle = "degraded"
+		a.state.Connection.Status = ConnError
+		a.state.Connection.Health = ""
+		a.state.Connection.LastError = "TUN adapter disappeared after sleep/network change"
+		a.state.UpdatedAt = time.Now().Unix()
+		a.mu.Unlock()
+		a.emitAppStateChanged()
+		a.traceEvent("core.resume.tun_missing", "fail", 0, map[string]any{"profileId": profileID})
+		go func() {
+			defer restartInProgress.Store(false)
+			a.attemptCoreAutoRestart(profileID, traffic)
+		}()
 		return
 	}
 	go func() { _, _ = a.RefreshHomeInsight() }()

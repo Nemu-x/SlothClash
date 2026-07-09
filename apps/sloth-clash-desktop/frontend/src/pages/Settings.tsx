@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
-import { APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
+import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
 import type { CompactSettings } from '../types/app'
 import { UI_SCALE_OPTIONS } from '../utils/settings'
 import { friendlyErrorMessage } from '../utils/yaml'
@@ -594,17 +594,13 @@ export function SettingsPage({
                       {t('settings.downloadInstaller')}
                     </button>
                   ) : null}
-                  {String(updateSnap?.releaseUrl ?? '').trim() ? (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() =>
-                        onBrowserOpen(String(updateSnap.releaseUrl))
-                      }
-                    >
-                      {t('settings.openReleasePage')}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => onBrowserOpen(APP_DOWNLOADS_URL)}
+                  >
+                    {t('settings.openReleasePage')}
+                  </button>
                 </div>
               </div>
             </div>

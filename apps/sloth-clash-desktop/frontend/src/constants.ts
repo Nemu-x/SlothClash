@@ -43,6 +43,9 @@ export const RULE_TYPE_OPTIONS = [
   // misc
   'NETWORK',
   'DSCP',
+  // matches connections re-dispatched by a `rematch` outbound (core >= 1.19.28);
+  // payload is one or more labels separated by '/'
+  'REMATCH-NAME',
   // rule providers & logical
   'RULE-SET',
   'AND',

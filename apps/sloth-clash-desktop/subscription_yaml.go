@@ -64,6 +64,7 @@ var canonicalRuntimeKeyOrder = []string{
 	"external-controller-pipe",
 	"external-controller-unix",
 	"external-controller-cors",
+	"external-controller-routing-mark",
 	"external-doh-server",
 	"external-ui",
 	"external-ui-name",

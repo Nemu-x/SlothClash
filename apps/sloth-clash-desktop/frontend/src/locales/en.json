@@ -247,7 +247,18 @@
         "autoUpdate": "Auto-update",
         "intervalMinutes": "Interval (minutes)",
         "copyUrl": "Copy URL",
-        "copyName": "Copy name"
+        "copyName": "Copy name",
+        "ageKey": "AGE secret key (optional)",
+        "ageKeyPlaceholder": "AGE-SECRET-KEY-… for age-encrypted subscriptions",
+        "generateAgePair": "Generate key pair",
+        "copyAgePublic": "Copy public key",
+        "ageSection": "AGE encryption (advanced)",
+        "ageReveal": "Show",
+        "ageHide": "Hide",
+        "agePublicLabel": "Public key (give this to your provider):",
+        "ageClear": "Clear key",
+        "agePublicPlaceholder": "Derived from the secret key automatically",
+        "ageKeyType": "Key type"
       },
       "fileModal": {
         "title": "Edit configuration file",

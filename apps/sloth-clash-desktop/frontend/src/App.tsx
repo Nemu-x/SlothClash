@@ -45,11 +45,14 @@ import {
 import {
   ActivateProfile,
   DeleteProfile,
+  DeriveAgePublicKey,
+  GenerateAgeKeyPair,
   GetProfilePaths,
   ImportProfileFromText,
   ImportProfileFromURL,
   ReadProfileConfig,
   RefreshProfileSubscription,
+  SetProfileAgeSecretKey,
   SetProfileAutoUpdate,
   SetProfileMergeTemplate,
   UpdateProfileInfo,
@@ -239,6 +242,7 @@ function App() {
   const [profileEditUrl, setProfileEditUrl] = useState('')
   const [profileEditAutoEnabled, setProfileEditAutoEnabled] = useState(true)
   const [profileEditAutoInterval, setProfileEditAutoInterval] = useState('360')
+  const [profileEditAgeKey, setProfileEditAgeKey] = useState('')
   const isAnyEditorModalOpen = Boolean(
     profileMergeModal ||
       profileFileModal ||
@@ -877,6 +881,12 @@ function App() {
     if (!profileEditInfo) return
     setProfileEditName(profileEditInfo.name)
     setProfileEditUrl(profileEditInfo.url)
+    setProfileEditAgeKey(
+      String(
+        state?.profile?.profiles?.find((x: any) => x.id === profileEditInfo.id)
+          ?.ageSecretKey ?? '',
+      ),
+    )
     const p = state?.profile?.profiles?.find(
       (x: any) => x.id === profileEditInfo.id,
     )
@@ -885,7 +895,7 @@ function App() {
     setProfileEditAutoInterval(
       String(Number.isFinite(interval) && interval > 0 ? interval : 360),
     )
-  }, [profileEditInfo, state?.profile?.profiles])
+  }, [profileEditInfo])
 
   useEffect(() => {
     if (!profileFileModal) return
@@ -2104,6 +2114,18 @@ function App() {
         url={profileEditUrl}
         autoEnabled={profileEditAutoEnabled}
         autoInterval={profileEditAutoInterval}
+        ageKey={profileEditAgeKey}
+        onAgeKeyChange={setProfileEditAgeKey}
+        onGenerateAgeKeyPair={async (kind) => {
+          const pair = await GenerateAgeKeyPair(kind)
+          return {
+            publicKey: String(pair?.publicKey ?? ''),
+            secretKey: String(pair?.secretKey ?? ''),
+          }
+        }}
+        onDeriveAgePublicKey={async (secret) =>
+          String((await DeriveAgePublicKey(secret)) ?? '')
+        }
         onNameChange={setProfileEditName}
         onUrlChange={setProfileEditUrl}
         onAutoEnabledToggle={() => setProfileEditAutoEnabled((v) => !v)}
@@ -2128,6 +2150,7 @@ function App() {
               profileEditName.trim(),
               profileEditUrl.trim(),
             )
+            await SetProfileAgeSecretKey(id, profileEditAgeKey.trim())
             const interval = Number(profileEditAutoInterval || '360')
             await SetProfileAutoUpdate(
               id,

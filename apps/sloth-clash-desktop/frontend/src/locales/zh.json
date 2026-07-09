@@ -247,7 +247,18 @@
         "autoUpdate": "自动更新",
         "intervalMinutes": "间隔（分钟）",
         "copyUrl": "复制 URL",
-        "copyName": "复制名称"
+        "copyName": "复制名称",
+        "ageKey": "AGE 私钥（可选）",
+        "ageKeyPlaceholder": "AGE-SECRET-KEY-… 用于 age 加密订阅",
+        "generateAgePair": "生成密钥对",
+        "copyAgePublic": "复制公钥",
+        "ageSection": "AGE 加密（高级）",
+        "ageReveal": "显示",
+        "ageHide": "隐藏",
+        "agePublicLabel": "公钥（提供给订阅商）：",
+        "ageClear": "清除密钥",
+        "agePublicPlaceholder": "由私钥自动推导",
+        "ageKeyType": "密钥类型"
       },
       "fileModal": {
         "title": "编辑配置文件",

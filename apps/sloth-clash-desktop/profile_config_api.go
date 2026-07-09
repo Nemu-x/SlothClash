@@ -250,6 +250,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 	return a.writeRuntimeConfig(
 		dataDir,
 		target.URL,
+		target.AgeSecretKey,
 		target.MergeTemplate,
 		target.ProxyTemplate,
 		target.RulesTemplate,
@@ -450,7 +451,7 @@ func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byt
 		}
 		return body, nil
 	}
-	return fetchSubscriptionBody(ctx, p.URL)
+	return fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey)
 }
 
 func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool) error {

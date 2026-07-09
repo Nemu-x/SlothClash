@@ -60,6 +60,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",
@@ -115,6 +116,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",
@@ -181,6 +183,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		closedURL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",
@@ -227,6 +230,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		tmp,
 		srv.URL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",

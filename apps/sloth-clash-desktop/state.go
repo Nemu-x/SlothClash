@@ -48,6 +48,10 @@ type Profile struct {
 	Name             string `json:"name"`
 	Type             string `json:"type"`
 	URL              string `json:"url,omitempty"`
+	// AgeSecretKey is the optional age identity (AGE-SECRET-KEY-…) used to
+	// decrypt an age-encrypted subscription body; empty = plain subscription.
+	// Same trust domain as URL (both are bearer secrets in profiles.json).
+	AgeSecretKey     string `json:"ageSecretKey,omitempty"`
 	SubscriptionInfo string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
 	// Optional provider metadata from subscription HTTP response headers (non-standard; see subscription.go).
 	SubscriptionSupportURL    string `json:"subscriptionSupportUrl,omitempty"`

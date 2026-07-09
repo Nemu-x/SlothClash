@@ -5076,3 +5076,11 @@
   align-items: center;
   gap: 8px;
 }
+
+.modalAgeSection {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel-deep);
+}

@@ -247,7 +247,18 @@
         "autoUpdate": "Автообновление",
         "intervalMinutes": "Интервал (минуты)",
         "copyUrl": "Копировать URL",
-        "copyName": "Копировать имя"
+        "copyName": "Копировать имя",
+        "ageKey": "Секретный ключ AGE (опционально)",
+        "ageKeyPlaceholder": "AGE-SECRET-KEY-… для зашифрованных подписок",
+        "generateAgePair": "Создать пару ключей",
+        "copyAgePublic": "Копировать публичный ключ",
+        "ageSection": "Шифрование AGE (расширенное)",
+        "ageReveal": "Показать",
+        "ageHide": "Скрыть",
+        "agePublicLabel": "Публичный ключ (передайте провайдеру):",
+        "ageClear": "Очистить ключ",
+        "agePublicPlaceholder": "Выводится из секретного ключа автоматически",
+        "ageKeyType": "Тип ключа"
       },
       "fileModal": {
         "title": "Редактировать файл конфигурации",

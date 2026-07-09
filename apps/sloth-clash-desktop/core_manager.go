@@ -478,11 +478,11 @@ func tunBlockForTraffic(enable bool) string {
 `
 }
 
-func (a *App) writeRuntimeConfig(dataDir string, subURL string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
+func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
 	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
 
-	outcome, err := tryWriteMergedFullProfile(dataDir, subURL, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun)
+	outcome, err := tryWriteMergedFullProfile(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun)
 	if outcome == pipelineOK {
 		return nil
 	}
@@ -681,6 +681,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 	if err := a.writeRuntimeConfig(
 		dataDir,
 		profile.URL,
+		profile.AgeSecretKey,
 		profile.MergeTemplate,
 		profile.ProxyTemplate,
 		profile.RulesTemplate,

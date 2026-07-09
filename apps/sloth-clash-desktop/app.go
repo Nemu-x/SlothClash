@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +112,8 @@ func (a *App) startup(ctx context.Context) {
 	installDockReopenHook()
 	loadDesktopPrefs()
 	a.loadProfilesFromDisk()
+	// Reclaim runtime dirs of profiles deleted in earlier sessions (audit R3).
+	a.pruneOrphanRuntimeDirs()
 	a.refreshServiceStatus()
 	if trayRuntimeEnabled() {
 		startAppTray(a)
@@ -124,7 +127,12 @@ func (a *App) startup(ctx context.Context) {
 	// PUT /configs?force=true reload with the desired TUN state instead of
 	// paying the 2-5s cold-start cost of spawning Mihomo. Failures here are
 	// non-fatal — Connect will retry the full ensureCoreForProfile path.
-	go a.bootActiveProfileCoreInBackground()
+	// Clear an orphan service-core from a crashed prior run BEFORE booting a new
+	// one, otherwise the survivor still holds the wintun adapter (audit L1).
+	go func() {
+		a.reconcileOrphanServiceCoreOnStartup()
+		a.bootActiveProfileCoreInBackground()
+	}()
 	// Deep link may arrive before the webview attaches EventsOn — short delay on cold start only.
 	args := os.Args[1:]
 	if len(args) > 0 && findSlothclashInstallConfigURL(args) != "" {
@@ -461,16 +469,46 @@ func (a *App) tryInstallConfigFromArgs(args []string) {
 	go a.handleInstallConfigURL(raw)
 }
 
+// handleInstallConfigURL validates a slothclash:// deep link and ASKS the user
+// before importing. A page the user merely visited can trigger the registered
+// scheme, so a silent import would let any site plant a subscription profile.
+// The actual import happens in ConfirmInstallConfigFromLink once the user accepts.
 func (a *App) handleInstallConfigURL(raw string) {
 	name, subURL, err := ParseInstallConfigURL(raw)
 	if err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return
 	}
-	st, err := a.ImportProfileFromURL(name, subURL)
+	norm, err := normalizeSubscriptionURL(subURL)
 	if err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return
+	}
+	// Untrusted origin: never let a link aim us at the LAN / cloud metadata.
+	if err := validateUntrustedSubscriptionURL(norm); err != nil {
+		a.emitInstallConfigResult(false, err.Error(), "", "")
+		return
+	}
+	a.emitInstallConfigRequest(name, norm)
+}
+
+// ConfirmInstallConfigFromLink performs the import a deep link asked for, after
+// the user accepted the confirmation dialog. It re-validates the URL: the
+// frontend must not be able to widen what the link was allowed to reach.
+func (a *App) ConfirmInstallConfigFromLink(name string, subscriptionURL string) (AppState, error) {
+	norm, err := normalizeSubscriptionURL(subscriptionURL)
+	if err != nil {
+		a.emitInstallConfigResult(false, err.Error(), "", "")
+		return a.GetAppState(), err
+	}
+	if err := validateUntrustedSubscriptionURL(norm); err != nil {
+		a.emitInstallConfigResult(false, err.Error(), "", "")
+		return a.GetAppState(), err
+	}
+	st, err := a.ImportProfileFromURL(name, norm)
+	if err != nil {
+		a.emitInstallConfigResult(false, err.Error(), "", "")
+		return st, err
 	}
 	a.emitAppStateChanged()
 	pid := strings.TrimSpace(st.Profile.ActiveProfileID)
@@ -482,6 +520,22 @@ func (a *App) handleInstallConfigURL(raw string) {
 		}
 	}
 	a.emitInstallConfigResult(true, "Subscription added", pid, pname)
+	return st, nil
+}
+
+// emitInstallConfigRequest asks the UI to confirm a deep-link subscription import.
+func (a *App) emitInstallConfigRequest(name, subscriptionURL string) {
+	if a.ctx == nil {
+		return
+	}
+	payload := map[string]any{
+		"name": name,
+		"url":  subscriptionURL,
+	}
+	if u, err := url.Parse(subscriptionURL); err == nil {
+		payload["host"] = u.Hostname()
+	}
+	go wailsrt.EventsEmit(a.ctx, "app:install-config-request", payload)
 }
 
 func (a *App) emitInstallConfigResult(success bool, message, profileID, profileName string) {

@@ -22,3 +22,6 @@ export {
   UpdateProfileInfo,
   WriteProfileConfig,
 } from '../../wailsjs/go/main/App'
+
+/** Deep-link subscription import, performed only after the user confirms. */
+export { ConfirmInstallConfigFromLink } from '../../wailsjs/go/main/App'

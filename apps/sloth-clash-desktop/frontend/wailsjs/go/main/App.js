@@ -62,6 +62,10 @@ export function CompanionUnpair(arg1) {
   return window['go']['main']['App']['CompanionUnpair'](arg1)
 }
 
+export function ConfirmInstallConfigFromLink(arg1, arg2) {
+  return window['go']['main']['App']['ConfirmInstallConfigFromLink'](arg1, arg2)
+}
+
 export function Connect() {
   return window['go']['main']['App']['Connect']()
 }

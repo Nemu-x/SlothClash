@@ -42,6 +42,11 @@ export function CompanionStopDiscovery(): Promise<void>
 
 export function CompanionUnpair(arg1: string): Promise<void>
 
+export function ConfirmInstallConfigFromLink(
+  arg1: string,
+  arg2: string,
+): Promise<main.AppState>
+
 export function Connect(): Promise<main.AppState>
 
 export function CopyTunDiagnostics(): Promise<string>

@@ -389,6 +389,11 @@ func normalizeSubscriptionURL(raw string) (string, error) {
 	if err != nil || u.Host == "" {
 		return "", errors.New("invalid subscription url")
 	}
+	// Only fetchable schemes. Without this, anything with a host (ftp://, gopher://…)
+	// reached the HTTP client, which then failed obscurely instead of up front.
+	if !subscriptionSchemeAllowed(u.Scheme) {
+		return "", errSubscriptionURLScheme
+	}
 	return u.String(), nil
 }
 

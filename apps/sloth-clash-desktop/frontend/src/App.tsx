@@ -44,6 +44,7 @@ import {
 } from './api/prefs'
 import {
   ActivateProfile,
+  ConfirmInstallConfigFromLink,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,
@@ -70,6 +71,8 @@ import {
   ImportProfileModal,
   type ImportMode,
 } from './components/ImportProfileModal'
+import type { InstallConfigRequest } from './components/InstallConfigConfirmModal'
+import { InstallConfigConfirmModal } from './components/InstallConfigConfirmModal'
 import { ProfileContextMenu } from './components/ProfileContextMenu'
 import { ProfileEditInfoModal } from './components/ProfileEditInfoModal'
 import { ProfileFileModal } from './components/ProfileFileModal'
@@ -133,7 +136,7 @@ import {
   DEFAULT_SETTINGS,
   loadCompactSettings,
 } from './utils/settings'
-import { yamlValidationError } from './utils/yaml'
+import { friendlyErrorMessage, yamlValidationError } from './utils/yaml'
 
 function App() {
   const { t } = useTranslation()
@@ -253,6 +256,9 @@ function App() {
     id: string
     name: string
   } | null>(null)
+  const [installConfigRequest, setInstallConfigRequest] =
+    useState<InstallConfigRequest | null>(null)
+  const [installConfigBusy, setInstallConfigBusy] = useState(false)
   const [settings, setSettings] = useState<CompactSettings>(() =>
     loadCompactSettings(),
   )
@@ -515,6 +521,39 @@ function App() {
     })
     return () => off()
   }, [refresh])
+
+  // A deep link never imports silently: the backend asks first (audit SEC1).
+  useEffect(() => {
+    const off = EventsOn('app:install-config-request', (payload: unknown) => {
+      const p = payload as { name?: string; url?: string; host?: string }
+      if (!p?.url) return
+      setInstallConfigRequest({
+        name: String(p.name ?? ''),
+        url: String(p.url),
+        host: String(p.host ?? p.url),
+      })
+    })
+    return () => off()
+  }, [])
+
+  const confirmInstallConfig = useCallback(
+    async (req: InstallConfigRequest) => {
+      setInstallConfigBusy(true)
+      try {
+        await ConfirmInstallConfigFromLink(req.name, req.url)
+      } catch (e) {
+        pushToast({
+          kind: 'error',
+          message: friendlyErrorMessage(String(e)),
+          durationMs: 0,
+        })
+      } finally {
+        setInstallConfigBusy(false)
+        setInstallConfigRequest(null)
+      }
+    },
+    [pushToast],
+  )
 
   useEffect(() => {
     const off = EventsOn('app:install-config', (payload: unknown) => {
@@ -2156,6 +2195,13 @@ function App() {
           })
           setProfileEditInfo(null)
         }}
+      />
+
+      <InstallConfigConfirmModal
+        request={installConfigRequest}
+        busy={installConfigBusy}
+        onCancel={() => setInstallConfigRequest(null)}
+        onConfirm={(req) => void confirmInstallConfig(req)}
       />
 
       <DeleteProfileModal

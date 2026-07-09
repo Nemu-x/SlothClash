@@ -513,5 +513,15 @@
     "prepend": "Prepend",
     "append": "Append",
     "addShort": "+ 添加"
+  },
+  "installConfig": {
+    "title": "通过链接添加订阅？",
+    "lead": "某个链接请求 Sloth Clash 添加订阅配置。仅在信任该来源时继续。",
+    "source": "来源",
+    "name": "名称",
+    "url": "链接",
+    "warning": "任何网站都可以打开此类链接。请勿添加您未主动请求的订阅。",
+    "confirm": "添加订阅",
+    "adding": "正在添加…"
   }
 }

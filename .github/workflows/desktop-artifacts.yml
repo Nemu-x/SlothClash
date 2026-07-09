@@ -299,8 +299,18 @@ jobs:
           name: release-darwin-amd64
           path: dist/*.dmg
 
-  linux-amd64:
-    runs-on: ubuntu-24.04
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            aitool: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            aitool: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -327,18 +337,60 @@ jobs:
       - name: Desktop resources
         run: pnpm run desktop:resources
 
-      - name: Wails build (linux/amd64)
-        run: pnpm run desktop:build:linux:amd64
+      - name: Wails build (linux/${{ matrix.arch }})
+        run: pnpm run desktop:build:linux:${{ matrix.arch }}
 
       - name: Pack Linux artifact (preserve executable bits)
         run: |
           mkdir -p dist
-          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-linux-amd64.tar.gz" .
+          tar -C apps/sloth-clash-desktop/build/bin -czf "dist/sloth-clash-linux-${{ matrix.arch }}.tar.gz" .
+
+      - name: Resolve package version
+        id: pkgver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.0.0~dev.$(git rev-parse --short HEAD)"
+          fi
+          # pacman forbids '-' and '~' in pkgver
+          ARCH_VER="${VER//[~-]/_}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "arch_version=${ARCH_VER}" >> "$GITHUB_OUTPUT"
+          echo "version=${VER} arch_version=${ARCH_VER}"
+
+      - name: Package deb / rpm / archlinux (nfpm)
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          CFG=apps/sloth-clash-desktop/build/linux/nfpm.yaml
+          export NFPM_ARCH="${{ matrix.arch }}"
+          NFPM_VERSION="${{ steps.pkgver.outputs.version }}" nfpm package -f "$CFG" -p deb -t "dist/sloth-clash-linux-${{ matrix.arch }}.deb"
+          NFPM_VERSION="${{ steps.pkgver.outputs.version }}" nfpm package -f "$CFG" -p rpm -t "dist/sloth-clash-linux-${{ matrix.arch }}.rpm"
+          NFPM_VERSION="${{ steps.pkgver.outputs.arch_version }}" nfpm package -f "$CFG" -p archlinux -t "dist/sloth-clash-linux-${{ matrix.arch }}.pkg.tar.zst"
+          ls -la dist/
+
+      - name: Build AppImage
+        run: |
+          APPDIR=AppDir
+          mkdir -p "$APPDIR/usr/bin"
+          cp apps/sloth-clash-desktop/build/bin/sloth-clash-desktop "$APPDIR/usr/bin/"
+          cp apps/sloth-clash-desktop/build/linux/sloth-clash.desktop "$APPDIR/"
+          cp apps/sloth-clash-desktop/build/appicon.png "$APPDIR/sloth-clash.png"
+          ln -s usr/bin/sloth-clash-desktop "$APPDIR/AppRun"
+          curl -fsSL -o appimagetool             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.aitool }}.AppImage
+          chmod +x appimagetool
+          ARCH=${{ matrix.aitool }} ./appimagetool --appimage-extract-and-run "$APPDIR" "dist/SlothClash-linux-${{ matrix.arch }}.AppImage"
+          ls -la dist/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-linux-amd64
-          path: dist/sloth-clash-linux-amd64.tar.gz
+          name: release-linux-${{ matrix.arch }}
+          path: |
+            dist/sloth-clash-linux-${{ matrix.arch }}.tar.gz
+            dist/sloth-clash-linux-${{ matrix.arch }}.deb
+            dist/sloth-clash-linux-${{ matrix.arch }}.rpm
+            dist/sloth-clash-linux-${{ matrix.arch }}.pkg.tar.zst
+            dist/SlothClash-linux-${{ matrix.arch }}.AppImage
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -347,7 +399,7 @@ jobs:
       - windows-arm64
       - darwin-arm64
       - darwin-amd64
-      - linux-amd64
+      - linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -370,7 +422,7 @@ jobs:
           while IFS= read -r f; do
             d=$(sha256sum "$f" | cut -d' ' -f1)
             echo "$d  $(basename "$f")" >> SHA256SUMS
-          done < <(find . -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' \) | sort)
+          done < <(find . -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.pkg.tar.zst' \) | sort)
           echo "----- SHA256SUMS -----"; cat SHA256SUMS
 
       - name: Sign SHA256SUMS with minisign
@@ -394,5 +446,9 @@ jobs:
             dist/**/*.exe
             dist/**/*.tar.gz
             dist/**/*.dmg
+            dist/**/*.AppImage
+            dist/**/*.deb
+            dist/**/*.rpm
+            dist/**/*.pkg.tar.zst
             dist/SHA256SUMS
             dist/SHA256SUMS.minisig

@@ -23,6 +23,7 @@
     "desktop:build:darwin:arm64:dmg": "pnpm run desktop:build:darwin:arm64 && pnpm run desktop:package:dmg",
     "desktop:build:darwin:amd64:dmg": "pnpm run desktop:build:darwin:amd64 && pnpm run desktop:package:dmg",
     "desktop:build:linux:amd64": "node scripts/wails.mjs build -platform linux/amd64 -clean -tags webkit2_41",
+    "desktop:build:linux:arm64": "node scripts/wails.mjs build -platform linux/arm64 -clean -tags webkit2_41",
     "test:required": "node tests/required/run-required-tests.mjs",
     "updater": "node scripts/updater.mjs",
     "updater-fixed-webview2": "node scripts/updater-fixed-webview2.mjs",

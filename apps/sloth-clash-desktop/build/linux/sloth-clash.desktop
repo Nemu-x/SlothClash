@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Sloth Clash
+Comment=Clash Meta (Mihomo) desktop client
+Exec=sloth-clash-desktop %u
+Icon=sloth-clash
+Terminal=false
+Categories=Network;
+MimeType=x-scheme-handler/slothclash;
+StartupWMClass=SlothClashDesktop

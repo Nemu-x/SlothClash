@@ -1,6 +1,166 @@
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export type ProfileEditInfoTarget = { id: string; name: string; url: string }
+
+// Collapsible "AGE encryption" block. Remounted per profile (key=target.id) so
+// reveal/public state never leaks between profiles. Secret (top) and derived
+// public key (bottom, read-only) are separate fields; Generate replaces the
+// secret in the FORM only — nothing persists until Save.
+function AgeKeySection({
+  ageKey,
+  onAgeKeyChange,
+  onGenerateAgeKeyPair,
+  onDeriveAgePublicKey,
+  onCopyText,
+}: {
+  ageKey: string
+  onAgeKeyChange: (next: string) => void
+  onGenerateAgeKeyPair: (
+    kind: string,
+  ) => Promise<{ publicKey: string; secretKey: string }>
+  onDeriveAgePublicKey: (secret: string) => Promise<string>
+  onCopyText: (text: string) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(() => Boolean(ageKey.trim()))
+  const [reveal, setReveal] = useState(false)
+  const [keyKind, setKeyKind] = useState('x25519')
+  const [genBusy, setGenBusy] = useState(false)
+  const [publicKey, setPublicKey] = useState('')
+
+  // Live-derive the public half from whatever secret is in the field, so the
+  // user can copy it for the provider at ANY time (not only right after
+  // generation). Invalid/partial input just blanks the public row.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      const secret = ageKey.trim()
+      if (!secret) {
+        if (!cancelled) setPublicKey('')
+        return
+      }
+      try {
+        const pub = await onDeriveAgePublicKey(secret)
+        if (!cancelled) setPublicKey(String(pub ?? ''))
+      } catch {
+        if (!cancelled) setPublicKey('')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [ageKey, open, onDeriveAgePublicKey])
+
+  const hasKey = Boolean(ageKey.trim())
+
+  const generate = async () => {
+    setGenBusy(true)
+    try {
+      const pair = await onGenerateAgeKeyPair(keyKind)
+      onAgeKeyChange(pair.secretKey)
+      setReveal(false)
+    } catch {
+      /* surfaced by the caller's error channel */
+    } finally {
+      setGenBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="btn btnModalSecondary"
+        style={{ marginTop: 12 }}
+        onClick={() => setOpen(true)}
+      >
+        {t('ui.profiles.editInfo.ageSection')}
+      </button>
+    )
+  }
+
+  return (
+    <div className="modalAgeSection">
+      <label className="field modalField">
+        <span className="fieldLab">{t('ui.profiles.editInfo.ageKey')}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="input"
+            style={{ flex: 1 }}
+            type={reveal ? 'text' : 'password'}
+            autoComplete="off"
+            spellCheck={false}
+            value={ageKey}
+            onChange={(e) => onAgeKeyChange(e.target.value)}
+            placeholder={t('ui.profiles.editInfo.ageKeyPlaceholder')}
+          />
+          <button
+            type="button"
+            className="btn btnModalSecondary"
+            onClick={() => setReveal((v) => !v)}
+          >
+            {reveal
+              ? t('ui.profiles.editInfo.ageHide')
+              : t('ui.profiles.editInfo.ageReveal')}
+          </button>
+        </div>
+      </label>
+      <label className="field modalField">
+        <span className="fieldLab">
+          {t('ui.profiles.editInfo.agePublicLabel')}
+        </span>
+        <input
+          className="input"
+          readOnly
+          spellCheck={false}
+          value={publicKey}
+          placeholder={t('ui.profiles.editInfo.agePublicPlaceholder')}
+          onFocus={(e) => e.target.select()}
+        />
+      </label>
+      <div className="modalActions">
+        <select
+          className="input"
+          style={{ width: 'auto' }}
+          aria-label={t('ui.profiles.editInfo.ageKeyType')}
+          value={keyKind}
+          onChange={(e) => setKeyKind(e.target.value)}
+        >
+          <option value="x25519">X25519</option>
+          <option value="hybrid">MLKEM768-X25519</option>
+        </select>
+        <button
+          type="button"
+          className="btn btnModalSecondary"
+          disabled={genBusy}
+          onClick={() => void generate()}
+        >
+          {t('ui.profiles.editInfo.generateAgePair')}
+        </button>
+        {publicKey ? (
+          <button
+            type="button"
+            className="btn btnModalSecondary"
+            onClick={() => onCopyText(publicKey)}
+          >
+            {t('ui.profiles.editInfo.copyAgePublic')}
+          </button>
+        ) : null}
+        {hasKey ? (
+          <button
+            type="button"
+            className="btn btnModalSecondary"
+            onClick={() => onAgeKeyChange('')}
+          >
+            {t('ui.profiles.editInfo.ageClear')}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 export function ProfileEditInfoModal({
   target,
@@ -8,6 +168,10 @@ export function ProfileEditInfoModal({
   url,
   autoEnabled,
   autoInterval,
+  ageKey,
+  onAgeKeyChange,
+  onGenerateAgeKeyPair,
+  onDeriveAgePublicKey,
   onNameChange,
   onUrlChange,
   onAutoEnabledToggle,
@@ -22,6 +186,12 @@ export function ProfileEditInfoModal({
   url: string
   autoEnabled: boolean
   autoInterval: string
+  ageKey: string
+  onAgeKeyChange: (next: string) => void
+  onGenerateAgeKeyPair: (
+    kind: string,
+  ) => Promise<{ publicKey: string; secretKey: string }>
+  onDeriveAgePublicKey: (secret: string) => Promise<string>
   onNameChange: (next: string) => void
   onUrlChange: (next: string) => void
   onAutoEnabledToggle: () => void
@@ -96,6 +266,14 @@ export function ProfileEditInfoModal({
             />
           </label>
         </div>
+        <AgeKeySection
+          key={target.id}
+          ageKey={ageKey}
+          onAgeKeyChange={onAgeKeyChange}
+          onGenerateAgeKeyPair={onGenerateAgeKeyPair}
+          onDeriveAgePublicKey={onDeriveAgePublicKey}
+          onCopyText={onCopyName}
+        />
         <div className="modalActions">
           <button
             type="button"

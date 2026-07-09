@@ -1,3 +1,72 @@
+export namespace companion {
+  export class AgentInfo {
+    deviceId: string
+    name: string
+    app: string
+    ver: number
+    fp: string
+    host: string
+    port: number
+    paired: boolean
+    reachable: boolean
+    supported: boolean
+
+    static createFrom(source: any = {}) {
+      return new AgentInfo(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.deviceId = source['deviceId']
+      this.name = source['name']
+      this.app = source['app']
+      this.ver = source['ver']
+      this.fp = source['fp']
+      this.host = source['host']
+      this.port = source['port']
+      this.paired = source['paired']
+      this.reachable = source['reachable']
+      this.supported = source['supported']
+    }
+  }
+  export class PowerResult {
+    ok: boolean
+    power: string
+
+    static createFrom(source: any = {}) {
+      return new PowerResult(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.ok = source['ok']
+      this.power = source['power']
+    }
+  }
+  export class StatusView {
+    deviceId: string
+    name: string
+    app: string
+    ver: number
+    power: string
+    capabilities: string[]
+
+    static createFrom(source: any = {}) {
+      return new StatusView(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.deviceId = source['deviceId']
+      this.name = source['name']
+      this.app = source['app']
+      this.ver = source['ver']
+      this.power = source['power']
+      this.capabilities = source['capabilities']
+    }
+  }
+}
+
 export namespace main {
   export class AdvancedGeoStatus {
     geoIpPath: string
@@ -45,6 +114,20 @@ export namespace main {
       this.serviceLog = source['serviceLog']
       this.geoDir = source['geoDir']
       this.activeConfig = source['activeConfig']
+    }
+  }
+  export class AgeKeyPair {
+    publicKey: string
+    secretKey: string
+
+    static createFrom(source: any = {}) {
+      return new AgeKeyPair(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.publicKey = source['publicKey']
+      this.secretKey = source['secretKey']
     }
   }
   export class UIState {
@@ -194,6 +277,7 @@ export namespace main {
     name: string
     type: string
     url?: string
+    ageSecretKey?: string
     subscriptionInfo?: string
     subscriptionSupportUrl?: string
     subscriptionAnnouncement?: string
@@ -216,6 +300,7 @@ export namespace main {
       this.name = source['name']
       this.type = source['type']
       this.url = source['url']
+      this.ageSecretKey = source['ageSecretKey']
       this.subscriptionInfo = source['subscriptionInfo']
       this.subscriptionSupportUrl = source['subscriptionSupportUrl']
       this.subscriptionAnnouncement = source['subscriptionAnnouncement']
@@ -792,75 +877,6 @@ export namespace options {
       if ('string' === typeof source) source = JSON.parse(source)
       this.Args = source['Args']
       this.WorkingDirectory = source['WorkingDirectory']
-    }
-  }
-}
-
-export namespace companion {
-  export class AgentInfo {
-    deviceId: string
-    name: string
-    app: string
-    ver: number
-    fp: string
-    host: string
-    port: number
-    paired: boolean
-    reachable: boolean
-    supported: boolean
-
-    static createFrom(source: any = {}) {
-      return new AgentInfo(source)
-    }
-
-    constructor(source: any = {}) {
-      if ('string' === typeof source) source = JSON.parse(source)
-      this.deviceId = source['deviceId']
-      this.name = source['name']
-      this.app = source['app']
-      this.ver = source['ver']
-      this.fp = source['fp']
-      this.host = source['host']
-      this.port = source['port']
-      this.paired = source['paired']
-      this.reachable = source['reachable']
-      this.supported = source['supported']
-    }
-  }
-  export class StatusView {
-    deviceId: string
-    name: string
-    app: string
-    ver: number
-    power: string
-    capabilities: string[]
-
-    static createFrom(source: any = {}) {
-      return new StatusView(source)
-    }
-
-    constructor(source: any = {}) {
-      if ('string' === typeof source) source = JSON.parse(source)
-      this.deviceId = source['deviceId']
-      this.name = source['name']
-      this.app = source['app']
-      this.ver = source['ver']
-      this.power = source['power']
-      this.capabilities = source['capabilities']
-    }
-  }
-  export class PowerResult {
-    ok: boolean
-    power: string
-
-    static createFrom(source: any = {}) {
-      return new PowerResult(source)
-    }
-
-    constructor(source: any = {}) {
-      if ('string' === typeof source) source = JSON.parse(source)
-      this.ok = source['ok']
-      this.power = source['power']
     }
   }
 }

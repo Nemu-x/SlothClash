@@ -66,7 +66,7 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	if root, derr := slothDataRoot(); derr == nil {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		_ = runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL)
+		_ = runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey)
 		bodyCancel()
 	}
 

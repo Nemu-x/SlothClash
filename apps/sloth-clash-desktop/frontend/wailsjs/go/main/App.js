@@ -26,40 +26,40 @@ export function CompanionListAgents() {
   return window['go']['main']['App']['CompanionListAgents']()
 }
 
-export function CompanionPairByString(arg1) {
-  return window['go']['main']['App']['CompanionPairByString'](arg1)
-}
-
 export function CompanionPairByPin(arg1, arg2) {
   return window['go']['main']['App']['CompanionPairByPin'](arg1, arg2)
 }
 
-export function CompanionStatus(arg1) {
-  return window['go']['main']['App']['CompanionStatus'](arg1)
+export function CompanionPairByString(arg1) {
+  return window['go']['main']['App']['CompanionPairByString'](arg1)
 }
 
 export function CompanionPower(arg1, arg2) {
   return window['go']['main']['App']['CompanionPower'](arg1, arg2)
 }
 
-export function CompanionShareSubscription(arg1) {
-  return window['go']['main']['App']['CompanionShareSubscription'](arg1)
-}
-
 export function CompanionRename(arg1, arg2) {
   return window['go']['main']['App']['CompanionRename'](arg1, arg2)
 }
 
-export function CompanionUnpair(arg1) {
-  return window['go']['main']['App']['CompanionUnpair'](arg1)
+export function CompanionShareSubscription(arg1) {
+  return window['go']['main']['App']['CompanionShareSubscription'](arg1)
 }
 
 export function CompanionStartDiscovery() {
   return window['go']['main']['App']['CompanionStartDiscovery']()
 }
 
+export function CompanionStatus(arg1) {
+  return window['go']['main']['App']['CompanionStatus'](arg1)
+}
+
 export function CompanionStopDiscovery() {
   return window['go']['main']['App']['CompanionStopDiscovery']()
+}
+
+export function CompanionUnpair(arg1) {
+  return window['go']['main']['App']['CompanionUnpair'](arg1)
 }
 
 export function Connect() {
@@ -72,6 +72,10 @@ export function CopyTunDiagnostics() {
 
 export function DeleteProfile(arg1) {
   return window['go']['main']['App']['DeleteProfile'](arg1)
+}
+
+export function DeriveAgePublicKey(arg1) {
+  return window['go']['main']['App']['DeriveAgePublicKey'](arg1)
 }
 
 export function Disconnect() {
@@ -88,6 +92,10 @@ export function FetchConnectionsOverview() {
 
 export function FetchRulesOverview() {
   return window['go']['main']['App']['FetchRulesOverview']()
+}
+
+export function GenerateAgeKeyPair(arg1) {
+  return window['go']['main']['App']['GenerateAgeKeyPair'](arg1)
 }
 
 export function GetAdvancedGeoStatus() {
@@ -248,6 +256,10 @@ export function SetLaunchOnStartupPreference(arg1) {
 
 export function SetMode(arg1) {
   return window['go']['main']['App']['SetMode'](arg1)
+}
+
+export function SetProfileAgeSecretKey(arg1, arg2) {
+  return window['go']['main']['App']['SetProfileAgeSecretKey'](arg1, arg2)
 }
 
 export function SetProfileAutoUpdate(arg1, arg2, arg3) {

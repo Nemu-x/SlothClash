@@ -38,6 +38,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	if err := a.writeRuntimeConfig(
 		tunDir,
 		"https://example.com/sub",
+		"", // ageKey: plain subscription
 		"",
 		"",
 		"",
@@ -80,6 +81,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	if err := a.writeRuntimeConfig(
 		idleDir,
 		"https://example.com/sub",
+		"", // ageKey: plain subscription
 		"",
 		"",
 		"",
@@ -105,6 +107,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	if err := a.writeRuntimeConfig(
 		proxyDir,
 		"https://example.com/sub",
+		"", // ageKey: plain subscription
 		"",
 		"",
 		"",
@@ -150,6 +153,7 @@ append:
 	if err := a.writeRuntimeConfig(
 		dir,
 		"https://example.com/sub",
+		"", // ageKey: plain subscription
 		"",
 		proxyTemplate,
 		rulesTemplate,
@@ -268,6 +272,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		dir,
 		srv.URL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",
@@ -336,6 +341,7 @@ rules:
 	outcome, err := tryWriteMergedFullProfile(
 		dir,
 		srv.URL,
+		"", // ageKey: plain
 		"",
 		"",
 		"",

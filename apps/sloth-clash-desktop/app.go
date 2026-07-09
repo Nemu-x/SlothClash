@@ -982,6 +982,70 @@ func (a *App) UpdateProfileInfo(profileID string, displayName string, subscripti
 	return a.state, nil
 }
 
+// AgeKeyPair is the result of GenerateAgeKeyPair: the public recipient goes to
+// the subscription provider, the secret identity goes on the profile.
+type AgeKeyPair struct {
+	PublicKey string `json:"publicKey"`
+	SecretKey string `json:"secretKey"`
+}
+
+// GenerateAgeKeyPair mints a fresh age identity for age-encrypted
+// subscriptions. kind: "x25519" (default) or "hybrid" (MLKEM768-X25519,
+// post-quantum). Nothing is persisted — the user explicitly saves the secret
+// on a profile (SetProfileAgeSecretKey) and hands the public key to the
+// provider.
+func (a *App) GenerateAgeKeyPair(kind string) (AgeKeyPair, error) {
+	pub, sec, err := generateAgeKeyPair(kind)
+	if err != nil {
+		return AgeKeyPair{}, err
+	}
+	return AgeKeyPair{PublicKey: pub, SecretKey: sec}, nil
+}
+
+// DeriveAgePublicKey re-derives the public recipient (age1…) from a secret
+// identity so the user can copy it for the provider at any time. Pure; nothing
+// persisted or logged.
+func (a *App) DeriveAgePublicKey(secretKey string) (string, error) {
+	return deriveAgePublicKeys(secretKey)
+}
+
+// SetProfileAgeSecretKey stores (or clears, when empty) the age identity used
+// to decrypt this profile's age-encrypted subscription body. The key is
+// validated before persisting and is never logged.
+func (a *App) SetProfileAgeSecretKey(profileID string, secretKey string) (AppState, error) {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return a.GetAppState(), errors.New("profile id is required")
+	}
+	secretKey = strings.TrimSpace(secretKey)
+	if secretKey != "" {
+		if err := validateAgeSecretKey(secretKey); err != nil {
+			return a.GetAppState(), fmt.Errorf("invalid AGE secret key: %w", err)
+		}
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	found := false
+	for i := range a.profiles {
+		if a.profiles[i].ID != profileID {
+			continue
+		}
+		found = true
+		a.profiles[i].AgeSecretKey = secretKey
+		a.profiles[i].LastUpdated = time.Now().Unix()
+		break
+	}
+	if !found {
+		return a.state, errors.New("profile not found")
+	}
+	a.state.Profile.Profiles = a.profiles
+	a.state.UpdatedAt = time.Now().Unix()
+	if err := a.persistProfilesLocked(); err != nil {
+		return a.state, err
+	}
+	return a.state, nil
+}
+
 // SetProfileMergeTemplate stores the Verge-style merge YAML for a profile and clears manual-config pinning.
 func (a *App) SetProfileMergeTemplate(profileID string, template string) (AppState, error) {
 	profileID = strings.TrimSpace(profileID)

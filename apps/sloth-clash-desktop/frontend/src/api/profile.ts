@@ -5,6 +5,8 @@
 export {
   ActivateProfile,
   DeleteProfile,
+  DeriveAgePublicKey,
+  GenerateAgeKeyPair,
   GetProfilePaths,
   GetProfileProxyGroupsBaseline,
   GetProfileRulesBaseline,
@@ -12,6 +14,7 @@ export {
   ImportProfileFromURL,
   ReadProfileConfig,
   RefreshProfileSubscription,
+  SetProfileAgeSecretKey,
   SetProfileAutoUpdate,
   SetProfileMergeTemplate,
   SetProfileProxyTemplate,

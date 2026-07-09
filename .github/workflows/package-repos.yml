@@ -1,0 +1,187 @@
+# Publishes Linux package REPOSITORIES to GitHub Pages so users get updates via
+# their package manager (apt update / dnf upgrade), plus pushes the AUR package.
+#
+#   apt : flat repo at  https://<owner>.github.io/SlothClash/apt  (GPG-signed InRelease)
+#   dnf : yum repo at   https://<owner>.github.io/SlothClash/rpm  (createrepo_c)
+#   AUR : sloth-clash-bin (gated on AUR_SSH_PRIVATE_KEY secret)
+#
+# Trigger: after a release is published (assets present), or manually.
+# Requires: Pages source = "GitHub Actions"; secret GPG_PRIVATE_KEY (repo
+# signing key, no passphrase). The site is REBUILT each run from the assets of
+# the last 5 releases (no git branch grows).
+
+name: Package repositories
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-repos
+  cancel-in-progress: false
+
+jobs:
+  build-site:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RETAIN_RELEASES: '5'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils createrepo-c gnupg
+
+      - name: Download packages from recent releases
+        run: |
+          mkdir -p pool
+          # Version-free asset names collide across releases, so re-name with
+          # the tag while pooling (apt/dnf need distinct files per version).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit "$RETAIN_RELEASES" --json tagName -q '.[].tagName' | while read -r tag; do
+            ver="${tag#v}"
+            mkdir -p "tmp-$tag"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" -D "tmp-$tag" -p '*linux*.deb' -p '*linux*.rpm' || true
+            for f in "tmp-$tag"/*; do
+              [ -f "$f" ] || continue
+              base=$(basename "$f")
+              cp "$f" "pool/${base%.*}_${ver}.${base##*.}"
+            done
+            rm -rf "tmp-$tag"
+          done
+          ls -la pool/ || true
+          if [ -z "$(ls -A pool 2>/dev/null)" ]; then
+            echo "No linux packages found in recent releases yet — publishing empty site skeleton."
+          fi
+
+      - name: Import GPG signing key
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys
+
+      - name: Build apt flat repo
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          mkdir -p site/apt
+          cp pool/*.deb site/apt/ 2>/dev/null || true
+          cd site/apt
+          apt-ftparchive packages . > Packages
+          gzip -k -f Packages
+          apt-ftparchive -o APT::FTPArchive::Release::Origin=SlothClash \
+                         -o APT::FTPArchive::Release::Label=SlothClash \
+                         -o APT::FTPArchive::Release::Suite=stable \
+                         -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
+                         release . > Release
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            gpg --batch --yes --clearsign -o InRelease Release
+            gpg --batch --yes -abs -o Release.gpg Release
+            gpg --batch --export > key.gpg
+          else
+            echo "GPG_PRIVATE_KEY not set — apt repo left UNSIGNED (apt will refuse by default)."
+          fi
+
+      - name: Build dnf/yum repo
+        run: |
+          mkdir -p site/rpm
+          cp pool/*.rpm site/rpm/ 2>/dev/null || true
+          createrepo_c site/rpm
+          cat > site/rpm/slothclash.repo <<EOF
+          [slothclash]
+          name=SlothClash
+          baseurl=https://nemu-x.github.io/SlothClash/rpm
+          enabled=1
+          gpgcheck=0
+          repo_gpgcheck=0
+          EOF
+
+      - name: Landing page
+        run: |
+          cat > site/index.html <<'EOF'
+          <!doctype html><meta charset="utf-8"><title>SlothClash packages</title>
+          <body style="font-family:sans-serif;max-width:720px;margin:40px auto;line-height:1.5">
+          <h1>SlothClash Linux package repositories</h1>
+          <h2>Debian / Ubuntu (apt)</h2>
+          <pre>curl -fsSL https://nemu-x.github.io/SlothClash/apt/key.gpg | sudo tee /usr/share/keyrings/slothclash.gpg &gt;/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/slothclash.gpg] https://nemu-x.github.io/SlothClash/apt ./" | sudo tee /etc/apt/sources.list.d/slothclash.list
+          sudo apt update &amp;&amp; sudo apt install sloth-clash</pre>
+          <h2>Fedora / openSUSE (dnf)</h2>
+          <pre>sudo dnf config-manager --add-repo https://nemu-x.github.io/SlothClash/rpm/slothclash.repo
+          sudo dnf install sloth-clash</pre>
+          <h2>Arch Linux</h2>
+          <pre>sudo pacman -U https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-amd64.pkg.tar.zst</pre>
+          <p><a href="https://github.com/Nemu-x/SlothClash">GitHub repository</a></p>
+          </body>
+          EOF
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-pages:
+    needs: build-site
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  publish-aur:
+    # AUR publish only makes sense for real releases with a version tag.
+    # Quietly skips when AUR_SSH_PRIVATE_KEY is not configured (owner has no
+    # AUR account yet — infra stays ready for when registration succeeds).
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check AUR key present
+        id: gate
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "$AUR_KEY" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "AUR key not set — skipping AUR publish."; fi
+
+      - name: Prepare PKGBUILD (version + checksums from release assets)
+        id: prep
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          [ "$VER" = "$GITHUB_REF_NAME" ] && VER="${{ github.event.release.tag_name }}" && VER="${VER#v}"
+          TAG="v${VER}"
+          mkdir -p aurpkg dl
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D dl -p 'sloth-clash-linux-amd64.tar.gz' -p 'sloth-clash-linux-arm64.tar.gz'
+          SHA_AMD=$(sha256sum dl/sloth-clash-linux-amd64.tar.gz | cut -d' ' -f1)
+          SHA_ARM=$(sha256sum dl/sloth-clash-linux-arm64.tar.gz | cut -d' ' -f1)
+          sed -e "s/@PKGVER@/${VER//-/_}/g" \
+              -e "s/@TAG@/${TAG}/g" \
+              -e "s/@SHA256_AMD64@/${SHA_AMD}/g" \
+              -e "s/@SHA256_ARM64@/${SHA_ARM}/g" \
+              packaging/aur/PKGBUILD.template > aurpkg/PKGBUILD
+          cat aurpkg/PKGBUILD
+
+      - name: Publish to AUR
+        if: steps.gate.outputs.enabled == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: sloth-clash-bin
+          pkgbuild: aurpkg/PKGBUILD
+          commit_username: Nemu-x
+          commit_email: Nemu-x@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.event.release.tag_name }}

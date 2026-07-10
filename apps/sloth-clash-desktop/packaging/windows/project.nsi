@@ -210,6 +210,25 @@ Section "un.$(SL_UNINSTALL_CORE)" SecUnApp
     SetShellVarContext current
     !insertmacro wails.setShellContext
 
+    ; Close the app so it releases the core and the TUN adapter.
+    nsExec::ExecToStack 'taskkill /F /T /IM "${PRODUCT_EXECUTABLE}"'
+    Pop $0
+    Pop $1
+    Sleep 650
+
+    ; Remove the privileged helper service BEFORE deleting files. Stopping it also
+    ; tears down the mihomo core it manages (and the wintun adapter). Without this
+    ; the SYSTEM service survives uninstall, registered against a deleted binary.
+    DetailPrint "Removing the Sloth helper service..."
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" stop sloth_clash_service'
+    Pop $0
+    Pop $1
+    ; Let the SCM reach STOPPED before deregistering.
+    Sleep 2000
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" delete sloth_clash_service'
+    Pop $0
+    Pop $1
+
     RMDir /r $INSTDIR
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"

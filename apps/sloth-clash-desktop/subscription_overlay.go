@@ -14,6 +14,7 @@ const tunDefaultDNSYAML = `dns:
   respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter-mode: blacklist
   use-hosts: true
   default-nameserver:
     - 1.1.1.1
@@ -22,6 +23,41 @@ const tunDefaultDNSYAML = `dns:
     - https://1.1.1.1/dns-query
     - tls://8.8.8.8:853
 `
+
+// defaultFakeIPFilter mirrors clash-verge-rev's default fake-ip blacklist.
+// In fake-ip mode every resolved name gets a synthetic 198.18.x address; these
+// names MUST resolve for real or the OS breaks in ways users blame on the VPN:
+//   - captive-portal / connectivity probes (msftncsi, msftconnecttest) → Windows
+//     shows "No internet" and may loop a captive-portal sign-in page;
+//   - NTP (time.*, ntp.*) → clock never syncs;
+//   - *.lan / *.local / *.arpa → local network + mDNS/rDNS lookups break.
+// Most subscriptions ship their own list; we only fill it when absent.
+var defaultFakeIPFilter = []any{
+	"*.lan",
+	"*.local",
+	"*.arpa",
+	"time.*.com",
+	"ntp.*.com",
+	"+.market.xiaomi.com",
+	"localhost.ptlogin2.qq.com",
+	"*.msftncsi.com",
+	"www.msftconnecttest.com",
+}
+
+// fakeIPFilterIsEmpty reports whether the parsed dns.fake-ip-filter carries no
+// entries (missing, wrong type, or an empty sequence).
+func fakeIPFilterIsEmpty(v any) bool {
+	switch f := v.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(f) == 0
+	case []string:
+		return len(f) == 0
+	default:
+		return true
+	}
+}
 
 func mergeTunFromYAMLString(m map[string]any, fragment string) {
 	var wrap map[string]any
@@ -47,6 +83,7 @@ func ensureDefaultDNSForTun(m map[string]any) {
 			return
 		}
 		if d, ok := wrap["dns"].(map[string]any); ok {
+			d["fake-ip-filter"] = append([]any(nil), defaultFakeIPFilter...)
 			m["dns"] = d
 		}
 		return
@@ -75,6 +112,14 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	if mode, _ := dns["enhanced-mode"].(string); strings.TrimSpace(strings.ToLower(mode)) == "fake-ip" {
 		if _, ok := dns["fake-ip-range"]; !ok {
 			dns["fake-ip-range"] = "198.18.0.1/16"
+		}
+		// Without a filter, captive-portal probes / NTP / *.lan get fake IPs and
+		// the OS looks broken. Verge parity: fill the default list when absent.
+		if raw, ok := dns["fake-ip-filter"]; !ok || fakeIPFilterIsEmpty(raw) {
+			dns["fake-ip-filter"] = append([]any(nil), defaultFakeIPFilter...)
+		}
+		if v, ok := dns["fake-ip-filter-mode"].(string); !ok || strings.TrimSpace(v) == "" {
+			dns["fake-ip-filter-mode"] = "blacklist"
 		}
 	}
 	if _, ok := dns["ipv6"]; !ok {

@@ -5084,3 +5084,37 @@
   border-radius: var(--radius-md);
   background: var(--panel-deep);
 }
+
+/* Deep-link subscription confirmation (see InstallConfigConfirmModal). */
+.installConfigDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.installConfigRow {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.installConfigRow .fieldLab {
+  min-width: 70px;
+  flex: none;
+}
+.installConfigHost {
+  font-size: 1.02rem;
+}
+.installConfigUrl {
+  font-size: 0.82rem;
+  word-break: break-all;
+  opacity: 0.85;
+}
+.installConfigWarn {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  color: var(--warn, #d8a657);
+}

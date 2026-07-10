@@ -1052,6 +1052,49 @@ func (a *App) ensureCoreForProfileEx(profile Profile, gen uint64, enableTun bool
 	return true, nil
 }
 
+// rotateCoreLogForNewRun keeps the previous core run's log as `core.log.1` and
+// lets the caller start `core.log` fresh. Best-effort: a failure here must never
+// stop a core from starting.
+func rotateCoreLogForNewRun(logPath string) {
+	if fi, err := os.Stat(logPath); err != nil || fi.Size() == 0 {
+		return
+	}
+	_ = os.Remove(logPath + ".1")
+	_ = os.Rename(logPath, logPath+".1")
+}
+
+// reconcileOrphanServiceCoreOnStartup stops a mihomo core that the privileged
+// service is STILL managing from a previous app run. On a fresh process our
+// in-memory core state is empty, so stopCoreLocked() cannot see such a core
+// (it only tears down what `coreOverPipe`/`coreCmd` point at) and therefore
+// never stops it. After an unclean exit (crash, Task-Manager kill) that orphan
+// keeps holding the wintun adapter and its old ports, and the first Connect
+// races it. Best-effort and idempotent: when nothing is running, the service
+// simply reports nothing to stop.
+//
+// Safe to call unconditionally at startup: SingleInstanceLock guarantees no
+// other Sloth instance owns a live core.
+func (a *App) reconcileOrphanServiceCoreOnStartup() {
+	a.mu.RLock()
+	installed := a.state.Service.Installed
+	running := a.state.Core.Running
+	a.mu.RUnlock()
+	// running==true would mean this process already owns a core (it never does
+	// at startup) — guard anyway so a future caller cannot kill a live session.
+	if !installed || running {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ipcSlothStopCore(ctx); err != nil {
+		// Nothing to stop, or the service is not reachable: both are fine here.
+		a.traceEvent("core.orphan.reconcile", "skip", 0, map[string]any{"error": err.Error()})
+		return
+	}
+	a.traceEvent("core.orphan.reconcile", "ok", 0, nil)
+	a.appendRuntimeDiag("core.orphan", "stopped a service-managed core left by a previous run")
+}
+
 // forceRestartCoreForProfile always restarts the core for the provided profile,
 // even when the current running core already belongs to the same profile.
 // Used as a controlled fallback after runtime reload failures.
@@ -1321,7 +1364,10 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		cmd.SysProcAttr = attr
 	}
 	logPath := filepath.Join(dataDir, "core.log")
-	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	// One generation per core run: the previous run's log survives as core.log.1
+	// (it is what you read after a crash), and the live file cannot grow forever.
+	rotateCoreLogForNewRun(logPath)
+	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		cancel()
 		return err

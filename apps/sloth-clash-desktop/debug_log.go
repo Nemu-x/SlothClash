@@ -10,12 +10,31 @@ import (
 
 const (
 	debugSessionID = "cb9690"
+
+	// debugLogMaxBytes caps the diagnostic log. The app lives in the tray for
+	// weeks and every pipeline step writes a line, so an uncapped O_APPEND file
+	// grows without bound. On overflow we keep exactly one previous generation
+	// (`.1`) — enough to diagnose "what happened just before" without hoarding.
+	debugLogMaxBytes = 5 << 20 // 5 MiB
 )
 
 var (
 	debugLogPathOnce sync.Once
 	debugLogPath     string
+	// debugLogMu serializes size-check + rotate + append so two goroutines cannot
+	// rotate concurrently (and keeps JSON lines from interleaving).
+	debugLogMu sync.Mutex
 )
+
+// rotateDebugLogIfLargeLocked moves an oversized log aside. Caller holds debugLogMu.
+func rotateDebugLogIfLargeLocked(path string) {
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() < debugLogMaxBytes {
+		return
+	}
+	_ = os.Remove(path + ".1")
+	_ = os.Rename(path, path+".1")
+}
 
 func resolveDebugLogPath() string {
 	debugLogPathOnce.Do(func() {

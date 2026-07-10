@@ -513,5 +513,15 @@
     "prepend": "Prepend",
     "append": "Append",
     "addShort": "+ Add"
+  },
+  "installConfig": {
+    "title": "Add subscription from link?",
+    "lead": "A link asked Sloth Clash to add a subscription profile. Only continue if you trust this source.",
+    "source": "Source",
+    "name": "Name",
+    "url": "URL",
+    "warning": "A website can open this kind of link. Never add a subscription you did not request.",
+    "confirm": "Add subscription",
+    "adding": "Adding…"
   }
 }

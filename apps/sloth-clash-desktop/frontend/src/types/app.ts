@@ -44,6 +44,8 @@ export type ConnectionsOverview = {
     start?: string
     rule?: string
     rulePayload?: string
+    /** Proxy chain from exit node (index 0) to the entry group. Empty for DIRECT/REJECT. */
+    chains?: string[]
     metadata?: {
       host?: string
       destinationIP?: string

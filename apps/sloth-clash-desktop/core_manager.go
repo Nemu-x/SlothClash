@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -227,6 +228,40 @@ func (a *App) resolveMihomoBinary() (string, error) {
 		return "", fmt.Errorf("mihomo core unavailable: %w. If you are on an installed build this usually means antivirus quarantined the extracted file or `%%APPDATA%%/SlothClash/runtime/_sidecar` is not writable — check Windows Security › Protection history and add the SlothClash folder to exclusions. (%s)", extractErr, hint)
 	}
 	return "", fmt.Errorf("mihomo binary not found in embedded bundle or on disk. %s", hint)
+}
+
+// pinnedCoreHashesFromEmbed returns the SHA-256 (hex) of every embedded
+// sloth-mihomo* binary. These bytes are part of the signed client, so their
+// hash is a trustworthy pin: the privileged service verifies the core it is
+// asked to spawn against this set (SLOTH_CLASH_CORE_SHA256), which lets the core
+// live in a user-writable dir (_sidecar) yet still blocks a same-user swap.
+// Multiple hashes (stable + alpha) are returned so any embedded variant is
+// accepted.
+func (a *App) pinnedCoreHashesFromEmbed() []string {
+	var hashes []string
+	seen := map[string]bool{}
+	matches, _ := fs.Glob(a.bundle, "build/sidecar/sloth-mihomo*")
+	sort.Strings(matches)
+	for _, m := range matches {
+		if strings.Contains(strings.ToLower(filepath.Base(m)), "verge") {
+			continue // pre-fork leftovers are never run
+		}
+		info, err := fs.Stat(a.bundle, m)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		data, err := a.bundle.ReadFile(m)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		h := hex.EncodeToString(sum[:])
+		if !seen[h] {
+			seen[h] = true
+			hashes = append(hashes, h)
+		}
+	}
+	return hashes
 }
 
 func (a *App) extractBundledMihomoBinary() (string, error) {

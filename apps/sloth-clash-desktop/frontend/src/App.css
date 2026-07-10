@@ -5118,3 +5118,95 @@
   font-size: 0.88rem;
   color: var(--warn, #d8a657);
 }
+
+/* Connections: the exit node a connection actually egressed through. */
+.connNodeChip {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim, rgba(201, 168, 108, 0.16));
+  border: 1px solid var(--accent);
+  cursor: default;
+}
+.connNodeDirect {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* Privileged helper service: outdated-version nudge (security update). */
+.serviceUpdateBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--warn, #d8a657);
+  border-radius: var(--radius-sm);
+  background: rgba(216, 166, 87, 0.1);
+}
+.serviceUpdateIcon {
+  font-size: 1.3rem;
+  flex: none;
+}
+.serviceUpdateBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.88rem;
+  flex: 1;
+  min-width: 0;
+}
+.serviceUpdateHint {
+  font-size: 0.8rem;
+}
+.serviceUpdateBanner .btn {
+  flex: none;
+}
+
+/* App-wide "update the helper service" bar — shown on every screen while the
+   privileged service is outdated (security), until dismissed for the session. */
+.serviceUpdateBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--warn, #d8a657);
+  border-radius: var(--radius-sm);
+  background: rgba(216, 166, 87, 0.12);
+}
+.serviceUpdateBarIcon {
+  font-size: 1.15rem;
+  flex: none;
+}
+.serviceUpdateBarText {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.serviceUpdateBarBtn {
+  flex: none;
+}
+.serviceUpdateBarClose {
+  flex: none;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.serviceUpdateBarClose:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}

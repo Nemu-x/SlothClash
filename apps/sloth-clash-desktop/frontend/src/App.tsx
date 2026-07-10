@@ -62,7 +62,11 @@ import {
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
 import { UpdateRuleProvider } from './api/rules'
 import { BrowserOpenURL, EventsOn, WindowHide } from './api/runtime'
-import { InstallService, RefreshSlothServiceStatus } from './api/service'
+import {
+  GetServiceInfo,
+  InstallService,
+  RefreshSlothServiceStatus,
+} from './api/service'
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
@@ -259,6 +263,11 @@ function App() {
   const [installConfigRequest, setInstallConfigRequest] =
     useState<InstallConfigRequest | null>(null)
   const [installConfigBusy, setInstallConfigBusy] = useState(false)
+  const [serviceInfo, setServiceInfo] =
+    useState<main.ServiceRuntimeInfo | null>(null)
+  // Session-dismiss for the app-wide "update the helper service" banner. It
+  // reappears next launch while the service is still outdated.
+  const [serviceBannerDismissed, setServiceBannerDismissed] = useState(false)
   const [settings, setSettings] = useState<CompactSettings>(() =>
     loadCompactSettings(),
   )
@@ -1500,11 +1509,24 @@ function App() {
     await refresh()
   }
 
+  const refreshServiceInfo = useCallback(async () => {
+    try {
+      setServiceInfo(await GetServiceInfo())
+    } catch {
+      /* non-fatal: the update nudge simply won't show */
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshServiceInfo()
+  }, [refreshServiceInfo])
+
   const installService = async () => {
     setError('')
     const result = await InstallService()
     setTunBanner(result.message)
     await refresh()
+    await refreshServiceInfo()
   }
 
   const switchTraffic = async (mode: 'proxy' | 'tun') => {
@@ -1657,6 +1679,36 @@ function App() {
       />
 
       <section className="content">
+        {serviceInfo?.updateRequired && !serviceBannerDismissed ? (
+          <div className="serviceUpdateBar" role="alert">
+            <span className="serviceUpdateBarIcon" aria-hidden>
+              ⚠️
+            </span>
+            <span className="serviceUpdateBarText">
+              {t('settings.serviceUpdateTitle')} —{' '}
+              {t('settings.serviceUpdateAdminHint')}
+            </span>
+            <button
+              type="button"
+              className="btn primary serviceUpdateBarBtn"
+              onClick={() => {
+                setScreen('settings')
+                void installService()
+              }}
+            >
+              {t('settings.serviceUpdateAction')}
+            </button>
+            <button
+              type="button"
+              className="serviceUpdateBarClose"
+              aria-label={t('common.dismiss')}
+              title={t('common.dismiss')}
+              onClick={() => setServiceBannerDismissed(true)}
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         {screen === 'home' ? (
           <HomePage
             state={state}
@@ -1992,6 +2044,7 @@ function App() {
                 })()
               }}
               onInstallService={installService}
+              serviceInfo={serviceInfo}
               onEnsureTun={ensureTun}
               onShowTunModal={() => setShowTunModal(true)}
               onApplyDefaultAutoUpdate={() =>

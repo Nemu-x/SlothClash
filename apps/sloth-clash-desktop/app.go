@@ -1256,21 +1256,30 @@ func (a *App) InstallService() (TunSetupResult, error) {
 		}, nil
 	}
 
+	// Pin the embedded core by content: the installer records these SHA-256(s) in
+	// the service environment so it will only spawn a core whose bytes match,
+	// even though the core lives in the user-writable _sidecar dir.
+	coreHashesArg := strings.Join(a.pinnedCoreHashesFromEmbed(), ",")
+
 	var out []byte
 	var runErr error
 	if runtime.GOOS == "windows" {
 		if a.ctx != nil {
 			wailsrt.WindowMinimise(a.ctx)
 		}
-		out, runErr = installServiceElevatedWindows(installPath, tmpDir)
+		out, runErr = installServiceElevatedWindows(installPath, tmpDir, coreHashesArg)
 		if a.ctx != nil {
 			wailsrt.WindowShow(a.ctx)
 			wailsrt.WindowUnminimise(a.ctx)
 		}
 	} else if runtime.GOOS == "darwin" {
-		out, runErr = installServiceElevatedDarwin(installPath, tmpDir)
+		out, runErr = installServiceElevatedDarwin(installPath, tmpDir, coreHashesArg)
 	} else {
-		cmd := exec.Command(installPath)
+		args := []string{}
+		if coreHashesArg != "" {
+			args = append(args, "--core-sha256", coreHashesArg)
+		}
+		cmd := exec.Command(installPath, args...)
 		cmd.Dir = tmpDir
 		out, runErr = cmd.CombinedOutput()
 	}
@@ -1792,17 +1801,26 @@ func extractEmbeddedDir(bundle embed.FS, prefix string, dest string) error {
 	})
 }
 
-func installServiceElevatedWindows(installPath, workDir string) ([]byte, error) {
+func installServiceElevatedWindows(installPath, workDir, coreHashes string) ([]byte, error) {
 	psExe := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
 	if _, err := os.Stat(psExe); err != nil {
 		psExe = "powershell.exe"
 	}
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
+	// The installer persists the pinned core hash(es) into the service's own
+	// environment (SLOTH_CLASH_CORE_SHA256) so the service can content-verify the
+	// core it spawns. Passed as an ARGUMENT, not an env var: a -Verb RunAs child
+	// does not inherit this process's environment. Hex-only, so quoting is safe.
+	argList := ""
+	if strings.TrimSpace(coreHashes) != "" {
+		argList = fmt.Sprintf(" -ArgumentList '--core-sha256','%s'", esc(coreHashes))
+	}
 	// Windows PowerShell 5.x: Start-Process has -FilePath, not -LiteralPath.
 	script := fmt.Sprintf(
-		"$ErrorActionPreference='Stop'; Start-Process -FilePath '%s' -WorkingDirectory '%s' -Verb RunAs -Wait; exit $LASTEXITCODE",
+		"$ErrorActionPreference='Stop'; Start-Process -FilePath '%s' -WorkingDirectory '%s'%s -Verb RunAs -Wait; exit $LASTEXITCODE",
 		esc(installPath),
 		esc(workDir),
+		argList,
 	)
 	cmd := exec.Command(psExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 	if attr := hideWindowSysProcAttr(); attr != nil {
@@ -1811,12 +1829,18 @@ func installServiceElevatedWindows(installPath, workDir string) ([]byte, error) 
 	return cmd.CombinedOutput()
 }
 
-func installServiceElevatedDarwin(installPath, workDir string) ([]byte, error) {
+func installServiceElevatedDarwin(installPath, workDir, coreHashes string) ([]byte, error) {
 	_ = os.Chmod(installPath, 0o755)
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "'\\''") }
+	// Pass the pinned core hash(es) so the installer records them in the launchd
+	// plist EnvironmentVariables (SLOTH_CLASH_CORE_SHA256). Hex-only → quote-safe.
+	coreArg := ""
+	if strings.TrimSpace(coreHashes) != "" {
+		coreArg = fmt.Sprintf(" --core-sha256 '%s'", esc(coreHashes))
+	}
 	// Some installer builds explicitly require launching through sudo/pkexec.
 	// We use sudo under AppleScript elevation to satisfy that check reliably.
-	shellCmd := fmt.Sprintf("cd '%s' && /usr/bin/sudo '%s'", esc(workDir), esc(installPath))
+	shellCmd := fmt.Sprintf("cd '%s' && /usr/bin/sudo '%s'%s", esc(workDir), esc(installPath), coreArg)
 	appleScript := fmt.Sprintf("do shell script %q with administrator privileges", shellCmd)
 	cmd := exec.Command("osascript", "-e", appleScript)
 	return cmd.CombinedOutput()

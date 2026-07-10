@@ -15,10 +15,10 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // (scripts/prebuild.mjs SERVICE_DOWNLOAD_TAG) whenever the service ships a
 // security-relevant change the client must not run against an older build.
 //
-// The 0.2.0 line is the first release carrying the IPC LPE hardening
-// (core hash-pinning, log-dir validation, DACL narrowing). A user still on an
-// older service is prompted to have it reinstalled.
-const expectedSlothServiceVersion = "0.2.0"
+// 2.3.0 is the first release carrying the IPC LPE hardening (core hash-pinning,
+// log-dir validation, DACL narrowing). A user still on an older service (2.2.0
+// and below) is prompted to have it reinstalled.
+const expectedSlothServiceVersion = "2.3.0"
 
 // ServiceRuntimeInfo is the health/version snapshot the UI uses to decide
 // whether to nudge the user to update the privileged helper service.

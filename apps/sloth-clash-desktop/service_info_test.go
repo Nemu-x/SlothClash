@@ -8,6 +8,8 @@ func TestCompareServiceVersions(t *testing.T) {
 		want int
 	}{
 		{"0.1.0", "0.2.0", -1}, // old service vs required → update
+		{"2.2.0", "2.3.0", -1}, // real case: pre-fix service vs LPE-hardened release
+		{"2.3.0", "2.3.0", 0},  // real case: on the fixed release → no nag
 		{"0.2.0", "0.2.0", 0},
 		{"0.2.1", "0.2.0", 1},
 		{"1.0.0", "0.2.0", 1},

@@ -1,7 +1,12 @@
 import { useTranslation } from 'react-i18next'
 
+import { FlagMark } from '../components/FlagMark'
 import type { ConnectionsOverview } from '../types/app'
 import { formatBytesSmart } from '../utils/format'
+import {
+  extractNodeFlagIso,
+  proxyNodeLabelBesideFlag,
+} from '../utils/proxyNames'
 
 type ConnectionRow = NonNullable<ConnectionsOverview['connections']>[number]
 
@@ -110,7 +115,14 @@ export function ConnectionsPage({
                         className="connNodeChip"
                         title={chainPath(c.chains)}
                       >
-                        {exitNode(c.chains)}
+                        <FlagMark
+                          iso2={extractNodeFlagIso(exitNode(c.chains))}
+                          width={16}
+                          height={12}
+                        />
+                        <span className="connNodeLabel">
+                          {proxyNodeLabelBesideFlag(exitNode(c.chains))}
+                        </span>
                       </span>
                     ) : (
                       <span className="connNodeDirect">

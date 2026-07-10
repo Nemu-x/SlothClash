@@ -5121,11 +5121,10 @@
 
 /* Connections: the exit node a connection actually egressed through. */
 .connNodeChip {
-  display: inline-block;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
   vertical-align: bottom;
   padding: 2px 10px;
   border-radius: 999px;
@@ -5135,6 +5134,15 @@
   background: var(--accent-dim, rgba(201, 168, 108, 0.16));
   border: 1px solid var(--accent);
   cursor: default;
+}
+.connNodeChip img {
+  flex: none;
+  border-radius: 2px;
+}
+.connNodeLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .connNodeDirect {
   font-size: 0.82rem;

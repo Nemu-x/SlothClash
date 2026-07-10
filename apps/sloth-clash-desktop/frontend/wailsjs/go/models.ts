@@ -767,6 +767,28 @@ export namespace main {
       this.lastError = source['lastError']
     }
   }
+  export class ServiceRuntimeInfo {
+    installed: boolean
+    running: boolean
+    reachable: boolean
+    version?: string
+    expectedVersion: string
+    updateRequired: boolean
+
+    static createFrom(source: any = {}) {
+      return new ServiceRuntimeInfo(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.installed = source['installed']
+      this.running = source['running']
+      this.reachable = source['reachable']
+      this.version = source['version']
+      this.expectedVersion = source['expectedVersion']
+      this.updateRequired = source['updateRequired']
+    }
+  }
 
   export class SubscriptionDeviceIdentityPublic {
     hwid: string

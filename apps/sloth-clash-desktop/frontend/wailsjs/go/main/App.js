@@ -142,6 +142,10 @@ export function GetRuntimeDiagEvents() {
   return window['go']['main']['App']['GetRuntimeDiagEvents']()
 }
 
+export function GetServiceInfo() {
+  return window['go']['main']['App']['GetServiceInfo']()
+}
+
 export function GetSubscriptionDeviceIdentity() {
   return window['go']['main']['App']['GetSubscriptionDeviceIdentity']()
 }

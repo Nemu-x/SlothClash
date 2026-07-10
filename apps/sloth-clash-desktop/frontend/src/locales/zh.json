@@ -85,7 +85,11 @@
       "keepProfilesBody": "重置界面设置和本地默认值，但保留配置？",
       "withProfilesBody": "重置设置并从此设备删除所有配置？",
       "reset": "重置"
-    }
+    },
+    "serviceUpdateTitle": "需要更新辅助服务",
+    "serviceUpdateBody": "特权辅助服务已过时（v{{version}}，需要 v{{expected}}+）。它包含重要的安全修复。",
+    "serviceUpdateAdminHint": "重新安装需要管理员权限 — 请接受提示，或联系您的管理员。",
+    "serviceUpdateAction": "更新服务"
   },
   "tour": {
     "back": "上一步",
@@ -385,7 +389,9 @@
       "host": "主机",
       "process": "进程",
       "rule": "规则",
-      "traffic": "流量"
+      "traffic": "流量",
+      "node": "节点",
+      "direct": "直连"
     },
     "logs": {
       "title": "日志",

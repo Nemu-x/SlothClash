@@ -62,7 +62,11 @@ import {
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
 import { UpdateRuleProvider } from './api/rules'
 import { BrowserOpenURL, EventsOn, WindowHide } from './api/runtime'
-import { InstallService, RefreshSlothServiceStatus } from './api/service'
+import {
+  GetServiceInfo,
+  InstallService,
+  RefreshSlothServiceStatus,
+} from './api/service'
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
@@ -259,6 +263,8 @@ function App() {
   const [installConfigRequest, setInstallConfigRequest] =
     useState<InstallConfigRequest | null>(null)
   const [installConfigBusy, setInstallConfigBusy] = useState(false)
+  const [serviceInfo, setServiceInfo] =
+    useState<main.ServiceRuntimeInfo | null>(null)
   const [settings, setSettings] = useState<CompactSettings>(() =>
     loadCompactSettings(),
   )
@@ -1500,11 +1506,24 @@ function App() {
     await refresh()
   }
 
+  const refreshServiceInfo = useCallback(async () => {
+    try {
+      setServiceInfo(await GetServiceInfo())
+    } catch {
+      /* non-fatal: the update nudge simply won't show */
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshServiceInfo()
+  }, [refreshServiceInfo])
+
   const installService = async () => {
     setError('')
     const result = await InstallService()
     setTunBanner(result.message)
     await refresh()
+    await refreshServiceInfo()
   }
 
   const switchTraffic = async (mode: 'proxy' | 'tun') => {
@@ -1992,6 +2011,7 @@ function App() {
                 })()
               }}
               onInstallService={installService}
+              serviceInfo={serviceInfo}
               onEnsureTun={ensureTun}
               onShowTunModal={() => setShowTunModal(true)}
               onApplyDefaultAutoUpdate={() =>

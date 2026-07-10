@@ -57,6 +57,7 @@ export function SettingsPage({
   onSetSetting,
   onSetLaunchOnStartup,
   onInstallService,
+  serviceInfo,
   onEnsureTun,
   onShowTunModal,
   onApplyDefaultAutoUpdate,
@@ -91,6 +92,7 @@ export function SettingsPage({
   ) => void
   onSetLaunchOnStartup: (next: boolean) => void
   onInstallService: () => void
+  serviceInfo: main.ServiceRuntimeInfo | null
   onEnsureTun: () => void
   onShowTunModal: () => void
   onApplyDefaultAutoUpdate: () => void
@@ -290,6 +292,32 @@ export function SettingsPage({
               />
             </div>
             <p className="muted settingsMicroHint">{t('settings.dnsHint')}</p>
+            {serviceInfo?.updateRequired ? (
+              <div className="serviceUpdateBanner" role="alert">
+                <span className="serviceUpdateIcon" aria-hidden>
+                  ⚠️
+                </span>
+                <div className="serviceUpdateBody">
+                  <strong>{t('settings.serviceUpdateTitle')}</strong>
+                  <span className="muted">
+                    {t('settings.serviceUpdateBody', {
+                      version: serviceInfo.version || '—',
+                      expected: serviceInfo.expectedVersion,
+                    })}
+                  </span>
+                  <span className="serviceUpdateHint muted">
+                    {t('settings.serviceUpdateAdminHint')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={onInstallService}
+                >
+                  {t('settings.serviceUpdateAction')}
+                </button>
+              </div>
+            ) : null}
             <div className="row">
               <button
                 type="button"

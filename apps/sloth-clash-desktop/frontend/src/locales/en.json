@@ -85,7 +85,11 @@
       "keepProfilesBody": "Reset UI settings and local defaults, but keep profiles?",
       "withProfilesBody": "Reset settings and delete all profiles from this device?",
       "reset": "Reset"
-    }
+    },
+    "serviceUpdateTitle": "Helper service update required",
+    "serviceUpdateBody": "The privileged helper service is outdated (v{{version}}, needs v{{expected}}+). It contains important security fixes.",
+    "serviceUpdateAdminHint": "Reinstalling requires administrator rights — accept the prompt, or ask your administrator.",
+    "serviceUpdateAction": "Update service"
   },
   "tour": {
     "back": "Back",
@@ -385,7 +389,9 @@
       "host": "Host",
       "process": "Process",
       "rule": "Rule",
-      "traffic": "Traffic"
+      "traffic": "Traffic",
+      "node": "Node",
+      "direct": "Direct"
     },
     "logs": {
       "title": "Logs",

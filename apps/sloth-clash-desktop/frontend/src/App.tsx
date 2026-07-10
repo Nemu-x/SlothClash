@@ -265,6 +265,9 @@ function App() {
   const [installConfigBusy, setInstallConfigBusy] = useState(false)
   const [serviceInfo, setServiceInfo] =
     useState<main.ServiceRuntimeInfo | null>(null)
+  // Session-dismiss for the app-wide "update the helper service" banner. It
+  // reappears next launch while the service is still outdated.
+  const [serviceBannerDismissed, setServiceBannerDismissed] = useState(false)
   const [settings, setSettings] = useState<CompactSettings>(() =>
     loadCompactSettings(),
   )
@@ -1676,6 +1679,36 @@ function App() {
       />
 
       <section className="content">
+        {serviceInfo?.updateRequired && !serviceBannerDismissed ? (
+          <div className="serviceUpdateBar" role="alert">
+            <span className="serviceUpdateBarIcon" aria-hidden>
+              ⚠️
+            </span>
+            <span className="serviceUpdateBarText">
+              {t('settings.serviceUpdateTitle')} —{' '}
+              {t('settings.serviceUpdateAdminHint')}
+            </span>
+            <button
+              type="button"
+              className="btn primary serviceUpdateBarBtn"
+              onClick={() => {
+                setScreen('settings')
+                void installService()
+              }}
+            >
+              {t('settings.serviceUpdateAction')}
+            </button>
+            <button
+              type="button"
+              className="serviceUpdateBarClose"
+              aria-label={t('common.dismiss')}
+              title={t('common.dismiss')}
+              onClick={() => setServiceBannerDismissed(true)}
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         {screen === 'home' ? (
           <HomePage
             state={state}

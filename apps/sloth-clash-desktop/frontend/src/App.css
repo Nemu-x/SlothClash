@@ -5170,3 +5170,43 @@
 .serviceUpdateBanner .btn {
   flex: none;
 }
+
+/* App-wide "update the helper service" bar — shown on every screen while the
+   privileged service is outdated (security), until dismissed for the session. */
+.serviceUpdateBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--warn, #d8a657);
+  border-radius: var(--radius-sm);
+  background: rgba(216, 166, 87, 0.12);
+}
+.serviceUpdateBarIcon {
+  font-size: 1.15rem;
+  flex: none;
+}
+.serviceUpdateBarText {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.serviceUpdateBarBtn {
+  flex: none;
+}
+.serviceUpdateBarClose {
+  flex: none;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.serviceUpdateBarClose:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}

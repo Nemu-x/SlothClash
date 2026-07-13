@@ -210,7 +210,7 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 		"gen": gen,
 	})
 	a.emitAppStateChanged()
-	go func() { _, _ = a.RefreshHomeInsight() }()
+	a.safeGo("insight", func() { _, _ = a.RefreshHomeInsight() })
 }
 
 func (a *App) finishConnectJobFailed(gen uint64, err error) {

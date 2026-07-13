@@ -1,22 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
+import { useCallback } from 'react'
 
 import type { main } from '../../api/models'
 import { FetchRulesOverview } from '../../api/rules'
 
-/**
- * Mihomo rules snapshot. Only fetches when `enabled` (Rules screen is open).
- * Manual refresh via the returned `refresh()` (used by the bulk
- * "Update all providers" button after it cycles through the providers).
- */
+/** Mihomo rules snapshot (Rules screen). `refresh` memoized (audit C1-1). */
 export function useRulesOverview(enabled: boolean) {
-  const q = useQuery({
+  const { data, isFetching, refetch } = useQuery({
     queryKey: ['rules-overview'],
     queryFn: () => FetchRulesOverview() as Promise<main.RulesOverview>,
     enabled,
   })
-  return {
-    overview: q.data ?? null,
-    busy: q.isFetching,
-    refresh: () => void q.refetch(),
-  }
+  const refresh = useCallback(() => void refetch(), [refetch])
+  return { overview: data ?? null, busy: isFetching, refresh }
 }

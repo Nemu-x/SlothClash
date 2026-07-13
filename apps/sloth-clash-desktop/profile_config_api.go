@@ -16,7 +16,7 @@ import (
 func (a *App) GetProfilePaths(profileID string) ProfilePaths {
 	profileID = strings.TrimSpace(profileID)
 	out := ProfilePaths{}
-	if profileID == "" {
+	if !validProfileID(profileID) {
 		return out
 	}
 	root, err := slothDataRoot()
@@ -41,7 +41,7 @@ func (a *App) GetProfilePaths(profileID string) ProfilePaths {
 // subscription rules UX.
 func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 	profileID = strings.TrimSpace(profileID)
-	if profileID == "" {
+	if !validProfileID(profileID) {
 		return ProfileRulesBaseline{LastError: "profile id is required"}
 	}
 	a.mu.RLock()
@@ -116,7 +116,7 @@ func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 // template) without editing them in place.
 func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroupsBaseline {
 	profileID = strings.TrimSpace(profileID)
-	if profileID == "" {
+	if !validProfileID(profileID) {
 		return ProfileProxyGroupsBaseline{LastError: "profile id is required"}
 	}
 	a.mu.RLock()
@@ -192,7 +192,7 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 // ReadProfileConfig reads runtime/<id>/config.yaml when it exists.
 func (a *App) ReadProfileConfig(profileID string) ProfileConfigPeek {
 	profileID = strings.TrimSpace(profileID)
-	if profileID == "" {
+	if !validProfileID(profileID) {
 		return ProfileConfigPeek{LastError: "profile id is required"}
 	}
 	p := a.GetProfilePaths(profileID).ConfigPath
@@ -266,7 +266,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 // WriteProfileConfig replaces config.yaml for a profile (must be valid YAML mapping).
 func (a *App) WriteProfileConfig(profileID string, content string) (AppState, error) {
 	profileID = strings.TrimSpace(profileID)
-	if profileID == "" {
+	if !validProfileID(profileID) {
 		return a.GetAppState(), errors.New("profile id is required")
 	}
 	content = strings.TrimSpace(content)
@@ -341,7 +341,15 @@ func (a *App) reconnectActiveProfile() {
 		defer a.reconnectInFlight.Store(false)
 		passes := 0
 		overall := time.Now()
+		// Safety cap: never let a self-feeding trigger turn this into an
+		// infinite core-reload livelock (bounded passes + wall budget).
+		const maxReconnectPasses = 6
+		const reconnectBudget = 30 * time.Second
 		for {
+			if passes >= maxReconnectPasses || time.Since(overall) > reconnectBudget {
+				a.traceEvent("pipeline.reconnect.capped", "stop", time.Since(overall), map[string]any{"passes": passes})
+				return
+			}
 			passes++
 			a.reconnectQueued.Store(false)
 			passStart := time.Now()

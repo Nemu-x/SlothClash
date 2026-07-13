@@ -88,7 +88,6 @@ const slothPrefsFile = "prefs.json"
 var (
 	prefsMu      sync.RWMutex
 	prefsCurrent DesktopPrefs
-	prefsLoaded  bool
 )
 
 func prefsStorePath() (string, error) {
@@ -106,21 +105,14 @@ func loadDesktopPrefs() {
 	}
 	b, err := os.ReadFile(p)
 	if err != nil || len(b) == 0 {
-		prefsMu.Lock()
-		prefsLoaded = true
-		prefsMu.Unlock()
 		return
 	}
 	var disk DesktopPrefs
 	if err := json.Unmarshal(b, &disk); err != nil {
-		prefsMu.Lock()
-		prefsLoaded = true
-		prefsMu.Unlock()
 		return
 	}
 	prefsMu.Lock()
 	prefsCurrent = disk
-	prefsLoaded = true
 	prefsMu.Unlock()
 }
 

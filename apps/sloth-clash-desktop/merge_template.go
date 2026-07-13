@@ -87,7 +87,9 @@ func mergeListPrepend(doc map[string]any, key string, patch any) {
 		return
 	}
 	base := listGet(doc, key)
-	doc[key] = append(add, base...)
+	// Copy first so we never mutate the template's slice in place (append can
+	// alias the source backing array if it has spare capacity).
+	doc[key] = append(append([]any{}, add...), base...)
 }
 
 func mergeListAppend(doc map[string]any, key string, patch any) {
@@ -99,7 +101,7 @@ func mergeListAppend(doc map[string]any, key string, patch any) {
 		return
 	}
 	base := listGet(doc, key)
-	doc[key] = append(base, add...)
+	doc[key] = append(append([]any{}, base...), add...)
 }
 
 func listGet(doc map[string]any, key string) []any {

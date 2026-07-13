@@ -20,9 +20,9 @@ const coreHealthFailThreshold = 2
 type coreHealthAction int
 
 const (
-	coreHealthNoop     coreHealthAction = iota // healthy, or not monitoring
-	coreHealthCountFail                        // probe failed but still under threshold
-	coreHealthRestart                          // N consecutive fails — recover
+	coreHealthNoop      coreHealthAction = iota // healthy, or not monitoring
+	coreHealthCountFail                         // probe failed but still under threshold
+	coreHealthRestart                           // N consecutive fails — recover
 )
 
 // decideCoreHealth is the pure decision for the health watchdog: given whether
@@ -180,7 +180,7 @@ func (a *App) runNetworkResumePass(restartInProgress *atomic.Bool) {
 		}()
 		return
 	}
-	go func() { _, _ = a.RefreshHomeInsight() }()
+	a.safeGo("insight", func() { _, _ = a.RefreshHomeInsight() })
 	if runtime.GOOS == "windows" && traffic == "proxy" {
 		a.maybeWindowsSysProxyReconcile()
 	}

@@ -118,9 +118,9 @@ func (a *App) startup(ctx context.Context) {
 	if trayRuntimeEnabled() {
 		startAppTray(a)
 	}
-	go a.startProfileAutoUpdateLoop(ctx)
-	go a.updateCheckLoop(ctx)
-	go a.runRuntimeSupervisorLoop(ctx)
+	go a.runGuardedLoop(ctx, "profile-autoupdate", a.startProfileAutoUpdateLoop)
+	go a.runGuardedLoop(ctx, "update-check", a.updateCheckLoop)
+	go a.runGuardedLoop(ctx, "supervisor", a.runRuntimeSupervisorLoop)
 	a.emitAppStateChanged()
 	// Warm the core in the background for the active profile (cold start with
 	// tun.enable: false) so the first Connect only has to push a single
@@ -745,7 +745,10 @@ func (a *App) EnsureTunReady() TunSetupResult {
 	if a.state.Service.Installed {
 		a.state.Traffic = "tun"
 		a.state.UpdatedAt = time.Now().Unix()
-		_ = a.persistProfilesLocked()
+		if err := a.persistProfilesLocked(); err != nil {
+			debugLog("profiles", "A4", "app.go", "failed to persist profiles",
+				map[string]any{"error": err.Error()})
+		}
 		return TunSetupResult{Success: true, Message: "TUN enabled", InstallAction: false}
 	}
 	return TunSetupResult{
@@ -1662,7 +1665,7 @@ func (a *App) OnWindowBecameVisible() {
 	connected := a.state.Connection.Status == "connected"
 	a.mu.RUnlock()
 	if connected {
-		go func() { _, _ = a.RefreshHomeInsight() }()
+		a.safeGo("insight", func() { _, _ = a.RefreshHomeInsight() })
 	}
 	if runtime.GOOS == "windows" {
 		a.maybeWindowsSysProxyReconcile()

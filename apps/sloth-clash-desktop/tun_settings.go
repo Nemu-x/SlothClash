@@ -180,6 +180,17 @@ func normalizeFindProcessMode(v string) string {
 }
 
 // GetDesktopPrefs is the Wails-exposed getter for the Settings UI.
+
+// savePrefsBestEffort persists desktop prefs and logs on failure instead of
+// silently dropping the error (audit A4-1) — a full disk / ACL issue is at
+// least visible in the debug log.
+func savePrefsBestEffort(snapshot DesktopPrefs) {
+	if err := saveDesktopPrefsLocked(snapshot); err != nil {
+		debugLog("prefs", "A4", "tun_settings.go", "failed to persist desktop prefs",
+			map[string]any{"error": err.Error()})
+	}
+}
+
 func (a *App) GetDesktopPrefs() DesktopPrefs {
 	_ = a
 	return currentDesktopPrefs()
@@ -201,7 +212,7 @@ func (a *App) SetTunSettings(next TunSettings) DesktopPrefs {
 	prefsMu.Lock()
 	prefsCurrent.TUN = next
 	snapshot := prefsCurrent
-	_ = saveDesktopPrefsLocked(snapshot)
+	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 
 	a.triggerRuntimeReloadForPrefs()
@@ -221,7 +232,7 @@ func (a *App) SetUiLanguage(lang string) DesktopPrefs {
 	prefsMu.Lock()
 	prefsCurrent.Lang = lang
 	snapshot := prefsCurrent
-	_ = saveDesktopPrefsLocked(snapshot)
+	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 	return snapshot
 }
@@ -236,7 +247,7 @@ func (a *App) SetHwidEnabled(enabled bool) DesktopPrefs {
 	prefsMu.Lock()
 	prefsCurrent.Privacy.HwidEnabled = &v
 	snapshot := prefsCurrent
-	_ = saveDesktopPrefsLocked(snapshot)
+	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 	return snapshot
 }
@@ -250,7 +261,7 @@ func (a *App) SetAppAutoUpdateEnabled(enabled bool) DesktopPrefs {
 	prefsMu.Lock()
 	prefsCurrent.AppUpdate.AutoCheckEnabled = &v
 	snapshot := prefsCurrent
-	_ = saveDesktopPrefsLocked(snapshot)
+	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 	return snapshot
 }
@@ -262,7 +273,7 @@ func (a *App) SetTrafficSettings(next TrafficSettings) DesktopPrefs {
 	prefsMu.Lock()
 	prefsCurrent.Traffic = next
 	snapshot := prefsCurrent
-	_ = saveDesktopPrefsLocked(snapshot)
+	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 
 	a.triggerRuntimeReloadForPrefs()

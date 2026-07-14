@@ -2,6 +2,26 @@ package main
 
 import "testing"
 
+func TestCurrentBootLogIgnoresStaleFailure(t *testing.T) {
+	t.Parallel()
+	// A stale failure from a previous boot, then a fresh boot that succeeds.
+	// currentBootLog must drop everything before the last boot marker so the
+	// old "start tun listening error" can't produce a false failure verdict.
+	log := "Start initial configuration in progress\n" +
+		"Start TUN listening error: configure tun interface: operation not permitted\n" +
+		"Start initial configuration in progress\n" +
+		"[TUN] Tun adapter listening at: utun5([198.18.0.1/30],[]), mtu: 9000\n"
+	if got := scanTunBringUpLog(currentBootLog(log)); got != tunVerifyUp {
+		t.Fatalf("scoped scan = %v, want tunVerifyUp (stale failure must be ignored)", got)
+	}
+	// And a genuine failure in the current boot is still caught.
+	failLog := "Start initial configuration in progress\n" +
+		"Start TUN listening error: configure tun interface: operation not permitted\n"
+	if got := scanTunBringUpLog(currentBootLog(failLog)); got != tunVerifyFailed {
+		t.Fatalf("current-boot failure = %v, want tunVerifyFailed", got)
+	}
+}
+
 func TestScanTunBringUpLog(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

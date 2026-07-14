@@ -10,18 +10,20 @@ import (
 const tunDefaultDNSYAML = `dns:
   enable: true
   listen: ":1053"
-  ipv6: true
-  respect-rules: true
+  ipv6: false
+  respect-rules: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   fake-ip-filter-mode: blacklist
   use-hosts: true
   default-nameserver:
+    - system
     - 1.1.1.1
     - 8.8.8.8
   nameserver:
+    - 8.8.8.8
+    - 1.1.1.1
     - https://1.1.1.1/dns-query
-    - tls://8.8.8.8:853
 `
 
 // defaultFakeIPFilter mirrors clash-verge-rev's default fake-ip blacklist.
@@ -122,13 +124,12 @@ func ensureDefaultDNSForTun(m map[string]any) {
 			dns["fake-ip-filter-mode"] = "blacklist"
 		}
 	}
-	if _, ok := dns["ipv6"]; !ok {
-		if topIPv6, has := m["ipv6"].(bool); has {
-			dns["ipv6"] = topIPv6
-		} else {
-			dns["ipv6"] = true
-		}
-	}
+	// verge parity (enhance/tun.rs): dns.ipv6 follows the top-level `ipv6` flag,
+	// defaulting to false. A machine with no working IPv6 route that receives AAAA
+	// records dials v6 and fails "address not valid in its context" (real user
+	// log: assets.msn.com). Force-align to top-level rather than defaulting true.
+	topIPv6, _ := m["ipv6"].(bool)
+	dns["ipv6"] = topIPv6
 	// Mihomo requires proxy-server-nameserver when respect-rules is enabled.
 	// Keep Verge-like non-destructive behavior: only fill it when missing/empty.
 	respectRules := false

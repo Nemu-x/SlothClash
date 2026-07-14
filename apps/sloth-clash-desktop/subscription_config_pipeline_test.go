@@ -51,6 +51,35 @@ func TestSubscriptionDocIsFullProfileHeuristics(t *testing.T) {
 	}
 }
 
+func TestNormalizeProxySNI(t *testing.T) {
+	m := map[string]any{
+		"proxies": []any{
+			// hysteria2 with servername, no sni -> sni copied (the panel bug we fix).
+			map[string]any{"name": "hy2", "type": "hysteria2", "server": "1.2.3.4", "servername": "hey.example.com"},
+			// tuic likewise.
+			map[string]any{"name": "tuic", "type": "tuic", "server": "1.2.3.4", "servername": "t.example.com"},
+			// existing sni must win (never overwritten).
+			map[string]any{"name": "hy2b", "type": "hysteria2", "server": "1.2.3.4", "sni": "keep.example.com", "servername": "other.example.com"},
+			// vless uses servername natively -> must NOT get an sni injected.
+			map[string]any{"name": "vless", "type": "vless", "server": "1.2.3.4", "servername": "google.com"},
+		},
+	}
+	normalizeProxySNI(m)
+	got := m["proxies"].([]any)
+	if sni, _ := got[0].(map[string]any)["sni"].(string); sni != "hey.example.com" {
+		t.Fatalf("hy2 sni = %q, want hey.example.com", sni)
+	}
+	if sni, _ := got[1].(map[string]any)["sni"].(string); sni != "t.example.com" {
+		t.Fatalf("tuic sni = %q, want t.example.com", sni)
+	}
+	if sni, _ := got[2].(map[string]any)["sni"].(string); sni != "keep.example.com" {
+		t.Fatalf("existing sni overwritten: %q", sni)
+	}
+	if _, has := got[3].(map[string]any)["sni"]; has {
+		t.Fatalf("vless must not get sni injected")
+	}
+}
+
 func TestNormalizeProxyGroupRefsPrunesUnknownProxies(t *testing.T) {
 	t.Parallel()
 	m := map[string]any{

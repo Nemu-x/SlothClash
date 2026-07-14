@@ -598,7 +598,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 	fmt.Fprintf(&cfg, "    path: ./providers/sub1.yaml\n")
 	fmt.Fprintf(&cfg, "    health-check:\n")
 	fmt.Fprintf(&cfg, "      enable: true\n")
-	fmt.Fprintf(&cfg, "      url: http://www.gstatic.com/generate_204\n")
+	fmt.Fprintf(&cfg, "      url: http://cp.cloudflare.com/generate_204\n")
 	fmt.Fprintf(&cfg, "      interval: 600\n\n")
 
 	// Bare fallback groups: emit a `select` group (Manual) that lists Auto
@@ -614,7 +614,7 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 	fmt.Fprintf(&cfg, "    type: url-test\n")
 	fmt.Fprintf(&cfg, "    use:\n")
 	fmt.Fprintf(&cfg, "      - sub1\n")
-	fmt.Fprintf(&cfg, "    url: http://www.gstatic.com/generate_204\n")
+	fmt.Fprintf(&cfg, "    url: http://cp.cloudflare.com/generate_204\n")
 	fmt.Fprintf(&cfg, "    interval: 300\n")
 	fmt.Fprintf(&cfg, "    tolerance: 50\n")
 	fmt.Fprintf(&cfg, "  - name: Manual\n")

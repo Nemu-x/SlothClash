@@ -157,7 +157,7 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 					"name":      "Auto",
 					"type":      "url-test",
 					"use":       []any{"sub1"},
-					"url":       "http://www.gstatic.com/generate_204",
+					"url":       "http://cp.cloudflare.com/generate_204",
 					"interval":  300,
 					"tolerance": 50,
 				},

@@ -395,6 +395,43 @@ func pruneFallbackAutoManualIfCustom(m map[string]any) {
 	m["proxy-groups"] = filtered
 }
 
+// tlsSNIProtocols are proxy types whose TLS server name is the `sni` field in
+// mihomo — NOT `servername` (that's vmess/vless/trojan/reality). Some panels
+// (Marzban / PasarGuard family) emit `servername` for these; mihomo ignores it,
+// so an IP-addressed server gets its cert verified against the IP and fails
+// ("cannot validate certificate ... doesn't contain any IP SANs") even though a
+// valid domain cert exists.
+var tlsSNIProtocols = map[string]bool{"hysteria2": true, "hysteria": true, "tuic": true}
+
+// normalizeProxySNI copies a stray `servername` onto `sni` for hysteria/hysteria2/
+// tuic nodes that lack an explicit sni, so a domain cert verifies against its
+// domain instead of the raw IP. Upstream (clash-verge-rev) does NOT do this, so
+// we work on subscriptions where it fails. Non-destructive: an existing sni wins,
+// and `servername` is left untouched (mihomo ignores it), so working nodes never
+// change.
+func normalizeProxySNI(m map[string]any) {
+	proxies, ok := m["proxies"].([]any)
+	if !ok {
+		return
+	}
+	for _, it := range proxies {
+		p, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := p["type"].(string)
+		if !tlsSNIProtocols[strings.ToLower(strings.TrimSpace(typ))] {
+			continue
+		}
+		if sni, _ := p["sni"].(string); strings.TrimSpace(sni) != "" {
+			continue
+		}
+		if sn, _ := p["servername"].(string); strings.TrimSpace(sn) != "" {
+			p["sni"] = sn
+		}
+	}
+}
+
 // normalizeRulesMatchLast ensures terminal MATCH rules are placed last.
 // If MATCH appears earlier, appended user rules become unreachable.
 func normalizeRulesMatchLast(m map[string]any) {

@@ -135,6 +135,20 @@ func TestParseHysteria2(t *testing.T) {
 	}
 }
 
+func TestParseHysteria2InsecureVariants(t *testing.T) {
+	// insecure spelled as "true" (not just "1") must still set skip-cert-verify —
+	// otherwise an IP-addressed server (cert has no IP SAN) fails the handshake.
+	for _, q := range []string{"insecure=true", "insecure=1", "allowInsecure=yes"} {
+		p, err := ParseLink("hysteria2://pass@108.61.209.112:443?" + q + "#H")
+		if err != nil {
+			t.Fatalf("%s err: %v", q, err)
+		}
+		if p["skip-cert-verify"] != true {
+			t.Fatalf("%s: skip-cert-verify not set: %#v", q, p)
+		}
+	}
+}
+
 func TestParseTuic(t *testing.T) {
 	link := "tuic://uuid-1:password-1@example.com:443?sni=example.com&congestion_control=bbr&udp_relay_mode=native#U"
 	p, err := ParseLink(link)

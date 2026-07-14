@@ -337,7 +337,7 @@ func parseTrojan(link string) (Proxy, error) {
 	if sni := firstNonEmpty(q.Get("sni"), q.Get("peer")); sni != "" {
 		p["sni"] = sni
 	}
-	if q.Get("allowInsecure") == "1" || q.Get("insecure") == "1" {
+	if insecureRequested(q) {
 		p["skip-cert-verify"] = true
 	}
 	if alpn := q.Get("alpn"); alpn != "" {
@@ -349,6 +349,21 @@ func parseTrojan(link string) (Proxy, error) {
 		applyTransport(p, network, q)
 	}
 	return p, nil
+}
+
+// insecureRequested reports whether a share link asks to skip TLS cert
+// verification. Links in the wild spell it several ways — insecure /
+// allowInsecure / allow_insecure — with values 1/true/yes. Missing any of these
+// leaves skip-cert-verify unset, which for an IP-addressed server (no IP SAN in
+// the cert) fails the handshake with "cannot validate certificate ... IP SANs".
+func insecureRequested(q url.Values) bool {
+	for _, k := range []string{"insecure", "allowInsecure", "allow_insecure"} {
+		switch strings.ToLower(strings.TrimSpace(q.Get(k))) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
 }
 
 func parseHysteria2(link string) (Proxy, error) {
@@ -379,7 +394,7 @@ func parseHysteria2(link string) (Proxy, error) {
 	if sni := q.Get("sni"); sni != "" {
 		p["sni"] = sni
 	}
-	if q.Get("insecure") == "1" {
+	if insecureRequested(q) {
 		p["skip-cert-verify"] = true
 	}
 	if obfs := q.Get("obfs"); obfs != "" {
@@ -429,7 +444,7 @@ func parseTuic(link string) (Proxy, error) {
 	if rm := q.Get("udp_relay_mode"); rm != "" {
 		p["udp-relay-mode"] = rm
 	}
-	if q.Get("allow_insecure") == "1" {
+	if insecureRequested(q) {
 		p["skip-cert-verify"] = true
 	}
 	return p, nil

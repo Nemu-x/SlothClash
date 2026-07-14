@@ -178,6 +178,7 @@ func finalizeRuntimeConfigPipeline(
 	}
 	normalizeRulesMatchLast(m)
 	normalizeProxyGroupRefs(m)
+	normalizeProxySNI(m)
 	pruneFallbackAutoManualIfCustom(m)
 	cleanupUnusedProxyProviders(m)
 	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun)

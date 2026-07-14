@@ -40,11 +40,11 @@ const (
 	// HWND_MESSAGE = (HWND)-3, cast to uintptr.
 	winHwndMessage = ^uintptr(2)
 
-	wmUser          = uintptr(0x0400)
-	wmTrayCallback  = uint32(wmUser + 1)
-	wmTrayQuit      = uint32(wmUser + 2)
-	wmTrayReinit    = uint32(wmUser + 3)
-	wmTraySetState  = uint32(wmUser + 4) // wparam = state code (0..2)
+	wmUser         = uintptr(0x0400)
+	wmTrayCallback = uint32(wmUser + 1)
+	wmTrayQuit     = uint32(wmUser + 2)
+	wmTrayReinit   = uint32(wmUser + 3)
+	wmTraySetState = uint32(wmUser + 4) // wparam = state code (0..2)
 
 	nimAdd        = uintptr(0x00000000)
 	nimModify     = uintptr(0x00000001)
@@ -54,8 +54,6 @@ const (
 	nifMessage = uint32(0x00000001)
 	nifIcon    = uint32(0x00000002)
 	nifTip     = uint32(0x00000004)
-
-	notifyIconVersion4 = uint32(4)
 
 	wmDestroy       = uint32(0x0002)
 	wmCommand       = uint32(0x0111)
@@ -135,18 +133,18 @@ type winMsg struct {
 }
 
 type winWndClassExW struct {
-	CbSize        uint32
-	Style         uint32
-	WndProc       uintptr
-	ClsExtra      int32
-	WndExtra      int32
-	Instance      uintptr
-	Icon          uintptr
-	Cursor        uintptr
-	Background    uintptr
-	MenuName      *uint16
-	ClassName     *uint16
-	IconSm        uintptr
+	CbSize     uint32
+	Style      uint32
+	WndProc    uintptr
+	ClsExtra   int32
+	WndExtra   int32
+	Instance   uintptr
+	Icon       uintptr
+	Cursor     uintptr
+	Background uintptr
+	MenuName   *uint16
+	ClassName  *uint16
+	IconSm     uintptr
 }
 
 // NOTIFYICONDATAW V4 (Vista+) — keeps the layout the modern shell expects.

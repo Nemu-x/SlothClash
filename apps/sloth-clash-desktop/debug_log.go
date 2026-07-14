@@ -67,7 +67,15 @@ func debugLog(runID, hypothesisID, location, message string, data map[string]any
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(resolveDebugLogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	path := resolveDebugLogPath()
+
+	// Serialize size-check + rotate + append so the log stays bounded (5 MiB,
+	// one `.1` generation) and JSON lines don't interleave across goroutines.
+	debugLogMu.Lock()
+	defer debugLogMu.Unlock()
+	rotateDebugLogIfLargeLocked(path)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
 	}

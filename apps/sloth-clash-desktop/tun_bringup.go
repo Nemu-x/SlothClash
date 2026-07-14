@@ -39,7 +39,26 @@ const (
 	tunSuccessMarker    = "tun adapter listening at"
 	tunFailErrorMarker  = "start tun listening error"
 	tunFailConfigMarker = "configure tun interface"
+	// tunBootMarker is logged by Mihomo at the start of every (re)load. core.log
+	// is append-only across restarts AND sessions, so a raw tail can carry a
+	// stale "start tun listening error" from a PREVIOUS boot — which made verify
+	// latch a false failure that survived reboots/reinstalls (the poison line
+	// stays in the log). Scoping every scan to the text after the LAST boot
+	// marker guarantees we only judge the current core instance.
+	tunBootMarker = "start initial configuration in progress"
 )
+
+// currentBootLog trims core.log text to the current core instance: everything
+// from the LAST boot marker onward. Lines before it belong to a previous
+// (re)load or session and MUST NOT influence this connect's verdict — otherwise
+// a stale failure line produces a permanent false "TUN blocked" banner that
+// reinstalling the service and rebooting can't clear. No marker => return as-is.
+func currentBootLog(logText string) string {
+	if i := strings.LastIndex(strings.ToLower(logText), tunBootMarker); i >= 0 {
+		return logText[i:]
+	}
+	return logText
+}
 
 // scanTunBringUpLog classifies a chunk of core.log text. The LAST relevant
 // event wins (a later success after an earlier transient error means up, and
@@ -126,7 +145,7 @@ func verifyTunBringUp(profileID string, grace time.Duration) tunVerifyResult {
 	}
 	deadline := time.Now().Add(grace)
 	for {
-		switch scanTunBringUpLog(readFileTail(logPath, 64*1024)) {
+		switch scanTunBringUpLog(currentBootLog(readFileTail(logPath, 64*1024))) {
 		case tunVerifyUp:
 			return tunVerifyUp
 		case tunVerifyFailed:
@@ -208,7 +227,7 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	}
 	hint := "The TUN adapter could not be brought up. Try reconnecting or use Proxy mode."
 	if logPath, err := coreLogPathForProfile(profile.ID); err == nil {
-		hint = classifyTunFailure(readFileTail(logPath, 16*1024))
+		hint = classifyTunFailure(currentBootLog(readFileTail(logPath, 64*1024)))
 	}
 	a.traceEvent("pipeline.connect.tun_verify", "fail", 0, map[string]any{"gen": gen, "hint": hint})
 	return errors.New(hint)
@@ -220,7 +239,7 @@ func classifyTunFailure(logTail string) string {
 	l := strings.ToLower(logTail)
 	switch {
 	case strings.Contains(l, "operation not permitted"):
-		return "The TUN adapter was blocked (operation not permitted). Another VPN or network filter (e.g. Cisco AnyConnect) may be blocking it — disable it, or reinstall the SlothClash service, then try again. You can also use Proxy mode."
+		return "The TUN adapter couldn't be created (operation not permitted) — usually a previous tunnel is still releasing. Click Connect again; it typically succeeds on the next try. If it keeps failing, another VPN or network filter (e.g. Cisco AnyConnect) may be blocking it — disable it or reinstall the SlothClash service. You can also use Proxy mode."
 	case strings.Contains(l, "access is denied"):
 		return "Access was denied creating the TUN adapter. The privileged service may not be running with the required rights — reinstall the service and try again."
 	case strings.Contains(l, "already exists"), strings.Contains(l, "in use"):

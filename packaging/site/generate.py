@@ -194,8 +194,10 @@ sudo apt update &amp;&amp; sudo apt install sloth-clash</pre>
 <h3 style="margin:18px 0 8px">Fedora / openSUSE</h3>
 <pre>sudo dnf config-manager --add-repo {PAGES}/rpm/slothclash.repo
 sudo dnf install sloth-clash</pre>
-<h3 style="margin:18px 0 8px">Arch Linux</h3>
-<pre>sudo pacman -U {DL}/sloth-clash-linux-amd64.pkg.tar.zst</pre>
+<h3 style="margin:18px 0 8px">Arch Linux (AUR)</h3>
+<pre>yay -S sloth-clash-bin      # or: paru -S sloth-clash-bin</pre>
+<p class="muted">Or a one-off install without an AUR helper:
+<code>sudo pacman -U {DL}/sloth-clash-linux-amd64.pkg.tar.zst</code></p>
 
 <h2>Releases</h2>
 {releases_html}

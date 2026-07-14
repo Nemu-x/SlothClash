@@ -207,13 +207,13 @@ func resolveInsightDelayName(groups []ProxyGroup, activeGroup string) string {
 }
 
 func fetchMihomoDelay(ctx context.Context, listen, secret, proxyName string) (int, error) {
-	return fetchMihomoDelayToURL(ctx, listen, secret, proxyName, "http://www.gstatic.com/generate_204")
+	return fetchMihomoDelayToURL(ctx, listen, secret, proxyName, "http://cp.cloudflare.com/generate_204")
 }
 
 func fetchMihomoDelayToURL(ctx context.Context, listen, secret, proxyName, testURL string) (int, error) {
 	u := "/proxies/" + url.PathEscape(proxyName) + "/delay"
 	q := url.Values{}
-	q.Set("timeout", "4000")
+	q.Set("timeout", "10000") // verge parity; QUIC/hysteria cold handshake needs headroom
 	q.Set("url", testURL)
 	u += "?" + q.Encode()
 

@@ -41,8 +41,13 @@ func (a *App) TestProxyDelay(name string) (int, error) {
 	}
 
 	q := url.Values{}
-	q.Set("timeout", "4000")
-	q.Set("url", "http://www.gstatic.com/generate_204")
+	// 10s (verge parity: default_latency_timeout=10000). A hysteria2/QUIC node's
+	// first probe is a cold handshake (QUIC + obfs + masquerade + uTLS) that
+	// routinely needs 4-8s over a long path — a 4s cap made working nodes show a
+	// false 504. Cloudflare's generate_204 (verge default) is a more reliable exit
+	// probe than gstatic, which some proxy exits throttle.
+	q.Set("timeout", "10000")
+	q.Set("url", "http://cp.cloudflare.com/generate_204")
 	path := "/proxies/" + url.PathEscape(name) + "/delay?" + q.Encode()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

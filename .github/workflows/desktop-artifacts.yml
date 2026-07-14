@@ -403,6 +403,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     env:
       MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
       MINISIGN_SIGN_PASSWORD: ${{ secrets.MINISIGN_SIGN_PASSWORD }}
@@ -452,3 +453,12 @@ jobs:
             dist/**/*.pkg.tar.zst
             dist/SHA256SUMS
             dist/SHA256SUMS.minisig
+
+      # A release created with GITHUB_TOKEN does NOT cascade to trigger the
+      # `on: release` workflow (GitHub anti-recursion). workflow_dispatch is an
+      # exception, so kick package-repos (AUR + apt/dnf + site) explicitly, on
+      # this tag ref — its AUR step derives the version from GITHUB_REF_NAME.
+      - name: Trigger package repositories (AUR + apt/dnf + site)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run package-repos.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"

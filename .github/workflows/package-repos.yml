@@ -129,7 +129,9 @@ jobs:
     # AUR publish only makes sense for real releases with a version tag.
     # Quietly skips when AUR_SSH_PRIVATE_KEY is not configured (owner has no
     # AUR account yet — infra stays ready for when registration succeeds).
-    if: github.event_name == 'release'
+    # Real releases, or a manual/auto dispatch pinned to a version tag. A plain
+    # branch dispatch (e.g. a site-only refresh) intentionally skips AUR.
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
@@ -170,4 +172,4 @@ jobs:
           commit_username: Nemu-x
           commit_email: Nemu-x@users.noreply.github.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: Update to ${{ github.event.release.tag_name }}
+          commit_message: Update to ${{ github.event.release.tag_name || github.ref_name }}

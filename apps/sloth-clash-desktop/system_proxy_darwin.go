@@ -7,7 +7,13 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// darwinProxyReconcileOnce bounds the leaked-loopback-proxy cleanup to one pass
+// per process (startup), so the periodic supervisor tick doesn't spawn
+// networksetup on every iteration while idle/TUN.
+var darwinProxyReconcileOnce sync.Once
 
 func (a *App) applySystemProxyIfNeededLocked() error {
 	if a.state.Traffic != "proxy" {
@@ -177,13 +183,55 @@ func runNetworksetup(args ...string) error {
 }
 
 func clearDarwinSystemProxyWithSnapshot(leased bool, snapshot map[string]SystemProxyServiceSnapshot) error {
-	if !leased {
-		return nil
+	if leased {
+		if len(snapshot) > 0 {
+			return restoreDarwinSystemProxySnapshot(snapshot)
+		}
+		return setDarwinSystemProxy("", 0, false)
 	}
-	if len(snapshot) > 0 {
-		return restoreDarwinSystemProxySnapshot(snapshot)
+	// Not leased in THIS process — but systemProxyLeased lives only in memory and
+	// does NOT survive a force-quit / crash / updater-kill, while the macOS proxy
+	// setting persists (even across reboots). A stale "127.0.0.1:<oldport>" proxy we
+	// set earlier would then never be cleared and blackholes all traffic once the
+	// core stops. So still turn off any proxy that points at loopback (ours); never
+	// touch a real upstream proxy the user configured.
+	return clearDarwinLoopbackProxy()
+}
+
+// isLoopbackProxyHost reports whether a proxy server value is our own loopback.
+func isLoopbackProxyHost(h string) bool {
+	switch strings.TrimSpace(strings.ToLower(h)) {
+	case "127.0.0.1", "::1", "localhost":
+		return true
 	}
-	return setDarwinSystemProxy("", 0, false)
+	return false
+}
+
+// clearDarwinLoopbackProxy turns off web/secure proxies that currently point at
+// loopback across all services — cleaning up a lease we lost track of. Upstream
+// proxies (non-loopback) are left untouched.
+func clearDarwinLoopbackProxy() error {
+	services, err := darwinNetworkServices()
+	if err != nil {
+		return err
+	}
+	var errs []string
+	for _, svc := range services {
+		if web, e := getDarwinProxyState("-getwebproxy", svc); e == nil && web.enabled && isLoopbackProxyHost(web.server) {
+			if err := runNetworksetup("-setwebproxystate", svc, "off"); err != nil {
+				errs = append(errs, fmt.Sprintf("%s web off: %v", svc, err))
+			}
+		}
+		if sec, e := getDarwinProxyState("-getsecurewebproxy", svc); e == nil && sec.enabled && isLoopbackProxyHost(sec.server) {
+			if err := runNetworksetup("-setsecurewebproxystate", svc, "off"); err != nil {
+				errs = append(errs, fmt.Sprintf("%s secure off: %v", svc, err))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 func captureDarwinSystemProxySnapshot(services []string) map[string]SystemProxyServiceSnapshot {
@@ -271,7 +319,20 @@ func getDarwinProxyState(flag string, service string) (darwinProxyState, error) 
 	return state, nil
 }
 
-func (a *App) maybeWindowsSysProxyReconcile() {}
+// maybeWindowsSysProxyReconcile (darwin) self-heals a leaked loopback proxy.
+// The supervisor calls this periodically and on resume/startup: if we're not in
+// proxy mode yet a 127.0.0.1 proxy is still enabled (a previous session was
+// force-quit / crashed before teardown), turn it off so direct traffic isn't
+// blackholed. A legitimate proxy-mode lease is left alone.
+func (a *App) maybeWindowsSysProxyReconcile() {
+	a.mu.RLock()
+	inProxy := a.state.Traffic == "proxy" && a.systemProxyLeased
+	a.mu.RUnlock()
+	if inProxy {
+		return
+	}
+	darwinProxyReconcileOnce.Do(func() { _ = clearDarwinLoopbackProxy() })
+}
 
 func (a *App) handleMixedPortChangeForWindowsSysProxy(prevPort, newPort int) {
 	_, _ = prevPort, newPort

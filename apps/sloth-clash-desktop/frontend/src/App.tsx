@@ -88,6 +88,7 @@ import { SidebarNav } from './components/SidebarNav'
 import { ToastHub } from './components/ToastHub'
 import { TunSettingsModal } from './components/TunSettingsModal'
 import {
+  LS_ACCENT,
   LS_NAV_COLLAPSED,
   LS_SETTINGS,
   LS_SPOTLIGHT,
@@ -134,6 +135,7 @@ import { parseMihomoRulesJson, parseRuleProvidersJson } from './rulesTable'
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { CompactSettings, ImportModalReason, Screen } from './types/app'
+import { deriveAccentVars, normalizeHex, resolveAccent } from './utils/accent'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from './utils/proxyNames'
 import {
   applyUiScale,
@@ -314,6 +316,10 @@ function App() {
     if (v === 'light' || v === 'dark' || v === 'system') return v
     return 'dark'
   })
+  // Raw user-picked hex; per-theme contrast adjustment happens at apply time.
+  const [customAccent, setCustomAccent] = useState<string | null>(() =>
+    normalizeHex(localStorage.getItem(LS_ACCENT)),
+  )
   const [lang, setLang] = useState<'en' | 'ru' | 'zh'>(() => readStoredLang())
   const [spotlightOpen, setSpotlightOpen] = useState(
     () => localStorage.getItem(LS_SPOTLIGHT) !== '1',
@@ -817,14 +823,31 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(LS_THEME, theme)
+    if (customAccent) localStorage.setItem(LS_ACCENT, customAccent)
+    else localStorage.removeItem(LS_ACCENT)
     const el = shellRef.current
     if (!el) return
     const apply = () => {
+      let effective: 'dark' | 'light'
       if (theme === 'system') {
         const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        el.setAttribute('data-theme', dark ? 'dark' : 'light')
+        effective = dark ? 'dark' : 'light'
       } else {
-        el.setAttribute('data-theme', theme)
+        effective = theme
+      }
+      el.setAttribute('data-theme', effective)
+      // Inline custom properties outrank both stylesheet blocks, so every
+      // var(--accent*) consumer restyles without per-component changes.
+      const hex = resolveAccent({ userHex: customAccent })
+      if (hex) {
+        const vars = deriveAccentVars(hex, effective)
+        el.style.setProperty('--accent', vars.accent)
+        el.style.setProperty('--accent-dim', vars.dim)
+        el.style.setProperty('--accent-muted', vars.muted)
+      } else {
+        el.style.removeProperty('--accent')
+        el.style.removeProperty('--accent-dim')
+        el.style.removeProperty('--accent-muted')
       }
     }
     apply()
@@ -832,7 +855,7 @@ function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme])
+  }, [theme, customAccent])
 
   useEffect(() => {
     let cancelled = false
@@ -1157,9 +1180,11 @@ function App() {
     setError('')
     try {
       setTheme('system')
+      setCustomAccent(null)
       setLang('en')
       setSettings(DEFAULT_SETTINGS)
       localStorage.removeItem(LS_THEME)
+      localStorage.removeItem(LS_ACCENT)
       localStorage.removeItem(LS_LANG)
       localStorage.removeItem(LS_SETTINGS)
       localStorage.removeItem(LS_NAV_COLLAPSED)
@@ -2017,6 +2042,8 @@ function App() {
           <Suspense fallback={<div className="panel" />}>
             <SettingsPage
               theme={theme}
+              accent={customAccent}
+              onSetAccent={setCustomAccent}
               lang={lang}
               settings={settings}
               settingsBusy={settingsBusy}

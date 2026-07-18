@@ -138,7 +138,8 @@ export function SpotlightTour({
               height: r.height + PAD * 2,
               borderRadius: 14,
               border: '2px solid var(--accent, #c9a86c)',
-              boxShadow: '0 0 0 1px rgba(201, 168, 108, 0.35)',
+              boxShadow:
+                '0 0 0 1px color-mix(in srgb, var(--accent, #c9a86c) 35%, transparent)',
               pointerEvents: 'none',
               zIndex: 1001,
             }}

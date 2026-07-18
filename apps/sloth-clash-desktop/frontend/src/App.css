@@ -67,8 +67,8 @@
   --dur-slow: 320ms;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   /* scrollbars — themed (bronze) instead of stark white */
-  --scrollbar-thumb: rgba(201, 168, 108, 0.3);
-  --scrollbar-thumb-hover: rgba(201, 168, 108, 0.5);
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 30%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 50%, transparent);
 
   background: radial-gradient(
     circle at 18% 10%,
@@ -247,8 +247,8 @@
   --text-muted: #6f6450;
   --hairline: rgba(70, 52, 28, 0.1);
   --hairline-strong: rgba(70, 52, 28, 0.16);
-  --scrollbar-thumb: rgba(147, 107, 56, 0.34);
-  --scrollbar-thumb-hover: rgba(147, 107, 56, 0.55);
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 34%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 55%, transparent);
   background: radial-gradient(
     circle at 18% 10%,
     #f2ebdc 0,
@@ -430,7 +430,7 @@
 }
 
 .shell[data-theme="light"] .homeSupportHeaderBtn {
-  background: rgba(147, 107, 56, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   border-color: var(--accent-muted);
   color: #7a5828;
 }
@@ -453,8 +453,8 @@
 }
 
 .shell[data-theme="light"] .proxyCountChip {
-  background: rgba(147, 107, 56, 0.18);
-  border-color: rgba(147, 107, 56, 0.42);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
   color: #6e5025;
 }
 
@@ -647,7 +647,7 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: #efe8dc;
-  background: rgba(201, 168, 108, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid var(--accent-muted);
 }
 
@@ -695,9 +695,13 @@
   line-height: 1;
   cursor: help;
   color: #1a1816;
-  background: linear-gradient(145deg, #e8c87a, #c9a86c);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 72%, #fff),
+    var(--accent)
+  );
   border: 1px solid var(--accent-muted);
-  box-shadow: 0 2px 10px rgba(201, 168, 108, 0.35);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .homeUpdateBadge {
@@ -843,7 +847,7 @@
   z-index: 0;
   border-radius: 9px;
   pointer-events: none;
-  background: rgba(201, 168, 108, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   border: 1px solid var(--accent-muted);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   transition:
@@ -979,7 +983,11 @@
   height: 180px;
   border-radius: 50%;
   border: 0;
-  background: linear-gradient(145deg, #c9a86c, #8a6e42);
+  background: linear-gradient(
+    145deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 68%, #000)
+  );
   color: #ffffff;
   font-size: var(--font-size-lg);
   font-weight: 700;
@@ -1177,8 +1185,8 @@
   border-radius: 999px;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  background: rgba(201, 168, 108, 0.15);
-  border: 1px solid rgba(201, 168, 108, 0.35);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   color: #ecd7b2;
 }
 
@@ -1231,7 +1239,7 @@
 
 .proxyToolbarIconBtn:hover:not(:disabled) {
   border-color: var(--accent-muted);
-  background: rgba(201, 168, 108, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .proxyToolbarIconBtn:disabled {
@@ -1394,7 +1402,7 @@
 }
 
 .logsLevelChip.active {
-  background: rgba(201, 168, 108, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
   border-color: var(--accent-muted);
 }
@@ -1524,7 +1532,7 @@
 }
 
 .proxySplitGroupItem.active {
-  background: rgba(201, 168, 108, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border-color: var(--accent-muted);
 }
 
@@ -1903,7 +1911,7 @@
   padding: 6px 10px;
   border-radius: 10px;
   border: 1px solid var(--hairline-strong);
-  background: rgba(201, 168, 108, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
   font: inherit;
   cursor: pointer;
@@ -1913,7 +1921,7 @@
 
 .homeSupportLink:hover {
   border-color: var(--accent-muted);
-  background: rgba(201, 168, 108, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .homeSupportIcon {
@@ -2219,11 +2227,11 @@
 }
 
 .statusNodeMenuItem:hover {
-  background: rgba(201, 168, 108, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .statusNodeMenuItem.isActive {
-  background: rgba(201, 168, 108, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .statusNodeMenuItemLabel {
@@ -2382,18 +2390,18 @@
 }
 
 .profileCard:hover {
-  border-color: rgba(201, 168, 108, 0.28);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .profileCardActive {
-  border-color: rgba(201, 168, 108, 0.45);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   border-left-color: var(--accent);
   box-shadow:
-    0 0 0 1px rgba(201, 168, 108, 0.18),
-    0 14px 40px rgba(201, 168, 108, 0.12),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 14px 40px color-mix(in srgb, var(--accent) 12%, transparent),
     0 12px 36px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -2487,8 +2495,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(201, 168, 108, 0.35);
-  background: rgba(201, 168, 108, 0.08);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
   cursor: pointer;
   transition:
@@ -2498,9 +2506,9 @@
 }
 
 .profileRefreshIcon:hover:not(:disabled) {
-  background: rgba(201, 168, 108, 0.16);
-  box-shadow: 0 0 16px rgba(201, 168, 108, 0.28);
-  border-color: rgba(201, 168, 108, 0.55);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .profileRefreshIcon:disabled {
@@ -2537,8 +2545,8 @@
   font-weight: 700;
   font-size: var(--font-size-md);
   color: var(--accent);
-  background: rgba(201, 168, 108, 0.1);
-  border: 1px solid rgba(201, 168, 108, 0.22);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .profileCardText {
@@ -2995,7 +3003,7 @@
 
 .toastAction:hover {
   border-color: var(--accent-muted);
-  background: rgba(201, 168, 108, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .toastClose {
@@ -3185,7 +3193,7 @@
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--hairline-strong);
-  background: rgba(201, 168, 108, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -3194,7 +3202,7 @@
 
 .homeSupportHeaderBtn:hover {
   border-color: var(--accent-muted);
-  background: rgba(201, 168, 108, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .homeSupportHeaderGlyph {
@@ -3216,11 +3224,11 @@
 @keyframes pulseGlow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(201, 168, 108, 0.45);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
     transform: scale(1);
   }
   50% {
-    box-shadow: 0 0 0 10px rgba(201, 168, 108, 0);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent);
     transform: scale(1.02);
   }
 }
@@ -3232,7 +3240,11 @@
   font-weight: 600;
   cursor: pointer;
   color: #ffffff;
-  background: linear-gradient(135deg, #c9a86c, #7d6236);
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 62%, #000)
+  );
   animation: pulseGlow 1.8s ease-in-out infinite;
 }
 
@@ -4388,7 +4400,7 @@
 .ruleProviderCard {
   border-radius: 16px;
   border: 1px solid var(--hairline);
-  border-left: 3px solid rgba(201, 168, 108, 0.35);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: linear-gradient(
     155deg,
     rgba(34, 32, 29, 0.96) 0%,
@@ -4469,7 +4481,7 @@
 
 .ruleProviderRefreshIcon:hover:not(:disabled) {
   border-color: var(--accent-muted);
-  background: rgba(201, 168, 108, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .ruleProviderRefreshIcon:disabled {
@@ -4695,6 +4707,57 @@
   padding: 4px 10px;
   font-size: var(--font-size-xs);
   border-radius: 999px;
+}
+
+/* Custom accent color field (Settings → General). */
+.accentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accentPicker {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.accentHexInput {
+  width: 96px;
+  font-family: var(--font-mono, monospace);
+}
+
+.accentHexInput.invalid {
+  border-color: rgba(190, 55, 55, 0.65);
+}
+
+.accentHexInput.invalid:focus {
+  outline-color: rgba(190, 55, 55, 0.35);
+}
+
+/* Per-theme applied previews: left swatch on a dark chip, right on a light
+   chip, so the contrast-guard adjustment is visible at pick time. */
+.accentSwatch {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #1a1918;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+
+.accentSwatchLight {
+  border-color: #e9dec8;
+}
+
+.accentResetBtn {
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
 }
 
 /* iOS-style switch toggle (Settings booleans). */
@@ -5131,7 +5194,10 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--accent);
-  background: var(--accent-dim, rgba(201, 168, 108, 0.16));
+  background: var(
+    --accent-dim,
+    color-mix(in srgb, var(--accent) 16%, transparent)
+  );
   border: 1px solid var(--accent);
   cursor: default;
 }

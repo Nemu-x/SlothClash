@@ -1,4 +1,6 @@
 export const LS_THEME = 'sloth-theme'
+// Raw user-picked accent hex (#rrggbb); absence = built-in per-theme accents.
+export const LS_ACCENT = 'sloth-accent-v1'
 export const LS_SPOTLIGHT = 'sloth-spotlight-tour-v2'
 export const LS_NAV_COLLAPSED = 'sloth-nav-collapsed-v1'
 export const LS_SETTINGS = 'sloth-settings-v1'

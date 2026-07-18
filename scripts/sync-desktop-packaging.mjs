@@ -10,6 +10,7 @@
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { generateCorePins } from './generate-core-pins.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -76,6 +77,10 @@ function main() {
       srcVcPs1,
     )
   }
+
+  // Core SHA-256 pin set for the installer's service re-pin (must run after
+  // the destNsi dir exists; mirrors Go's pinnedCoreHashesFromEmbed).
+  generateCorePins()
 
   if (fs.existsSync(appIcon)) {
     fs.mkdirSync(trayDir, { recursive: true })

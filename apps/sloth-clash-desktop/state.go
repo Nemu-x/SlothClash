@@ -139,6 +139,12 @@ type ServiceState struct {
 	Installed bool   `json:"installed"`
 	Running   bool   `json:"running"`
 	LastError string `json:"lastError,omitempty"`
+	// CorePinMismatch is set when the privileged service refused to spawn the
+	// core because its pinned SHA-256(s) no longer match the client's embedded
+	// core (typically after a core bump on app upgrade). Sticky until a
+	// successful (re)install re-pins or a connect succeeds. Drives the
+	// "reinstall service" banner. See core_pin_mismatch.go.
+	CorePinMismatch bool `json:"corePinMismatch,omitempty"`
 }
 
 type CoreState struct {

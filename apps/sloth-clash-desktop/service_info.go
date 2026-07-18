@@ -32,6 +32,11 @@ type ServiceRuntimeInfo struct {
 	// expected. An unreachable/unknown service does NOT set it — we never nag on
 	// a mere probe failure.
 	UpdateRequired bool `json:"updateRequired"`
+	// CorePinMismatch mirrors ServiceState: the service refused the current
+	// core because its pinned hash is stale (core bump on upgrade). Like
+	// UpdateRequired it asks the user to reinstall the service, but for a
+	// different reason. See core_pin_mismatch.go.
+	CorePinMismatch bool `json:"corePinMismatch"`
 }
 
 // GetServiceInfo reports the privileged service status + version and whether it
@@ -41,12 +46,14 @@ func (a *App) GetServiceInfo() ServiceRuntimeInfo {
 	a.mu.RLock()
 	installed := a.state.Service.Installed
 	running := a.state.Service.Running
+	pinMismatch := a.state.Service.CorePinMismatch
 	a.mu.RUnlock()
 
 	info := ServiceRuntimeInfo{
 		Installed:       installed,
 		Running:         running,
 		ExpectedVersion: expectedSlothServiceVersion,
+		CorePinMismatch: pinMismatch,
 	}
 	if !installed {
 		return info

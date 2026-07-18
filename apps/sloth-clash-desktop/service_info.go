@@ -15,10 +15,20 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // (scripts/prebuild.mjs SERVICE_DOWNLOAD_TAG) whenever the service ships a
 // security-relevant change the client must not run against an older build.
 //
-// 2.3.0 is the first release carrying the IPC LPE hardening (core hash-pinning,
-// log-dir validation, DACL narrowing). A user still on an older service (2.2.0
-// and below) is prompted to have it reinstalled.
-const expectedSlothServiceVersion = "2.3.0"
+// 2.3.0 was the first release carrying the IPC LPE hardening (core hash-pinning,
+// log-dir validation, DACL narrowing).
+//
+// 2.4.0 moves the service binary itself out of the per-user temp dir it was
+// registered from into an admin-only location (%ProgramFiles%\SlothClash\service
+// on Windows, /usr/local/lib/sloth-clash on Linux; macOS already used
+// /Library/PrivilegedHelperTools). Before that, a non-admin could swap the
+// binary the SYSTEM/root service executes — the exact Layer-1 boundary the
+// service is meant to hold. Requiring 2.4.0 makes existing installs surface the
+// reinstall banner, which performs the migration.
+//
+// ⚠️ SEQUENCING: only ship this bump once the 2.4.0 service binaries are actually
+// published and pulled by prebuild — otherwise the banner can never clear.
+const expectedSlothServiceVersion = "2.4.0"
 
 // ServiceRuntimeInfo is the health/version snapshot the UI uses to decide
 // whether to nudge the user to update the privileged helper service.

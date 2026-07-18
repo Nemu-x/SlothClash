@@ -1822,9 +1822,25 @@ func installServiceElevatedWindows(installPath, workDir, coreHashes string) ([]b
 	// environment (SLOTH_CLASH_CORE_SHA256) so the service can content-verify the
 	// core it spawns. Passed as an ARGUMENT, not an env var: a -Verb RunAs child
 	// does not inherit this process's environment. Hex-only, so quoting is safe.
-	argList := ""
+	var args []string
 	if strings.TrimSpace(coreHashes) != "" {
-		argList = fmt.Sprintf(" -ArgumentList '--core-sha256','%s'", esc(coreHashes))
+		args = append(args, "'--core-sha256'", fmt.Sprintf("'%s'", esc(coreHashes)))
+	}
+	// Ask the installer to place the service next to this app (one Program
+	// Files tree instead of two). The installer treats the value as untrusted
+	// and only honours it when it resolves inside Program Files, so a
+	// dev/portable exe dir is simply ignored in favour of its own fallback.
+	// NOTE: Start-Process joins -ArgumentList with spaces WITHOUT re-quoting,
+	// so the path (…\Sloth Clash) must carry its own double quotes or it would
+	// reach the installer split across two argv entries.
+	if exe, err := os.Executable(); err == nil {
+		if dir := filepath.Dir(exe); dir != "" {
+			args = append(args, "'--install-dir'", fmt.Sprintf(`'"%s"'`, esc(dir)))
+		}
+	}
+	argList := ""
+	if len(args) > 0 {
+		argList = " -ArgumentList " + strings.Join(args, ",")
 	}
 	// Windows PowerShell 5.x: Start-Process has -FilePath, not -LiteralPath.
 	script := fmt.Sprintf(

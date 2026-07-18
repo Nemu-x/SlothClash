@@ -1304,10 +1304,12 @@ func (a *App) InstallService() (TunSetupResult, error) {
 		}, nil
 	}
 
-	// A fresh (re)install records the current embedded core hashes, so any
-	// stale-pin condition is now resolved regardless of platform.
+	// A fresh (re)install records the current embedded core hashes and re-lays
+	// the service binary, so any stale-pin or unreachable condition is now
+	// resolved regardless of platform.
 	a.mu.Lock()
 	a.state.Service.CorePinMismatch = false
+	a.state.Service.Unreachable = false
 	a.mu.Unlock()
 
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {

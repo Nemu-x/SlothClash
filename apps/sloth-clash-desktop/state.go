@@ -145,6 +145,11 @@ type ServiceState struct {
 	// successful (re)install re-pins or a connect succeeds. Drives the
 	// "reinstall service" banner. See core_pin_mismatch.go.
 	CorePinMismatch bool `json:"corePinMismatch,omitempty"`
+	// Unreachable is set when the service is (supposedly) installed but could
+	// not be reached even after the client tried to start it — e.g. its
+	// temp-dir binary was reaped or it crashed after an upgrade. Same remedy
+	// (reinstall) and same banner as CorePinMismatch, different message.
+	Unreachable bool `json:"unreachable,omitempty"`
 }
 
 type CoreState struct {

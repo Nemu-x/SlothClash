@@ -30,6 +30,16 @@
     "accentReset": "Reset",
     "accentPreviewDark": "Dark theme preview",
     "accentPreviewLight": "Light theme preview",
+    "operator": "Operator",
+    "operatorWebsite": "Website",
+    "operatorSupport": "Support",
+    "operatorBot": "Bot",
+    "operatorCabinet": "Account",
+    "operatorRenew": "Renew",
+    "operatorStatus": "Status",
+    "operatorHelp": "Help",
+    "operatorPrivacy": "Privacy",
+    "operatorTerms": "Terms",
     "language": "Language",
     "uiScale": "Interface scale",
     "startMinimized": "Start minimized",
@@ -93,6 +103,8 @@
       "reset": "Reset"
     },
     "serviceUpdateTitle": "Helper service update required",
+    "serviceRepinTitle": "Helper service must be reinstalled to allow the updated core",
+    "serviceUnreachableTitle": "Helper service is unavailable — reinstall to restore it",
     "serviceUpdateBody": "The privileged helper service is outdated (v{{version}}, needs v{{expected}}+). It contains important security fixes.",
     "serviceUpdateAdminHint": "Reinstalling requires administrator rights — accept the prompt, or ask your administrator.",
     "serviceUpdateAction": "Update service"
@@ -475,7 +487,11 @@
       "geoStatusLead": "Local .dat files referenced by config.yaml.",
       "geoIpLabel": "geoip.dat",
       "geoSiteLabel": "geosite.dat",
-      "geoNotExtracted": "Not extracted yet — Connect once to provision."
+      "geoNotExtracted": "Not extracted yet — Connect once to provision.",
+      "brandDebugTitle": "Brand headers (dev)",
+      "brandDebugHint": "Injects X-Brand-Desktop-* headers through the real capture pipeline for the active profile. The next real subscription refresh overwrites this override. Dev builds only.",
+      "brandDebugApply": "Apply",
+      "brandDebugClear": "Clear"
     },
     "toasts": {
       "profileAddedFromLink": "Profile “{{name}}” added from link.",

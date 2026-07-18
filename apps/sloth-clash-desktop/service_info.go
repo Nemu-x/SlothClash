@@ -37,6 +37,10 @@ type ServiceRuntimeInfo struct {
 	// UpdateRequired it asks the user to reinstall the service, but for a
 	// different reason. See core_pin_mismatch.go.
 	CorePinMismatch bool `json:"corePinMismatch"`
+	// Unreachable mirrors ServiceState: installed but not reachable after a
+	// start attempt (reaped temp binary / crash after upgrade). Same reinstall
+	// remedy as CorePinMismatch, different banner message.
+	Unreachable bool `json:"unreachable"`
 }
 
 // GetServiceInfo reports the privileged service status + version and whether it
@@ -47,6 +51,7 @@ func (a *App) GetServiceInfo() ServiceRuntimeInfo {
 	installed := a.state.Service.Installed
 	running := a.state.Service.Running
 	pinMismatch := a.state.Service.CorePinMismatch
+	unreachable := a.state.Service.Unreachable
 	a.mu.RUnlock()
 
 	info := ServiceRuntimeInfo{
@@ -54,6 +59,7 @@ func (a *App) GetServiceInfo() ServiceRuntimeInfo {
 		Running:         running,
 		ExpectedVersion: expectedSlothServiceVersion,
 		CorePinMismatch: pinMismatch,
+		Unreachable:     unreachable,
 	}
 	if !installed {
 		return info

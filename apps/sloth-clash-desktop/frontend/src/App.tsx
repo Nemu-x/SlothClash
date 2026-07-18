@@ -95,6 +95,7 @@ import {
   LS_THEME,
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
+import { useBranding } from './hooks/queries/useBranding'
 import { useConnectionsOverview } from './hooks/queries/useConnectionsOverview'
 import { useRulesOverview } from './hooks/queries/useRulesOverview'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
@@ -339,6 +340,8 @@ function App() {
     errors: proxyDelayErr,
     pingAll: runProxyDelayTestAll,
   } = useProxyDelay()
+  const branding = useBranding()
+  const brandManifest = branding?.manifest ?? null
   const [ruleSearch, setRuleSearch] = useState('')
   const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
   const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
@@ -838,7 +841,11 @@ function App() {
       el.setAttribute('data-theme', effective)
       // Inline custom properties outrank both stylesheet blocks, so every
       // var(--accent*) consumer restyles without per-component changes.
-      const hex = resolveAccent({ userHex: customAccent })
+      // Brand accent (panel-provided) sits below the user's own pick.
+      const hex = resolveAccent({
+        userHex: customAccent,
+        brandHex: brandManifest?.accentColor,
+      })
       if (hex) {
         const vars = deriveAccentVars(hex, effective)
         el.style.setProperty('--accent', vars.accent)
@@ -855,7 +862,7 @@ function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme, customAccent])
+  }, [theme, customAccent, brandManifest?.accentColor])
 
   useEffect(() => {
     let cancelled = false
@@ -1701,17 +1708,25 @@ function App() {
         onChange={setScreen}
         collapsed={navCollapsed}
         onToggleCollapse={() => setNavCollapsed((v) => !v)}
+        hiddenScreens={brandManifest?.hideAdvanced ? ['advanced'] : undefined}
       />
 
       <section className="content">
-        {serviceInfo?.updateRequired && !serviceBannerDismissed ? (
+        {(serviceInfo?.updateRequired ||
+          serviceInfo?.corePinMismatch ||
+          serviceInfo?.unreachable) &&
+        !serviceBannerDismissed ? (
           <div className="serviceUpdateBar" role="alert">
             <span className="serviceUpdateBarIcon" aria-hidden>
               ⚠️
             </span>
             <span className="serviceUpdateBarText">
-              {t('settings.serviceUpdateTitle')} —{' '}
-              {t('settings.serviceUpdateAdminHint')}
+              {serviceInfo?.updateRequired
+                ? t('settings.serviceUpdateTitle')
+                : serviceInfo?.corePinMismatch
+                  ? t('settings.serviceRepinTitle')
+                  : t('settings.serviceUnreachableTitle')}{' '}
+              — {t('settings.serviceUpdateAdminHint')}
             </span>
             <button
               type="button"
@@ -1738,6 +1753,8 @@ function App() {
           <HomePage
             state={state}
             activeProfile={activeProfile}
+            hideGlobalMode={brandManifest?.hideGlobalMode}
+            hideProxyMode={brandManifest?.hideProxyMode}
             service={service}
             linkToast={linkToast}
             error={error}
@@ -2044,6 +2061,7 @@ function App() {
               theme={theme}
               accent={customAccent}
               onSetAccent={setCustomAccent}
+              branding={branding}
               lang={lang}
               settings={settings}
               settingsBusy={settingsBusy}
@@ -2136,6 +2154,7 @@ function App() {
         name={importName}
         content={importContent}
         busy={importBusy}
+        hidePaste={brandManifest?.hideLocalConfigs}
         onModeChange={setImportMode}
         onUrlChange={setImportUrl}
         onNameChange={setImportName}

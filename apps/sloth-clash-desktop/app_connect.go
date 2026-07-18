@@ -228,11 +228,14 @@ func (a *App) finishConnectJobFailed(gen uint64, err error) {
 		a.state.Connection.Status = ConnError
 		a.state.Connection.Health = ""
 		a.state.Connection.LastError = err.Error()
-		// A stale core pin is an actionable service-reinstall case, not a
-		// generic connect failure — flag it so the UI shows the reinstall
-		// banner instead of a raw, unactionable 503.
+		// A stale core pin or an unreachable-after-start service are both
+		// actionable service-reinstall cases, not generic connect failures —
+		// flag them so the UI shows the reinstall banner instead of a raw,
+		// unactionable error. Pin mismatch wins if somehow both match.
 		if isCorePinMismatchError(err) {
 			a.state.Service.CorePinMismatch = true
+		} else if isServiceUnreachableError(err) {
+			a.state.Service.Unreachable = true
 		}
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
@@ -259,8 +262,10 @@ func (a *App) finishConnectJobOK(gen uint64) {
 		a.state.Connection.Health = ""
 		a.state.Connection.Since = time.Now().Unix()
 		a.state.Connection.LastError = ""
-		// A successful start means the pin is fine again (or was re-pinned).
+		// A successful start means the service is healthy again (pin fine /
+		// reachable), so clear both reinstall signals.
 		a.state.Service.CorePinMismatch = false
+		a.state.Service.Unreachable = false
 		a.state.UpdatedAt = time.Now().Unix()
 		notify = true
 	}

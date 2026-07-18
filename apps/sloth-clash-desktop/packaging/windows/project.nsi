@@ -219,9 +219,16 @@ Section "${INFO_PRODUCTNAME}" SecApp
     nsExec::ExecToStack '"$SYSDIR\reg.exe" add "HKLM\SYSTEM\CurrentControlSet\Services\sloth_clash_service" /v Environment /t REG_MULTI_SZ /d "SLOTH_CLASH_CORE_SHA256=${SLOTH_CORE_SHA256_PINS}" /f'
     Pop $0
     Pop $1
-    ; Stop the running instance so the next core start (driven by the client)
-    ; spins it up with the refreshed environment. Non-fatal if already stopped.
+    ; Restart the service IN PLACE so the new environment takes effect now. The
+    ; service's ImagePath lives in a temp dir kept alive only by the running
+    ; process's file lock, so we must stop and immediately start (the binary is
+    ; still on disk during this installer run) — never leave it stopped, or the
+    ; temp binary can be reaped and the service becomes unstartable.
     nsExec::ExecToStack '"$SYSDIR\sc.exe" stop sloth_clash_service'
+    Pop $0
+    Pop $1
+    Sleep 1200
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" start sloth_clash_service'
     Pop $0
     Pop $1
   RepinSkip:

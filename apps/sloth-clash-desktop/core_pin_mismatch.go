@@ -23,3 +23,21 @@ func isCorePinMismatchError(err error) bool {
 	return strings.Contains(msg, "pinned hash") ||
 		strings.Contains(msg, "does not match any pinned")
 }
+
+// isServiceUnreachableError reports whether a connect failed because the
+// privileged service, though (supposedly) installed, could not be reached even
+// after the client tried to start it — e.g. its temp-dir binary was reaped, or
+// it is stopped/crashed after an upgrade. The remedy is the same as for a stale
+// pin: reinstall the service (re-extracts a fresh binary and re-registers it),
+// so both conditions drive the same "reinstall service" banner. Matches only
+// the terminal, post-start-attempt errors (not a transient mid-startup dial)
+// so we do not nag on a blip that the next connect resolves.
+func isServiceUnreachableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "pipe still unreachable after attempting to start") ||
+		strings.Contains(msg, "pipe not reachable") ||
+		strings.Contains(msg, "is `sloth_clash_service` installed and running")
+}

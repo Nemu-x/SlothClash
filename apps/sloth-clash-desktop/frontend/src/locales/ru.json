@@ -30,6 +30,16 @@
     "accentReset": "Сбросить",
     "accentPreviewDark": "Превью тёмной темы",
     "accentPreviewLight": "Превью светлой темы",
+    "operator": "Оператор",
+    "operatorWebsite": "Сайт",
+    "operatorSupport": "Поддержка",
+    "operatorBot": "Бот",
+    "operatorCabinet": "Кабинет",
+    "operatorRenew": "Продлить",
+    "operatorStatus": "Статус",
+    "operatorHelp": "Справка",
+    "operatorPrivacy": "Конфиденциальность",
+    "operatorTerms": "Условия",
     "language": "Язык",
     "uiScale": "Масштаб интерфейса",
     "startMinimized": "Запуск свёрнутым",
@@ -93,6 +103,8 @@
       "reset": "Сбросить"
     },
     "serviceUpdateTitle": "Требуется обновление служебного сервиса",
+    "serviceRepinTitle": "Нужно переустановить служебный сервис, чтобы разрешить обновлённое ядро",
+    "serviceUnreachableTitle": "Служебный сервис недоступен — переустановите, чтобы восстановить",
     "serviceUpdateBody": "Привилегированный сервис устарел (v{{version}}, нужен v{{expected}}+). В нём важные исправления безопасности.",
     "serviceUpdateAdminHint": "Переустановка требует прав администратора — подтвердите запрос или обратитесь к администратору.",
     "serviceUpdateAction": "Обновить сервис"
@@ -475,7 +487,11 @@
       "geoStatusLead": "Локальные .dat-файлы, на которые ссылается config.yaml.",
       "geoIpLabel": "geoip.dat",
       "geoSiteLabel": "geosite.dat",
-      "geoNotExtracted": "Ещё не распакованы — подключись один раз, чтобы инициализировать."
+      "geoNotExtracted": "Ещё не распакованы — подключись один раз, чтобы инициализировать.",
+      "brandDebugTitle": "Бренд-хедеры (dev)",
+      "brandDebugHint": "Прогоняет X-Brand-Desktop-* хедеры через реальный пайплайн для активного профиля. Следующее реальное обновление подписки перезапишет оверрайд. Только в dev-сборке.",
+      "brandDebugApply": "Применить",
+      "brandDebugClear": "Очистить"
     },
     "toasts": {
       "profileAddedFromLink": "Профиль «{{name}}» добавлен по ссылке.",

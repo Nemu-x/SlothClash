@@ -30,6 +30,16 @@
     "accentReset": "重置",
     "accentPreviewDark": "深色主题预览",
     "accentPreviewLight": "浅色主题预览",
+    "operator": "运营商",
+    "operatorWebsite": "官网",
+    "operatorSupport": "支持",
+    "operatorBot": "机器人",
+    "operatorCabinet": "账户",
+    "operatorRenew": "续费",
+    "operatorStatus": "状态",
+    "operatorHelp": "帮助",
+    "operatorPrivacy": "隐私",
+    "operatorTerms": "条款",
     "language": "语言",
     "uiScale": "界面缩放",
     "startMinimized": "启动时最小化",
@@ -93,6 +103,8 @@
       "reset": "重置"
     },
     "serviceUpdateTitle": "需要更新辅助服务",
+    "serviceRepinTitle": "需要重装辅助服务以允许更新后的内核",
+    "serviceUnreachableTitle": "辅助服务不可用 — 请重装以恢复",
     "serviceUpdateBody": "特权辅助服务已过时（v{{version}}，需要 v{{expected}}+）。它包含重要的安全修复。",
     "serviceUpdateAdminHint": "重新安装需要管理员权限 — 请接受提示，或联系您的管理员。",
     "serviceUpdateAction": "更新服务"
@@ -475,7 +487,11 @@
       "geoStatusLead": "config.yaml 引用的本地 .dat 文件。",
       "geoIpLabel": "geoip.dat",
       "geoSiteLabel": "geosite.dat",
-      "geoNotExtracted": "尚未解包 — 请先连接一次以初始化。"
+      "geoNotExtracted": "尚未解包 — 请先连接一次以初始化。",
+      "brandDebugTitle": "品牌标头（开发）",
+      "brandDebugHint": "将 X-Brand-Desktop-* 标头通过真实管线应用到当前配置。下次真实订阅刷新会覆盖此调试值。仅限开发构建。",
+      "brandDebugApply": "应用",
+      "brandDebugClear": "清除"
     },
     "toasts": {
       "profileAddedFromLink": "已通过链接添加配置“{{name}}”。",

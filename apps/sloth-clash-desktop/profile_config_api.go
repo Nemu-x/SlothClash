@@ -459,7 +459,8 @@ func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byt
 		}
 		return body, nil
 	}
-	return fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey)
+	body, _, err := fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey)
+	return body, err
 }
 
 func (a *App) applyRuntimeConfig(profile Profile, traffic string, enableTun bool) error {

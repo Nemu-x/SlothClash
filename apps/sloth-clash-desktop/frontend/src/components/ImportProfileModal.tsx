@@ -80,6 +80,7 @@ export function ImportProfileModal({
   onPasteFromClipboard,
   onClose,
   onSubmit,
+  hidePaste,
 }: {
   open: boolean
   title: string
@@ -89,6 +90,8 @@ export function ImportProfileModal({
   name: string
   content: string
   busy: boolean
+  // Brand hide flag: drop the paste/local-config tab, URL-only import.
+  hidePaste?: boolean
   onModeChange: (next: ImportMode) => void
   onUrlChange: (next: string) => void
   onNameChange: (next: string) => void
@@ -101,10 +104,11 @@ export function ImportProfileModal({
   const fileRef = useRef<HTMLInputElement>(null)
   if (!open) return null
 
-  const detection = mode === 'paste' ? detect(content, t) : null
+  const effectiveMode: ImportMode = hidePaste ? 'url' : mode
+  const detection = effectiveMode === 'paste' ? detect(content, t) : null
   const canSubmit =
     !busy &&
-    (mode === 'url'
+    (effectiveMode === 'url'
       ? url.trim().length > 0
       : content.trim().length > 0 && detection?.kind !== 'unknown')
 
@@ -128,28 +132,30 @@ export function ImportProfileModal({
         </h3>
         <p className="muted small">{blurb}</p>
 
-        <div className="segmentInset importModeTabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'url'}
-            className={mode === 'url' ? 'btn' : 'btn ghost'}
-            onClick={() => onModeChange('url')}
-          >
-            {t('ui.profiles.importModal.tabUrl')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'paste'}
-            className={mode === 'paste' ? 'btn' : 'btn ghost'}
-            onClick={() => onModeChange('paste')}
-          >
-            {t('ui.profiles.importModal.tabPaste')}
-          </button>
-        </div>
+        {hidePaste ? null : (
+          <div className="segmentInset importModeTabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveMode === 'url'}
+              className={effectiveMode === 'url' ? 'btn' : 'btn ghost'}
+              onClick={() => onModeChange('url')}
+            >
+              {t('ui.profiles.importModal.tabUrl')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveMode === 'paste'}
+              className={effectiveMode === 'paste' ? 'btn' : 'btn ghost'}
+              onClick={() => onModeChange('paste')}
+            >
+              {t('ui.profiles.importModal.tabPaste')}
+            </button>
+          </div>
+        )}
 
-        {mode === 'url' ? (
+        {effectiveMode === 'url' ? (
           <label className="field modalField">
             <span className="fieldLab">
               {t('ui.profiles.importModal.subscriptionUrl')}
@@ -193,7 +199,7 @@ export function ImportProfileModal({
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder={
-              mode === 'url'
+              effectiveMode === 'url'
                 ? t('ui.profiles.importModal.namePlaceholderUrl')
                 : t('ui.profiles.importModal.namePlaceholderPaste')
             }
@@ -209,7 +215,7 @@ export function ImportProfileModal({
             >
               {t('ui.profiles.importModal.pasteFromClipboard')}
             </button>
-            {mode === 'paste' ? (
+            {effectiveMode === 'paste' ? (
               <>
                 <button
                   type="button"

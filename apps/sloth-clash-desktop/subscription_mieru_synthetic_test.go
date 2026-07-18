@@ -168,7 +168,7 @@ func TestBuildMieruSubscriptionYAMLPasswordWithAt(t *testing.T) {
 func TestFetchSubscriptionBodyMieruSkipsHTTP(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	b, err := fetchSubscriptionBody(ctx, "mieru://a:b@192.0.2.1:9001", "")
+	b, _, err := fetchSubscriptionBody(ctx, "mieru://a:b@192.0.2.1:9001", "")
 	if err != nil {
 		t.Fatal(err)
 	}

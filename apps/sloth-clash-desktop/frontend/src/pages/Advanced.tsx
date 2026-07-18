@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
+import { BrandDebugPanel } from '../components/BrandDebugPanel'
 import { friendlyErrorMessage } from '../utils/yaml'
 
 /**
@@ -502,6 +503,8 @@ export function AdvancedPage({
           </CollapsibleCard>
         </div>
       </div>
+
+      {import.meta.env.DEV ? <BrandDebugPanel /> : null}
 
       {error ? <p className="error">{friendlyErrorMessage(error)}</p> : null}
     </div>

@@ -63,6 +63,8 @@ export function HomePage({
   activeNode,
   activeNodeVisual,
   showBuiltinProxyGroups,
+  hideGlobalMode,
+  hideProxyMode,
   onOpenImport,
   onOpenSupport,
   onOpenUpdate,
@@ -97,6 +99,9 @@ export function HomePage({
   activeNode: string
   activeNodeVisual: HomeActiveNodeVisual
   showBuiltinProxyGroups: boolean
+  // Brand hide flags (presentation-only; see brand-headers-protocol).
+  hideGlobalMode?: boolean
+  hideProxyMode?: boolean
   onOpenImport: (reason: 'beacon' | 'manual') => void
   onOpenSupport: (url: string) => void
   onOpenUpdate: () => void
@@ -242,43 +247,49 @@ export function HomePage({
       <div className="connectArea">
         <div className="connectRow">
           <div className="connectSide connectSideLeft" data-tour="mode">
-            <span className="sideLabel sideLabelCentered">
-              {t('ui.home.mode')}
-            </span>
-            <div
-              className="segmentInset segmentInset2"
-              role="group"
-              aria-label={t('ui.home.routingModeAria')}
-            >
-              <div
-                className="segmentGlider"
-                aria-hidden
-                style={
-                  {
-                    '--seg-i': displayMode === 'global' ? 1 : 0,
-                  } as CSSProperties
-                }
-              />
-              {(['rule', 'global'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  title={
-                    m === 'rule'
-                      ? t('ui.home.ruleTitle')
-                      : t('ui.home.globalTitle')
-                  }
-                  className={
-                    displayMode === m
-                      ? 'segmentInsetBtn isOn'
-                      : 'segmentInsetBtn'
-                  }
-                  onClick={() => onSetMode(m)}
+            {hideGlobalMode ? null : (
+              <>
+                <span className="sideLabel sideLabelCentered">
+                  {t('ui.home.mode')}
+                </span>
+                <div
+                  className="segmentInset segmentInset2"
+                  role="group"
+                  aria-label={t('ui.home.routingModeAria')}
                 >
-                  {m === 'rule' ? t('ui.common.rule') : t('ui.common.global')}
-                </button>
-              ))}
-            </div>
+                  <div
+                    className="segmentGlider"
+                    aria-hidden
+                    style={
+                      {
+                        '--seg-i': displayMode === 'global' ? 1 : 0,
+                      } as CSSProperties
+                    }
+                  />
+                  {(['rule', 'global'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      title={
+                        m === 'rule'
+                          ? t('ui.home.ruleTitle')
+                          : t('ui.home.globalTitle')
+                      }
+                      className={
+                        displayMode === m
+                          ? 'segmentInsetBtn isOn'
+                          : 'segmentInsetBtn'
+                      }
+                      onClick={() => onSetMode(m)}
+                    >
+                      {m === 'rule'
+                        ? t('ui.common.rule')
+                        : t('ui.common.global')}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
           <div className="connectCenter">
             <button
@@ -312,48 +323,52 @@ export function HomePage({
             </div>
           </div>
           <div className="connectSide connectSideRight" data-tour="traffic">
-            <span className="sideLabel sideLabelCentered">
-              {t('ui.home.traffic')}
-            </span>
-            <div
-              className="segmentInset segmentInset2"
-              role="group"
-              aria-label={t('ui.home.trafficModeAria')}
-            >
-              <div
-                className="segmentGlider"
-                aria-hidden
-                style={
-                  {
-                    '--seg-i': displayTraffic === 'proxy' ? 0 : 1,
-                  } as CSSProperties
-                }
-              />
-              <button
-                type="button"
-                title={t('ui.home.systemProxyTitle')}
-                className={
-                  displayTraffic === 'proxy'
-                    ? 'segmentInsetBtn isOn'
-                    : 'segmentInsetBtn'
-                }
-                onClick={() => onSwitchTraffic('proxy')}
-              >
-                {t('ui.common.proxy')}
-              </button>
-              <button
-                type="button"
-                title={t('ui.home.tunTitle')}
-                className={
-                  displayTraffic === 'tun'
-                    ? 'segmentInsetBtn isOn'
-                    : 'segmentInsetBtn'
-                }
-                onClick={() => onSwitchTraffic('tun')}
-              >
-                TUN
-              </button>
-            </div>
+            {hideProxyMode ? null : (
+              <>
+                <span className="sideLabel sideLabelCentered">
+                  {t('ui.home.traffic')}
+                </span>
+                <div
+                  className="segmentInset segmentInset2"
+                  role="group"
+                  aria-label={t('ui.home.trafficModeAria')}
+                >
+                  <div
+                    className="segmentGlider"
+                    aria-hidden
+                    style={
+                      {
+                        '--seg-i': displayTraffic === 'proxy' ? 0 : 1,
+                      } as CSSProperties
+                    }
+                  />
+                  <button
+                    type="button"
+                    title={t('ui.home.systemProxyTitle')}
+                    className={
+                      displayTraffic === 'proxy'
+                        ? 'segmentInsetBtn isOn'
+                        : 'segmentInsetBtn'
+                    }
+                    onClick={() => onSwitchTraffic('proxy')}
+                  >
+                    {t('ui.common.proxy')}
+                  </button>
+                  <button
+                    type="button"
+                    title={t('ui.home.tunTitle')}
+                    className={
+                      displayTraffic === 'tun'
+                        ? 'segmentInsetBtn isOn'
+                        : 'segmentInsetBtn'
+                    }
+                    onClick={() => onSwitchTraffic('tun')}
+                  >
+                    TUN
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

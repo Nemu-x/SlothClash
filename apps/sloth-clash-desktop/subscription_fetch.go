@@ -28,17 +28,22 @@ import (
 //     └── on cache miss: blocking fetchSubscriptionBody (55 s)
 // ---------------------------------------------------------------------------
 
-func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([]byte, error) {
+// fetchSubscriptionBody returns the (decrypted) subscription body plus the
+// response headers of the successful GET — the same response carries the
+// optional brand manifest (branding.go), so callers can capture it without a
+// second billed request. Header is nil for non-HTTP sources (mieru).
+func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([]byte, http.Header, error) {
 	norm, err := normalizeSubscriptionURL(rawURL)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if subscriptionURLIsMieru(norm) {
-		return buildMieruSubscriptionYAML(norm)
+		b, err := buildMieruSubscriptionYAML(norm)
+		return b, nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, norm, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("User-Agent", "clash.meta/mihomo; SlothClash/1.0")
 	applySubscriptionIdentityHeaders(req)
@@ -55,20 +60,24 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("subscription HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, nil, fmt.Errorf("subscription HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 6<<20))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Providers may ship the body age-encrypted; decrypt BEFORE caching/parsing
 	// so every downstream consumer keeps seeing plain YAML.
-	return decryptSubscriptionBodyIfAge(body, ageKey)
+	body, err = decryptSubscriptionBodyIfAge(body, ageKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return body, resp.Header, nil
 }
 
 // subscriptionBodyCachePath returns the on-disk location where we persist the
@@ -112,7 +121,7 @@ func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey s
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
 		return nil
 	}
-	body, err := fetchSubscriptionBody(ctx, subURL, ageKey)
+	body, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey)
 	if err != nil {
 		return err
 	}
@@ -120,6 +129,7 @@ func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey s
 		return errors.New("empty subscription body")
 	}
 	writeSubscriptionBodyCache(dataDir, body)
+	persistBrandManifestFromHeaders(dataDir, subURL, hdr)
 	return nil
 }
 
@@ -246,8 +256,11 @@ func tryWriteMergedFullProfile(
 		fetchStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 		defer cancel()
-		b, err := fetchSubscriptionBody(ctx, subURL, ageKey)
+		b, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey)
 		fetchDur := time.Since(fetchStart)
+		if err == nil {
+			persistBrandManifestFromHeaders(dataDir, subURL, hdr)
+		}
 		if err != nil || len(bytes.TrimSpace(b)) == 0 {
 			f := map[string]any{"dataDir": dataDir}
 			if err != nil {
@@ -259,8 +272,8 @@ func tryWriteMergedFullProfile(
 			return pipelineCacheMissNoNet, nil
 		}
 		traceEvent("pipeline.subscription.fetch", "ok", fetchDur, map[string]any{
-			"dataDir":     dataDir,
-			"body_bytes":  len(b),
+			"dataDir":    dataDir,
+			"body_bytes": len(b),
 		})
 		body = b
 		writeSubscriptionBodyCache(dataDir, body)

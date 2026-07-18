@@ -1,9 +1,15 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
 import type { CompactSettings } from '../types/app'
+import {
+  STOCK_ACCENTS,
+  ensureReadableAccent,
+  normalizeHex,
+} from '../utils/accent'
 import { UI_SCALE_OPTIONS } from '../utils/settings'
 import { friendlyErrorMessage } from '../utils/yaml'
 
@@ -38,8 +44,94 @@ function SettingsSwitch({
   )
 }
 
+// Accent color field: picker + hex input + per-theme applied previews + reset.
+// The stored value is the raw user hex; swatches show what actually renders
+// after the contrast guard per theme.
+function AccentField({
+  accent,
+  onSetAccent,
+}: {
+  accent: string | null
+  onSetAccent: (hex: string | null) => void
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState<string>(accent ?? '')
+  // Adjust-during-render (not an effect): external accent changes — e.g. the
+  // app-wide settings reset — resync the text draft.
+  const [lastAccent, setLastAccent] = useState(accent)
+  if (accent !== lastAccent) {
+    setLastAccent(accent)
+    setDraft(accent ?? '')
+  }
+  const normalized = normalizeHex(draft)
+  const invalid = draft.trim() !== '' && !normalized
+  const pickerValue = normalized ?? accent ?? STOCK_ACCENTS.dark
+  const darkApplied = ensureReadableAccent(accent ?? STOCK_ACCENTS.dark, 'dark')
+  const lightApplied = ensureReadableAccent(
+    accent ?? STOCK_ACCENTS.light,
+    'light',
+  )
+  const commit = (raw: string) => {
+    setDraft(raw)
+    const hex = normalizeHex(raw)
+    if (hex) onSetAccent(hex)
+  }
+  return (
+    <label className="field">
+      <span className="fieldLab">{t('settings.accent')}</span>
+      <div className="accentRow">
+        <input
+          type="color"
+          className="accentPicker"
+          value={pickerValue}
+          aria-label={t('settings.accent')}
+          onChange={(e) => commit(e.target.value)}
+        />
+        <input
+          type="text"
+          className={
+            invalid ? 'input accentHexInput invalid' : 'input accentHexInput'
+          }
+          value={draft}
+          placeholder={t('settings.accentHexPlaceholder')}
+          spellCheck={false}
+          aria-invalid={invalid}
+          title={invalid ? t('settings.accentInvalid') : undefined}
+          onChange={(e) => commit(e.target.value)}
+        />
+        <span
+          className="accentSwatch"
+          style={{ background: darkApplied }}
+          title={t('settings.accentPreviewDark')}
+          aria-hidden
+        />
+        <span
+          className="accentSwatch accentSwatchLight"
+          style={{ background: lightApplied }}
+          title={t('settings.accentPreviewLight')}
+          aria-hidden
+        />
+        {accent ? (
+          <button
+            type="button"
+            className="btn ghost accentResetBtn"
+            onClick={() => {
+              onSetAccent(null)
+              setDraft('')
+            }}
+          >
+            {t('settings.accentReset')}
+          </button>
+        ) : null}
+      </div>
+    </label>
+  )
+}
+
 export function SettingsPage({
   theme,
+  accent,
+  onSetAccent,
   lang,
   settings,
   settingsBusy,
@@ -85,6 +177,9 @@ export function SettingsPage({
   error: string | null
   onBrowserOpen: (url: string) => void
   onSetTheme: (theme: ThemeMode) => void
+  // Custom accent: raw #rrggbb or null = built-in; null resets.
+  accent: string | null
+  onSetAccent: (hex: string | null) => void
   onSetLang: (lang: Lang) => void
   onSetSetting: <K extends keyof CompactSettings>(
     key: K,
@@ -184,6 +279,7 @@ export function SettingsPage({
                 ))}
               </div>
             </label>
+            <AccentField accent={accent} onSetAccent={onSetAccent} />
             <label className="field">
               <span className="fieldLab">{t('settings.language')}</span>
               <select

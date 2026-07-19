@@ -252,13 +252,17 @@ export function HomePage({
       <div className="connectArea">
         <div className="connectRow">
           <div className="connectSide connectSideLeft" data-tour="mode">
-            {hideGlobalMode ? null : (
+            {
               <>
                 <span className="sideLabel sideLabelCentered">
                   {t('ui.home.mode')}
                 </span>
                 <div
-                  className="segmentInset segmentInset2"
+                  className={
+                    hideGlobalMode
+                      ? 'segmentInset segmentInset1'
+                      : 'segmentInset segmentInset2'
+                  }
                   role="group"
                   aria-label={t('ui.home.routingModeAria')}
                 >
@@ -267,11 +271,18 @@ export function HomePage({
                     aria-hidden
                     style={
                       {
-                        '--seg-i': displayMode === 'global' ? 1 : 0,
+                        '--seg-i':
+                          !hideGlobalMode && displayMode === 'global' ? 1 : 0,
                       } as CSSProperties
                     }
                   />
-                  {(['rule', 'global'] as const).map((m) => (
+                  {/* Hide-Global-Mode drops the Global OPTION, it does not hide
+                      the whole control — the user still needs to see which mode
+                      is active. */}
+                  {(hideGlobalMode
+                    ? (['rule'] as const)
+                    : (['rule', 'global'] as const)
+                  ).map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -294,7 +305,7 @@ export function HomePage({
                   ))}
                 </div>
               </>
-            )}
+            }
           </div>
           <div className="connectCenter">
             <button
@@ -328,13 +339,17 @@ export function HomePage({
             </div>
           </div>
           <div className="connectSide connectSideRight" data-tour="traffic">
-            {hideProxyMode ? null : (
+            {
               <>
                 <span className="sideLabel sideLabelCentered">
                   {t('ui.home.traffic')}
                 </span>
                 <div
-                  className="segmentInset segmentInset2"
+                  className={
+                    hideProxyMode
+                      ? 'segmentInset segmentInset1'
+                      : 'segmentInset segmentInset2'
+                  }
                   role="group"
                   aria-label={t('ui.home.trafficModeAria')}
                 >
@@ -343,22 +358,27 @@ export function HomePage({
                     aria-hidden
                     style={
                       {
-                        '--seg-i': displayTraffic === 'proxy' ? 0 : 1,
+                        '--seg-i':
+                          hideProxyMode || displayTraffic === 'proxy' ? 0 : 1,
                       } as CSSProperties
                     }
                   />
-                  <button
-                    type="button"
-                    title={t('ui.home.systemProxyTitle')}
-                    className={
-                      displayTraffic === 'proxy'
-                        ? 'segmentInsetBtn isOn'
-                        : 'segmentInsetBtn'
-                    }
-                    onClick={() => onSwitchTraffic('proxy')}
-                  >
-                    {t('ui.common.proxy')}
-                  </button>
+                  {/* Like Hide-Global-Mode: drops the Proxy OPTION (TUN-only
+                      deployment), keeps the control so the state stays visible. */}
+                  {hideProxyMode ? null : (
+                    <button
+                      type="button"
+                      title={t('ui.home.systemProxyTitle')}
+                      className={
+                        displayTraffic === 'proxy'
+                          ? 'segmentInsetBtn isOn'
+                          : 'segmentInsetBtn'
+                      }
+                      onClick={() => onSwitchTraffic('proxy')}
+                    >
+                      {t('ui.common.proxy')}
+                    </button>
+                  )}
                   <button
                     type="button"
                     title={t('ui.home.tunTitle')}
@@ -373,7 +393,7 @@ export function HomePage({
                   </button>
                 </div>
               </>
-            )}
+            }
           </div>
         </div>
       </div>

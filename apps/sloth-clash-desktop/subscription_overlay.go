@@ -14,6 +14,7 @@ const tunDefaultDNSYAML = `dns:
   respect-rules: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-range6: fdfe:dcba:9876::1/64
   fake-ip-filter-mode: blacklist
   use-hosts: true
   default-nameserver:
@@ -112,8 +113,16 @@ func ensureDefaultDNSForTun(m map[string]any) {
 		dns["enhanced-mode"] = "fake-ip"
 	}
 	if mode, _ := dns["enhanced-mode"].(string); strings.TrimSpace(strings.ToLower(mode)) == "fake-ip" {
-		if _, ok := dns["fake-ip-range"]; !ok {
+		if v, ok := dns["fake-ip-range"].(string); !ok || strings.TrimSpace(v) == "" {
 			dns["fake-ip-range"] = "198.18.0.1/16"
+		}
+		// A v6 pool is mandatory once fake-ip runs with ipv6:true — otherwise
+		// AAAA queries never get a fake address and IPv6 resolution fails
+		// (clash-verge-rev #7373). Filled unconditionally so a profile that
+		// flips ipv6 on later is still correct. Empty string counts as missing
+		// so a hand-edited YAML gets repaired.
+		if v, ok := dns["fake-ip-range6"].(string); !ok || strings.TrimSpace(v) == "" {
+			dns["fake-ip-range6"] = "fdfe:dcba:9876::1/64"
 		}
 		// Without a filter, captive-portal probes / NTP / *.lan get fake IPs and
 		// the OS looks broken. Verge parity: fill the default list when absent.
@@ -243,7 +252,18 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 		delete(m, "external-controller")
 	}
 	m["secret"] = secret
-	m["allow-lan"] = false
+
+	// LAN exposure is a user decision (default off = localhost only). When it
+	// is on, a loopback `bind-address` inherited from the profile would silently
+	// defeat it — the core would still listen on localhost only — so rewrite it
+	// to the wildcard, matching clash-verge-rev's fix.
+	allowLan := currentDesktopPrefs().Connection.IsAllowLanEnabled()
+	m["allow-lan"] = allowLan
+	if allowLan {
+		if v, ok := m["bind-address"].(string); !ok || isLoopbackBindAddress(v) {
+			m["bind-address"] = "*"
+		}
+	}
 
 	// profile.store-selected / store-fake-ip mirrors clash-verge-rev's
 	// `use_clash` defaults. Without store-selected, mihomo forgets the

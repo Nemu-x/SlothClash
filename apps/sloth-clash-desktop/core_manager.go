@@ -540,7 +540,14 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 		fmt.Fprintf(&cfg, "external-controller: 127.0.0.1:%d\n", ctrlPort)
 	}
 	fmt.Fprintf(&cfg, "secret: %q\n", secret)
-	fmt.Fprintf(&cfg, "allow-lan: false\n")
+	// Same user pref as the subscription path (default off = localhost only);
+	// the wildcard bind keeps LAN clients able to reach us when it is on.
+	if currentDesktopPrefs().Connection.IsAllowLanEnabled() {
+		fmt.Fprintf(&cfg, "allow-lan: true\n")
+		fmt.Fprintf(&cfg, "bind-address: \"*\"\n")
+	} else {
+		fmt.Fprintf(&cfg, "allow-lan: false\n")
+	}
 	fmt.Fprintf(&cfg, "mode: rule\n")
 	fmt.Fprintf(&cfg, "log-level: info\n")
 	fmt.Fprintf(&cfg, "ipv6: true\n\n")
@@ -565,6 +572,10 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
   respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  # Required whenever fake-ip runs with ipv6:true — without a v6 pool AAAA
+  # queries never get a fake address and IPv6 resolution fails outright
+  # (clash-verge-rev #7373). Same default range upstream uses.
+  fake-ip-range6: fdfe:dcba:9876::1/64
   use-hosts: true
   default-nameserver:
     - 1.1.1.1

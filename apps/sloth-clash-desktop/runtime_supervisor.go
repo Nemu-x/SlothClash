@@ -41,6 +41,22 @@ func decideCoreHealth(monitoring, probeOK bool, consecutiveFails int) (coreHealt
 	return coreHealthCountFail, n
 }
 
+// wallClockGap reports how much WALL-CLOCK time passed between two samples.
+//
+// `time.Since` (and `Sub` on two `time.Now()` values) uses the monotonic clock
+// reading, which does NOT advance while the machine is suspended. A laptop that
+// slept for an hour would therefore report a gap of one tick, the resume pass
+// would never run, and the wintun re-check that repairs TUN after suspend would
+// never fire — the "closed the lid, opened it, no internet" report.
+//
+// `Round(0)` strips the monotonic reading, so the subtraction falls back to the
+// wall clock and a suspend shows up as the large gap it actually is. The cost is
+// that a manual clock change also looks like a resume; running the resume pass
+// once too often is harmless, missing it is not.
+func wallClockGap(prev, now time.Time) time.Duration {
+	return now.Round(0).Sub(prev.Round(0))
+}
+
 // runRuntimeSupervisorLoop performs bounded periodic checks: Windows system proxy
 // reconcile (see maybeWindowsSysProxyReconcile) and a resume-style pass when the
 // wall clock gap suggests the machine slept or the ticker was delayed.
@@ -55,14 +71,15 @@ func (a *App) runRuntimeSupervisorLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			gap := time.Since(lastTick)
+			now := time.Now()
+			gap := wallClockGap(lastTick, now)
 			if gap > 75*time.Second {
 				a.appendRuntimeDiag("network.resume", fmt.Sprintf("gap=%s", gap.Round(time.Second)))
 				a.runNetworkResumePass(&restartInProgress)
 				// A resume pass already probed/handled the core; don't double-count.
 				coreFails = 0
 			}
-			lastTick = time.Now()
+			lastTick = now
 			a.maybeWindowsSysProxyReconcile()
 			coreFails = a.runCoreHealthWatch(coreFails, &restartInProgress)
 		}

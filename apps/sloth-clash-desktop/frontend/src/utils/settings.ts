@@ -28,7 +28,13 @@ export function clampUiScale(v: unknown): number {
 export function applyUiScale(scale: number): void {
   // CSS `zoom` (Chromium/WebView2) scales layout uniformly — px, rem and
   // embedded widgets (Monaco) alike — without a px→rem refactor.
-  document.documentElement.style.zoom = String(clampUiScale(scale))
+  const z = clampUiScale(scale)
+  document.documentElement.style.zoom = String(z)
+  // Viewport units are NOT affected by zoom: `100vh` still resolves against the
+  // unzoomed viewport and is then multiplied by the zoom, so at 80% the shell
+  // filled only 80% of the window (empty band at the bottom) and above 100% it
+  // overflowed. CSS compensates by dividing viewport lengths by this factor.
+  document.documentElement.style.setProperty('--ui-zoom', String(z))
 }
 
 export function loadCompactSettings(): CompactSettings {

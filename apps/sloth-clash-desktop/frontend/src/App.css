@@ -7,8 +7,11 @@
   /* `height` (not `min-height`) clamps the shell to the window so the inner
      .content owns scrolling on its own. With `min-height` a tall page could
      push the whole shell — including the sidebar — past the viewport and the
-     user lost reach to nav buttons. */
-  height: 100vh;
+     user lost reach to nav buttons.
+     Percentage (not a viewport unit) so Interface scale works: see style.css —
+     `zoom` does not affect viewport units, so a vh-based height under-filled the
+     window below 100% scale and overflowed above it. */
+  height: 100%;
   overflow: hidden;
   --accent: #c9a86c;
   --accent-dim: rgba(201, 168, 108, 0.24);
@@ -2201,8 +2204,8 @@
   padding: 2px;
   list-style: none;
   min-width: min(100%, 260px);
-  max-width: min(calc(100vw - 48px), 400px);
-  max-height: min(38vh, 240px);
+  max-width: min(calc(calc(100vw / var(--ui-zoom, 1)) - 48px), 400px);
+  max-height: min(calc(38vh / var(--ui-zoom, 1)), 240px);
   overflow-y: auto;
   z-index: 45;
   border-radius: 10px;
@@ -3587,7 +3590,7 @@
 /* Nodes scroll inside the open group so collapsed groups below stay reachable
    instead of pushing the accordion into a long scroll. */
 .proxyAccBody .proxyNodesGrid {
-  max-height: clamp(180px, 38vh, 420px);
+  max-height: clamp(180px, calc(38vh / var(--ui-zoom, 1)), 420px);
   overflow-y: auto;
   padding-right: var(--space-1);
 }
@@ -3681,21 +3684,21 @@
 }
 
 .yamlModalCard {
-  max-height: min(90vh, 720px);
+  max-height: min(calc(90vh / var(--ui-zoom, 1)), 720px);
   display: flex;
   flex-direction: column;
 }
 
 .modalCardFullscreen {
-  width: min(96vw, 1400px);
-  max-height: 96vh;
-  min-height: 88vh;
+  width: min(calc(96vw / var(--ui-zoom, 1)), 1400px);
+  max-height: calc(96vh / var(--ui-zoom, 1));
+  min-height: calc(88vh / var(--ui-zoom, 1));
   overflow: auto;
 }
 
 .modalCardVisualTall {
-  max-height: 94vh;
-  min-height: min(84vh, 760px);
+  max-height: calc(94vh / var(--ui-zoom, 1));
+  min-height: min(calc(84vh / var(--ui-zoom, 1)), 760px);
   overflow: auto;
 }
 
@@ -4328,7 +4331,7 @@
   left: 50%;
   bottom: 22px;
   transform: translateX(-50%);
-  width: min(440px, calc(100vw - 32px));
+  width: min(440px, calc(calc(100vw / var(--ui-zoom, 1)) - 32px));
   border-radius: 18px;
   padding: 16px 18px 14px;
   background: linear-gradient(165deg, #1a222c, #12171e);
@@ -4374,7 +4377,7 @@
 }
 
 .rulesTableWrapFull {
-  max-height: min(62vh, 520px);
+  max-height: min(calc(62vh / var(--ui-zoom, 1)), 520px);
 }
 
 .rulesPanel {
@@ -4405,7 +4408,7 @@
  * trigger in the Rules screen header. Keeps a wide layout so 4-column grid
  * still fits on the typical 1200px window. */
 .ruleProvidersModalCard {
-  max-height: 80vh;
+  max-height: calc(80vh / var(--ui-zoom, 1));
   display: flex;
   flex-direction: column;
 }
@@ -4707,7 +4710,7 @@
 }
 
 .tunSettingsModal {
-  width: min(560px, 92vw);
+  width: min(560px, calc(92vw / var(--ui-zoom, 1)));
   max-width: 560px;
 }
 
@@ -4715,7 +4718,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 60vh;
+  max-height: calc(60vh / var(--ui-zoom, 1));
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -5388,7 +5391,8 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  height: 100vh;
+  /* Fills the window like .shell — percentage, not a viewport unit (zoom). */
+  height: 100%;
   padding: 32px;
   text-align: center;
 }

@@ -15,7 +15,13 @@ html,
 body,
 #root {
   margin: 0;
-  min-height: 100%;
+  /* Full `height` chain (not min-height): the shell sizes itself with `height:
+     100%`, and percentage heights resolve against the zoom-adjusted containing
+     block. Viewport units would NOT — `100vh` ignores CSS `zoom` and is then
+     multiplied by it, which left an empty band below the UI at 80% scale and
+     overflowed above 100%. Percentages keep this correct on both WebView2
+     (Blink) and WKWebView / WebKitGTK. */
+  height: 100%;
   font-family: var(--font-sans);
 }
 

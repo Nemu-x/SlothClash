@@ -110,6 +110,30 @@ func TestParseBrandManifestAccentAndCyrillic(t *testing.T) {
 	}
 }
 
+func TestParseBrandManifestDeviceCounts(t *testing.T) {
+	h := brandHeadersOf(map[string]string{
+		brandHdrEnabled:      "true",
+		brandHdrDevicesUsed:  "3",
+		brandHdrDevicesLimit: "5",
+	})
+	m := parseBrandManifest(h.Get)
+	if m == nil || m.DevicesUsed != 3 || m.DevicesLimit != 5 {
+		t.Fatalf("device counts = %+v", m)
+	}
+
+	// Garbage / negative / absurd values must read as "not reported" (0) rather
+	// than rendering nonsense next to the user's real quota.
+	for _, bad := range []string{"", "many", "-1", "99999999", "3.5"} {
+		h := brandHeadersOf(map[string]string{
+			brandHdrEnabled:     "true",
+			brandHdrDevicesUsed: bad,
+		})
+		if m := parseBrandManifest(h.Get); m == nil || m.DevicesUsed != 0 {
+			t.Fatalf("DevicesUsed for %q = %+v, want 0", bad, m)
+		}
+	}
+}
+
 func TestPersistBrandManifestLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	branded := brandHeadersOf(map[string]string{

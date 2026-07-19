@@ -524,7 +524,8 @@
       "daysLeft": "{{count}} days",
       "expired": "Expired",
       "copyForSupport": "Copy info for support",
-      "copied": "Copied"
+      "copied": "Copied",
+      "devices": "Devices"
     }
   },
   "common": {

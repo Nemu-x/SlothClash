@@ -122,17 +122,19 @@ export function OperatorModal({
           </p>
         ) : null}
 
-        {usage ? (
+        {usage || m.devicesUsed || m.devicesLimit ? (
           <div className="operatorUsage">
-            <div className="operatorUsageRow">
-              <span className="muted small">{t('ui.operator.traffic')}</span>
-              <span className="operatorUsageValue">
-                {formatBytesSmart(usage.usedBytes)}
-                {usage.totalBytes > 0
-                  ? ` / ${formatBytesSmart(usage.totalBytes)}`
-                  : ''}
-              </span>
-            </div>
+            {usage ? (
+              <div className="operatorUsageRow">
+                <span className="muted small">{t('ui.operator.traffic')}</span>
+                <span className="operatorUsageValue">
+                  {formatBytesSmart(usage.usedBytes)}
+                  {usage.totalBytes > 0
+                    ? ` / ${formatBytesSmart(usage.totalBytes)}`
+                    : ''}
+                </span>
+              </div>
+            ) : null}
             {pct !== null ? (
               <div
                 className="operatorUsageBar"
@@ -145,6 +147,21 @@ export function OperatorModal({
                   className="operatorUsageBarFill"
                   style={{ width: `${pct}%` }}
                 />
+              </div>
+            ) : null}
+            {m.devicesUsed || m.devicesLimit ? (
+              <div className="operatorUsageRow">
+                <span className="muted small">{t('ui.operator.devices')}</span>
+                <span
+                  className={
+                    m.devicesLimit && (m.devicesUsed ?? 0) >= m.devicesLimit
+                      ? 'operatorUsageValue operatorUsageWarn'
+                      : 'operatorUsageValue'
+                  }
+                >
+                  {m.devicesUsed ?? 0}
+                  {m.devicesLimit ? ` / ${m.devicesLimit}` : ''}
+                </span>
               </div>
             ) : null}
             {daysLeft !== null ? (

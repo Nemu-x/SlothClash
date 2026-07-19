@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -52,6 +53,13 @@ const (
 	brandHdrUserDisplayName = "X-Brand-Desktop-User-Display-Name"
 	brandHdrGreeting        = "X-Brand-Desktop-Greeting"
 
+	// Device-slot usage. No standard subscription header carries this (the
+	// common Subscription-Userinfo only has traffic + expiry), so it lives in
+	// our namespace: panels that track device limits can surface "3 / 5" in the
+	// operator dialog instead of the user guessing.
+	brandHdrDevicesUsed  = "X-Brand-Desktop-Devices-Used"
+	brandHdrDevicesLimit = "X-Brand-Desktop-Devices-Limit"
+
 	brandHdrHideGlobalMode   = "X-Brand-Desktop-Hide-Global-Mode"
 	brandHdrHideProxyMode    = "X-Brand-Desktop-Hide-Proxy-Mode"
 	brandHdrHideLocalConfigs = "X-Brand-Desktop-Hide-Local-Configs"
@@ -65,6 +73,7 @@ const (
 	brandMaxDisplayNameLen = 96
 	brandMaxGreetingLen    = 160
 	brandMaxURLLen         = 2048
+	brandMaxDeviceCount    = 10000
 )
 
 // BrandManifest is the validated, ready-to-render branding for one profile.
@@ -91,6 +100,11 @@ type BrandManifest struct {
 
 	UserDisplayName string `json:"userDisplayName,omitempty"`
 	Greeting        string `json:"greeting,omitempty"`
+
+	// 0 = not reported. Used alone still renders ("2 devices"); with a limit it
+	// renders as a ratio.
+	DevicesUsed  int `json:"devicesUsed,omitempty"`
+	DevicesLimit int `json:"devicesLimit,omitempty"`
 
 	HideGlobalMode   bool `json:"hideGlobalMode,omitempty"`
 	HideProxyMode    bool `json:"hideProxyMode,omitempty"`
@@ -161,6 +175,17 @@ func brandCleanURL(v string) string {
 	return ""
 }
 
+// brandCleanCount parses a non-negative device counter. Anything unparseable,
+// negative or absurd (a panel bug should not render "4294967295 devices")
+// degrades to 0 = not reported.
+func brandCleanCount(v string) int {
+	n, err := strconv.Atoi(brandRawValue(v))
+	if err != nil || n < 0 || n > brandMaxDeviceCount {
+		return 0
+	}
+	return n
+}
+
 // brandCleanString caps display strings; over-limit values drop to empty
 // (absent) rather than truncating — a cap violation is a protocol violation.
 func brandCleanString(v string, maxLen int) string {
@@ -200,6 +225,9 @@ func parseBrandManifest(get func(string) string) *BrandManifest {
 
 		UserDisplayName: brandCleanString(get(brandHdrUserDisplayName), brandMaxDisplayNameLen),
 		Greeting:        brandCleanString(get(brandHdrGreeting), brandMaxGreetingLen),
+
+		DevicesUsed:  brandCleanCount(get(brandHdrDevicesUsed)),
+		DevicesLimit: brandCleanCount(get(brandHdrDevicesLimit)),
 
 		HideGlobalMode:   brandParseBool(get(brandHdrHideGlobalMode)),
 		HideProxyMode:    brandParseBool(get(brandHdrHideProxyMode)),

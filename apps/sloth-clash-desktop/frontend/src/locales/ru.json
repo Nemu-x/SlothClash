@@ -524,7 +524,8 @@
       "daysLeft": "{{count}} дн.",
       "expired": "Истекла",
       "copyForSupport": "Скопировать для поддержки",
-      "copied": "Скопировано"
+      "copied": "Скопировано",
+      "devices": "Устройства"
     }
   },
   "common": {

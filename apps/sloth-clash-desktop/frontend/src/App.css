@@ -2296,6 +2296,35 @@
   color: #ffe7a3;
 }
 
+/* Status banner with a close button (auto-retires after a few seconds too). */
+.bannerDismissable {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.bannerDismissable > span {
+  flex: 1 1 auto;
+}
+
+.bannerClose {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.bannerClose:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
 .error {
   margin-top: 10px;
   color: #ff8d8d;

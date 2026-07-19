@@ -184,6 +184,15 @@ function App() {
   const [error, setError] = useState('')
   const [linkToast, setLinkToast] = useState('')
   const [tunBanner, setTunBanner] = useState('')
+  // Status line, not a permanent notice: it used to stay on screen forever with
+  // no way to close it (and a stale "Service installed …" text made the app look
+  // like it had a pending problem). Auto-retire it; Settings also renders a
+  // dismiss button.
+  useEffect(() => {
+    if (!tunBanner.trim()) return
+    const id = window.setTimeout(() => setTunBanner(''), 12_000)
+    return () => window.clearTimeout(id)
+  }, [tunBanner])
   const [profilePaths, setProfilePaths] = useState<main.ProfilePaths | null>(
     null,
   )
@@ -1328,7 +1337,10 @@ function App() {
 
   const homeAlertTooltip = useMemo(() => {
     const parts: string[] = []
-    if (tunBanner?.trim()) parts.push(tunBanner.trim())
+    // tunBanner is a general status line ("URL copied", "service installed",
+    // "cache cleared" …) — informational, not an alert. Feeding it here made
+    // routine successes raise the warning badge on Home, which read as
+    // "something is wrong". Only genuine connection problems belong below.
     if (state?.connection?.status === 'connected') {
       const health = String(state?.connection?.health ?? '').trim()
       if (health === 'degraded') {
@@ -1344,7 +1356,6 @@ function App() {
     return parts.join('\n\n')
   }, [
     t,
-    tunBanner,
     state?.connection?.status,
     state?.connection?.health,
     state?.connection?.lastWarning,
@@ -2070,6 +2081,7 @@ function App() {
               tunPrefs={tunPrefs}
               trafficPrefs={trafficPrefs}
               tunBanner={tunBanner}
+              onDismissBanner={() => setTunBanner('')}
               state={state}
               updateSnap={updateSnap}
               error={error}

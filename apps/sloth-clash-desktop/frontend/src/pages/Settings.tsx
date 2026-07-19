@@ -212,6 +212,7 @@ export function SettingsPage({
   tunPrefs,
   trafficPrefs,
   tunBanner,
+  onDismissBanner,
   state,
   updateSnap,
   error,
@@ -244,6 +245,7 @@ export function SettingsPage({
   tunPrefs: main.TunSettings
   trafficPrefs: main.TrafficSettings
   tunBanner: string
+  onDismissBanner: () => void
   state: any
   updateSnap: any
   error: string | null
@@ -824,7 +826,20 @@ export function SettingsPage({
           </div>
         </div>
       </div>
-      {tunBanner ? <p className="banner">{tunBanner}</p> : null}
+      {tunBanner ? (
+        <div className="banner bannerDismissable" role="status">
+          <span>{tunBanner}</span>
+          <button
+            type="button"
+            className="bannerClose"
+            aria-label={t('common.dismiss')}
+            title={t('common.dismiss')}
+            onClick={onDismissBanner}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
       {error ? <p className="error">{friendlyErrorMessage(error)}</p> : null}
     </div>
   )

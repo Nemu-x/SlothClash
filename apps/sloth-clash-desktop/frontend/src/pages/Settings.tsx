@@ -215,6 +215,10 @@ export function SettingsPage({
   onDismissBanner,
   allowLan,
   onSetAllowLan,
+  dnsIpv6,
+  onSetDnsIpv6,
+  smartDns,
+  onSetSmartDns,
   state,
   updateSnap,
   error,
@@ -251,6 +255,10 @@ export function SettingsPage({
   // Backend-owned (prefs.json): opens the local proxy to the LAN.
   allowLan: boolean
   onSetAllowLan: (next: boolean) => void
+  dnsIpv6: boolean
+  onSetDnsIpv6: (next: boolean) => void
+  smartDns: boolean
+  onSetSmartDns: (next: boolean) => void
   state: any
   updateSnap: any
   error: string | null
@@ -449,19 +457,17 @@ export function SettingsPage({
             <div className="settingsToggleRow">
               <span>{t('settings.smartDns')}</span>
               <SettingsSwitch
-                checked={settings.dnsSmartFallback}
+                checked={smartDns}
                 label={t('settings.smartDns')}
-                onToggle={() =>
-                  onSetSetting('dnsSmartFallback', !settings.dnsSmartFallback)
-                }
+                onToggle={() => onSetSmartDns(!smartDns)}
               />
             </div>
             <div className="settingsToggleRow">
               <span>{t('settings.ipv6Dns')}</span>
               <SettingsSwitch
-                checked={settings.dnsIpv6}
+                checked={dnsIpv6}
                 label={t('settings.ipv6Dns')}
-                onToggle={() => onSetSetting('dnsIpv6', !settings.dnsIpv6)}
+                onToggle={() => onSetDnsIpv6(!dnsIpv6)}
               />
             </div>
             <div className="settingsToggleRow">

@@ -62,8 +62,6 @@ export type CompactSettings = {
   launchOnStartup: boolean
   autoConnectOnStartup: boolean
   closeToTray: boolean
-  dnsSmartFallback: boolean
-  dnsIpv6: boolean
   logLevel: 'error' | 'warn' | 'info' | 'debug'
   defaultAutoUpdateMinutes: number
   reconnectOnManualProfileUpdate: boolean

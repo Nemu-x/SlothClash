@@ -2109,6 +2109,14 @@ function App() {
               onSetAllowLan={(next) =>
                 void commitConnectionPrefs({ allowLan: next })
               }
+              dnsIpv6={connectionPrefs.dnsIpv6 === true}
+              onSetDnsIpv6={(next) =>
+                void commitConnectionPrefs({ dnsIpv6: next })
+              }
+              smartDns={connectionPrefs.smartDns === true}
+              onSetSmartDns={(next) =>
+                void commitConnectionPrefs({ smartDns: next })
+              }
               tunBanner={tunBanner}
               onDismissBanner={() => setTunBanner('')}
               state={state}

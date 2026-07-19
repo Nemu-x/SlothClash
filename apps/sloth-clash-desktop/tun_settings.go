@@ -40,11 +40,31 @@ type ConnectionSettings struct {
 	// LAN lets any device on the network egress through the user's tunnel.
 	// Turning it on is an explicit, informed user choice.
 	AllowLan *bool `json:"allowLan,omitempty"`
+	// DNSIPv6 controls `dns.ipv6`: whether the resolver answers AAAA queries.
+	// nil = off. Off by default because a broken/half-working IPv6 path is a
+	// classic source of "some sites hang" reports; users on real IPv6 networks
+	// turn it on. Pairs with dns.fake-ip-range6 in the generated config.
+	DNSIPv6 *bool `json:"dnsIpv6,omitempty"`
+	// SmartDNS controls `dns.respect-rules`: resolve proxied domains through the
+	// proxy (no DNS leak / ISP poisoning for them) while direct domains stay
+	// local. nil = off, matching verge's default; enabling it also requires
+	// proxy-server-nameserver, which the overlay fills in automatically.
+	SmartDNS *bool `json:"smartDns,omitempty"`
 }
 
 // IsAllowLanEnabled reports the effective value (default: false).
 func (c ConnectionSettings) IsAllowLanEnabled() bool {
 	return c.AllowLan != nil && *c.AllowLan
+}
+
+// IsDNSIPv6Enabled reports the effective value (default: false).
+func (c ConnectionSettings) IsDNSIPv6Enabled() bool {
+	return c.DNSIPv6 != nil && *c.DNSIPv6
+}
+
+// IsSmartDNSEnabled reports the effective value (default: false).
+func (c ConnectionSettings) IsSmartDNSEnabled() bool {
+	return c.SmartDNS != nil && *c.SmartDNS
 }
 
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.

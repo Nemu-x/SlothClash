@@ -6,8 +6,6 @@ export const DEFAULT_SETTINGS: CompactSettings = {
   launchOnStartup: false,
   autoConnectOnStartup: false,
   closeToTray: true,
-  dnsSmartFallback: true,
-  dnsIpv6: false,
   logLevel: 'info',
   defaultAutoUpdateMinutes: 360,
   reconnectOnManualProfileUpdate: true,

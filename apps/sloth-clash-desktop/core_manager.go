@@ -550,7 +550,10 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 	}
 	fmt.Fprintf(&cfg, "mode: rule\n")
 	fmt.Fprintf(&cfg, "log-level: info\n")
-	fmt.Fprintf(&cfg, "ipv6: true\n\n")
+	// Top-level ipv6 must agree with dns.ipv6 below (the subscription path
+	// force-aligns them for the same reason): a machine with no working IPv6
+	// route that gets AAAA records dials v6 and fails.
+	fmt.Fprintf(&cfg, "ipv6: %t\n\n", currentDesktopPrefs().Connection.IsDNSIPv6Enabled())
 
 	// profile.store-selected mirrors clash-verge-rev's `use_clash` defaults:
 	// preserves per-group node selections across hot reloads (we reload on
@@ -565,12 +568,16 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 		// Match enhance::tun::use_tun: fake-ip DNS block goes in only when TUN
 		// is actually being brought up. Without it, TUN + strict-route gives
 		// "connected" apps but no working resolution / routing.
-		cfg.WriteString(`dns:
+		// Both flags follow the Settings → Connection toggles (same source of
+		// truth as the subscription path), instead of being pinned on here.
+		conn := currentDesktopPrefs().Connection
+		fmt.Fprintf(&cfg, `dns:
   enable: true
   listen: ":1053"
-  ipv6: true
-  respect-rules: true
-  enhanced-mode: fake-ip
+  ipv6: %t
+  respect-rules: %t
+  enhanced-mode: fake-ip`, conn.IsDNSIPv6Enabled(), conn.IsSmartDNSEnabled())
+		cfg.WriteString(`
   fake-ip-range: 198.18.0.1/16
   # Required whenever fake-ip runs with ipv6:true — without a v6 pool AAAA
   # queries never get a fake address and IPv6 resolution fails outright

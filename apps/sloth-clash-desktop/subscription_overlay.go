@@ -137,19 +137,30 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	// defaulting to false. A machine with no working IPv6 route that receives AAAA
 	// records dials v6 and fails "address not valid in its context" (real user
 	// log: assets.msn.com). Force-align to top-level rather than defaulting true.
-	topIPv6, _ := m["ipv6"].(bool)
+	//
+	// The Settings toggle overrides both: an explicit user choice beats whatever
+	// the subscription ships, in either direction, so a broken-IPv6 machine can
+	// switch it off even when the profile enables it.
+	topIPv6 := currentDesktopPrefs().Connection.IsDNSIPv6Enabled()
+	m["ipv6"] = topIPv6
 	dns["ipv6"] = topIPv6
-	// Mihomo requires proxy-server-nameserver when respect-rules is enabled.
-	// Keep Verge-like non-destructive behavior: only fill it when missing/empty.
-	respectRules := false
-	switch v := dns["respect-rules"].(type) {
-	case bool:
-		respectRules = v
-	case string:
-		s := strings.ToLower(strings.TrimSpace(v))
-		respectRules = s == "true" || s == "1" || s == "yes" || s == "on"
+	// "Smart DNS fallback" in Settings maps to dns.respect-rules: proxied domains
+	// resolve through the proxy (no leak / ISP poisoning for them), direct ones
+	// stay local. Opt-in only — when the toggle is off we leave whatever the
+	// subscription shipped, because the config-parity guard requires
+	// subscription DNS blocks to survive untouched.
+	if currentDesktopPrefs().Connection.IsSmartDNSEnabled() {
+		dns["respect-rules"] = true
 	}
-	if respectRules {
+
+	// proxy-server-nameserver is required whenever respect-rules is on, and is
+	// needed under TUN regardless: the proxy server's own hostname must resolve
+	// OUTSIDE the tunnel, otherwise it depends on the tunnel it is meant to
+	// establish. This function only runs when TUN is being brought up, so fill
+	// it unconditionally — it used to be a side effect of respect-rules being
+	// hardcoded true, which broke once that became a user toggle.
+	// Keep Verge-like non-destructive behavior: only fill it when missing/empty.
+	{
 		repair := true
 		switch vv := dns["proxy-server-nameserver"].(type) {
 		case []any:

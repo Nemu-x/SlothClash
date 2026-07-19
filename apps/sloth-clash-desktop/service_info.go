@@ -19,9 +19,10 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // log-dir validation, DACL narrowing).
 //
 // 2.4.0 moves the service binary itself out of the per-user temp dir it was
-// registered from into an admin-only location (%ProgramFiles%\SlothClash\service
-// on Windows, /usr/local/lib/sloth-clash on Linux; macOS already used
-// /Library/PrivilegedHelperTools). Before that, a non-admin could swap the
+// registered from into an admin-only location: on Windows a `service` folder
+// next to the app (%ProgramFiles%\Nemu-x\Sloth Clash\service — the client passes
+// --install-dir, see installServiceElevatedWindows), /usr/local/lib/sloth-clash
+// on Linux; macOS already used /Library/PrivilegedHelperTools. Before that, a non-admin could swap the
 // binary the SYSTEM/root service executes — the exact Layer-1 boundary the
 // service is meant to hold. Requiring 2.4.0 makes existing installs surface the
 // reinstall banner, which performs the migration.

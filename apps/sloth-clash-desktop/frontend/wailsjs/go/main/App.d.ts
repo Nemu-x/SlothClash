@@ -6,6 +6,10 @@ import { options } from '../models'
 
 export function ActivateProfile(arg1: string): Promise<main.AppState>
 
+export function ApplyBrandDebugHeaders(
+  arg1: string,
+): Promise<main.ActiveBranding>
+
 export function ApplyUpdate(): Promise<void>
 
 export function CheckForUpdates(): Promise<main.UpdateState>
@@ -64,6 +68,8 @@ export function FetchConnectionsOverview(): Promise<main.ConnectionsOverview>
 export function FetchRulesOverview(): Promise<main.RulesOverview>
 
 export function GenerateAgeKeyPair(arg1: string): Promise<main.AgeKeyPair>
+
+export function GetActiveBranding(): Promise<main.ActiveBranding>
 
 export function GetAdvancedGeoStatus(): Promise<main.AdvancedGeoStatus>
 
@@ -159,6 +165,10 @@ export function SetAppAutoUpdateEnabled(
 ): Promise<main.DesktopPrefs>
 
 export function SetCloseToTrayPreference(arg1: boolean): Promise<main.AppState>
+
+export function SetConnectionSettings(
+  arg1: main.ConnectionSettings,
+): Promise<main.DesktopPrefs>
 
 export function SetHwidEnabled(arg1: boolean): Promise<main.DesktopPrefs>
 

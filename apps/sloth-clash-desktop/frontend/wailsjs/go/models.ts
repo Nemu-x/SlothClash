@@ -68,6 +68,98 @@ export namespace companion {
 }
 
 export namespace main {
+  export class BrandManifest {
+    enabled: boolean
+    name?: string
+    tagline?: string
+    logoUrl?: string
+    logoLightUrl?: string
+    accentColor?: string
+    websiteUrl?: string
+    supportUrl?: string
+    telegramUrl?: string
+    botUrl?: string
+    privacyUrl?: string
+    termsUrl?: string
+    helpUrl?: string
+    statusUrl?: string
+    renewUrl?: string
+    cabinetUrl?: string
+    userDisplayName?: string
+    greeting?: string
+    devicesUsed?: number
+    devicesLimit?: number
+    hideGlobalMode?: boolean
+    hideProxyMode?: boolean
+    hideLocalConfigs?: boolean
+    hideAdvanced?: boolean
+
+    static createFrom(source: any = {}) {
+      return new BrandManifest(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.enabled = source['enabled']
+      this.name = source['name']
+      this.tagline = source['tagline']
+      this.logoUrl = source['logoUrl']
+      this.logoLightUrl = source['logoLightUrl']
+      this.accentColor = source['accentColor']
+      this.websiteUrl = source['websiteUrl']
+      this.supportUrl = source['supportUrl']
+      this.telegramUrl = source['telegramUrl']
+      this.botUrl = source['botUrl']
+      this.privacyUrl = source['privacyUrl']
+      this.termsUrl = source['termsUrl']
+      this.helpUrl = source['helpUrl']
+      this.statusUrl = source['statusUrl']
+      this.renewUrl = source['renewUrl']
+      this.cabinetUrl = source['cabinetUrl']
+      this.userDisplayName = source['userDisplayName']
+      this.greeting = source['greeting']
+      this.devicesUsed = source['devicesUsed']
+      this.devicesLimit = source['devicesLimit']
+      this.hideGlobalMode = source['hideGlobalMode']
+      this.hideProxyMode = source['hideProxyMode']
+      this.hideLocalConfigs = source['hideLocalConfigs']
+      this.hideAdvanced = source['hideAdvanced']
+    }
+  }
+  export class ActiveBranding {
+    manifest?: BrandManifest
+    logoDataUri?: string
+    logoLightDataUri?: string
+
+    static createFrom(source: any = {}) {
+      return new ActiveBranding(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.manifest = this.convertValues(source['manifest'], BrandManifest)
+      this.logoDataUri = source['logoDataUri']
+      this.logoLightDataUri = source['logoLightDataUri']
+    }
+
+    convertValues(a: any, classs: any, asMap: boolean = false): any {
+      if (!a) {
+        return a
+      }
+      if (a.slice && a.map) {
+        return (a as any[]).map((elem) => this.convertValues(elem, classs))
+      } else if ('object' === typeof a) {
+        if (asMap) {
+          for (const key of Object.keys(a)) {
+            a[key] = new classs(a[key])
+          }
+          return a
+        }
+        return new classs(a)
+      }
+      return a
+    }
+  }
   export class AdvancedGeoStatus {
     geoIpPath: string
     geoIpSize: number
@@ -208,6 +300,8 @@ export namespace main {
     installed: boolean
     running: boolean
     lastError?: string
+    corePinMismatch?: boolean
+    unreachable?: boolean
 
     static createFrom(source: any = {}) {
       return new ServiceState(source)
@@ -218,6 +312,8 @@ export namespace main {
       this.installed = source['installed']
       this.running = source['running']
       this.lastError = source['lastError']
+      this.corePinMismatch = source['corePinMismatch']
+      this.unreachable = source['unreachable']
     }
   }
   export class ProxyGroup {
@@ -443,6 +539,7 @@ export namespace main {
       this.autoCheckEnabled = source['autoCheckEnabled']
     }
   }
+
   export class ConnectionMeta {
     network?: string
     type?: string
@@ -511,6 +608,23 @@ export namespace main {
         return new classs(a)
       }
       return a
+    }
+  }
+
+  export class ConnectionSettings {
+    allowLan?: boolean
+    dnsIpv6?: boolean
+    smartDns?: boolean
+
+    static createFrom(source: any = {}) {
+      return new ConnectionSettings(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.allowLan = source['allowLan']
+      this.dnsIpv6 = source['dnsIpv6']
+      this.smartDns = source['smartDns']
     }
   }
 
@@ -611,6 +725,7 @@ export namespace main {
   export class DesktopPrefs {
     tun: TunSettings
     traffic: TrafficSettings
+    connection: ConnectionSettings
     privacy: PrivacySettings
     appUpdate: AppUpdateSettings
     lang?: string
@@ -623,6 +738,10 @@ export namespace main {
       if ('string' === typeof source) source = JSON.parse(source)
       this.tun = this.convertValues(source['tun'], TunSettings)
       this.traffic = this.convertValues(source['traffic'], TrafficSettings)
+      this.connection = this.convertValues(
+        source['connection'],
+        ConnectionSettings,
+      )
       this.privacy = this.convertValues(source['privacy'], PrivacySettings)
       this.appUpdate = this.convertValues(
         source['appUpdate'],
@@ -774,6 +893,8 @@ export namespace main {
     version?: string
     expectedVersion: string
     updateRequired: boolean
+    corePinMismatch: boolean
+    unreachable: boolean
 
     static createFrom(source: any = {}) {
       return new ServiceRuntimeInfo(source)
@@ -787,6 +908,8 @@ export namespace main {
       this.version = source['version']
       this.expectedVersion = source['expectedVersion']
       this.updateRequired = source['updateRequired']
+      this.corePinMismatch = source['corePinMismatch']
+      this.unreachable = source['unreachable']
     }
   }
 

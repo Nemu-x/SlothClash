@@ -6,6 +6,10 @@ export function ActivateProfile(arg1) {
   return window['go']['main']['App']['ActivateProfile'](arg1)
 }
 
+export function ApplyBrandDebugHeaders(arg1) {
+  return window['go']['main']['App']['ApplyBrandDebugHeaders'](arg1)
+}
+
 export function ApplyUpdate() {
   return window['go']['main']['App']['ApplyUpdate']()
 }
@@ -100,6 +104,10 @@ export function FetchRulesOverview() {
 
 export function GenerateAgeKeyPair(arg1) {
   return window['go']['main']['App']['GenerateAgeKeyPair'](arg1)
+}
+
+export function GetActiveBranding() {
+  return window['go']['main']['App']['GetActiveBranding']()
 }
 
 export function GetAdvancedGeoStatus() {
@@ -252,6 +260,10 @@ export function SetAppAutoUpdateEnabled(arg1) {
 
 export function SetCloseToTrayPreference(arg1) {
   return window['go']['main']['App']['SetCloseToTrayPreference'](arg1)
+}
+
+export function SetConnectionSettings(arg1) {
+  return window['go']['main']['App']['SetConnectionSettings'](arg1)
 }
 
 export function SetHwidEnabled(arg1) {

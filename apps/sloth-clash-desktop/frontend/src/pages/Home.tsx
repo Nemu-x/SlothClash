@@ -157,12 +157,17 @@ export function HomePage({
             {updateSnap?.hasUpdate ? (
               <button
                 type="button"
-                className="homeUpdateBadge"
+                className="homeUpdatePill"
                 title={homeUpdateTooltip}
                 aria-label={homeUpdateTooltip}
                 onClick={onOpenUpdate}
               >
-                <span aria-hidden>⭳</span>
+                <span className="homeUpdatePillLabel">
+                  {t('ui.home.updateAvailable')}
+                </span>
+                <span className="homeUpdatePillArrow" aria-hidden>
+                  ➤
+                </span>
               </button>
             ) : null}
             {homeAlertTooltip ? (

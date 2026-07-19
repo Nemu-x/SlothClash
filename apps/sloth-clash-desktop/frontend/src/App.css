@@ -704,47 +704,55 @@
   box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-.homeUpdateBadge {
+/* "Update available" pill — reads as an action, not an alarm. Uses the accent
+   so it follows the user's custom / brand colour instead of a fixed green. */
+.homeUpdatePill {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: var(--font-size-md);
-  line-height: 1;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  color: #eaf7ef;
-  background: linear-gradient(145deg, #3ccf8e, #2ea976);
-  border: 1px solid rgba(61, 207, 142, 0.6);
-  box-shadow: 0 2px 10px rgba(46, 169, 118, 0.35);
+  font-size: var(--font-size-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   transition:
-    transform 0.16s ease,
-    filter 0.16s ease;
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
 }
 
-.homeUpdateBadge:hover {
-  filter: brightness(1.06);
+.homeUpdatePill:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
   transform: translateY(-1px);
 }
 
-.homeUpdateBadge:active {
+.homeUpdatePillArrow {
+  font-size: 0.85em;
+  transition: transform 0.16s ease;
+}
+
+.homeUpdatePill:hover .homeUpdatePillArrow {
+  transform: translateX(2px);
+}
+
+.homeUpdatePill:active {
   transform: translateY(0);
 }
 
-.homeUpdateBadge:focus-visible {
-  outline: 2px solid rgba(61, 207, 142, 0.75);
+.homeUpdatePill:focus-visible {
+  outline: 2px solid var(--accent-muted);
   outline-offset: 2px;
 }
 
 .shell[data-theme="light"] .homeAlertBadge {
   color: #2a2215;
-}
-
-.shell[data-theme="light"] .homeUpdateBadge {
-  color: #10472f;
 }
 
 .homeHeader h2 {

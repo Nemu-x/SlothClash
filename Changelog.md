@@ -1,3 +1,51 @@
+## Sloth Clash desktop `0.8.0` — 2026-07-19
+
+> ⚠️ **After updating you will be asked once to reinstall the helper service.** This release moves the service binary out of a temporary folder into an admin-only location next to the app — a security fix (below). Click the button on the banner, accept the UAC prompt, and it will not come back.
+
+### English
+
+- **Security: the helper service no longer runs from a temporary folder.** The privileged service (running as SYSTEM/root) was registered from a per-user temp directory, so a non-admin user could replace that binary while the service was stopped and get code execution as SYSTEM. It is now copied into an admin-only location — `%ProgramFiles%\Nemu-x\Sloth Clash\service` on Windows, `/usr/local/lib/sloth-clash` on Linux (macOS already used `/Library/PrivilegedHelperTools`) — and the service is registered against *that* path. Requires helper service **2.4.0+**. The installer also re-pins the service in place on upgrade, and both "reinstall service" conditions now surface an actionable banner instead of a raw error.
+- **Operator branding.** Providers can brand the app through HTTP response headers on the subscription (`X-Brand-Desktop-*`): name, logo, accent colour, greeting and their links. A button in the Home header opens an operator dialog with subscription **traffic and expiry**, **device slots**, provider links, and a one-click **"copy info for support"** block. Providers can also hide non-critical UI (Global mode, Proxy mode, local configs, Advanced). Full protocol: [wiki → Branding](https://github.com/Nemu-x/SlothClash/wiki/Branding).
+- **Custom accent colour.** Pick any colour by hex in Settings → Appearance. A contrast guard keeps it readable in both themes, and a user-chosen accent always wins over a provider's.
+- **The Connection settings actually work now.** "Allow LAN binding", "Enable IPv6 DNS" and "Smart DNS fallback" were inert placeholders; they now drive `allow-lan` (rewriting a loopback `bind-address` so LAN access really works), `dns.ipv6` and `dns.respect-rules`.
+- **IPv6 resolution under TUN fixed.** Fake-IP mode ran with IPv6 enabled but no IPv6 fake-IP pool, so AAAA lookups never resolved. Added `fake-ip-range6` to both config paths.
+- **Suspend/resume detection fixed.** The resume check compared monotonic time, which does not advance while the machine sleeps — so the post-wake TUN repair never ran ("closed the lid, opened it, no internet"). It now measures the wall clock.
+- **Interface scale fixed.** Below 100% the UI no longer leaves an empty band at the bottom; above 100% it no longer overflows the window.
+- **Mihomo core updated to `v1.19.29`.**
+- **UI polish.** The status banner is dismissable and auto-retires instead of hanging forever and raising a false warning badge on Home; "update available" is now a labelled accent pill; the helper service version is always visible in Settings → Info.
+
+### Русский
+
+- **Безопасность: служба-помощник больше не запускается из временной папки.** Привилегированная служба (работает как SYSTEM/root) регистрировалась из пользовательской temp-папки, поэтому пользователь без прав администратора мог подменить этот файл, пока служба остановлена, и получить выполнение кода от SYSTEM. Теперь бинарник копируется в папку, доступную на запись только администратору — `%ProgramFiles%\Nemu-x\Sloth Clash\service` на Windows, `/usr/local/lib/sloth-clash` на Linux (на macOS уже использовалась `/Library/PrivilegedHelperTools`) — и служба регистрируется именно на этот путь. Требуется служба **2.4.0+**. Установщик к тому же обновляет привязку службы прямо при апгрейде, а оба случая «переустановите службу» теперь показывают понятный баннер вместо сырой ошибки.
+- **Брендинг оператора.** Провайдер может забрендировать приложение HTTP-заголовками ответа на подписку (`X-Brand-Desktop-*`): название, логотип, акцентный цвет, приветствие и свои ссылки. Кнопка в шапке главного экрана открывает окно оператора с **трафиком и сроком** подписки, **слотами устройств**, ссылками и блоком **«скопировать для поддержки»** в один клик. Также можно скрыть некритичные элементы интерфейса (режим Global, режим Proxy, локальные конфиги, Advanced). Полный протокол: [вики → Брендинг](https://github.com/Nemu-x/SlothClash/wiki/Branding-ru).
+- **Свой акцентный цвет.** Любой цвет по hex в Настройки → Внешний вид. Контраст-гард держит его читаемым в обеих темах, а выбор пользователя всегда важнее цвета провайдера.
+- **Настройки соединения наконец работают.** «Allow LAN binding», «Enable IPv6 DNS» и «Smart DNS fallback» были неработающими заглушками; теперь они управляют `allow-lan` (с переписыванием loopback-адреса в `bind-address`, иначе доступ из сети не заработал бы), `dns.ipv6` и `dns.respect-rules`.
+- **Починен IPv6-резолвинг под TUN.** Режим fake-ip работал с включённым IPv6, но без пула fake-IP для IPv6 — AAAA-запросы не резолвились никогда. Добавлен `fake-ip-range6` в оба пути генерации конфига.
+- **Починен детект выхода из сна.** Проверка пробуждения сравнивала монотонное время, которое во время сна не идёт, поэтому починка TUN после пробуждения не запускалась («закрыл ноут, открыл — интернета нет»). Теперь измеряется по стенным часам.
+- **Починен масштаб интерфейса.** При масштабе меньше 100% снизу больше не остаётся пустой полосы, при большем — интерфейс не вылезает за окно.
+- **Ядро Mihomo обновлено до `v1.19.29`.**
+- **Полировка интерфейса.** Плашка статуса закрывается и сама исчезает вместо того, чтобы висеть вечно и поднимать ложный значок предупреждения на главной; «update available» стал акцентной пилюлей с подписью; версия службы-помощника всегда видна в Настройки → Информация.
+
+## Sloth Clash desktop `0.7.0` — 2026-07-14
+
+### English
+
+- **Helper service version handshake.** The app knows which service version it needs and shows an app-wide banner when the installed one is older, instead of failing in confusing ways. The embedded Mihomo core is pinned by SHA-256 and that pin is handed to the installer, so the service only ever spawns a core whose bytes match.
+- **Robustness pass (post-audit).** Background goroutines are panic-guarded, persist errors are logged instead of swallowed, `profileID` is validated before use in paths, the reconnect loop is capped against livelock, and a top-level ErrorBoundary plus a global rejection handler keep a render error from blanking the window.
+- **Fixed a WebView2 memory leak** caused by an infinite update-state invalidation loop on the Settings screen.
+- **DNS defaults aligned with clash-verge-rev:** `respect-rules` off, `dns.ipv6` following the top-level flag, and a plain-UDP resolver alongside DoH/DoT so DNS survives networks that block encrypted DNS ports.
+- **Debug log rotation now actually runs** (it was dead code).
+- **Country flag in the Connections node pill.**
+
+### Русский
+
+- **Согласование версии службы-помощника.** Приложение знает, какая версия службы ему нужна, и показывает баннер на весь экран, если установлена более старая — вместо непонятных сбоев. Встроенное ядро Mihomo привязано по SHA-256, и эта привязка передаётся установщику, поэтому служба запускает только то ядро, чьи байты совпадают.
+- **Проход по надёжности (после аудита).** Фоновые горутины защищены от паник, ошибки сохранения логируются, а не проглатываются, `profileID` проверяется перед использованием в путях, цикл переподключения ограничен от livelock, а ErrorBoundary верхнего уровня и глобальный обработчик отклонённых промисов не дают ошибке рендера обнулить окно.
+- **Исправлена утечка памяти WebView2**, вызванная бесконечным циклом инвалидации состояния обновлений на экране настроек.
+- **Дефолты DNS выровнены с clash-verge-rev:** `respect-rules` выключен, `dns.ipv6` следует за верхнеуровневым флагом, и обычный UDP-резолвер рядом с DoH/DoT, чтобы DNS работал в сетях, блокирующих порты шифрованного DNS.
+- **Ротация debug-логов теперь действительно работает** (была мёртвым кодом).
+- **Флаг страны в плашке ноды на экране «Соединения».**
+
 ## Sloth Clash desktop `0.6.0` — 2026-06-06
 
 ### English

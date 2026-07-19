@@ -95,6 +95,8 @@
     "reconnectOnManualProfileUpdate": "Переподключаться при ручном обновлении активного профиля",
     "coreTitle": "Mihomo / встроенное ядро",
     "updateChannelLabel": "Канал",
+    "serviceVersionLabel": "Сервис",
+    "serviceNotInstalled": "Не установлен",
     "lastCheckedLabel": "Проверено",
     "resetModal": {
       "title": "Сброс настроек приложения",

@@ -95,6 +95,8 @@
     "reconnectOnManualProfileUpdate": "手动更新活动配置时重新连接",
     "coreTitle": "Mihomo / 内置核心",
     "updateChannelLabel": "通道",
+    "serviceVersionLabel": "服务",
+    "serviceNotInstalled": "未安装",
     "lastCheckedLabel": "上次检查",
     "resetModal": {
       "title": "重置应用设置",

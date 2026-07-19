@@ -704,6 +704,19 @@ export function SettingsPage({
                   <span>{t('settings.updateChannelLabel')}</span>
                   <strong>{updateSnap?.channel ?? 'stable'}</strong>
                 </div>
+                {/* Privileged service version. Previously only visible inside
+                    the "update required" banner, so a healthy install had no
+                    way to show which service is actually running. */}
+                <div className="settingsKpi">
+                  <span>{t('settings.serviceVersionLabel')}</span>
+                  <strong title={serviceInfo?.expectedVersion}>
+                    {!serviceInfo?.installed
+                      ? t('settings.serviceNotInstalled')
+                      : serviceInfo?.version?.trim()
+                        ? serviceInfo.version
+                        : '—'}
+                  </strong>
+                </div>
                 <div className="settingsKpi">
                   <span>{t('settings.lastCheckedLabel')}</span>
                   <strong>

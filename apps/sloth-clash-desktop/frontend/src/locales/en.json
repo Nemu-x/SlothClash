@@ -95,6 +95,8 @@
     "reconnectOnManualProfileUpdate": "Reconnect on manual active-profile update",
     "coreTitle": "Mihomo / embedded core",
     "updateChannelLabel": "Channel",
+    "serviceVersionLabel": "Service",
+    "serviceNotInstalled": "Not installed",
     "lastCheckedLabel": "Checked",
     "resetModal": {
       "title": "Reset app settings",

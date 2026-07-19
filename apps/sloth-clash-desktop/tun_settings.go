@@ -31,12 +31,29 @@ type TrafficSettings struct {
 	FindProcessMode string `json:"findProcessMode,omitempty"` // "" = inherit; off|strict|always
 }
 
+// ConnectionSettings holds knobs that change how the local proxy is EXPOSED,
+// as opposed to how traffic is processed. Kept separate from TrafficSettings
+// because the security posture differs: these decide who can reach us.
+type ConnectionSettings struct {
+	// AllowLan opens the mixed-port proxy to the local network. nil/false =
+	// localhost only, which is the safe default we ship: an open proxy on the
+	// LAN lets any device on the network egress through the user's tunnel.
+	// Turning it on is an explicit, informed user choice.
+	AllowLan *bool `json:"allowLan,omitempty"`
+}
+
+// IsAllowLanEnabled reports the effective value (default: false).
+func (c ConnectionSettings) IsAllowLanEnabled() bool {
+	return c.AllowLan != nil && *c.AllowLan
+}
+
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
 type DesktopPrefs struct {
-	TUN       TunSettings       `json:"tun"`
-	Traffic   TrafficSettings   `json:"traffic"`
-	Privacy   PrivacySettings   `json:"privacy"`
-	AppUpdate AppUpdateSettings `json:"appUpdate"`
+	TUN        TunSettings        `json:"tun"`
+	Traffic    TrafficSettings    `json:"traffic"`
+	Connection ConnectionSettings `json:"connection"`
+	Privacy    PrivacySettings    `json:"privacy"`
+	AppUpdate  AppUpdateSettings  `json:"appUpdate"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -203,6 +220,20 @@ func (a *App) SetTunSettings(next TunSettings) DesktopPrefs {
 
 	prefsMu.Lock()
 	prefsCurrent.TUN = next
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+
+	a.triggerRuntimeReloadForPrefs()
+	return snapshot
+}
+
+// SetConnectionSettings is the Wails-exposed setter for the Connection section
+// of the Settings UI. Same flow as SetTunSettings: persist, then reload the
+// running core so `allow-lan` takes effect without a restart.
+func (a *App) SetConnectionSettings(next ConnectionSettings) DesktopPrefs {
+	prefsMu.Lock()
+	prefsCurrent.Connection = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()

@@ -19,6 +19,7 @@ import {
   SetMode,
   SetTrafficMode,
   SetTrafficSettings,
+  SetConnectionSettings,
   SetTunSettings,
 } from './api/core'
 import {
@@ -294,6 +295,10 @@ function App() {
   const [trafficPrefs, setTrafficPrefs] = useState<main.TrafficSettings>(
     () => new main.TrafficSettings({}),
   )
+  // Backend-owned (prefs.json), not localStorage: allow-lan changes what the
+  // core binds to, so the Go side must be the source of truth.
+  const [connectionPrefs, setConnectionPrefs] =
+    useState<main.ConnectionSettings>(() => new main.ConnectionSettings({}))
   // HWID is enabled by default; the prefs.json field uses an optional bool so
   // a fresh install (or any pre-0.4.1 prefs file lacking `privacy`) lands on
   // `true` here. Setting this to false omits the x-hwid header on subscription
@@ -468,6 +473,7 @@ function App() {
         const nextTraffic = new main.TrafficSettings(prefs?.traffic ?? {})
         setTunPrefs(nextTun)
         setTrafficPrefs(nextTraffic)
+        setConnectionPrefs(new main.ConnectionSettings(prefs?.connection ?? {}))
         setTunDnsHijackDraft((nextTun.dnsHijack ?? []).join(', '))
         setTunMtuDraft(nextTun.mtu ? String(nextTun.mtu) : '')
         setTunDeviceDraft(nextTun.device ?? '')
@@ -1063,6 +1069,25 @@ function App() {
       setTunDnsHijackDraft((updatedTun.dnsHijack ?? []).join(', '))
       setTunMtuDraft(updatedTun.mtu ? String(updatedTun.mtu) : '')
       setTunDeviceDraft(updatedTun.device ?? '')
+    } catch (e: any) {
+      setError(String(e))
+    } finally {
+      setTunPrefsSaving(false)
+    }
+  }
+
+  const commitConnectionPrefs = async (
+    patch: Partial<main.ConnectionSettings>,
+  ) => {
+    if (tunPrefsSaving) return
+    setTunPrefsSaving(true)
+    try {
+      const next: main.ConnectionSettings = new main.ConnectionSettings({
+        ...connectionPrefs,
+        ...patch,
+      })
+      const updated = await SetConnectionSettings(next)
+      setConnectionPrefs(new main.ConnectionSettings(updated?.connection ?? {}))
     } catch (e: any) {
       setError(String(e))
     } finally {
@@ -2080,6 +2105,10 @@ function App() {
               tunStackValue={tunStackValue}
               tunPrefs={tunPrefs}
               trafficPrefs={trafficPrefs}
+              allowLan={connectionPrefs.allowLan === true}
+              onSetAllowLan={(next) =>
+                void commitConnectionPrefs({ allowLan: next })
+              }
               tunBanner={tunBanner}
               onDismissBanner={() => setTunBanner('')}
               state={state}

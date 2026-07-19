@@ -213,6 +213,8 @@ export function SettingsPage({
   trafficPrefs,
   tunBanner,
   onDismissBanner,
+  allowLan,
+  onSetAllowLan,
   state,
   updateSnap,
   error,
@@ -246,6 +248,9 @@ export function SettingsPage({
   trafficPrefs: main.TrafficSettings
   tunBanner: string
   onDismissBanner: () => void
+  // Backend-owned (prefs.json): opens the local proxy to the LAN.
+  allowLan: boolean
+  onSetAllowLan: (next: boolean) => void
   state: any
   updateSnap: any
   error: string | null
@@ -462,11 +467,9 @@ export function SettingsPage({
             <div className="settingsToggleRow">
               <span>{t('settings.allowLanBinding')}</span>
               <SettingsSwitch
-                checked={settings.dnsAllowLan}
+                checked={allowLan}
                 label={t('settings.allowLanBinding')}
-                onToggle={() =>
-                  onSetSetting('dnsAllowLan', !settings.dnsAllowLan)
-                }
+                onToggle={() => onSetAllowLan(!allowLan)}
               />
             </div>
             <p className="muted settingsMicroHint">{t('settings.dnsHint')}</p>

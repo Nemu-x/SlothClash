@@ -10,5 +10,6 @@ export {
   SetMode,
   SetTrafficMode,
   SetTrafficSettings,
+  SetConnectionSettings,
   SetTunSettings,
 } from '../../wailsjs/go/main/App'

@@ -1430,7 +1430,7 @@ function App() {
   }, [screen, state?.profile?.activeProfileId])
 
   useEffect(() => {
-    if (screen !== 'advanced') return
+    if (screen !== 'advanced' && !operatorModalOpen) return
     let cancelled = false
     void GetSubscriptionDeviceIdentity()
       .then((d) => {
@@ -1443,7 +1443,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [screen])
+  }, [screen, operatorModalOpen])
 
   useEffect(() => {
     if (!homeActiveNodeOpen) return
@@ -2200,6 +2200,14 @@ function App() {
 
       <OperatorModal
         branding={branding}
+        activeProfile={activeProfile}
+        deviceIdentity={deviceIdentity}
+        appVersion={
+          String(updateSnap?.currentVersion ?? '').trim() ||
+          ((import.meta.env.VITE_APP_VERSION as string | undefined) ?? 'dev')
+        }
+        coreVersion={String(state?.core?.version ?? '')}
+        serviceVersion={String(serviceInfo?.version ?? '')}
         lightUI={theme === 'light'}
         open={operatorModalOpen}
         onClose={() => setOperatorModalOpen(false)}

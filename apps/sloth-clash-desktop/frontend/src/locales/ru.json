@@ -517,6 +517,14 @@
       "nameCopied": "Имя скопировано.",
       "resetRemoved": "Сброс завершён (профили удалены).",
       "resetKept": "Сброс завершён (профили сохранены)."
+    },
+    "operator": {
+      "traffic": "Трафик",
+      "expires": "Истекает",
+      "daysLeft": "{{count}} дн.",
+      "expired": "Истекла",
+      "copyForSupport": "Скопировать для поддержки",
+      "copied": "Скопировано"
     }
   },
   "common": {

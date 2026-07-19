@@ -517,6 +517,14 @@
       "nameCopied": "名称已复制。",
       "resetRemoved": "重置完成（已删除配置）。",
       "resetKept": "重置完成（已保留配置）。"
+    },
+    "operator": {
+      "traffic": "流量",
+      "expires": "到期",
+      "daysLeft": "{{count}} 天",
+      "expired": "已到期",
+      "copyForSupport": "复制支持信息",
+      "copied": "已复制"
     }
   },
   "common": {

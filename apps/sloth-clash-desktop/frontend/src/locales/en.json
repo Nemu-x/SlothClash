@@ -517,6 +517,14 @@
       "nameCopied": "Name copied.",
       "resetRemoved": "Settings reset complete (profiles removed).",
       "resetKept": "Settings reset complete (profiles preserved)."
+    },
+    "operator": {
+      "traffic": "Traffic",
+      "expires": "Expires",
+      "daysLeft": "{{count}} days",
+      "expired": "Expired",
+      "copyForSupport": "Copy info for support",
+      "copied": "Copied"
     }
   },
   "common": {

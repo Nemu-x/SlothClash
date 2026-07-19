@@ -65,6 +65,9 @@ export function HomePage({
   showBuiltinProxyGroups,
   hideGlobalMode,
   hideProxyMode,
+  brandName,
+  brandLogo,
+  onOpenOperator,
   onOpenImport,
   onOpenSupport,
   onOpenUpdate,
@@ -102,6 +105,10 @@ export function HomePage({
   // Brand hide flags (presentation-only; see brand-headers-protocol).
   hideGlobalMode?: boolean
   hideProxyMode?: boolean
+  // Operator button (brand manifest); empty name = no brand, button hidden.
+  brandName?: string
+  brandLogo?: string
+  onOpenOperator: () => void
   onOpenImport: (reason: 'beacon' | 'manual') => void
   onOpenSupport: (url: string) => void
   onOpenUpdate: () => void
@@ -188,6 +195,27 @@ export function HomePage({
           </p>
         </div>
         <div className="homeHeaderActions">
+          {/* Operator (brand) entry point — opens the dialog with the panel's
+              logo/name and its links (cabinet, renew, …). Only rendered when a
+              brand manifest is actually present. */}
+          {brandName ? (
+            <button
+              type="button"
+              className="btn subtle homeOperatorBtn"
+              title={brandName}
+              onClick={onOpenOperator}
+            >
+              {brandLogo ? (
+                <img
+                  className="homeOperatorBtnLogo"
+                  src={brandLogo}
+                  alt=""
+                  aria-hidden
+                />
+              ) : null}
+              <span>{brandName}</span>
+            </button>
+          ) : null}
           {!hasAnyProfile ? (
             <button
               type="button"

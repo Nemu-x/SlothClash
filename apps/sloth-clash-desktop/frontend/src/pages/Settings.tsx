@@ -44,77 +44,6 @@ function SettingsSwitch({
   )
 }
 
-// Operator (brand) card: rendered only when the active profile carries a
-// valid X-Brand-Desktop-* manifest. Links open in the system browser; the
-// logo comes from the backend disk cache as a data: URI (offline-safe).
-function OperatorCard({
-  branding,
-  theme,
-  onBrowserOpen,
-}: {
-  branding: main.ActiveBranding | null
-  theme: ThemeMode
-  onBrowserOpen: (url: string) => void
-}) {
-  const { t } = useTranslation()
-  const [systemDark] = useState(
-    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
-  )
-  const m = branding?.manifest
-  if (!m) return null
-  const lightUI = theme === 'light' || (theme === 'system' && !systemDark)
-  const logo = lightUI
-    ? branding?.logoLightDataUri || branding?.logoDataUri
-    : branding?.logoDataUri || branding?.logoLightDataUri
-  const links: Array<[string, string | undefined]> = [
-    [t('settings.operatorWebsite'), m.websiteUrl],
-    [t('settings.operatorSupport'), m.supportUrl],
-    ['Telegram', m.telegramUrl],
-    [t('settings.operatorBot'), m.botUrl],
-    [t('settings.operatorCabinet'), m.cabinetUrl],
-    [t('settings.operatorRenew'), m.renewUrl],
-    [t('settings.operatorStatus'), m.statusUrl],
-    [t('settings.operatorHelp'), m.helpUrl],
-    [t('settings.operatorPrivacy'), m.privacyUrl],
-    [t('settings.operatorTerms'), m.termsUrl],
-  ]
-  return (
-    <div className="homeCard settingsCardCompact operatorCard">
-      <h3 className="homeCardTitle">
-        <span className="settingsCardIcon" aria-hidden>
-          🛰️
-        </span>
-        {m.name || t('settings.operator')}
-      </h3>
-      {logo ? (
-        <img className="operatorLogo" src={logo} alt={m.name || 'logo'} />
-      ) : null}
-      {m.tagline ? <p className="muted small">{m.tagline}</p> : null}
-      {m.greeting || m.userDisplayName ? (
-        <p className="operatorGreeting">
-          {m.greeting}
-          {m.greeting && m.userDisplayName ? ' ' : ''}
-          {m.userDisplayName}
-        </p>
-      ) : null}
-      <div className="operatorLinks">
-        {links
-          .filter(([, url]) => !!url)
-          .map(([label, url]) => (
-            <button
-              key={label}
-              type="button"
-              className="btn ghost operatorLinkBtn"
-              onClick={() => onBrowserOpen(String(url))}
-            >
-              {label}
-            </button>
-          ))}
-      </div>
-    </div>
-  )
-}
-
 // Accent color field: picker + hex input + per-theme applied previews + reset.
 // The stored value is the raw user hex; swatches show what actually renders
 // after the contrast guard per theme.
@@ -203,7 +132,6 @@ export function SettingsPage({
   theme,
   accent,
   onSetAccent,
-  branding,
   lang,
   settings,
   settingsBusy,
@@ -267,8 +195,6 @@ export function SettingsPage({
   // Custom accent: raw #rrggbb or null = built-in; null resets.
   accent: string | null
   onSetAccent: (hex: string | null) => void
-  // Active profile's brand manifest + cached logos; null = stock UI.
-  branding: main.ActiveBranding | null
   onSetLang: (lang: Lang) => void
   onSetSetting: <K extends keyof CompactSettings>(
     key: K,
@@ -339,12 +265,6 @@ export function SettingsPage({
         </div>
       </div>
       <p className="muted settingsPanelLead">{t('settings.lead')}</p>
-
-      <OperatorCard
-        branding={branding}
-        theme={theme}
-        onBrowserOpen={onBrowserOpen}
-      />
 
       <div className="settingsGridCompact">
         <div className="settingsCol">

@@ -78,6 +78,7 @@ import {
 } from './components/ImportProfileModal'
 import type { InstallConfigRequest } from './components/InstallConfigConfirmModal'
 import { InstallConfigConfirmModal } from './components/InstallConfigConfirmModal'
+import { OperatorModal } from './components/OperatorModal'
 import { ProfileContextMenu } from './components/ProfileContextMenu'
 import { ProfileEditInfoModal } from './components/ProfileEditInfoModal'
 import { ProfileFileModal } from './components/ProfileFileModal'
@@ -356,6 +357,7 @@ function App() {
   } = useProxyDelay()
   const branding = useBranding()
   const brandManifest = branding?.manifest ?? null
+  const [operatorModalOpen, setOperatorModalOpen] = useState(false)
   const [ruleSearch, setRuleSearch] = useState('')
   const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
   const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
@@ -1791,6 +1793,9 @@ function App() {
             activeProfile={activeProfile}
             hideGlobalMode={brandManifest?.hideGlobalMode}
             hideProxyMode={brandManifest?.hideProxyMode}
+            brandName={brandManifest?.name}
+            brandLogo={branding?.logoDataUri || branding?.logoLightDataUri}
+            onOpenOperator={() => setOperatorModalOpen(true)}
             service={service}
             linkToast={linkToast}
             error={error}
@@ -2097,7 +2102,6 @@ function App() {
               theme={theme}
               accent={customAccent}
               onSetAccent={setCustomAccent}
-              branding={branding}
               lang={lang}
               settings={settings}
               settingsBusy={settingsBusy}
@@ -2193,6 +2197,14 @@ function App() {
           </Suspense>
         ) : null}
       </section>
+
+      <OperatorModal
+        branding={branding}
+        lightUI={theme === 'light'}
+        open={operatorModalOpen}
+        onClose={() => setOperatorModalOpen(false)}
+        onBrowserOpen={(url) => BrowserOpenURL(url)}
+      />
 
       <ImportProfileModal
         open={importModalOpen}

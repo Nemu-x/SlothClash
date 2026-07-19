@@ -4791,6 +4791,29 @@
   margin-bottom: 12px;
 }
 
+/* Operator entry point in the Home header (left of "Add subscription"). */
+.homeOperatorBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.homeOperatorBtnLogo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+.operatorModalCard {
+  text-align: center;
+}
+
+.operatorModalCard .operatorLinks {
+  justify-content: center;
+  margin-top: 12px;
+}
+
 .operatorLogo {
   max-height: 44px;
   max-width: 220px;

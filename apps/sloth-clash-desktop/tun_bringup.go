@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -160,8 +161,9 @@ func verifyTunBringUp(profileID string, grace time.Duration) tunVerifyResult {
 }
 
 // osHasTunAdapter is a best-effort cross-check: is a Mihomo TUN adapter present
-// in the OS interface list? We do not set a custom tun `device`, so Mihomo uses
-// its defaults (Windows wintun shows as "Meta"; macOS/Linux use utun/tun names).
+// in the OS interface list? On Windows we now name the wintun adapter
+// "SlothClash" (see tunWindowsDeviceName); older builds and macOS/Linux use the
+// defaults ("Meta", utun/tun). All are covered by the name fragments below.
 func osHasTunAdapter() bool {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -204,6 +206,14 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	if verifyTunBringUp(profile.ID, verifyGrace) == tunVerifyUp {
 		return nil
 	}
+	// Windows core recovery: a wintun adapter left registered by a force-killed
+	// core (in-app update, crash, Task-Manager) makes the next create fail with
+	// "access is denied", and a plain core restart just re-hits the same corpse —
+	// which is exactly why reinstalling the service and rebooting did NOT help a
+	// real user. Before restarting, ask the SYSTEM service to force-remove the
+	// stale adapter so the restart below creates a fresh one. Targeted at the
+	// access-denied signature only, best-effort, and a no-op off Windows.
+	a.maybeRecoverStuckTunAdapter(profile.ID, gen)
 	for attempt := 1; attempt <= maxRestarts; attempt++ {
 		if a.connectGen.Load() != gen {
 			return errConnectAborted
@@ -233,6 +243,41 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	return errors.New(hint)
 }
 
+// maybeRecoverStuckTunAdapter asks the privileged service to force-remove a
+// stale wintun adapter when the core.log tail shows the "access is denied"
+// signature — the fingerprint of a registered adapter left behind by a
+// force-killed core that a plain restart cannot clear. Windows-only and
+// best-effort: any failure is logged into the connect diagnostics and the caller
+// proceeds to its restart attempts regardless. Scoped to the current boot's log
+// so a stale line from a previous session never triggers a needless removal.
+func (a *App) maybeRecoverStuckTunAdapter(profileID string, gen uint64) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	logPath, err := coreLogPathForProfile(profileID)
+	if err != nil {
+		return
+	}
+	tail := strings.ToLower(currentBootLog(readFileTail(logPath, 64*1024)))
+	if !strings.Contains(tail, "access is denied") {
+		return
+	}
+	a.appendRuntimeDiag("tun.recover", "stale wintun adapter suspected (access denied) — asking the service to remove it")
+	a.traceEvent("pipeline.connect.tun_recover", "start", 0, map[string]any{"gen": gen})
+
+	// The service runs a PnP sweep that can take several seconds; give it room.
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	removed, err := ipcSlothRemoveTun(ctx)
+	if err != nil {
+		a.appendRuntimeDiag("tun.recover", "adapter removal via service failed: "+err.Error())
+		a.traceEvent("pipeline.connect.tun_recover", "fail", 0, map[string]any{"gen": gen, "error": err.Error()})
+		return
+	}
+	a.appendRuntimeDiag("tun.recover", fmt.Sprintf("service removed %d stale wintun adapter(s)", removed))
+	a.traceEvent("pipeline.connect.tun_recover", "ok", 0, map[string]any{"gen": gen, "removed": removed})
+}
+
 // classifyTunFailure maps a core.log failure tail to a human-readable hint so
 // the UI can tell the user the likely cause instead of a false "connected".
 func classifyTunFailure(logTail string) string {
@@ -241,7 +286,7 @@ func classifyTunFailure(logTail string) string {
 	case strings.Contains(l, "operation not permitted"):
 		return "The TUN adapter couldn't be created (operation not permitted) — usually a previous tunnel is still releasing. Click Connect again; it typically succeeds on the next try. If it keeps failing, another VPN or network filter (e.g. Cisco AnyConnect) may be blocking it — disable it or reinstall the SlothClash service. You can also use Proxy mode."
 	case strings.Contains(l, "access is denied"):
-		return "Access was denied creating the TUN adapter. The privileged service may not be running with the required rights — reinstall the service and try again."
+		return "The TUN adapter couldn't be created (access denied) — a leftover network adapter from a previous session was blocking it. SlothClash asked the service to remove it; click Connect again and it should succeed. If it still fails, reinstall the service or use Proxy mode."
 	case strings.Contains(l, "already exists"), strings.Contains(l, "in use"):
 		return "The TUN adapter is already in use. Another Clash/wintun client may be holding it — close it (e.g. clash-verge, v2rayN) and try again."
 	case strings.Contains(l, "wintun"):

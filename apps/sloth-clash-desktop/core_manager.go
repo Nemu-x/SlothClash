@@ -1146,6 +1146,26 @@ func (a *App) reconcileOrphanServiceCoreOnStartup() {
 	}
 	a.traceEvent("core.orphan.reconcile", "ok", 0, nil)
 	a.appendRuntimeDiag("core.orphan", "stopped a service-managed core left by a previous run")
+
+	// Prevention (Windows): we just stopped an orphaned core that belonged to us,
+	// so any wintun adapter it left is ours to clear. A graceful stop usually
+	// releases the adapter, but an orphan implies the previous exit was unclean —
+	// the exact path that can leave a registered adapter behind and make the next
+	// Connect fail with "access is denied". Force-remove it now, once, so the
+	// first Connect starts from a clean slate. Best-effort; a no-op off Windows.
+	// (The harder case — a stuck adapter with NO orphan process — has no owner to
+	// stop here and is instead recovered on demand by maybeRecoverStuckTunAdapter
+	// when a Connect actually hits the access-denied signature.)
+	if runtime.GOOS == "windows" {
+		rctx, rcancel := context.WithTimeout(context.Background(), 35*time.Second)
+		defer rcancel()
+		if removed, err := ipcSlothRemoveTun(rctx); err != nil {
+			a.traceEvent("core.orphan.tun_cleanup", "fail", 0, map[string]any{"error": err.Error()})
+		} else if removed > 0 {
+			a.appendRuntimeDiag("core.orphan", fmt.Sprintf("removed %d leftover wintun adapter(s) from the previous run", removed))
+			a.traceEvent("core.orphan.tun_cleanup", "ok", 0, map[string]any{"removed": removed})
+		}
+	}
 }
 
 // forceRestartCoreForProfile always restarts the core for the provided profile,

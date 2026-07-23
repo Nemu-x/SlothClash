@@ -27,9 +27,18 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // service is meant to hold. Requiring 2.4.0 makes existing installs surface the
 // reinstall banner, which performs the migration.
 //
-// ⚠️ SEQUENCING: only ship this bump once the 2.4.0 service binaries are actually
+// 2.4.2 adds the DELETE /tun/remove endpoint: the SYSTEM service force-removes a
+// stale wintun adapter left registered by a force-killed core, which is what
+// makes the next TUN create fail with "access is denied" (a state that survives
+// a reboot and a service reinstall). The client's on-demand recovery
+// (maybeRecoverStuckTunAdapter) and startup cleanup call this endpoint; an older
+// service answers 404 and the stuck adapter can never be cleared automatically.
+// Requiring 2.4.2 makes existing installs surface the reinstall banner so every
+// user gets the recovery path.
+//
+// ⚠️ SEQUENCING: only ship this bump once the 2.4.2 service binaries are actually
 // published and pulled by prebuild — otherwise the banner can never clear.
-const expectedSlothServiceVersion = "2.4.0"
+const expectedSlothServiceVersion = "2.4.2"
 
 // ServiceRuntimeInfo is the health/version snapshot the UI uses to decide
 // whether to nudge the user to update the privileged helper service.

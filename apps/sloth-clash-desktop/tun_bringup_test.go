@@ -83,7 +83,7 @@ func TestClassifyTunFailure(t *testing.T) {
 		wantSub string
 	}{
 		{"anyconnect", "Start TUN listening error: configure tun interface: operation not permitted", "AnyConnect"},
-		{"access-denied", "configure tun interface: Access is denied.", "Access was denied"},
+		{"access-denied", "configure tun interface: Access is denied.", "leftover network adapter"},
 		{"in-use", "configure tun interface: the adapter already exists", "already in use"},
 		{"wintun", "failed to load wintun.dll", "wintun driver"},
 		{"generic", "some unexpected tun failure text", "could not be brought up"},

@@ -2,10 +2,18 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// tunWindowsDeviceName is the deterministic wintun adapter name used on Windows.
+// Kept distinct from mihomo's default "Meta" so a fresh adapter never collides
+// with a stale one and so the interface is recognisably ours. See its use in
+// ensureTunOverlayForTraffic and the service-side removal that matches wintun by
+// driver (so it also clears the historical "Meta" name).
+const tunWindowsDeviceName = "SlothClash"
 
 const tunDefaultDNSYAML = `dns:
   enable: true
@@ -233,6 +241,21 @@ func ensureTunOverlayForTraffic(m map[string]any, enableTun bool) {
 	rawTun["strict-route"] = false
 	rawTun["dns-hijack"] = []string{"any:53"}
 	rawTun["enable"] = enableTun
+
+	// Windows only: give the wintun adapter a deterministic, branded name instead
+	// of mihomo's default "Meta". Two payoffs. (1) A fresh install creates
+	// "SlothClash", which never collides with a stale "Meta" adapter left by an
+	// older build or a co-installed clash-verge — the exact name collision that
+	// makes WintunCreateAdapter fail with "access is denied". (2) Combined with
+	// the service-side removal, recovery is unambiguous. A DEFAULT, not a force:
+	// a subscription or Settings → TUN device stays honoured (applyUserTunOverlay
+	// runs after this). macOS/Linux keep the empty/auto name — mihomo requires a
+	// utunN-style name there and a custom one would break bring-up.
+	if runtime.GOOS == "windows" {
+		if dev, ok := rawTun["device"].(string); !ok || strings.TrimSpace(dev) == "" {
+			rawTun["device"] = tunWindowsDeviceName
+		}
+	}
 	m["tun"] = rawTun
 }
 

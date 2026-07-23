@@ -248,3 +248,10 @@ func ipcSlothStopCore(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ipcSlothRemoveTun is a no-op on macOS: there is no wintun and mihomo tears its
+// own utun down on stop. Present so cross-platform recovery code compiles.
+func ipcSlothRemoveTun(ctx context.Context) (int, error) {
+	_ = ctx
+	return 0, nil
+}

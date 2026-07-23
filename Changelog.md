@@ -1,3 +1,25 @@
+## Sloth Clash desktop `0.8.1` — 2026-07-23
+
+> ⚠️ **After updating you will be asked once to reinstall the helper service.** This release requires helper service **2.4.2+**, which adds the adapter-recovery the fix below relies on. Click the banner, accept the UAC prompt, and it will not come back.
+
+### English
+
+- **TUN "Access was denied creating the TUN adapter" fixed for good.** When the core was force-killed (an in-app update, a crash, Task-Manager), it never deleted its wintun adapter, and the leftover registered adapter made every later connect fail with *"access is denied"* — a state that survived a reboot **and** a service reinstall, because a registered network device is untouched by either. Three changes close it:
+  - The privileged service can now force-remove a stale wintun adapter (new `DELETE /tun/remove`), the one thing the unprivileged app could never do itself.
+  - On a failed connect showing that signature, the app asks the service to remove the leftover adapter and then retries automatically — no more manual Device Manager surgery.
+  - After an unclean previous exit, any adapter left behind is cleared at startup before the first connect.
+- **The Windows TUN adapter now has a stable name (`SlothClash`) instead of the generic `Meta`,** so a fresh adapter never collides with a stale one or with a co-installed Clash client. A subscription- or user-provided device name still wins. macOS/Linux are unchanged.
+- **Mihomo core updated to `v1.19.29`.** (unchanged from 0.8.0)
+
+### Русский
+
+- **Окончательно починен TUN «Access was denied creating the TUN adapter».** Когда ядро убивали принудительно (внутренний апдейт, краш, Диспетчер задач), оно не удаляло свой wintun-адаптер, и оставшийся зарегистрированный адаптер валил каждый следующий коннект ошибкой *«access is denied»* — состояние переживало и перезагрузку, **и** переустановку службы, потому что зарегистрированное сетевое устройство ни то ни другое не трогает. Закрыто тремя изменениями:
+  - Привилегированная служба теперь умеет принудительно снести застрявший wintun-адаптер (новый `DELETE /tun/remove`) — ровно то, чего приложение без прав админа сделать не могло.
+  - При неудачном коннекте с этой сигнатурой приложение просит службу снести адаптер и повторяет попытку автоматически — больше никакой ручной возни в Диспетчере устройств.
+  - После нечистого прошлого выхода оставшийся адаптер вычищается при старте, до первого коннекта.
+- **У TUN-адаптера на Windows теперь стабильное имя (`SlothClash`) вместо общего `Meta`,** чтобы новый адаптер не конфликтовал со старым или с рядом стоящим Clash-клиентом. Имя устройства из подписки или настроек по-прежнему в приоритете. macOS/Linux без изменений.
+- **Ядро Mihomo обновлено до `v1.19.29`.** (без изменений с 0.8.0)
+
 ## Sloth Clash desktop `0.8.0` — 2026-07-19
 
 > ⚠️ **After updating you will be asked once to reinstall the helper service.** This release moves the service binary out of a temporary folder into an admin-only location next to the app — a security fix (below). Click the button on the banner, accept the UAC prompt, and it will not come back.

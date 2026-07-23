@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -137,5 +138,42 @@ func TestConfigParitySubscriptionBlocksPreserved(t *testing.T) {
 	// Routing payload intact.
 	if px, ok := m["proxies"].([]any); !ok || len(px) != 1 {
 		t.Errorf("proxies not preserved: %#v", m["proxies"])
+	}
+}
+
+// On Windows the wintun adapter is given the deterministic name "SlothClash" so
+// a fresh adapter never collides with a stale "Meta" corpse (the access-denied
+// trigger) and the interface is recognisably ours. It is a DEFAULT: a device the
+// subscription already ships must survive. Off Windows we must NOT set it —
+// mihomo requires a utunN-style name on macOS and a custom one breaks bring-up.
+func TestTunDeviceNameWindowsDefault(t *testing.T) {
+	// No device in the subscription tun block -> our default applies (Windows).
+	m := representativeFullProfile()
+	if err := finalizeRuntimeConfigPipeline(m, t.TempDir(), 54333, 9097, "secret", "tun", true, true); err != nil {
+		t.Fatalf("pipeline error: %v", err)
+	}
+	tun, ok := m["tun"].(map[string]any)
+	if !ok {
+		t.Fatalf("tun block missing: %#v", m["tun"])
+	}
+	if runtime.GOOS == "windows" {
+		if tun["device"] != "SlothClash" {
+			t.Errorf("tun.device = %v, want SlothClash (Windows default)", tun["device"])
+		}
+	} else {
+		if _, present := tun["device"]; present {
+			t.Errorf("tun.device = %v, want unset off Windows (mihomo needs a utunN name)", tun["device"])
+		}
+	}
+
+	// A subscription-provided device must be preserved, not overwritten, on every
+	// platform (user/subscription intent wins over our default).
+	m2 := representativeFullProfile()
+	m2["tun"].(map[string]any)["device"] = "CustomTun0"
+	if err := finalizeRuntimeConfigPipeline(m2, t.TempDir(), 54333, 9097, "secret", "tun", true, true); err != nil {
+		t.Fatalf("pipeline error: %v", err)
+	}
+	if got := m2["tun"].(map[string]any)["device"]; got != "CustomTun0" {
+		t.Errorf("tun.device = %v, want CustomTun0 (subscription value preserved)", got)
 	}
 }

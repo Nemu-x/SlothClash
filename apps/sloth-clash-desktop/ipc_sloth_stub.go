@@ -19,3 +19,8 @@ func ipcSlothStopCore(ctx context.Context) error {
 	_ = ctx
 	return nil
 }
+
+func ipcSlothRemoveTun(ctx context.Context) (int, error) {
+	_ = ctx
+	return 0, nil
+}

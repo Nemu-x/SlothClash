@@ -162,3 +162,37 @@ func ipcSlothStopCore(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ipcSlothRemoveTun asks the privileged service to force-remove any stale wintun
+// TUN adapter. mihomo's core, when force-killed (an in-app update replacing the
+// binary, a crash, or Task-Manager), never deletes its adapter, and the next
+// create then fails with "access is denied" — a state that survives a reboot and
+// a service reinstall because the adapter is a registered PnP device. The
+// unprivileged app cannot remove it; the SYSTEM service can. Returns the number
+// of adapters removed. Requires service ≥ 2.4.2; older services answer 404,
+// which surfaces here as a non-2xx error the caller treats as best-effort.
+func ipcSlothRemoveTun(ctx context.Context) (int, error) {
+	st, b, err := ipcSlothDo(ctx, http.MethodDelete, "/tun/remove", nil)
+	if err != nil {
+		return 0, err
+	}
+	var env struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    int    `json:"data"`
+	}
+	_ = json.Unmarshal(b, &env)
+	if st < 200 || st >= 300 {
+		if env.Message != "" {
+			return 0, fmt.Errorf("DELETE /tun/remove: HTTP %d — %s", st, env.Message)
+		}
+		return 0, fmt.Errorf("DELETE /tun/remove: HTTP %d — %s", st, strings.TrimSpace(string(b)))
+	}
+	if env.Code != 0 {
+		if env.Message != "" {
+			return 0, fmt.Errorf("remove tun via service: %s", env.Message)
+		}
+		return 0, fmt.Errorf("remove tun via service: code %d", env.Code)
+	}
+	return env.Data, nil
+}

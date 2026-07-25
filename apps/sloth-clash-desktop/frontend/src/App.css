@@ -4585,6 +4585,56 @@
   font-weight: 600;
 }
 
+/* Rules dashboard enable/disable toggle column. */
+.rulesToggleCol {
+  width: 44px;
+  text-align: center;
+}
+
+.rulesToggleCell {
+  text-align: center;
+}
+
+.ruleToggleBox {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #5eead4;
+}
+
+.ruleToggleBox:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* A rule the user has disabled: dimmed + struck so it reads as "off" while
+   staying visible for re-enabling. */
+.ruleRowDisabled td {
+  opacity: 0.5;
+}
+
+.ruleRowDisabled .rulesPayload {
+  text-decoration: line-through;
+}
+
+.ruleRowDisabled .ruleToggleBox {
+  opacity: 1;
+}
+
+/* "hidden" chip on revealed hidden proxy groups (subscription hidden:true). */
+.proxyHiddenChip {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #c9a86c;
+  background: rgba(201, 168, 108, 0.14);
+  border: 1px solid rgba(201, 168, 108, 0.35);
+  white-space: nowrap;
+}
+
 .settingsBasics {
   margin-bottom: 16px;
 }

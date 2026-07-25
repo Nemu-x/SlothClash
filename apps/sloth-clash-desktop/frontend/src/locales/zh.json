@@ -353,6 +353,8 @@
       "pingAll": "测试本组全部节点延迟",
       "pinging": "测速中...",
       "showBuiltin": "显示内置分组（DIRECT/REJECT）",
+      "showHidden": "显示隐藏分组",
+      "showHiddenHint": "显示订阅标记为隐藏的代理分组。",
       "focusGroup": "焦点分组（UI）",
       "autoGroupHint": "这是自动分组（url-test / fallback / load-balance），Mihomo 自行选择节点，此处不支持手动选择。如需手动切换节点，请打开 select / Manual 分组。",
       "noGroups": "暂时没有分组 - 请等待订阅健康检查后再刷新。",
@@ -373,7 +375,9 @@
       "fastest": "最快",
       "density": "切换节点密度",
       "densityCompact": "紧凑",
-      "densityComfortable": "宽松"
+      "densityComfortable": "宽松",
+      "hiddenChip": "隐藏",
+      "hiddenChipHint": "此分组被订阅标记为隐藏。"
     },
     "rules": {
       "title": "规则",
@@ -395,7 +399,14 @@
       "type": "类型",
       "match": "匹配",
       "policy": "策略",
-      "noParsed": "请先在首页连接，然后点击刷新以加载规则。"
+      "noParsed": "请先在首页连接，然后点击刷新以加载规则。",
+      "toggleCol": "启用",
+      "toggleEnable": "启用此规则",
+      "toggleDisable": "停用此规则",
+      "toggleNoProfile": "请先激活一个配置，才能在此启用或停用规则。",
+      "toggleReadonlyHint": "此规则不属于配置的可编辑规则，无法在此切换。",
+      "toggleRulesetHint": "切换规则集会启用或停用整个规则集；其中的单条规则无法单独切换。",
+      "toggleBaselineError": "无法加载配置的规则，切换不可用：{{error}}"
     },
     "connections": {
       "title": "连接",

@@ -353,6 +353,8 @@
       "pingAll": "Ping all nodes in this group",
       "pinging": "Pinging...",
       "showBuiltin": "Show built-in groups (DIRECT/REJECT)",
+      "showHidden": "Show hidden groups",
+      "showHiddenHint": "Reveal proxy groups the subscription marked as hidden.",
       "focusGroup": "Focus group (UI)",
       "autoGroupHint": "This is an auto group (url-test / fallback / load-balance). Mihomo picks the node itself — manual selection is disabled here. Open a select / Manual group to pick a specific node.",
       "noGroups": "No groups yet - wait for the subscription health check, then Refresh.",
@@ -373,7 +375,9 @@
       "fastest": "Fastest",
       "density": "Toggle node density",
       "densityCompact": "Compact",
-      "densityComfortable": "Comfortable"
+      "densityComfortable": "Comfortable",
+      "hiddenChip": "hidden",
+      "hiddenChipHint": "This group is marked hidden by the subscription."
     },
     "rules": {
       "title": "Rules",
@@ -395,7 +399,14 @@
       "type": "Type",
       "match": "Match",
       "policy": "Policy",
-      "noParsed": "Connect on Home first, then press Refresh to load rules."
+      "noParsed": "Connect on Home first, then press Refresh to load rules.",
+      "toggleCol": "On",
+      "toggleEnable": "Enable this rule",
+      "toggleDisable": "Disable this rule",
+      "toggleNoProfile": "Activate a profile to enable or disable rules from here.",
+      "toggleReadonlyHint": "This rule isn't part of the profile's editable rules, so it can't be toggled here.",
+      "toggleRulesetHint": "Toggling a rule-set enables or disables the whole set; individual entries inside it can't be toggled.",
+      "toggleBaselineError": "Couldn't load the profile's rules, so toggling is unavailable: {{error}}"
     },
     "connections": {
       "title": "Connections",

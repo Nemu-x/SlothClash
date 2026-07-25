@@ -3,7 +3,23 @@ import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
 import { RuleProvidersModal } from '../components/RuleProvidersModal'
+import type { RuleRow } from '../rulesTable'
 import { friendlyErrorMessage } from '../utils/yaml'
+
+// A rule row as rendered on the dashboard: a live rule (disabled=false) or a
+// user-disabled baseline rule (disabled=true, carrying its exact `line`).
+type DashboardRuleRow = RuleRow & { disabled?: boolean; line?: string }
+
+export type RuleToggleApi = {
+  hasActiveProfile: boolean
+  baselineLoading: boolean
+  baselineError: string | null
+  busyLines: Set<string>
+  isToggleable: (row: RuleRow) => boolean
+  matchLine: (row: RuleRow) => string | null
+  onDisable: (row: RuleRow) => void
+  onEnable: (line: string) => void
+}
 
 export function RulesPage({
   rulesOverview,
@@ -28,6 +44,7 @@ export function RulesPage({
   onSearchChange,
   onTypeFilterChange,
   onPolicyFilterChange,
+  ruleToggle,
 }: {
   rulesOverview: main.RulesOverview | null
   connectionStatus: string
@@ -37,7 +54,7 @@ export function RulesPage({
   providerErrMap: Record<string, string>
   bulkBusy: boolean
   rulesRows: any[]
-  filteredRulesRows: any[]
+  filteredRulesRows: DashboardRuleRow[]
   rulesTypeTop: Array<[string, number]>
   ruleSearch: string
   ruleTypeFilter: string
@@ -51,9 +68,19 @@ export function RulesPage({
   onSearchChange: (next: string) => void
   onTypeFilterChange: (next: string) => void
   onPolicyFilterChange: (next: string) => void
+  ruleToggle: RuleToggleApi
 }) {
   const { t } = useTranslation()
   const [providersModalOpen, setProvidersModalOpen] = useState(false)
+  // Toggling is offered only with an active profile whose baseline loaded.
+  const togglesReady = ruleToggle.hasActiveProfile && !ruleToggle.baselineError
+  // Why a given live row cannot be toggled (custom / unmatched / ruleset-only).
+  const rowHint = (row: DashboardRuleRow): string => {
+    if (!ruleToggle.hasActiveProfile) return t('ui.rules.toggleNoProfile')
+    if (String(row.type).toLowerCase().replace(/[-_]/g, '') === 'ruleset')
+      return t('ui.rules.toggleRulesetHint')
+    return t('ui.rules.toggleReadonlyHint')
+  }
   const failedProviders = providers.filter((p) =>
     Boolean(providerErrMap[p.name]),
   ).length
@@ -137,10 +164,25 @@ export function RulesPage({
               </span>
             ))}
           </div>
+          {!ruleToggle.hasActiveProfile ? (
+            <p className="muted small tight">{t('ui.rules.toggleNoProfile')}</p>
+          ) : ruleToggle.baselineError ? (
+            <p className="muted small tight rulesYamlErr">
+              {t('ui.rules.toggleBaselineError', {
+                error: ruleToggle.baselineError,
+              })}
+            </p>
+          ) : null}
           <div className="rulesTableWrap rulesTableWrapFull">
             <table className="rulesTable">
               <thead>
                 <tr>
+                  <th
+                    className="rulesToggleCol"
+                    title={t('ui.rules.toggleCol')}
+                  >
+                    {t('ui.rules.toggleCol')}
+                  </th>
                   <th>#</th>
                   <th>{t('ui.rules.type')}</th>
                   <th>{t('ui.rules.match')}</th>
@@ -148,22 +190,62 @@ export function RulesPage({
                 </tr>
               </thead>
               <tbody>
-                {filteredRulesRows.map((r) => (
-                  <tr key={`${r.idx}-${r.type}-${r.payload}`}>
-                    <td>{r.idx}</td>
-                    <td>{r.type}</td>
-                    <td className="rulesPayload">{r.payload || '—'}</td>
-                    <td
-                      className={
-                        r.proxy && r.proxy !== 'DIRECT'
-                          ? 'rulesPolicy rulesPolicyProxy'
-                          : 'rulesPolicy'
-                      }
+                {filteredRulesRows.map((r, i) => {
+                  const isDisabled = r.disabled === true
+                  const line = isDisabled ? r.line : ruleToggle.matchLine(r)
+                  const canToggle = togglesReady && Boolean(line)
+                  const busy = line ? ruleToggle.busyLines.has(line) : false
+                  const key = isDisabled
+                    ? `off-${r.line}`
+                    : `${r.idx}-${r.type}-${r.payload}-${i}`
+                  return (
+                    <tr
+                      key={key}
+                      className={isDisabled ? 'ruleRowDisabled' : undefined}
                     >
-                      {r.proxy}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="rulesToggleCell">
+                        <input
+                          type="checkbox"
+                          className="ruleToggleBox"
+                          checked={!isDisabled}
+                          disabled={!canToggle || busy}
+                          title={
+                            canToggle
+                              ? isDisabled
+                                ? t('ui.rules.toggleEnable')
+                                : t('ui.rules.toggleDisable')
+                              : rowHint(r)
+                          }
+                          aria-label={
+                            isDisabled
+                              ? t('ui.rules.toggleEnable')
+                              : t('ui.rules.toggleDisable')
+                          }
+                          onChange={() => {
+                            if (!canToggle || busy) return
+                            if (isDisabled) {
+                              if (r.line) ruleToggle.onEnable(r.line)
+                            } else {
+                              ruleToggle.onDisable(r)
+                            }
+                          }}
+                        />
+                      </td>
+                      <td>{isDisabled ? '—' : r.idx}</td>
+                      <td>{r.type}</td>
+                      <td className="rulesPayload">{r.payload || '—'}</td>
+                      <td
+                        className={
+                          r.proxy && r.proxy !== 'DIRECT'
+                            ? 'rulesPolicy rulesPolicyProxy'
+                            : 'rulesPolicy'
+                        }
+                      >
+                        {r.proxy}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -321,6 +321,8 @@ export namespace main {
     type: string
     proxies: string[]
     selected?: string
+    hidden?: boolean
+    icon?: string
 
     static createFrom(source: any = {}) {
       return new ProxyGroup(source)
@@ -332,6 +334,8 @@ export namespace main {
       this.type = source['type']
       this.proxies = source['proxies']
       this.selected = source['selected']
+      this.hidden = source['hidden']
+      this.icon = source['icon']
     }
   }
   export class ProxyState {

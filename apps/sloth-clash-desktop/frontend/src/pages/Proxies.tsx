@@ -138,7 +138,11 @@ export function ProxiesPage({
   onPingAll: (group: string, nodes: string[]) => void
 }) {
   const { t } = useTranslation()
-  const visibleGroups = groups.filter((g: any) => {
+  // Groups the subscription flags `hidden: true` (mihomo passes this through on
+  // /proxies) are collapsed by default; a toolbar toggle reveals them. The
+  // toggle only appears when there is something to reveal.
+  const [showHidden, setShowHidden] = useState(false)
+  const baseVisibleGroups = groups.filter((g: any) => {
     const name = String(g?.name ?? '')
     if (!showBuiltin) {
       if (isUnsafeGroupName(name)) return false
@@ -147,6 +151,12 @@ export function ProxiesPage({
     }
     return true
   })
+  const hiddenGroupCount = baseVisibleGroups.filter(
+    (g: any) => g?.hidden === true,
+  ).length
+  const visibleGroups = showHidden
+    ? baseVisibleGroups
+    : baseVisibleGroups.filter((g: any) => g?.hidden !== true)
 
   return (
     <div className="panel proxiesPanel">
@@ -204,6 +214,16 @@ export function ProxiesPage({
           >
             {t('ui.proxies.showBuiltin')}
           </button>
+          {hiddenGroupCount > 0 ? (
+            <button
+              type="button"
+              className={showHidden ? 'btn' : 'btn ghost'}
+              onClick={() => setShowHidden((v) => !v)}
+              title={t('ui.proxies.showHiddenHint')}
+            >
+              {t('ui.proxies.showHidden')} ({hiddenGroupCount})
+            </button>
+          ) : null}
         </div>
       </div>
       <ProxyGroupsAccordion
@@ -395,6 +415,14 @@ function ProxyGroupsAccordion({
                 onClick={() => setOpenName(isOpen ? '' : name)}
               >
                 <span className="proxyAccName">{name}</span>
+                {g.hidden === true ? (
+                  <span
+                    className="proxyHiddenChip"
+                    title={t('ui.proxies.hiddenChipHint')}
+                  >
+                    {t('ui.proxies.hiddenChip')}
+                  </span>
+                ) : null}
                 <span className={`proxyTypeChip proxyType-${type}`}>
                   {g.type}
                 </span>

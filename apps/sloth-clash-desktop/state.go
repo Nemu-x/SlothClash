@@ -118,6 +118,12 @@ type ProxyGroup struct {
 	Type     string   `json:"type"`
 	Proxies  []string `json:"proxies"`
 	Selected string   `json:"selected,omitempty"`
+	// Hidden mirrors mihomo's per-group `hidden` flag (set via proxy-groups
+	// hidden: true in the subscription). The UI hides these groups by default
+	// and offers a "show hidden" toggle. Icon is mihomo's optional per-group
+	// icon URL, passed through for future use / parity with dashboards.
+	Hidden bool   `json:"hidden,omitempty"`
+	Icon   string `json:"icon,omitempty"`
 }
 
 type ProxyState struct {

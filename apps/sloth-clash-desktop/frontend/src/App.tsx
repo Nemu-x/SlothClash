@@ -105,6 +105,7 @@ import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useProxyDelay } from './hooks/useProxyDelay'
+import { useRuleToggles } from './hooks/useRuleToggles'
 import { useToasts } from './hooks/useToasts'
 import i18n, { LS_LANG, readStoredLang } from './i18n'
 import {
@@ -1490,9 +1491,40 @@ function App() {
     }
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [rulesRows])
+  // Dashboard rule enable/disable. The hook loads the active profile's rule
+  // baseline, tracks which lines are disabled (rules-template `delete` bucket),
+  // and toggles them via SetProfileRulesTemplate (which auto-reconnects). See
+  // useRuleToggles for the safety invariant (only unambiguous matches toggle).
+  const ruleToggles = useRuleToggles({
+    activeProfileId: String(state?.profile?.activeProfileId ?? '').trim(),
+    profiles: state?.profile?.profiles,
+    enabled: screen === 'rules',
+    onError: (m) => setError(m),
+    // The reconnect reloads the core; refetch /rules shortly after so the live
+    // list reconciles with the optimistic view.
+    onApplied: () => {
+      window.setTimeout(() => void refreshRules(), 1500)
+    },
+  })
+  // Combined display: live rows (minus any optimistically-disabled ones) tagged
+  // enabled, followed by disabled rows so they can be re-enabled from the table.
+  const combinedRulesRows = useMemo(() => {
+    const live = rulesRows
+      .filter((r) => {
+        const line = ruleToggles.matchLine(r)
+        return !(line && ruleToggles.deleteLines.has(line))
+      })
+      .map((r) => ({ ...r, disabled: false as const }))
+    return [...live, ...ruleToggles.disabledRows]
+  }, [
+    rulesRows,
+    ruleToggles.matchLine,
+    ruleToggles.deleteLines,
+    ruleToggles.disabledRows,
+  ])
   const filteredRulesRows = useMemo(() => {
     const q = ruleSearch.trim().toLowerCase()
-    return rulesRows.filter((r) => {
+    return combinedRulesRows.filter((r) => {
       if (ruleTypeFilter !== 'all' && r.type !== ruleTypeFilter) return false
       if (rulePolicyFilter !== 'all' && r.proxy !== rulePolicyFilter)
         return false
@@ -1500,7 +1532,7 @@ function App() {
       const hay = `${r.type} ${r.payload} ${r.proxy}`.toLowerCase()
       return hay.includes(q)
     })
-  }, [rulesRows, ruleSearch, ruleTypeFilter, rulePolicyFilter])
+  }, [combinedRulesRows, ruleSearch, ruleTypeFilter, rulePolicyFilter])
   const rulesTypeTop = useMemo(() => {
     const counts = new Map<string, number>()
     for (const r of filteredRulesRows) {
@@ -1956,6 +1988,16 @@ function App() {
               onSearchChange={setRuleSearch}
               onTypeFilterChange={setRuleTypeFilter}
               onPolicyFilterChange={setRulePolicyFilter}
+              ruleToggle={{
+                hasActiveProfile: ruleToggles.hasActiveProfile,
+                baselineLoading: ruleToggles.baselineLoading,
+                baselineError: ruleToggles.baselineError,
+                busyLines: ruleToggles.busyLines,
+                isToggleable: ruleToggles.isToggleable,
+                matchLine: ruleToggles.matchLine,
+                onDisable: ruleToggles.disableRow,
+                onEnable: ruleToggles.enableLine,
+              }}
             />
           </Suspense>
         ) : null}

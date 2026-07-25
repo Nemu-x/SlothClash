@@ -349,7 +349,7 @@ function ruleRowsFromAny(raw: unknown): RuleRow[] {
   return out
 }
 
-function rowToRuleLine(r: RuleRow): string {
+export function rowToRuleLine(r: RuleRow): string {
   const type = r.ruleType.trim()
   const content = r.content.trim()
   const policy = r.policy.trim()

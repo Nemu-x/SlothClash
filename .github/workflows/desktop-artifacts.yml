@@ -408,6 +408,10 @@ jobs:
       MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
       MINISIGN_SIGN_PASSWORD: ${{ secrets.MINISIGN_SIGN_PASSWORD }}
     steps:
+      # Checkout first so Changelog.md is in the workspace for the release-notes
+      # step; download-artifact then adds dist/ alongside it.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -436,8 +440,36 @@ jobs:
           rm -f minisign.key
           test -f dist/SHA256SUMS.minisig && echo "signed OK"
 
+      # Release body = the English section of this version's Changelog entry.
+      # We author Changelog.md per release (Security/Features/Fixes as prose);
+      # this just lifts the matching `## Sloth Clash desktop `X.Y.Z`` block up to
+      # (not including) its `### Русский` section, dropping the `### English`
+      # heading. GitHub's auto "What's Changed" is appended below by softprops
+      # (generate_release_notes). If no section matches the tag, the body is
+      # empty and the release falls back to auto notes only.
+      - name: Build release notes from Changelog (English section)
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            /^## Sloth Clash desktop/ {
+              if (started) exit
+              if (index($0, "`" ver "`")) { started=1; next }
+              next
+            }
+            started && /^### Русский/ { exit }
+            started && /^### English/ { next }
+            started { print }
+          ' Changelog.md | sed -e '/./,$!d' | tac | sed -e '/./,$!d' | tac | cat -s > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::warning::No Changelog section found for ${VER} — using auto-generated notes only."
+          fi
+          echo "----- RELEASE_NOTES.md -----"; cat RELEASE_NOTES.md
+
       - uses: softprops/action-gh-release@v2
         with:
+          name: 🦥 SlothClash ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
           generate_release_notes: true

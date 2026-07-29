@@ -1,24 +1,44 @@
-## Sloth Clash desktop `0.8.1` — 2026-07-23
+## Sloth Clash desktop `0.8.1` — 2026-07-29
 
-> ⚠️ **After updating you will be asked once to reinstall the helper service.** This release requires helper service **2.4.2+**, which adds the adapter-recovery the fix below relies on. Click the banner, accept the UAC prompt, and it will not come back.
+> ⚠️ **After updating you'll be asked once to reinstall the helper service** (requires helper service **2.4.2+**, which powers the TUN recovery below). Click the banner, accept the UAC prompt — it won't come back.
 
 ### English
 
-- **TUN "Access was denied creating the TUN adapter" fixed for good.** When the core was force-killed (an in-app update, a crash, Task-Manager), it never deleted its wintun adapter, and the leftover registered adapter made every later connect fail with *"access is denied"* — a state that survived a reboot **and** a service reinstall, because a registered network device is untouched by either. Three changes close it:
-  - The privileged service can now force-remove a stale wintun adapter (new `DELETE /tun/remove`), the one thing the unprivileged app could never do itself.
-  - On a failed connect showing that signature, the app asks the service to remove the leftover adapter and then retries automatically — no more manual Device Manager surgery.
-  - After an unclean previous exit, any adapter left behind is cleared at startup before the first connect.
-- **The Windows TUN adapter now has a stable name (`SlothClash`) instead of the generic `Meta`,** so a fresh adapter never collides with a stale one or with a co-installed Clash client. A subscription- or user-provided device name still wins. macOS/Linux are unchanged.
-- **Mihomo core updated to `v1.19.29`.** (unchanged from 0.8.0)
+**🛠️ TUN "Access was denied creating the TUN adapter" — fixed for good**
+A force-killed core (an in-app update, a crash, Task-Manager) never deleted its wintun adapter, and the leftover registered adapter made every later connect fail with *"access is denied"* — a state that survived **both a reboot and a service reinstall**, because a registered network device is untouched by either. Now:
+- 🧹 The privileged service can force-remove a stale wintun adapter (new `DELETE /tun/remove`) — the one thing the unprivileged app could never do itself.
+- 🔁 On a failed connect with that signature, the app removes the leftover adapter and retries automatically — no more manual Device Manager surgery.
+- 🚀 After an unclean previous exit, any leftover adapter is cleared at startup, before the first connect.
+- 🏷️ The Windows TUN adapter now has a stable name (`SlothClash`) instead of the generic `Meta`, so a fresh adapter never collides with a stale one or a co-installed Clash client. A subscription- or user-set device name still wins; macOS/Linux are unchanged.
+
+**✅ Rules — enable/disable individual rules from the dashboard**
+- A checkbox on every row in the Rules table. Turn a rule off and it applies **live** (no manual reconnect) and stays listed so you can turn it back on.
+- Works for **both** subscription rules and your own custom ones. A rule-set toggles as a whole.
+
+**🌐 Proxies — reveal hidden groups**
+- Proxy groups the subscription marks as `hidden` are collapsed by default. A **"Show hidden"** toggle in the Proxies header reveals them (badged), and only appears when there's something to reveal.
+
+**🔒 Security & dependencies**
+- Production dependency audit is now **clean** — patched/removed the flagged packages (js-yaml, dompurify; dropped an unused react-router) and refreshed dependencies within their version ranges.
 
 ### Русский
 
-- **Окончательно починен TUN «Access was denied creating the TUN adapter».** Когда ядро убивали принудительно (внутренний апдейт, краш, Диспетчер задач), оно не удаляло свой wintun-адаптер, и оставшийся зарегистрированный адаптер валил каждый следующий коннект ошибкой *«access is denied»* — состояние переживало и перезагрузку, **и** переустановку службы, потому что зарегистрированное сетевое устройство ни то ни другое не трогает. Закрыто тремя изменениями:
-  - Привилегированная служба теперь умеет принудительно снести застрявший wintun-адаптер (новый `DELETE /tun/remove`) — ровно то, чего приложение без прав админа сделать не могло.
-  - При неудачном коннекте с этой сигнатурой приложение просит службу снести адаптер и повторяет попытку автоматически — больше никакой ручной возни в Диспетчере устройств.
-  - После нечистого прошлого выхода оставшийся адаптер вычищается при старте, до первого коннекта.
-- **У TUN-адаптера на Windows теперь стабильное имя (`SlothClash`) вместо общего `Meta`,** чтобы новый адаптер не конфликтовал со старым или с рядом стоящим Clash-клиентом. Имя устройства из подписки или настроек по-прежнему в приоритете. macOS/Linux без изменений.
-- **Ядро Mihomo обновлено до `v1.19.29`.** (без изменений с 0.8.0)
+**🛠️ Окончательно починен TUN «Access was denied creating the TUN adapter»**
+Принудительно убитое ядро (внутренний апдейт, краш, Диспетчер задач) не удаляло свой wintun-адаптер, и оставшийся зарегистрированный адаптер валил каждый следующий коннект ошибкой *«access is denied»* — состояние переживало **и перезагрузку, и переустановку службы**, потому что зарегистрированное сетевое устройство ни то ни другое не трогает. Теперь:
+- 🧹 Привилегированная служба умеет принудительно снести застрявший wintun-адаптер (новый `DELETE /tun/remove`) — ровно то, чего приложение без прав админа сделать не могло.
+- 🔁 При неудачном коннекте с этой сигнатурой приложение само сносит адаптер и повторяет попытку — больше никакой ручной возни в Диспетчере устройств.
+- 🚀 После нечистого прошлого выхода оставшийся адаптер вычищается при старте, до первого коннекта.
+- 🏷️ У TUN-адаптера на Windows теперь стабильное имя (`SlothClash`) вместо общего `Meta` — новый адаптер не конфликтует со старым или с рядом стоящим Clash-клиентом. Имя из подписки или настроек по-прежнему в приоритете; macOS/Linux без изменений.
+
+**✅ Правила — включение/выключение отдельных правил в дешборде**
+- Галочка на каждой строке таблицы Rules. Выключаешь правило — применяется **на лету** (без ручного переподключения), и оно остаётся в списке, чтобы включить обратно.
+- Работает **и** для подписочных правил, **и** для твоих ручных. Rule-set переключается целиком.
+
+**🌐 Прокси — показ скрытых групп**
+- Группы, помеченные в подписке как `hidden`, по умолчанию скрыты. Тумблер **«Показать скрытые»** в шапке Proxies их раскрывает (с бейджем) и появляется, только если есть что показывать.
+
+**🔒 Безопасность и зависимости**
+- Прод-аудит зависимостей теперь **чист** — пропатчены/удалены отмеченные пакеты (js-yaml, dompurify; выпилен неиспользуемый react-router), зависимости обновлены в рамках версий.
 
 ## Sloth Clash desktop `0.8.0` — 2026-07-19
 

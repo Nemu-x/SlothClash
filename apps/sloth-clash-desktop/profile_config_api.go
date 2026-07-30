@@ -353,18 +353,32 @@ func (a *App) reconnectActiveProfile() {
 			passes++
 			a.reconnectQueued.Store(false)
 			passStart := time.Now()
+			lastOK := false
 			if err := a.reloadActiveProfileConfig(); err != nil {
 				a.traceEvent("pipeline.reconnect.pass", "fail", time.Since(passStart), map[string]any{
 					"pass":  passes,
 					"error": err.Error(),
 				})
 			} else {
+				lastOK = true
 				a.traceEvent("pipeline.reconnect.pass", "ok", time.Since(passStart), map[string]any{
 					"pass": passes,
 				})
 			}
 			a.emitAppStateChanged()
 			if !a.reconnectQueued.Load() {
+				// A rule change asked for its routing to take effect now: the
+				// hot-reload alone leaves already-established keep-alive sockets
+				// (e.g. a browser's) on their old route, so close all connections
+				// once the reload has landed. Best-effort; only after a good
+				// reload, and only when a rule change requested it.
+				if lastOK && a.reconnectFlushConns.Swap(false) {
+					if err := a.CloseAllConnections(); err != nil {
+						a.traceEvent("pipeline.reconnect.flush", "fail", 0, map[string]any{"error": err.Error()})
+					} else {
+						a.traceEvent("pipeline.reconnect.flush", "ok", 0, nil)
+					}
+				}
 				a.traceEvent("pipeline.reconnect.done", "ok", time.Since(overall), map[string]any{
 					"passes": passes,
 				})

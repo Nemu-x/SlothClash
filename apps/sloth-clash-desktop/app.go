@@ -55,6 +55,12 @@ type App struct {
 	connectGen          atomic.Uint64 // bumped when starting async connect or on Disconnect; invalidates in-flight worker
 	reconnectInFlight   atomic.Bool
 	reconnectQueued     atomic.Bool
+	// reconnectFlushConns: after the next reconnect's hot-reload succeeds, close
+	// all live connections so a routing change (rule toggle / rules edit) applies
+	// immediately instead of lingering on already-established keep-alive sockets.
+	// Set by rule changes only; a plain config reload (subscription refresh, TUN
+	// tweak) leaves connections alone.
+	reconnectFlushConns atomic.Bool
 	closeToTray         bool
 	quitRequested       bool
 
@@ -1215,6 +1221,9 @@ func (a *App) SetProfileRulesTemplate(profileID string, template string) (AppSta
 	}
 	a.mu.Unlock()
 	if active && connected {
+		// A rules change must take effect on live traffic, not just new
+		// connections — flush existing sockets after the reload lands.
+		a.reconnectFlushConns.Store(true)
 		go a.reconnectActiveProfile()
 	}
 	a.emitAppStateChanged()

@@ -75,14 +75,19 @@ pnpm run format:check   # optional; or pnpm run format to write
 
 Go code: `cd apps/sloth-clash-desktop && go vet ./...` (and `gofmt` as you prefer).
 
+## Branches
+
+- **`main`** — stable integration branch. Releases are tagged from here (`vX.Y.Z`); treat it as always-shippable.
+- **`dev`** — active development. Base your work on `dev` and open PRs into `dev`; changes graduate to `main` when they're release-ready.
+
 ## Commits and PRs
 
-1. Fork and branch from the default branch.
+1. Fork and branch from **`dev`**.
 2. Keep commits focused; write clear messages.
-3. Open a PR describing **what** and **why**; screenshots help for UI/i18n.
+3. Open a PR into **`dev`** describing **what** and **why**; screenshots help for UI/i18n.
 4. Signed commits are welcome but not required unless maintainers ask.
 
-CI: [.github/workflows/desktop-artifacts.yml](.github/workflows/desktop-artifacts.yml) builds Windows (with NSIS via Chocolatey), macOS, and Linux artifacts on tag `v*` or manual **workflow_dispatch**.
+CI on every PR and on pushes to `main`/`dev`: [required-tests.yml](.github/workflows/required-tests.yml) (Windows/macOS/Linux test gate) and [security-audit.yml](.github/workflows/security-audit.yml) (govulncheck + `pnpm audit` on production deps, fail on high+). [desktop-artifacts.yml](.github/workflows/desktop-artifacts.yml) builds Windows (NSIS), macOS, and Linux installers on tag `v*` or manual **workflow_dispatch**.
 
 ## Releases & signed updates
 

@@ -70,7 +70,7 @@ func TestEnsureComponentInstallsVerifiesAndCaches(t *testing.T) {
 		BinRel:  "openconnect",
 	}
 
-	bin, err := ensureComponentAt(context.Background(), root, spec)
+	bin, err := ensureComponentAt(context.Background(), root, spec, nil)
 	if err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestEnsureComponentInstallsVerifiesAndCaches(t *testing.T) {
 	// because the pinned version is already present.
 	cached := spec
 	cached.URL = "http://127.0.0.1:0/should-not-be-hit"
-	if _, err := ensureComponentAt(context.Background(), root, cached); err != nil {
+	if _, err := ensureComponentAt(context.Background(), root, cached, nil); err != nil {
 		t.Fatalf("already-installed ensure should not download: %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestEnsureComponentRejectsBadHashFailClosed(t *testing.T) {
 		SHA256:  strings.Repeat("0", 64), // valid shape, wrong value
 		BinRel:  "openconnect",
 	}
-	if _, err := ensureComponentAt(context.Background(), root, spec); err == nil {
+	if _, err := ensureComponentAt(context.Background(), root, spec, nil); err == nil {
 		t.Fatal("expected a hash-mismatch error")
 	}
 	if componentInstalledAt(root, spec) {
@@ -121,7 +121,7 @@ func TestEnsureComponentRejectsMissingBinary(t *testing.T) {
 	spec := componentSpec{
 		Name: "openconnect", Version: "v", URL: srv.URL, SHA256: hash, BinRel: "openconnect",
 	}
-	if _, err := ensureComponentAt(context.Background(), root, spec); err == nil {
+	if _, err := ensureComponentAt(context.Background(), root, spec, nil); err == nil {
 		t.Fatal("expected error when the declared binary is absent")
 	}
 	if componentInstalledAt(root, spec) {

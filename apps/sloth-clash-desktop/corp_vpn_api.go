@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -132,7 +134,7 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 
 	ctx := a.baseCtx()
 	spec, _ := openconnectComponentSpec()
-	binPath, err := ensureComponent(ctx, spec)
+	binPath, err := ensureComponent(ctx, spec, a.componentHTTPClient())
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("prepare OpenConnect: %w", err)
 	}
@@ -228,4 +230,25 @@ func (a *App) baseCtx() context.Context {
 		return a.ctx
 	}
 	return context.Background()
+}
+
+// componentHTTPClient returns the client used to download the OpenConnect
+// component. When mihomo is connected it routes through the local mixed-port
+// proxy so the fetch resolves and reaches github.com even on networks that
+// can't do it directly (the exact "lookup github.com: no such host" a user hit)
+// — the proxy does the DNS remotely. When the core is down it falls back to a
+// direct client.
+func (a *App) componentHTTPClient() *http.Client {
+	a.mu.RLock()
+	connected := a.state.Connection.Status == "connected"
+	port := a.state.Core.MixedPort
+	a.mu.RUnlock()
+	if connected && port > 0 {
+		if u, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port)); err == nil {
+			return &http.Client{
+				Transport: &http.Transport{Proxy: http.ProxyURL(u)},
+			}
+		}
+	}
+	return http.DefaultClient
 }

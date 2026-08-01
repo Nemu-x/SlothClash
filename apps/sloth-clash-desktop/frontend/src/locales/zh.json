@@ -20,6 +20,7 @@
   "corp": {
     "title": "企业 VPN",
     "subtitle": "在使用 SlothClash 的同时连接企业 VPN。企业网络走企业 VPN，其余流量继续走你的代理。",
+    "protocols": "支持 SSL-VPN 网关：Cisco AnyConnect、FortiGate、GlobalProtect、Juniper。",
     "unsupported": "本版本的企业 VPN 仅支持 macOS。",
     "connected": "已连接",
     "disconnected": "未连接",
@@ -98,6 +99,8 @@
     "info": "信息",
     "checkUpdates": "检查更新",
     "autoUpdate": "自动更新应用",
+    "corpVpnToggle": "企业 VPN",
+    "corpVpnHint": "显示企业 VPN 标签页（Cisco AnyConnect、FortiGate…）。首次连接时下载 OpenConnect。",
     "whatsNew": "更新内容",
     "updatePlatformNote": "自动安装仅支持 Windows — 在本平台请打开发布页更新。",
     "updateDownloading": "下载中… {{pct}}%",

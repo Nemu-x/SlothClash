@@ -103,6 +103,7 @@ export function CorpVpnPage() {
         </span>
       </div>
       <p className="muted small">{t('corp.subtitle')}</p>
+      <p className="muted small corpProtocols">{t('corp.protocols')}</p>
 
       {error ? <div className="error">{error}</div> : null}
 

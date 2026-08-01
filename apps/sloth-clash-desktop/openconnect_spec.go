@@ -17,7 +17,7 @@ func openconnectComponentSpec() (componentSpec, bool) {
 			Name:    "openconnect",
 			Version: "9.21-macos-arm64",
 			URL:     "https://github.com/Nemu-x/SlothClash/releases/download/components-openconnect-9.21/openconnect-macos-arm64.tar.gz",
-			SHA256:  "", // TODO(brick2): paste sha from the publish-openconnect-component run
+			SHA256:  "5f2b3bb7dcbed6f11674a06d92850902a4e408dcf4a780d3bc01da84384c57c0",
 			BinRel:  "openconnect",
 		}, true
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":

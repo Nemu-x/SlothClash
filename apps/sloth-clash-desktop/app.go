@@ -61,7 +61,13 @@ type App struct {
 	// Set by rule changes only; a plain config reload (subscription refresh, TUN
 	// tweak) leaves connections alone.
 	reconnectFlushConns atomic.Bool
-	closeToTray         bool
+	// bootDone is closed once the startup background boot (orphan-reconcile +
+	// warm cold-start of the active profile) has finished. The first Connect
+	// waits on it so it never races a half-started boot core or the boot's own
+	// late config sync — the source of the "green but not actually connected on
+	// first launch, reconnect fixes it" bug. nil until startup wires it.
+	bootDone    chan struct{}
+	closeToTray bool
 	quitRequested       bool
 
 	emitStateMu           sync.Mutex
@@ -135,7 +141,12 @@ func (a *App) startup(ctx context.Context) {
 	// non-fatal — Connect will retry the full ensureCoreForProfile path.
 	// Clear an orphan service-core from a crashed prior run BEFORE booting a new
 	// one, otherwise the survivor still holds the wintun adapter (audit L1).
+	// bootDone lets the first Connect wait for this background boot to settle
+	// (see field doc). Created here, on the single-threaded startup path, before
+	// the webview can trigger a Connect.
+	a.bootDone = make(chan struct{})
 	go func() {
+		defer close(a.bootDone)
 		a.reconcileOrphanServiceCoreOnStartup()
 		a.bootActiveProfileCoreInBackground()
 	}()
@@ -170,11 +181,15 @@ func (a *App) bootActiveProfileCoreInBackground() {
 	if !found {
 		return
 	}
+	// Claim a connect generation up front so a concurrent Connect (which bumps
+	// connectGen) cleanly supersedes us: we then skip our late config sync
+	// instead of applying it on top of Connect's work.
+	bootGen := a.connectGen.Add(1)
 	// Boot cores with TUN disabled — the user has not clicked Connect yet.
 	// Connect() will bring TUN up via applyRuntimeConfig+PUT /configs force-reload
 	// (matches clash-verge-rev's init path: start_core with current verge state,
 	// then toggle_tun_mode goes through update_config → reload_config).
-	coldStarted, err := a.ensureCoreForProfileEx(profile, 0, false)
+	coldStarted, err := a.ensureCoreForProfileEx(profile, bootGen, false)
 	if err != nil {
 		debugLog(
 			"startup",
@@ -197,6 +212,12 @@ func (a *App) bootActiveProfileCoreInBackground() {
 	// Connect drag on heavy/unhealthy-provider profiles. Mirrors runConnectJob's
 	// own cold-start skip.
 	if coldStarted {
+		return
+	}
+	// A Connect fired while we were booting and now owns the core — don't run our
+	// late sync on top of its work (it would reapply enableTun=false and race the
+	// connect's own reload, the "green but not connected" bug).
+	if a.connectGen.Load() != bootGen {
 		return
 	}
 	if err := a.applyRuntimeConfig(profile, traffic, false); err != nil {

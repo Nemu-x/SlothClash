@@ -14,6 +14,9 @@
 **🐛 Rules can target a proxy node directly**
 - A rule whose policy is an individual proxy (not a group), e.g. `IP-CIDR,…,HK-FL-Mieru`, no longer fails validation with *"references unknown policy"*. mihomo accepts it, so we do too now.
 
+**🐛 First Connect after launch is reliable**
+- Fixed a startup race where the first Connect could race the background core warm-up and show green while traffic didn't route (a reconnect fixed it). Connect now waits for the warm-up to settle and the warm-up steps aside once you hit Connect.
+
 ### Русский
 
 **🔒 Фиксация порта прокси**
@@ -27,6 +30,9 @@
 
 **🐛 Правило может целить прямо в ноду**
 - Правило, чья политика — отдельная прокси (а не группа), например `IP-CIDR,…,HK-FL-Mieru`, больше не падает на валидации с *«references unknown policy»*. mihomo это принимает — теперь и мы.
+
+**🐛 Первый Connect после запуска надёжен**
+- Починена гонка на старте, из-за которой первый Connect мог наложиться на фоновый прогрев ядра и показать зелёный, хотя трафик не шёл (лечилось реконнектом). Теперь Connect дожидается прогрева, а прогрев уступает, как только нажали Connect.
 
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 

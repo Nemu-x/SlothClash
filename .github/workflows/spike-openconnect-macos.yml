@@ -1,6 +1,6 @@
 # Spike 0.1 (corp-vpn-coexistence): can we produce a self-contained, relocatable
 # OpenConnect bundle for macOS-arm64 in CI that the owner downloads and runs
-# against a real Cisco AnyConnect gateway (Skoltech)? This is throwaway spike
+# against a real Cisco AnyConnect gateway? This is throwaway spike
 # infra on the feature branch — NOT a shipping workflow. Uses Homebrew's
 # openconnect for speed; a pinned-from-source (v9.21) build comes later if the
 # spike proves the mechanism. dylibbundler makes the binary relocatable so it

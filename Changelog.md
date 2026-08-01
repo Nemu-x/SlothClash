@@ -20,6 +20,9 @@
 **🛡️ A crash in one screen no longer blanks the whole app**
 - Each screen is wrapped in an error boundary: if a page hits a render error, it shows a recoverable message (with a copyable error and a reload button) while the sidebar stays usable, instead of leaving a blank window.
 
+**🐛 Update button on macOS/Linux opens the release page**
+- The "update available" action on non-Windows no longer tries to download the Windows installer (on an Apple-silicon Mac it was grabbing the arm64 Windows `.exe`); it now opens the release page, where the right build lives. Direct download+install stays Windows-only.
+
 ### Русский
 
 **🔒 Фиксация порта прокси**
@@ -39,6 +42,9 @@
 
 **🛡️ Краш одного экрана больше не гасит всё приложение**
 - Каждый экран обёрнут в error boundary: если страница падает на отрисовке, показывается восстановимое сообщение (с копируемой ошибкой и кнопкой перезагрузки), а сайдбар остаётся рабочим — вместо пустого окна.
+
+**🐛 Кнопка обновления на macOS/Linux открывает страницу релиза**
+- Действие «доступно обновление» на не-Windows больше не пытается качать Windows-инсталлятор (на Mac с Apple-silicon оно тянуло arm64 Windows `.exe`); теперь открывает страницу релиза, где лежит правильная сборка. Прямая загрузка+установка остаётся только для Windows.
 
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 

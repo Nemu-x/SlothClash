@@ -77,6 +77,8 @@ export function GetAdvancedPaths(): Promise<main.AdvancedPaths>
 
 export function GetAppState(): Promise<main.AppState>
 
+export function GetCorpVpnStatus(): Promise<main.CorpVpnStatus>
+
 export function GetDesktopPrefs(): Promise<main.DesktopPrefs>
 
 export function GetLaunchOnStartupPreference(): Promise<boolean>
@@ -218,7 +220,16 @@ export function SetUiLanguage(arg1: string): Promise<main.DesktopPrefs>
 
 export function SetUpdateChannel(arg1: string): Promise<main.UpdateState>
 
+export function StartCorpVpn(
+  arg1: string,
+  arg2: string,
+  arg3: string,
+  arg4: string,
+): Promise<main.CorpVpnStatus>
+
 export function StartedMinimized(): Promise<boolean>
+
+export function StopCorpVpn(): Promise<void>
 
 export function TestProxyDelay(arg1: string): Promise<number>
 

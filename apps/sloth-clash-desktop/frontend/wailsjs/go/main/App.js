@@ -122,6 +122,10 @@ export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
 }
 
+export function GetCorpVpnStatus() {
+  return window['go']['main']['App']['GetCorpVpnStatus']()
+}
+
 export function GetDesktopPrefs() {
   return window['go']['main']['App']['GetDesktopPrefs']()
 }
@@ -322,8 +326,16 @@ export function SetUpdateChannel(arg1) {
   return window['go']['main']['App']['SetUpdateChannel'](arg1)
 }
 
+export function StartCorpVpn(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StartCorpVpn'](arg1, arg2, arg3, arg4)
+}
+
 export function StartedMinimized() {
   return window['go']['main']['App']['StartedMinimized']()
+}
+
+export function StopCorpVpn() {
+  return window['go']['main']['App']['StopCorpVpn']()
 }
 
 export function TestProxyDelay(arg1) {

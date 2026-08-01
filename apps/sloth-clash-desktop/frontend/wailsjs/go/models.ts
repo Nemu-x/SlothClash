@@ -678,6 +678,32 @@ export namespace main {
     }
   }
 
+  export class CorpVpnStatus {
+    connected: boolean
+    needsCertTrust: boolean
+    servercertSha256: string
+    routes: string[]
+    dnsServers: string[]
+    dnsDomains: string[]
+    fullTunnel: boolean
+    supported: boolean
+
+    static createFrom(source: any = {}) {
+      return new CorpVpnStatus(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.connected = source['connected']
+      this.needsCertTrust = source['needsCertTrust']
+      this.servercertSha256 = source['servercertSha256']
+      this.routes = source['routes']
+      this.dnsServers = source['dnsServers']
+      this.dnsDomains = source['dnsDomains']
+      this.fullTunnel = source['fullTunnel']
+      this.supported = source['supported']
+    }
+  }
   export class PrivacySettings {
     hwidEnabled?: boolean
 

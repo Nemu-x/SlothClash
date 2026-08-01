@@ -20,6 +20,14 @@ on:
         description: "Release tag to publish the component under"
         required: true
         default: components-openconnect-9.21
+  # Until this workflow lands on the default branch, workflow_dispatch is not
+  # selectable, so a narrow push trigger (scoped to THIS file only) lets a push
+  # to the feature branch kick off the one-shot build without re-firing on
+  # unrelated commits.
+  push:
+    branches: [feat/openconnect-integration]
+    paths:
+      - .github/workflows/publish-openconnect-component.yml
 
 permissions:
   contents: write

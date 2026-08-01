@@ -43,6 +43,11 @@ jobs:
           - runner: macos-13 # Intel
             arch: amd64
     runs-on: ${{ matrix.runner }}
+    # inputs.tag only exists on workflow_dispatch; on the push trigger it is
+    # empty, so fall back to the pinned default (GitHub expressions treat "" as
+    # falsy, so `inputs.tag || default` picks the default on push).
+    env:
+      COMPONENT_TAG: ${{ inputs.tag || 'components-openconnect-9.21' }}
     steps:
       - name: Install openconnect + dylibbundler
         run: brew install openconnect dylibbundler
@@ -94,7 +99,7 @@ jobs:
             echo ""
             echo "Pin in \`openconnect_spec.go\`:"
             echo '```go'
-            echo "URL:    \"https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/$asset\","
+            echo "URL:    \"https://github.com/${{ github.repository }}/releases/download/${{ env.COMPONENT_TAG }}/$asset\","
             echo "SHA256: \"$sha\","
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -104,7 +109,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag }}"
+          tag="$COMPONENT_TAG"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" \
               --title "Components — OpenConnect ($tag)" \

@@ -11,6 +11,9 @@
 **🎨 Proxy group icons**
 - Proxy groups now show the `icon` from your subscription (as many providers set) next to the group name. Broken image URLs are hidden gracefully; emoji icons are supported too.
 
+**🐛 Rules can target a proxy node directly**
+- A rule whose policy is an individual proxy (not a group), e.g. `IP-CIDR,…,HK-FL-Mieru`, no longer fails validation with *"references unknown policy"*. mihomo accepts it, so we do too now.
+
 ### Русский
 
 **🔒 Фиксация порта прокси**
@@ -21,6 +24,9 @@
 
 **🎨 Иконки proxy-групп**
 - У групп прокси теперь показывается `icon` из твоей подписки (как ставят многие провайдеры) рядом с именем группы. Битые ссылки на картинку скрываются, emoji-иконки тоже поддерживаются.
+
+**🐛 Правило может целить прямо в ноду**
+- Правило, чья политика — отдельная прокси (а не группа), например `IP-CIDR,…,HK-FL-Mieru`, больше не падает на валидации с *«references unknown policy»*. mihomo это принимает — теперь и мы.
 
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 

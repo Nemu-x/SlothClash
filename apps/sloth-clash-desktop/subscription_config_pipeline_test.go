@@ -188,6 +188,28 @@ func TestValidateRulePoliciesExistWithTrailingOptions(t *testing.T) {
 	}
 }
 
+// A rule may target an individual proxy node directly (not only a group) —
+// mihomo resolves it, and configs like the mieru one in the field do this
+// (rules: [IP-CIDR,...,HK-FL-Mieru] where HK-FL-Mieru is a proxy). Must accept.
+func TestValidateRulePoliciesExistAcceptsProxyNamePolicy(t *testing.T) {
+	t.Parallel()
+	m := map[string]any{
+		"proxies": []any{
+			map[string]any{"name": "HK-FL-Mieru", "type": "mieru"},
+		},
+		"proxy-groups": []any{
+			map[string]any{"name": "Proxies", "type": "select", "proxies": []any{"HK-FL-Mieru"}},
+		},
+		"rules": []any{
+			"IP-CIDR,34.0.96.0/19,HK-FL-Mieru",
+			"MATCH,Proxies",
+		},
+	}
+	if err := validateRulePoliciesExist(m); err != nil {
+		t.Fatalf("rule targeting a proxy node should be accepted, got: %v", err)
+	}
+}
+
 func TestValidateRulePoliciesExistRejectsUnknownPolicy(t *testing.T) {
 	t.Parallel()
 	m := map[string]any{

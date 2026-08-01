@@ -40,8 +40,8 @@ jobs:
         include:
           - runner: macos-14 # Apple silicon
             arch: arm64
-          - runner: macos-13 # Intel
-            arch: amd64
+          # macos-13 (Intel/amd64) re-enabled before shipping to Intel Macs;
+          # kept out of the P1 test loop where the Intel runner queue stalled.
     runs-on: ${{ matrix.runner }}
     # inputs.tag only exists on workflow_dispatch; on the push trigger it is
     # empty, so fall back to the pinned default (GitHub expressions treat "" as
@@ -49,6 +49,10 @@ jobs:
     env:
       COMPONENT_TAG: ${{ inputs.tag || 'components-openconnect-9.21' }}
     steps:
+      # gh release create/upload resolves the repo from the local git checkout,
+      # so a checkout is required even though the bundle itself comes from brew.
+      - uses: actions/checkout@v4
+
       - name: Install openconnect + dylibbundler
         run: brew install openconnect dylibbundler
 

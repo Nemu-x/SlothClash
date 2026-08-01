@@ -127,6 +127,9 @@ const ConnectionsPage = lazy(() =>
 const DevicesPage = lazy(() =>
   import('./pages/Devices').then((m) => ({ default: m.DevicesPage })),
 )
+const CorpVpnPage = lazy(() =>
+  import('./pages/CorpVpn').then((m) => ({ default: m.CorpVpnPage })),
+)
 const LogsPage = lazy(() =>
   import('./pages/Logs').then((m) => ({ default: m.LogsPage })),
 )
@@ -1965,6 +1968,12 @@ function App() {
           {screen === 'devices' ? (
             <Suspense fallback={<div className="panel" />}>
               <DevicesPage />
+            </Suspense>
+          ) : null}
+
+          {screen === 'corp' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <CorpVpnPage />
             </Suspense>
           ) : null}
 

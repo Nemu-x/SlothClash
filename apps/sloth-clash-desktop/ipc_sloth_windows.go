@@ -196,3 +196,21 @@ func ipcSlothRemoveTun(ctx context.Context) (int, error) {
 	}
 	return env.Data, nil
 }
+
+// Corp-VPN sidecar is macOS-only in P1. openconnectComponentSpec reports
+// unsupported on Windows so these are never reached; keep them total so the
+// cross-platform orchestration compiles.
+func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, error) {
+	_, _ = ctx, payload
+	return 0, nil, errCorpVpnUnsupported
+}
+
+func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
+	_ = ctx
+	return 0, nil, errCorpVpnUnsupported
+}
+
+func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
+	_ = ctx
+	return 0, nil, errCorpVpnUnsupported
+}

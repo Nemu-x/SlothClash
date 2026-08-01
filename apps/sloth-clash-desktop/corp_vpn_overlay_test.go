@@ -1,0 +1,138 @@
+package main
+
+import (
+	"reflect"
+	"testing"
+)
+
+func asStrings(t *testing.T, v any) []string {
+	t.Helper()
+	list, ok := v.([]any)
+	if !ok {
+		t.Fatalf("expected []any, got %T (%v)", v, v)
+	}
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		s, ok := e.(string)
+		if !ok {
+			t.Fatalf("expected string element, got %T", e)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func TestApplyCorpVpnOverlay_NoopWhenInactive(t *testing.T) {
+	// A full-tunnel / empty split must leave the config completely untouched so
+	// config parity holds when the feature is off.
+	m := map[string]any{
+		"tun": map[string]any{"enable": true},
+		"dns": map[string]any{"enhanced-mode": "fake-ip"},
+	}
+	before := map[string]any{
+		"tun": map[string]any{"enable": true},
+		"dns": map[string]any{"enhanced-mode": "fake-ip"},
+	}
+	applyCorpVpnOverlay(m, corpVpnSplit{}) // no routes
+	if !reflect.DeepEqual(m, before) {
+		t.Fatalf("inactive overlay mutated config:\n got %#v\nwant %#v", m, before)
+	}
+
+	// Full tunnel (DNS but no routes) is also inactive.
+	applyCorpVpnOverlay(m, corpVpnSplit{DNSServers: []string{"10.0.0.1"}, DNSDomains: []string{"corp"}})
+	if !reflect.DeepEqual(m, before) {
+		t.Fatalf("full-tunnel overlay mutated config:\n got %#v\nwant %#v", m, before)
+	}
+}
+
+func TestApplyCorpVpnOverlay_InjectsRoutesDNSAndFakeIPFilter(t *testing.T) {
+	m := map[string]any{
+		"tun": map[string]any{"enable": true},
+		"dns": map[string]any{"enhanced-mode": "fake-ip"},
+	}
+	split := corpVpnSplit{
+		Routes:     []string{"10.0.0.0/8", "172.16.0.0/12"},
+		DNSServers: []string{"10.16.32.100"},
+		DNSDomains: []string{"corp.example"},
+	}
+	applyCorpVpnOverlay(m, split)
+
+	tun := m["tun"].(map[string]any)
+	if got := asStrings(t, tun["route-exclude-address"]); !reflect.DeepEqual(got, []string{"10.0.0.0/8", "172.16.0.0/12"}) {
+		t.Fatalf("route-exclude-address = %v", got)
+	}
+
+	dns := m["dns"].(map[string]any)
+	policy, ok := dns["nameserver-policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("nameserver-policy missing: %#v", dns["nameserver-policy"])
+	}
+	for _, key := range []string{"corp.example", "+.corp.example"} {
+		got := asStrings(t, policy[key])
+		if !reflect.DeepEqual(got, []string{"10.16.32.100"}) {
+			t.Fatalf("nameserver-policy[%q] = %v", key, got)
+		}
+	}
+
+	// fake-ip-filter must include the corp domain (as +.domain) so it resolves real.
+	filter := asStrings(t, dns["fake-ip-filter"])
+	found := false
+	for _, p := range filter {
+		if p == "+.corp.example" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("fake-ip-filter missing +.corp.example: %v", filter)
+	}
+}
+
+func TestApplyCorpVpnOverlay_PreservesAndDedups(t *testing.T) {
+	m := map[string]any{
+		"tun": map[string]any{
+			"enable":                true,
+			"route-exclude-address": []any{"192.168.0.0/16", "10.0.0.0/8"},
+		},
+		"dns": map[string]any{
+			"fake-ip-filter": []any{"*.lan", "+.corp.example"},
+			"nameserver-policy": map[string]any{
+				"corp.example": []any{"9.9.9.9"}, // pre-existing: must NOT be clobbered
+			},
+		},
+	}
+	split := corpVpnSplit{
+		Routes:     []string{"10.0.0.0/8", "172.16.0.0/12"}, // 10.0.0.0/8 already present
+		DNSServers: []string{"10.16.32.100"},
+		DNSDomains: []string{"corp.example"},
+	}
+	applyCorpVpnOverlay(m, split)
+
+	tun := m["tun"].(map[string]any)
+	got := asStrings(t, tun["route-exclude-address"])
+	want := []string{"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"} // deduped, order preserved
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("route-exclude-address = %v, want %v", got, want)
+	}
+
+	dns := m["dns"].(map[string]any)
+	// pre-existing policy for the bare domain preserved; wildcard added.
+	policy := dns["nameserver-policy"].(map[string]any)
+	if got := asStrings(t, policy["corp.example"]); !reflect.DeepEqual(got, []string{"9.9.9.9"}) {
+		t.Fatalf("existing nameserver-policy[corp.example] clobbered: %v", got)
+	}
+	if got := asStrings(t, policy["+.corp.example"]); !reflect.DeepEqual(got, []string{"10.16.32.100"}) {
+		t.Fatalf("nameserver-policy[+.corp.example] = %v", got)
+	}
+
+	// fake-ip-filter deduped (was already present once).
+	filter := asStrings(t, dns["fake-ip-filter"])
+	count := 0
+	for _, p := range filter {
+		if p == "+.corp.example" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("fake-ip-filter has %d copies of +.corp.example, want 1: %v", count, filter)
+	}
+}

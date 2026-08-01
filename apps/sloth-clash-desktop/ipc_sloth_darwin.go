@@ -255,3 +255,17 @@ func ipcSlothRemoveTun(ctx context.Context) (int, error) {
 	_ = ctx
 	return 0, nil
 }
+
+// Corp-VPN sidecar transport (macOS-only in P1). These just relay to the
+// privileged service, which owns the OpenConnect process.
+func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, error) {
+	return ipcSlothDo(ctx, http.MethodPost, "/corp/start", payload)
+}
+
+func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
+	return ipcSlothDo(ctx, http.MethodDelete, "/corp/stop", nil)
+}
+
+func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
+	return ipcSlothDo(ctx, http.MethodGet, "/corp/status", nil)
+}

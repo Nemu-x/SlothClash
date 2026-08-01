@@ -10,6 +10,7 @@ export {
   OnWindowBecameVisible,
   SetAppAutoUpdateEnabled,
   SetCloseToTrayPreference,
+  SetExperimentalSettings,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetUiLanguage,

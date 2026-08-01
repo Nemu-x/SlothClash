@@ -270,6 +270,10 @@ export function SetConnectionSettings(arg1) {
   return window['go']['main']['App']['SetConnectionSettings'](arg1)
 }
 
+export function SetExperimentalSettings(arg1) {
+  return window['go']['main']['App']['SetExperimentalSettings'](arg1)
+}
+
 export function SetHwidEnabled(arg1) {
   return window['go']['main']['App']['SetHwidEnabled'](arg1)
 }

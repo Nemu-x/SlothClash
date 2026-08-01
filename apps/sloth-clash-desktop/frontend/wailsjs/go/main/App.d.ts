@@ -172,6 +172,10 @@ export function SetConnectionSettings(
   arg1: main.ConnectionSettings,
 ): Promise<main.DesktopPrefs>
 
+export function SetExperimentalSettings(
+  arg1: main.ExperimentalSettings,
+): Promise<main.DesktopPrefs>
+
 export function SetHwidEnabled(arg1: boolean): Promise<main.DesktopPrefs>
 
 export function SetLaunchOnStartupPreference(arg1: boolean): Promise<void>

@@ -704,6 +704,18 @@ export namespace main {
       this.supported = source['supported']
     }
   }
+  export class ExperimentalSettings {
+    corpVpnEnabled?: boolean
+
+    static createFrom(source: any = {}) {
+      return new ExperimentalSettings(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.corpVpnEnabled = source['corpVpnEnabled']
+    }
+  }
   export class PrivacySettings {
     hwidEnabled?: boolean
 
@@ -760,6 +772,7 @@ export namespace main {
     connection: ConnectionSettings
     privacy: PrivacySettings
     appUpdate: AppUpdateSettings
+    experimental: ExperimentalSettings
     lang?: string
 
     static createFrom(source: any = {}) {
@@ -778,6 +791,10 @@ export namespace main {
       this.appUpdate = this.convertValues(
         source['appUpdate'],
         AppUpdateSettings,
+      )
+      this.experimental = this.convertValues(
+        source['experimental'],
+        ExperimentalSettings,
       )
       this.lang = source['lang']
     }

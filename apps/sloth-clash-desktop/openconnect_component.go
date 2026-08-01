@@ -64,7 +64,7 @@ func componentInstalledAt(root string, spec componentSpec) bool {
 // present) under an explicit components root and returns the path to its
 // executable. Fail-closed: a hash mismatch or missing binary aborts without
 // leaving a half-installed component.
-func ensureComponentAt(ctx context.Context, root string, spec componentSpec) (string, error) {
+func ensureComponentAt(ctx context.Context, root string, spec componentSpec, client *http.Client) (string, error) {
 	dir := componentDirAt(root, spec.Name)
 	binPath := filepath.Join(dir, spec.BinRel)
 	if componentInstalledAt(root, spec) {
@@ -74,7 +74,7 @@ func ensureComponentAt(ctx context.Context, root string, spec componentSpec) (st
 		return "", errors.New("component spec missing url or sha256")
 	}
 
-	archive, err := downloadComponentArchive(ctx, spec.URL)
+	archive, err := downloadComponentArchive(ctx, spec.URL, client)
 	if err != nil {
 		return "", err
 	}
@@ -127,23 +127,28 @@ func componentsRoot() (string, error) {
 }
 
 // ensureComponent is the production entry point: installs the component under
-// the real app data dir and returns the executable path.
-func ensureComponent(ctx context.Context, spec componentSpec) (string, error) {
+// the real app data dir and returns the executable path. A nil client uses the
+// default; callers pass a proxy-aware client so the download can go through the
+// running mihomo proxy (reliable in restricted networks — see corp_vpn_api.go).
+func ensureComponent(ctx context.Context, spec componentSpec, client *http.Client) (string, error) {
 	root, err := componentsRoot()
 	if err != nil {
 		return "", err
 	}
-	return ensureComponentAt(ctx, root, spec)
+	return ensureComponentAt(ctx, root, spec, client)
 }
 
-func downloadComponentArchive(ctx context.Context, url string) ([]byte, error) {
+func downloadComponentArchive(ctx context.Context, url string, client *http.Client) ([]byte, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

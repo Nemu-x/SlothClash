@@ -168,6 +168,12 @@
     "errors": {
       "chooseProfileOrImport": "请先在“配置”中选择一个配置，或导入新配置。"
     },
+    "errorBoundary": {
+      "title": "此页面出现了问题",
+      "body": "渲染此页面时出错。其他页面仍可使用——请在左侧切换标签，或重新加载应用。",
+      "copy": "复制错误",
+      "reload": "重新加载"
+    },
     "import": {
       "connectNeedsProfile": "连接前需要先选择配置",
       "addFirstSubscription": "添加你的第一个订阅",

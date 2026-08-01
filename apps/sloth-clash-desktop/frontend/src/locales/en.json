@@ -168,6 +168,12 @@
     "errors": {
       "chooseProfileOrImport": "Choose a profile under Profiles, or import a new one."
     },
+    "errorBoundary": {
+      "title": "This screen ran into a problem",
+      "body": "Something went wrong rendering this page. Other screens still work — switch tabs in the sidebar, or reload the app.",
+      "copy": "Copy error",
+      "reload": "Reload app"
+    },
     "import": {
       "connectNeedsProfile": "Connect needs a profile",
       "addFirstSubscription": "Add your first subscription",

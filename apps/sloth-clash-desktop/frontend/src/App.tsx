@@ -72,6 +72,7 @@ import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
 import { DeleteProfileModal } from './components/DeleteProfileModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import {
   ImportProfileModal,
   type ImportMode,
@@ -1819,430 +1820,435 @@ function App() {
             </button>
           </div>
         ) : null}
-        {screen === 'home' ? (
-          <HomePage
-            state={state}
-            activeProfile={activeProfile}
-            hideGlobalMode={brandManifest?.hideGlobalMode}
-            hideProxyMode={brandManifest?.hideProxyMode}
-            brandName={brandManifest?.name}
-            brandLogo={branding?.logoDataUri || branding?.logoLightDataUri}
-            onOpenOperator={() => setOperatorModalOpen(true)}
-            service={service}
-            linkToast={linkToast}
-            error={error}
-            updateSnap={updateSnap}
-            homeUpdateTooltip={homeUpdateTooltip}
-            homeAlertTooltip={homeAlertTooltip}
-            hasAnyProfile={hasAnyProfile}
-            displayMode={displayMode}
-            displayTraffic={displayTraffic}
-            connectBusy={connectBusy}
-            connectVisual={connectVisual}
-            connectionLabel={connectionLabel}
-            showProtectedBadge={showProtectedBadge}
-            homeTrafficHealthSubtitle={homeTrafficHealthSubtitle}
-            nodePickerGroup={nodePickerGroup}
-            homeActiveNodeOpen={homeActiveNodeOpen}
-            homeActiveNodeRef={homeActiveNodeRef}
-            activeNode={activeNode}
-            activeNodeVisual={activeNodeVisual}
-            showBuiltinProxyGroups={showBuiltinProxyGroups}
-            onOpenImport={(reason) => openImportModal(reason)}
-            onOpenSupport={(url) => void BrowserOpenURL(url)}
-            onOpenUpdate={() => void handleOpenUpdate()}
-            onSetMode={(m) => {
-              setOptimisticMode(m)
-              setError('')
-              void (async () => {
-                try {
-                  await SetMode(m)
-                } catch (e: any) {
-                  setError(String(e))
-                } finally {
-                  setOptimisticMode(null)
-                  await refresh()
-                }
-              })()
-            }}
-            onSwitchTraffic={(m) => switchTraffic(m)}
-            onConnectClick={connectAction}
-            onInstallService={() => void installService()}
-            onRefreshService={() =>
-              void (async () => {
-                try {
-                  const s = await RefreshSlothServiceStatus()
-                  setService(s as main.ServiceState)
-                  await refresh()
-                } catch (e: any) {
-                  setError(String(e))
-                }
-              })()
-            }
-            onSelectGroup={(name) => void run(() => SelectProxyGroup(name))}
-            onSelectNode={(group, node) =>
-              void run(() => SetProxyNode(group, node))
-            }
-            onToggleActiveNodeOpen={() => setHomeActiveNodeOpen((o) => !o)}
-          />
-        ) : null}
-        {screen === 'proxies' ? (
-          <ProxiesPage
-            groups={(state?.proxy?.groups ?? []) as any[]}
-            activeGroup={state?.proxy?.activeGroup ?? ''}
-            connectionStatus={state?.connection?.status ?? ''}
-            displayMode={displayMode}
-            showBuiltin={showBuiltinProxyGroups}
-            proxyDelayBusy={proxyDelayBusy}
-            proxyDelayMap={proxyDelayMap}
-            proxyDelayErr={proxyDelayErr}
-            error={error}
-            onRefreshProxies={() => run(() => RefreshProxies())}
-            onToggleShowBuiltin={() =>
-              setShowBuiltinProxyGroups((prev) => !prev)
-            }
-            onSetMode={(mode) => run(() => SetMode(mode))}
-            onSelectGroup={(name) => void run(() => SelectProxyGroup(name))}
-            onSelectNode={(group, node) =>
-              void run(() => SetProxyNode(group, node))
-            }
-            onPingAll={(group, nodes) =>
-              void runProxyDelayTestAll(group, nodes)
-            }
-          />
-        ) : null}
-
-        {screen === 'profiles' ? (
-          <ProfilesPage
-            profiles={state?.profile?.profiles ?? []}
-            activeProfileId={state?.profile?.activeProfileId ?? ''}
-            refreshBusyId={profileRefreshBusyId}
-            error={error}
-            onImport={() => openImportModal('manual')}
-            onActivate={(id) => void run(() => ActivateProfile(id))}
-            onRefresh={(id) => {
-              setProfileRefreshBusyId(id)
-              void (async () => {
-                try {
-                  await run(() => RefreshProfileSubscription(id))
-                } finally {
-                  setProfileRefreshBusyId((cur) => (cur === id ? null : cur))
-                }
-              })()
-            }}
-            onContextMenu={(target) => setProfileMenu(target)}
-          />
-        ) : null}
-
-        {screen === 'connections' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <ConnectionsPage
-              overview={connectionsOverview}
-              filtered={filteredConnections}
-              busy={connectionsBusy}
-              search={connectionsSearch}
-              onSearchChange={setConnectionsSearch}
-              onRefresh={() => void refreshConnections()}
-              onCloseAll={() => run(closeAllConnections)}
-            />
-          </Suspense>
-        ) : null}
-
-        {screen === 'logs' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <LogsPage
-              serviceLog={serviceLog}
-              onRefresh={() => void refreshRuntimeLog()}
-            />
-          </Suspense>
-        ) : null}
-
-        {screen === 'devices' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <DevicesPage />
-          </Suspense>
-        ) : null}
-
-        {screen === 'rules' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <RulesPage
-              rulesOverview={rulesOverview}
-              connectionStatus={state?.connection?.status ?? ''}
-              rulesBusy={rulesBusy}
-              providers={ruleProvidersRows}
-              providerBusyMap={ruleProviderBusyMap}
-              providerErrMap={ruleProviderErrMap}
-              bulkBusy={ruleProvidersBulkBusy}
-              rulesRows={rulesRows}
-              filteredRulesRows={filteredRulesRows}
-              rulesTypeTop={rulesTypeTop}
-              ruleSearch={ruleSearch}
-              ruleTypeFilter={ruleTypeFilter}
-              rulePolicyFilter={rulePolicyFilter}
-              ruleTypeOptions={ruleTypeFilterOptions}
-              rulePolicyOptions={rulePolicyFilterOptions}
-              error={error}
-              onRefresh={() => refreshRules()}
-              onRefreshAll={() => void refreshRuleProvidersAll()}
-              onRefreshOne={(name) => void refreshRuleProviderOne(name)}
-              onSearchChange={setRuleSearch}
-              onTypeFilterChange={setRuleTypeFilter}
-              onPolicyFilterChange={setRulePolicyFilter}
-              ruleToggle={{
-                hasActiveProfile: ruleToggles.hasActiveProfile,
-                baselineLoading: ruleToggles.baselineLoading,
-                baselineError: ruleToggles.baselineError,
-                busyLines: ruleToggles.busyLines,
-                isToggleable: ruleToggles.isToggleable,
-                matchLine: ruleToggles.matchLine,
-                onDisable: ruleToggles.disableRow,
-                onEnable: ruleToggles.enableLine,
-              }}
-            />
-          </Suspense>
-        ) : null}
-
-        {screen === 'advanced' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <AdvancedPage
-              connectionStatus={state?.connection?.status ?? ''}
-              coreVersion={String(state?.core?.version ?? '')}
-              controllerAddr={String(state?.core?.controllerAddr ?? '')}
-              mixedPort={state?.core?.mixedPort ?? ''}
-              profilePaths={profilePaths}
-              deviceIdentity={deviceIdentity}
-              connectivityBusy={connectivityBusy}
-              connectivityResults={connectivityResults}
-              error={error}
-              onConnectivityCheck={(target, url) =>
-                runConnectivityCheck(target, url)
-              }
-              onCopyHwid={() => {
-                const h = deviceIdentity?.hwid
-                if (!h) return
-                void navigator.clipboard.writeText(h).then(
-                  () => {
-                    setLinkToast(t('ui.advanced.identityCopied'))
-                    window.setTimeout(() => setLinkToast(''), 2500)
-                  },
-                  () => setError('Clipboard unavailable'),
-                )
-              }}
-              onCopyAllIdentity={() => {
-                const d = deviceIdentity
-                if (!d) return
-                const text = [
-                  `x-hwid: ${d.hwid}`,
-                  `x-device-os: ${d.deviceOs}`,
-                  `x-ver-os: ${d.osVersion}`,
-                  `x-device-model: ${d.deviceModel}`,
-                  `x-app-version: ${d.appVersion}`,
-                ].join('\n')
-                void navigator.clipboard.writeText(text).then(
-                  () => {
-                    setLinkToast(t('ui.advanced.identityCopiedAll'))
-                    window.setTimeout(() => setLinkToast(''), 2500)
-                  },
-                  () => setError('Clipboard unavailable'),
-                )
-              }}
-              onRefreshProxies={() => run(() => RefreshProxies())}
-              onRefreshHomeInsight={() => run(() => RefreshHomeInsight())}
-              runtimeDiagEvents={runtimeDiagEvents}
-              advancedPaths={advancedPaths}
-              advancedGeo={advancedGeo}
-              toolsBusy={toolsBusy}
-              onOpenPath={(p) => {
-                if (!p) return
-                void OpenPathInExplorer(p).catch((e) =>
-                  pushToast({ kind: 'error', message: String(e) }),
-                )
-              }}
-              onRestartCore={() => {
-                if (toolsBusy) return
-                setToolsBusy('restartCore')
-                void RestartCore()
-                  .then(() => {
-                    pushToast({
-                      kind: 'success',
-                      message: t('ui.advanced.restartCore'),
-                    })
-                    refreshAdvancedInfo()
-                  })
-                  .catch((e) =>
-                    pushToast({ kind: 'error', message: String(e) }),
-                  )
-                  .finally(() => setToolsBusy(null))
-              }}
-              onResetSubscriptionCache={() => {
-                if (toolsBusy) return
-                setToolsBusy('resetSubCache')
-                void ResetSubscriptionCache()
-                  .then(() => {
-                    pushToast({
-                      kind: 'success',
-                      message: t('ui.advanced.resetSubCache'),
-                    })
-                  })
-                  .catch((e) =>
-                    pushToast({ kind: 'error', message: String(e) }),
-                  )
-                  .finally(() => setToolsBusy(null))
-              }}
-              onReextractBundled={() => {
-                if (toolsBusy) return
-                setToolsBusy('reextract')
-                void ReExtractBundledResources()
-                  .then(() => {
-                    pushToast({
-                      kind: 'success',
-                      message: t('ui.advanced.reextractBundled'),
-                    })
-                    refreshAdvancedInfo()
-                  })
-                  .catch((e) =>
-                    pushToast({ kind: 'error', message: String(e) }),
-                  )
-                  .finally(() => setToolsBusy(null))
-              }}
-              onCopyRuntimeTrace={(text) => {
-                if (!text) return
-                void navigator.clipboard.writeText(text).then(
-                  () => {
-                    setLinkToast(t('ui.advanced.runtimeTraceCopied'))
-                    window.setTimeout(() => setLinkToast(''), 2500)
-                  },
-                  () => setError('Clipboard unavailable'),
-                )
-              }}
-              hwidEnabled={hwidEnabled}
-              hwidSaving={hwidSaving}
-              onToggleHwid={(next) => {
-                if (hwidSaving) return
-                setHwidSaving(true)
-                // Optimistic flip so the toggle reflects user intent
-                // immediately; rolled back on backend error.
-                setHwidEnabled(next)
-                void SetHwidEnabled(next)
-                  .then((prefs) => {
-                    const raw = prefs?.privacy?.hwidEnabled
-                    setHwidEnabled(raw === false ? false : true)
-                  })
-                  .catch((e) => {
-                    setHwidEnabled(!next)
-                    pushToast({ kind: 'error', message: String(e) })
-                  })
-                  .finally(() => setHwidSaving(false))
-              }}
-            />
-          </Suspense>
-        ) : null}
-
-        {screen === 'settings' ? (
-          <Suspense fallback={<div className="panel" />}>
-            <SettingsPage
-              theme={theme}
-              accent={customAccent}
-              onSetAccent={setCustomAccent}
-              lang={lang}
-              settings={settings}
-              settingsBusy={settingsBusy}
-              trayAvailable={trayAvailable}
-              tunStackValue={tunStackValue}
-              tunPrefs={tunPrefs}
-              trafficPrefs={trafficPrefs}
-              allowLan={connectionPrefs.allowLan === true}
-              onSetAllowLan={(next) =>
-                void commitConnectionPrefs({ allowLan: next })
-              }
-              dnsIpv6={connectionPrefs.dnsIpv6 === true}
-              onSetDnsIpv6={(next) =>
-                void commitConnectionPrefs({ dnsIpv6: next })
-              }
-              smartDns={connectionPrefs.smartDns === true}
-              onSetSmartDns={(next) =>
-                void commitConnectionPrefs({ smartDns: next })
-              }
-              mixedPort={connectionPrefs.mixedPort ?? 0}
-              runningMixedPort={Number(state?.core?.mixedPort) || 0}
-              onSetMixedPort={(next) =>
-                void commitConnectionPrefs({ mixedPort: next })
-              }
-              tunBanner={tunBanner}
-              onDismissBanner={() => setTunBanner('')}
+        {/* Per-screen error boundary: a render crash in one page shows a
+            recoverable fallback here instead of blanking the whole app; the
+            sidebar stays alive. Keyed by screen so navigating resets it. */}
+        <ErrorBoundary key={screen}>
+          {screen === 'home' ? (
+            <HomePage
               state={state}
-              updateSnap={updateSnap}
+              activeProfile={activeProfile}
+              hideGlobalMode={brandManifest?.hideGlobalMode}
+              hideProxyMode={brandManifest?.hideProxyMode}
+              brandName={brandManifest?.name}
+              brandLogo={branding?.logoDataUri || branding?.logoLightDataUri}
+              onOpenOperator={() => setOperatorModalOpen(true)}
+              service={service}
+              linkToast={linkToast}
               error={error}
-              onBrowserOpen={(url) => BrowserOpenURL(url)}
-              onSetTheme={setTheme}
-              onSetLang={setLang}
-              onSetSetting={setSetting}
-              onSetLaunchOnStartup={(next) => {
-                setSetting('launchOnStartup', next)
+              updateSnap={updateSnap}
+              homeUpdateTooltip={homeUpdateTooltip}
+              homeAlertTooltip={homeAlertTooltip}
+              hasAnyProfile={hasAnyProfile}
+              displayMode={displayMode}
+              displayTraffic={displayTraffic}
+              connectBusy={connectBusy}
+              connectVisual={connectVisual}
+              connectionLabel={connectionLabel}
+              showProtectedBadge={showProtectedBadge}
+              homeTrafficHealthSubtitle={homeTrafficHealthSubtitle}
+              nodePickerGroup={nodePickerGroup}
+              homeActiveNodeOpen={homeActiveNodeOpen}
+              homeActiveNodeRef={homeActiveNodeRef}
+              activeNode={activeNode}
+              activeNodeVisual={activeNodeVisual}
+              showBuiltinProxyGroups={showBuiltinProxyGroups}
+              onOpenImport={(reason) => openImportModal(reason)}
+              onOpenSupport={(url) => void BrowserOpenURL(url)}
+              onOpenUpdate={() => void handleOpenUpdate()}
+              onSetMode={(m) => {
+                setOptimisticMode(m)
+                setError('')
                 void (async () => {
                   try {
-                    await SetLaunchOnStartupPreference(next)
+                    await SetMode(m)
                   } catch (e: any) {
                     setError(String(e))
-                    setSetting('launchOnStartup', !next)
+                  } finally {
+                    setOptimisticMode(null)
+                    await refresh()
                   }
                 })()
               }}
-              onInstallService={installService}
-              serviceInfo={serviceInfo}
-              onEnsureTun={ensureTun}
-              onShowTunModal={() => setShowTunModal(true)}
-              onApplyDefaultAutoUpdate={() =>
-                void applyDefaultAutoUpdateToProfiles()
-              }
-              onRefreshAllSubs={() => void refreshAllSubscriptions()}
-              onExportDiagnostics={() => void exportDiagnosticsBundle()}
-              onClearCache={clearTempUiState}
-              onOpenResetModal={(mode) => setSettingsResetModal(mode)}
-              onCheckUpdates={() =>
+              onSwitchTraffic={(m) => switchTraffic(m)}
+              onConnectClick={connectAction}
+              onInstallService={() => void installService()}
+              onRefreshService={() =>
                 void (async () => {
-                  setError('')
                   try {
-                    await runUpdateCheck()
+                    const s = await RefreshSlothServiceStatus()
+                    setService(s as main.ServiceState)
+                    await refresh()
                   } catch (e: any) {
                     setError(String(e))
                   }
                 })()
               }
-              onApplyUpdate={() =>
-                void (async () => {
-                  setError('')
-                  try {
-                    const ok = window.confirm(
-                      'The update will download, then the installer starts and Sloth Clash restarts to apply it. Continue?',
-                    )
-                    if (!ok) return
-                    setUpdateProgress({ downloaded: 0, total: 0, pct: 0 })
-                    await ApplyUpdate()
-                    // Backend exits the process after handing off to the installer.
-                    return
-                  } catch (e: any) {
-                    setUpdateProgress(null)
-                    setError(String(e))
-                  }
-                  await refresh()
-                  invalidateUpdateState()
-                })()
+              onSelectGroup={(name) => void run(() => SelectProxyGroup(name))}
+              onSelectNode={(group, node) =>
+                void run(() => SetProxyNode(group, node))
               }
-              updateProgress={updateProgress}
-              appUpdateEnabled={appUpdateEnabled}
-              onToggleAppUpdate={(next: boolean) => {
-                setAppUpdateEnabled(next)
-                void SetAppAutoUpdateEnabled(next)
-                  .then((prefs: any) => {
-                    const raw = prefs?.appUpdate?.autoCheckEnabled
-                    setAppUpdateEnabled(raw === false ? false : true)
-                  })
-                  .catch(() => setAppUpdateEnabled(!next))
-              }}
+              onToggleActiveNodeOpen={() => setHomeActiveNodeOpen((o) => !o)}
             />
-          </Suspense>
-        ) : null}
+          ) : null}
+          {screen === 'proxies' ? (
+            <ProxiesPage
+              groups={(state?.proxy?.groups ?? []) as any[]}
+              activeGroup={state?.proxy?.activeGroup ?? ''}
+              connectionStatus={state?.connection?.status ?? ''}
+              displayMode={displayMode}
+              showBuiltin={showBuiltinProxyGroups}
+              proxyDelayBusy={proxyDelayBusy}
+              proxyDelayMap={proxyDelayMap}
+              proxyDelayErr={proxyDelayErr}
+              error={error}
+              onRefreshProxies={() => run(() => RefreshProxies())}
+              onToggleShowBuiltin={() =>
+                setShowBuiltinProxyGroups((prev) => !prev)
+              }
+              onSetMode={(mode) => run(() => SetMode(mode))}
+              onSelectGroup={(name) => void run(() => SelectProxyGroup(name))}
+              onSelectNode={(group, node) =>
+                void run(() => SetProxyNode(group, node))
+              }
+              onPingAll={(group, nodes) =>
+                void runProxyDelayTestAll(group, nodes)
+              }
+            />
+          ) : null}
+
+          {screen === 'profiles' ? (
+            <ProfilesPage
+              profiles={state?.profile?.profiles ?? []}
+              activeProfileId={state?.profile?.activeProfileId ?? ''}
+              refreshBusyId={profileRefreshBusyId}
+              error={error}
+              onImport={() => openImportModal('manual')}
+              onActivate={(id) => void run(() => ActivateProfile(id))}
+              onRefresh={(id) => {
+                setProfileRefreshBusyId(id)
+                void (async () => {
+                  try {
+                    await run(() => RefreshProfileSubscription(id))
+                  } finally {
+                    setProfileRefreshBusyId((cur) => (cur === id ? null : cur))
+                  }
+                })()
+              }}
+              onContextMenu={(target) => setProfileMenu(target)}
+            />
+          ) : null}
+
+          {screen === 'connections' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <ConnectionsPage
+                overview={connectionsOverview}
+                filtered={filteredConnections}
+                busy={connectionsBusy}
+                search={connectionsSearch}
+                onSearchChange={setConnectionsSearch}
+                onRefresh={() => void refreshConnections()}
+                onCloseAll={() => run(closeAllConnections)}
+              />
+            </Suspense>
+          ) : null}
+
+          {screen === 'logs' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <LogsPage
+                serviceLog={serviceLog}
+                onRefresh={() => void refreshRuntimeLog()}
+              />
+            </Suspense>
+          ) : null}
+
+          {screen === 'devices' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <DevicesPage />
+            </Suspense>
+          ) : null}
+
+          {screen === 'rules' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <RulesPage
+                rulesOverview={rulesOverview}
+                connectionStatus={state?.connection?.status ?? ''}
+                rulesBusy={rulesBusy}
+                providers={ruleProvidersRows}
+                providerBusyMap={ruleProviderBusyMap}
+                providerErrMap={ruleProviderErrMap}
+                bulkBusy={ruleProvidersBulkBusy}
+                rulesRows={rulesRows}
+                filteredRulesRows={filteredRulesRows}
+                rulesTypeTop={rulesTypeTop}
+                ruleSearch={ruleSearch}
+                ruleTypeFilter={ruleTypeFilter}
+                rulePolicyFilter={rulePolicyFilter}
+                ruleTypeOptions={ruleTypeFilterOptions}
+                rulePolicyOptions={rulePolicyFilterOptions}
+                error={error}
+                onRefresh={() => refreshRules()}
+                onRefreshAll={() => void refreshRuleProvidersAll()}
+                onRefreshOne={(name) => void refreshRuleProviderOne(name)}
+                onSearchChange={setRuleSearch}
+                onTypeFilterChange={setRuleTypeFilter}
+                onPolicyFilterChange={setRulePolicyFilter}
+                ruleToggle={{
+                  hasActiveProfile: ruleToggles.hasActiveProfile,
+                  baselineLoading: ruleToggles.baselineLoading,
+                  baselineError: ruleToggles.baselineError,
+                  busyLines: ruleToggles.busyLines,
+                  isToggleable: ruleToggles.isToggleable,
+                  matchLine: ruleToggles.matchLine,
+                  onDisable: ruleToggles.disableRow,
+                  onEnable: ruleToggles.enableLine,
+                }}
+              />
+            </Suspense>
+          ) : null}
+
+          {screen === 'advanced' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <AdvancedPage
+                connectionStatus={state?.connection?.status ?? ''}
+                coreVersion={String(state?.core?.version ?? '')}
+                controllerAddr={String(state?.core?.controllerAddr ?? '')}
+                mixedPort={state?.core?.mixedPort ?? ''}
+                profilePaths={profilePaths}
+                deviceIdentity={deviceIdentity}
+                connectivityBusy={connectivityBusy}
+                connectivityResults={connectivityResults}
+                error={error}
+                onConnectivityCheck={(target, url) =>
+                  runConnectivityCheck(target, url)
+                }
+                onCopyHwid={() => {
+                  const h = deviceIdentity?.hwid
+                  if (!h) return
+                  void navigator.clipboard.writeText(h).then(
+                    () => {
+                      setLinkToast(t('ui.advanced.identityCopied'))
+                      window.setTimeout(() => setLinkToast(''), 2500)
+                    },
+                    () => setError('Clipboard unavailable'),
+                  )
+                }}
+                onCopyAllIdentity={() => {
+                  const d = deviceIdentity
+                  if (!d) return
+                  const text = [
+                    `x-hwid: ${d.hwid}`,
+                    `x-device-os: ${d.deviceOs}`,
+                    `x-ver-os: ${d.osVersion}`,
+                    `x-device-model: ${d.deviceModel}`,
+                    `x-app-version: ${d.appVersion}`,
+                  ].join('\n')
+                  void navigator.clipboard.writeText(text).then(
+                    () => {
+                      setLinkToast(t('ui.advanced.identityCopiedAll'))
+                      window.setTimeout(() => setLinkToast(''), 2500)
+                    },
+                    () => setError('Clipboard unavailable'),
+                  )
+                }}
+                onRefreshProxies={() => run(() => RefreshProxies())}
+                onRefreshHomeInsight={() => run(() => RefreshHomeInsight())}
+                runtimeDiagEvents={runtimeDiagEvents}
+                advancedPaths={advancedPaths}
+                advancedGeo={advancedGeo}
+                toolsBusy={toolsBusy}
+                onOpenPath={(p) => {
+                  if (!p) return
+                  void OpenPathInExplorer(p).catch((e) =>
+                    pushToast({ kind: 'error', message: String(e) }),
+                  )
+                }}
+                onRestartCore={() => {
+                  if (toolsBusy) return
+                  setToolsBusy('restartCore')
+                  void RestartCore()
+                    .then(() => {
+                      pushToast({
+                        kind: 'success',
+                        message: t('ui.advanced.restartCore'),
+                      })
+                      refreshAdvancedInfo()
+                    })
+                    .catch((e) =>
+                      pushToast({ kind: 'error', message: String(e) }),
+                    )
+                    .finally(() => setToolsBusy(null))
+                }}
+                onResetSubscriptionCache={() => {
+                  if (toolsBusy) return
+                  setToolsBusy('resetSubCache')
+                  void ResetSubscriptionCache()
+                    .then(() => {
+                      pushToast({
+                        kind: 'success',
+                        message: t('ui.advanced.resetSubCache'),
+                      })
+                    })
+                    .catch((e) =>
+                      pushToast({ kind: 'error', message: String(e) }),
+                    )
+                    .finally(() => setToolsBusy(null))
+                }}
+                onReextractBundled={() => {
+                  if (toolsBusy) return
+                  setToolsBusy('reextract')
+                  void ReExtractBundledResources()
+                    .then(() => {
+                      pushToast({
+                        kind: 'success',
+                        message: t('ui.advanced.reextractBundled'),
+                      })
+                      refreshAdvancedInfo()
+                    })
+                    .catch((e) =>
+                      pushToast({ kind: 'error', message: String(e) }),
+                    )
+                    .finally(() => setToolsBusy(null))
+                }}
+                onCopyRuntimeTrace={(text) => {
+                  if (!text) return
+                  void navigator.clipboard.writeText(text).then(
+                    () => {
+                      setLinkToast(t('ui.advanced.runtimeTraceCopied'))
+                      window.setTimeout(() => setLinkToast(''), 2500)
+                    },
+                    () => setError('Clipboard unavailable'),
+                  )
+                }}
+                hwidEnabled={hwidEnabled}
+                hwidSaving={hwidSaving}
+                onToggleHwid={(next) => {
+                  if (hwidSaving) return
+                  setHwidSaving(true)
+                  // Optimistic flip so the toggle reflects user intent
+                  // immediately; rolled back on backend error.
+                  setHwidEnabled(next)
+                  void SetHwidEnabled(next)
+                    .then((prefs) => {
+                      const raw = prefs?.privacy?.hwidEnabled
+                      setHwidEnabled(raw === false ? false : true)
+                    })
+                    .catch((e) => {
+                      setHwidEnabled(!next)
+                      pushToast({ kind: 'error', message: String(e) })
+                    })
+                    .finally(() => setHwidSaving(false))
+                }}
+              />
+            </Suspense>
+          ) : null}
+
+          {screen === 'settings' ? (
+            <Suspense fallback={<div className="panel" />}>
+              <SettingsPage
+                theme={theme}
+                accent={customAccent}
+                onSetAccent={setCustomAccent}
+                lang={lang}
+                settings={settings}
+                settingsBusy={settingsBusy}
+                trayAvailable={trayAvailable}
+                tunStackValue={tunStackValue}
+                tunPrefs={tunPrefs}
+                trafficPrefs={trafficPrefs}
+                allowLan={connectionPrefs.allowLan === true}
+                onSetAllowLan={(next) =>
+                  void commitConnectionPrefs({ allowLan: next })
+                }
+                dnsIpv6={connectionPrefs.dnsIpv6 === true}
+                onSetDnsIpv6={(next) =>
+                  void commitConnectionPrefs({ dnsIpv6: next })
+                }
+                smartDns={connectionPrefs.smartDns === true}
+                onSetSmartDns={(next) =>
+                  void commitConnectionPrefs({ smartDns: next })
+                }
+                mixedPort={connectionPrefs.mixedPort ?? 0}
+                runningMixedPort={Number(state?.core?.mixedPort) || 0}
+                onSetMixedPort={(next) =>
+                  void commitConnectionPrefs({ mixedPort: next })
+                }
+                tunBanner={tunBanner}
+                onDismissBanner={() => setTunBanner('')}
+                state={state}
+                updateSnap={updateSnap}
+                error={error}
+                onBrowserOpen={(url) => BrowserOpenURL(url)}
+                onSetTheme={setTheme}
+                onSetLang={setLang}
+                onSetSetting={setSetting}
+                onSetLaunchOnStartup={(next) => {
+                  setSetting('launchOnStartup', next)
+                  void (async () => {
+                    try {
+                      await SetLaunchOnStartupPreference(next)
+                    } catch (e: any) {
+                      setError(String(e))
+                      setSetting('launchOnStartup', !next)
+                    }
+                  })()
+                }}
+                onInstallService={installService}
+                serviceInfo={serviceInfo}
+                onEnsureTun={ensureTun}
+                onShowTunModal={() => setShowTunModal(true)}
+                onApplyDefaultAutoUpdate={() =>
+                  void applyDefaultAutoUpdateToProfiles()
+                }
+                onRefreshAllSubs={() => void refreshAllSubscriptions()}
+                onExportDiagnostics={() => void exportDiagnosticsBundle()}
+                onClearCache={clearTempUiState}
+                onOpenResetModal={(mode) => setSettingsResetModal(mode)}
+                onCheckUpdates={() =>
+                  void (async () => {
+                    setError('')
+                    try {
+                      await runUpdateCheck()
+                    } catch (e: any) {
+                      setError(String(e))
+                    }
+                  })()
+                }
+                onApplyUpdate={() =>
+                  void (async () => {
+                    setError('')
+                    try {
+                      const ok = window.confirm(
+                        'The update will download, then the installer starts and Sloth Clash restarts to apply it. Continue?',
+                      )
+                      if (!ok) return
+                      setUpdateProgress({ downloaded: 0, total: 0, pct: 0 })
+                      await ApplyUpdate()
+                      // Backend exits the process after handing off to the installer.
+                      return
+                    } catch (e: any) {
+                      setUpdateProgress(null)
+                      setError(String(e))
+                    }
+                    await refresh()
+                    invalidateUpdateState()
+                  })()
+                }
+                updateProgress={updateProgress}
+                appUpdateEnabled={appUpdateEnabled}
+                onToggleAppUpdate={(next: boolean) => {
+                  setAppUpdateEnabled(next)
+                  void SetAppAutoUpdateEnabled(next)
+                    .then((prefs: any) => {
+                      const raw = prefs?.appUpdate?.autoCheckEnabled
+                      setAppUpdateEnabled(raw === false ? false : true)
+                    })
+                    .catch(() => setAppUpdateEnabled(!next))
+                }}
+              />
+            </Suspense>
+          ) : null}
+        </ErrorBoundary>
       </section>
 
       <OperatorModal

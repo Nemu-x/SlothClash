@@ -17,6 +17,9 @@
 **🐛 First Connect after launch is reliable**
 - Fixed a startup race where the first Connect could race the background core warm-up and show green while traffic didn't route (a reconnect fixed it). Connect now waits for the warm-up to settle and the warm-up steps aside once you hit Connect.
 
+**🛡️ A crash in one screen no longer blanks the whole app**
+- Each screen is wrapped in an error boundary: if a page hits a render error, it shows a recoverable message (with a copyable error and a reload button) while the sidebar stays usable, instead of leaving a blank window.
+
 ### Русский
 
 **🔒 Фиксация порта прокси**
@@ -33,6 +36,9 @@
 
 **🐛 Первый Connect после запуска надёжен**
 - Починена гонка на старте, из-за которой первый Connect мог наложиться на фоновый прогрев ядра и показать зелёный, хотя трафик не шёл (лечилось реконнектом). Теперь Connect дожидается прогрева, а прогрев уступает, как только нажали Connect.
+
+**🛡️ Краш одного экрана больше не гасит всё приложение**
+- Каждый экран обёрнут в error boundary: если страница падает на отрисовке, показывается восстановимое сообщение (с копируемой ошибкой и кнопкой перезагрузки), а сайдбар остаётся рабочим — вместо пустого окна.
 
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 

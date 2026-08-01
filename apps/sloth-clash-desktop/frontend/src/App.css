@@ -3577,6 +3577,32 @@
   flex: 0 0 auto;
 }
 
+/* Screen error-boundary fallback. */
+.errorBoundaryTitle {
+  margin: 0 0 6px;
+  font-size: var(--font-size-md);
+}
+
+.errorBoundaryDetails {
+  max-height: 240px;
+  overflow: auto;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d4dfee;
+}
+
+.shell[data-theme="light"] .errorBoundaryDetails {
+  background: rgba(0, 0, 0, 0.05);
+  color: #374151;
+}
+
 .proxyAccCurrent {
   margin-left: auto;
   display: inline-flex;

@@ -1,0 +1,71 @@
+# Spike 0.1 (corp-vpn-coexistence): can we produce a self-contained, relocatable
+# OpenConnect bundle for macOS-arm64 in CI that the owner downloads and runs
+# against a real Cisco AnyConnect gateway (Skoltech)? This is throwaway spike
+# infra on the feature branch — NOT a shipping workflow. Uses Homebrew's
+# openconnect for speed; a pinned-from-source (v9.21) build comes later if the
+# spike proves the mechanism. dylibbundler makes the binary relocatable so it
+# runs off the user's machine without Homebrew installed.
+name: Spike — OpenConnect macOS bundle
+
+on:
+  push:
+    branches: [feat/openconnect-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: macos-14 # Apple silicon (arm64)
+    steps:
+      - name: Install openconnect + dylibbundler
+        run: brew install openconnect dylibbundler
+
+      - name: Version
+        run: openconnect --version
+
+      - name: Assemble relocatable bundle
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/libs
+          # Resolve the real binary (brew puts the client in sbin).
+          if [ -x "$(brew --prefix openconnect)/sbin/openconnect" ]; then
+            cp "$(brew --prefix openconnect)/sbin/openconnect" bundle/openconnect
+          else
+            cp "$(brew --prefix openconnect)/bin/openconnect" bundle/openconnect
+          fi
+          chmod +x bundle/openconnect
+          # Canonical vpnc-script (standalone bash, no build) — this is what
+          # captures the pushed corp routes/DNS (CISCO_SPLIT_INC_* etc).
+          curl -fsSL "https://gitlab.com/openconnect/vpnc-scripts/-/raw/master/vpnc-script" -o bundle/vpnc-script
+          chmod +x bundle/vpnc-script
+          # Collect all non-system dylibs into bundle/libs and rewrite the binary
+          # (and the libs) to load them via @executable_path/libs — relocatable.
+          dylibbundler -od -b -x ./bundle/openconnect -d ./bundle/libs -p @executable_path/libs
+
+      - name: Verify relocatable (no Homebrew paths remain)
+        run: |
+          set -euo pipefail
+          echo "--- otool -L bundle/openconnect ---"
+          otool -L bundle/openconnect
+          if otool -L bundle/openconnect | grep -q "/opt/homebrew"; then
+            echo "FAIL: binary still references /opt/homebrew — not relocatable"
+            exit 1
+          fi
+          echo "OK: no Homebrew paths"
+          echo "--- bundled libs ---"
+          ls -1 bundle/libs
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          tar -czf openconnect-macos-arm64.tar.gz -C bundle .
+          echo "--- artifact size ---"
+          ls -lh openconnect-macos-arm64.tar.gz
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: openconnect-macos-arm64
+          path: openconnect-macos-arm64.tar.gz

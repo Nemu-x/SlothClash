@@ -44,6 +44,79 @@ function SettingsSwitch({
   )
 }
 
+// "Lock port" row: pins the local mixed-port to a fixed value so external tools
+// pointed at 127.0.0.1:<port> keep working across reconnects / subscription
+// switches. 0 = auto (random free port each start, the default). The number
+// input commits on blur / Enter (not per keystroke) since a change rebinds the
+// core. Turning the lock on pins the currently-running port.
+function PortLockRow({
+  mixedPort,
+  runningMixedPort,
+  onSetMixedPort,
+}: {
+  mixedPort: number
+  runningMixedPort: number
+  onSetMixedPort: (next: number) => void
+}) {
+  const { t } = useTranslation()
+  const locked = mixedPort > 0
+  const [draft, setDraft] = useState<string>(locked ? String(mixedPort) : '')
+
+  const commit = () => {
+    const v = parseInt(draft, 10)
+    if (!Number.isNaN(v) && v >= 1 && v <= 65535) {
+      if (v !== mixedPort) onSetMixedPort(v)
+    } else {
+      setDraft(String(mixedPort)) // revert invalid input to the pinned value
+    }
+  }
+
+  const toggle = () => {
+    if (locked) {
+      setDraft('')
+      onSetMixedPort(0)
+    } else {
+      const p =
+        runningMixedPort >= 1 && runningMixedPort <= 65535
+          ? runningMixedPort
+          : 7890
+      setDraft(String(p))
+      onSetMixedPort(p)
+    }
+  }
+
+  return (
+    <>
+      <div className="settingsToggleRow">
+        <span>{t('settings.lockPort')}</span>
+        <SettingsSwitch
+          checked={locked}
+          label={t('settings.lockPort')}
+          onToggle={toggle}
+        />
+      </div>
+      {locked ? (
+        <div className="settingsToggleRow">
+          <span className="muted small">{t('settings.lockPortValue')}</span>
+          <input
+            type="number"
+            className="input settingsPortInput"
+            min={1}
+            max={65535}
+            value={draft}
+            aria-label={t('settings.lockPortValue')}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+          />
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 // Accent color field: picker + hex input + per-theme applied previews + reset.
 // The stored value is the raw user hex; swatches show what actually renders
 // after the contrast guard per theme.
@@ -147,6 +220,9 @@ export function SettingsPage({
   onSetDnsIpv6,
   smartDns,
   onSetSmartDns,
+  mixedPort,
+  runningMixedPort,
+  onSetMixedPort,
   state,
   updateSnap,
   error,
@@ -187,6 +263,10 @@ export function SettingsPage({
   onSetDnsIpv6: (next: boolean) => void
   smartDns: boolean
   onSetSmartDns: (next: boolean) => void
+  // Fixed mixed-port ("lock port"): 0 = auto/random, 1–65535 = pinned.
+  mixedPort: number
+  runningMixedPort: number
+  onSetMixedPort: (next: number) => void
   state: any
   updateSnap: any
   error: string | null
@@ -398,6 +478,14 @@ export function SettingsPage({
                 onToggle={() => onSetAllowLan(!allowLan)}
               />
             </div>
+            <PortLockRow
+              mixedPort={mixedPort}
+              runningMixedPort={runningMixedPort}
+              onSetMixedPort={onSetMixedPort}
+            />
+            <p className="muted settingsMicroHint">
+              {t('settings.lockPortHint')}
+            </p>
             <p className="muted settingsMicroHint">{t('settings.dnsHint')}</p>
             {serviceInfo?.updateRequired ? (
               <div className="serviceUpdateBanner" role="alert">

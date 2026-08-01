@@ -2163,6 +2163,11 @@ function App() {
               onSetSmartDns={(next) =>
                 void commitConnectionPrefs({ smartDns: next })
               }
+              mixedPort={connectionPrefs.mixedPort ?? 0}
+              runningMixedPort={Number(state?.core?.mixedPort) || 0}
+              onSetMixedPort={(next) =>
+                void commitConnectionPrefs({ mixedPort: next })
+              }
               tunBanner={tunBanner}
               onDismissBanner={() => setTunBanner('')}
               state={state}

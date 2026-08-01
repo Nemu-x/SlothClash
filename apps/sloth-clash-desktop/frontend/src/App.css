@@ -2812,7 +2812,8 @@
 /* Dim the HWID block when the user has turned off x-hwid sending so it is
    visually clear that the value displayed is not currently transmitted. The
    number is still readable for copy-and-paste support cases. */
-.advancedDeviceIdentityCard .deviceIdentityHwidRow[data-hwid-disabled="true"]
+.advancedDeviceIdentityCard
+  .deviceIdentityHwidRow[data-hwid-disabled="true"]
   .deviceIdentityHwid {
   opacity: 0.55;
   text-decoration: line-through;
@@ -3559,6 +3560,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 40%;
+}
+
+/* Proxy group icon (mihomo proxy-groups `icon`): small, rounded, before name. */
+.proxyGroupIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.proxyGroupIconEmoji {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 .proxyAccCurrent {
@@ -4792,6 +4808,12 @@
   min-height: 22px;
   padding: 1px 0;
   font-size: var(--font-size-sm);
+}
+
+.settingsPortInput {
+  width: 96px;
+  text-align: right;
+  flex: 0 0 auto;
 }
 
 .settingsToggleRow > span:first-child {

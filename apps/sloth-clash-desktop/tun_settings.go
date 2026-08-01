@@ -50,6 +50,13 @@ type ConnectionSettings struct {
 	// local. nil = off, matching verge's default; enabling it also requires
 	// proxy-server-nameserver, which the overlay fills in automatically.
 	SmartDNS *bool `json:"smartDns,omitempty"`
+	// MixedPort pins the local mixed-port to a fixed value ("lock the port").
+	// nil/0/out-of-range = auto: we pick a random free port on every core start
+	// (the default), which avoids collisions with stale binds but changes across
+	// reconnects / subscription switches. Users who point external tools at a
+	// specific 127.0.0.1:<port> lock it here so it stays constant. Overrides the
+	// port from the subscription config.
+	MixedPort *int `json:"mixedPort,omitempty"`
 }
 
 // IsAllowLanEnabled reports the effective value (default: false).
@@ -65,6 +72,19 @@ func (c ConnectionSettings) IsDNSIPv6Enabled() bool {
 // IsSmartDNSEnabled reports the effective value (default: false).
 func (c ConnectionSettings) IsSmartDNSEnabled() bool {
 	return c.SmartDNS != nil && *c.SmartDNS
+}
+
+// FixedMixedPort returns the user-pinned mixed-port and true when a valid one is
+// set (1–65535); otherwise (0, false), meaning "auto — pick a random free port".
+func (c ConnectionSettings) FixedMixedPort() (int, bool) {
+	if c.MixedPort == nil {
+		return 0, false
+	}
+	p := *c.MixedPort
+	if p < 1 || p > 65535 {
+		return 0, false
+	}
+	return p, true
 }
 
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
@@ -253,13 +273,49 @@ func (a *App) SetTunSettings(next TunSettings) DesktopPrefs {
 // running core so `allow-lan` takes effect without a restart.
 func (a *App) SetConnectionSettings(next ConnectionSettings) DesktopPrefs {
 	prefsMu.Lock()
+	prevPort, _ := prefsCurrent.Connection.FixedMixedPort()
 	prefsCurrent.Connection = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 
-	a.triggerRuntimeReloadForPrefs()
+	// allow-lan / DNS toggles apply via a hot-reload, but the mixed-port only
+	// rebinds on a fresh listen — a hot-reload reuses the running port. So when
+	// the port pin changed, do a full core restart; otherwise the usual reload.
+	newPort, _ := next.FixedMixedPort()
+	if newPort != prevPort {
+		a.restartActiveProfileCore()
+	} else {
+		a.triggerRuntimeReloadForPrefs()
+	}
 	return snapshot
+}
+
+// restartActiveProfileCore does a full core restart for the active profile when
+// connected. Used for settings that only take effect on a fresh listen (the
+// fixed mixed-port), which a hot-reload cannot change. No-op when disconnected —
+// the new value is picked up on the next connect.
+func (a *App) restartActiveProfileCore() {
+	a.mu.RLock()
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	connected := a.state.Connection.Status == "connected"
+	traffic := strings.TrimSpace(a.state.Traffic)
+	var active Profile
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			active = p
+			break
+		}
+	}
+	a.mu.RUnlock()
+	if !connected || active.ID == "" {
+		return
+	}
+	go func() {
+		if err := a.forceRestartCoreForProfile(active, 0, traffic == "tun"); err != nil {
+			a.appendRuntimeDiag("mixed-port", "core restart after port change failed: "+err.Error())
+		}
+	}()
 }
 
 // SetUiLanguage is called by the frontend at i18n init and whenever the user

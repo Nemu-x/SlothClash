@@ -619,6 +619,7 @@ export namespace main {
     allowLan?: boolean
     dnsIpv6?: boolean
     smartDns?: boolean
+    mixedPort?: number
 
     static createFrom(source: any = {}) {
       return new ConnectionSettings(source)
@@ -629,6 +630,7 @@ export namespace main {
       this.allowLan = source['allowLan']
       this.dnsIpv6 = source['dnsIpv6']
       this.smartDns = source['smartDns']
+      this.mixedPort = source['mixedPort']
     }
   }
 

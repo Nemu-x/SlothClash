@@ -1,3 +1,27 @@
+## Sloth Clash desktop `0.9.0` — Unreleased
+
+### English
+
+**🔒 Lock the proxy port**
+- The local mixed-port is random by default (a fresh free port each start, which avoids collisions but changes on reconnect / subscription switch). New **"Lock proxy port"** switch in Settings → Connection pins it to a fixed value, so apps you point at `127.0.0.1:<port>` manually keep working. If the pinned port is busy, we fall back to a random one for that session and note it in diagnostics.
+
+**🔁 Rule toggles apply to live traffic immediately**
+- Enabling/disabling a rule (or editing rules) now closes existing connections after the reload, so the change takes effect on already-open sockets (e.g. a browser's) instead of only new ones — no more toggling the VPN off and on to make it stick.
+
+**🎨 Proxy group icons**
+- Proxy groups now show the `icon` from your subscription (as many providers set) next to the group name. Broken image URLs are hidden gracefully; emoji icons are supported too.
+
+### Русский
+
+**🔒 Фиксация порта прокси**
+- Локальный mixed-port по умолчанию случайный (свежий свободный порт на каждый старт — это избегает конфликтов, но меняется при переподключении / смене подписки). Новый переключатель **«Фиксировать порт прокси»** в Настройки → Подключение закрепляет его, чтобы приложения, которым ты вручную указал `127.0.0.1:<порт>`, продолжали работать. Если порт занят — на эту сессию берём случайный и пишем это в диагностику.
+
+**🔁 Переключение правил применяется к живому трафику сразу**
+- Включение/выключение правила (и правки правил) теперь сбрасывает существующие соединения после reload — изменение применяется к уже открытым сокетам (например, браузера), а не только к новым. Больше не нужно дёргать VPN off/on.
+
+**🎨 Иконки proxy-групп**
+- У групп прокси теперь показывается `icon` из твоей подписки (как ставят многие провайдеры) рядом с именем группы. Битые ссылки на картинку скрываются, emoji-иконки тоже поддерживаются.
+
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 
 > ⚠️ **After updating you'll be asked once to reinstall the helper service** (requires helper service **2.4.2+**, which powers the TUN recovery below). Click the banner, accept the UAC prompt — it won't come back.

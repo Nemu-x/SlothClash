@@ -54,6 +54,7 @@ func TestApplyCorpVpnOverlay_InjectsRoutesDNSAndFakeIPFilter(t *testing.T) {
 		Routes:     []string{"10.0.0.0/8", "172.16.0.0/12"},
 		DNSServers: []string{"10.16.32.100"},
 		DNSDomains: []string{"corp.example"},
+		Tundev:     "utun4",
 	}
 	applyCorpVpnOverlay(m, split)
 
@@ -67,10 +68,11 @@ func TestApplyCorpVpnOverlay_InjectsRoutesDNSAndFakeIPFilter(t *testing.T) {
 	if !ok {
 		t.Fatalf("nameserver-policy missing: %#v", dns["nameserver-policy"])
 	}
+	// Resolver bound to the corp tunnel interface so the DNS dial egresses it.
 	for _, key := range []string{"corp.example", "+.corp.example"} {
 		got := asStrings(t, policy[key])
-		if !reflect.DeepEqual(got, []string{"10.16.32.100"}) {
-			t.Fatalf("nameserver-policy[%q] = %v", key, got)
+		if !reflect.DeepEqual(got, []string{"10.16.32.100#utun4"}) {
+			t.Fatalf("nameserver-policy[%q] = %v, want interface-bound", key, got)
 		}
 	}
 

@@ -25,6 +25,7 @@ type corpVpnSplit struct {
 	Routes     []string // corp subnets (CIDR) — excluded from mihomo TUN → routed to OpenConnect
 	DNSServers []string // corp resolvers
 	DNSDomains []string // corp search domains resolved via the corp resolvers
+	Tundev     string   // corp tunnel interface (e.g. "utun4") for the DNS interface-bind
 }
 
 // active reports whether there is anything to overlay. A full-tunnel corp
@@ -99,7 +100,23 @@ func applyCorpVpnOverlay(m map[string]any, split corpVpnSplit) {
 		if !ok || policy == nil {
 			policy = map[string]any{}
 		}
-		servers := toAnyList(split.DNSServers)
+		// Bind each corp resolver to the corp tunnel interface (mihomo's
+		// `<resolver>#<iface>` syntax) so the DNS dial egresses the corp utun
+		// instead of being bound to the physical NIC by auto-detect-interface.
+		// Validated live: `route get <resolver>` → the corp utun. Without the
+		// bind, corp-domain resolution silently fails when both VPNs are up.
+		boundServers := make([]string, 0, len(split.DNSServers))
+		for _, s := range split.DNSServers {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if split.Tundev != "" && !strings.Contains(s, "#") {
+				s += "#" + split.Tundev
+			}
+			boundServers = append(boundServers, s)
+		}
+		servers := toAnyList(boundServers)
 		for _, d := range split.DNSDomains {
 			d = strings.TrimSpace(strings.TrimPrefix(d, "."))
 			if d == "" {

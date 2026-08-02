@@ -38,7 +38,8 @@
     "trustConnect": "Trust & connect",
     "cancel": "Cancel",
     "logs": "Connection log",
-    "homeIndicator": "Corporate VPN on"
+    "homeIndicator": "Corporate VPN on",
+    "remember": "Remember server & username"
   },
   "settings": {
     "title": "Settings",

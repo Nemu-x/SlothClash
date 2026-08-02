@@ -1,5 +1,6 @@
 /** Corporate-VPN (OpenConnect sidecar) coexistence controls. macOS-only in P1. */
 export {
+  ForgetCorpVpnCredentials,
   GetCorpVpnCredentials,
   GetCorpVpnStatus,
   StartCorpVpn,

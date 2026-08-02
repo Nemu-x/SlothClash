@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
+  ForgetCorpVpnCredentials,
   GetCorpVpnCredentials,
   GetCorpVpnStatus,
   StartCorpVpn,
@@ -24,6 +25,8 @@ export function CorpVpnPage() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Remember server + username (never the password) between sessions.
+  const [remember, setRemember] = useState(true)
   // Pending server-cert to trust (first connect against an untrusted gateway).
   const [pendingCert, setPendingCert] = useState('')
 
@@ -65,6 +68,9 @@ export function CorpVpnPage() {
           servercert,
         )
         setStatus(s)
+        // The backend saves server+username on connect; honour "remember" by
+        // forgetting them when the box is unticked.
+        if (!remember) void ForgetCorpVpnCredentials()
         if (s.needsCertTrust) {
           // Gateway presented an untrusted cert — surface its fingerprint and
           // let the user accept it (trust-on-first-use), then reconnect pinned.
@@ -79,7 +85,7 @@ export function CorpVpnPage() {
         setBusy(false)
       }
     },
-    [gateway, username, password],
+    [gateway, username, password, remember],
   )
 
   const disconnect = useCallback(async () => {
@@ -231,6 +237,14 @@ export function CorpVpnPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+          </label>
+          <label className="corpRemember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            <span className="muted small">{t('corp.remember')}</span>
           </label>
           <div className="corpActions">
             <button

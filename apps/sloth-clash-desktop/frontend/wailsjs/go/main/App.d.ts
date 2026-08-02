@@ -67,6 +67,8 @@ export function FetchConnectionsOverview(): Promise<main.ConnectionsOverview>
 
 export function FetchRulesOverview(): Promise<main.RulesOverview>
 
+export function ForgetCorpVpnCredentials(): Promise<void>
+
 export function GenerateAgeKeyPair(arg1: string): Promise<main.AgeKeyPair>
 
 export function GetActiveBranding(): Promise<main.ActiveBranding>

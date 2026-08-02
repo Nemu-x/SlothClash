@@ -223,6 +223,17 @@ func (a *App) GetCorpVpnCredentials() CorpVpnCredentials {
 	return currentDesktopPrefs().CorpVpn
 }
 
+// ForgetCorpVpnCredentials clears the remembered corp server + username (used
+// when the user unticks "remember").
+func (a *App) ForgetCorpVpnCredentials() {
+	_ = a
+	prefsMu.Lock()
+	prefsCurrent.CorpVpn = CorpVpnCredentials{}
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+}
+
 // saveCorpVpnCredentials persists the corp server + username (never the password).
 func saveCorpVpnCredentials(gateway, username string) {
 	gateway = strings.TrimSpace(gateway)

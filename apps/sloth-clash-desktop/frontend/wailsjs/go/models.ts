@@ -687,6 +687,7 @@ export namespace main {
     dnsDomains: string[]
     fullTunnel: boolean
     tundev: string
+    gatewayIp: string
     logTail: string[]
     supported: boolean
 
@@ -704,6 +705,7 @@ export namespace main {
       this.dnsDomains = source['dnsDomains']
       this.fullTunnel = source['fullTunnel']
       this.tundev = source['tundev']
+      this.gatewayIp = source['gatewayIp']
       this.logTail = source['logTail']
       this.supported = source['supported']
     }

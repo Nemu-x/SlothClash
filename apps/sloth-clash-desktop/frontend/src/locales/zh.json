@@ -39,7 +39,10 @@
     "cancel": "取消",
     "logs": "连接日志",
     "homeIndicator": "企业 VPN 已开启",
-    "remember": "记住服务器和用户名"
+    "remember": "记住服务器和用户名",
+    "howTitle": "工作原理",
+    "howCorp": "企业网络 → 企业 VPN",
+    "howRest": "其余流量 → 你的代理"
   },
   "settings": {
     "title": "设置",

@@ -73,6 +73,8 @@ export function HomePage({
   onOpenUpdate,
   onSetMode,
   onSwitchTraffic,
+  corpConnected,
+  onOpenCorp,
   onConnectClick,
   onInstallService,
   onRefreshService,
@@ -114,6 +116,10 @@ export function HomePage({
   onOpenUpdate: () => void
   onSetMode: (mode: 'rule' | 'global') => void
   onSwitchTraffic: (mode: 'proxy' | 'tun') => void
+  // Corporate VPN (optional feature): show a small live indicator only when it
+  // is connected; nothing at all otherwise.
+  corpConnected?: boolean
+  onOpenCorp?: () => void
   onConnectClick: () => void
   onInstallService: () => void
   onRefreshService: () => void
@@ -155,6 +161,17 @@ export function HomePage({
         <p className="homeLinkToast" role="status">
           {linkToast}
         </p>
+      ) : null}
+      {corpConnected ? (
+        <button
+          type="button"
+          className="homeCorpPill"
+          onClick={() => onOpenCorp?.()}
+          title={t('corp.title')}
+        >
+          <span className="homeCorpDot" aria-hidden />
+          {t('corp.homeIndicator')}
+        </button>
       ) : null}
       <header className="homeHeader">
         <div>

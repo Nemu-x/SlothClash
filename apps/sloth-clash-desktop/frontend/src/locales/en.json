@@ -36,7 +36,9 @@
     "certTitle": "Trust this server?",
     "certBody": "The VPN server presented a certificate we haven't seen before. Check the fingerprint with your IT team, then trust it to continue.",
     "trustConnect": "Trust & connect",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "logs": "Connection log",
+    "homeIndicator": "Corporate VPN on"
   },
   "settings": {
     "title": "Settings",

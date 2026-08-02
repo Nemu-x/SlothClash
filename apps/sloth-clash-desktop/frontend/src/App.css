@@ -5663,3 +5663,62 @@
   word-break: break-all;
   font-size: var(--font-size-sm);
 }
+
+/* Corporate VPN — live indicators + log view */
+.navIcon {
+  position: relative;
+}
+.navActiveDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px var(--panel, #111);
+}
+.homeCorpPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 4px 10px;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--panel-deep);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.homeCorpPill:hover {
+  border-color: var(--ok, #16a34a);
+}
+.homeCorpDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok, #16a34a);
+}
+.corpLogs {
+  gap: var(--space-2);
+}
+.corpLogs summary {
+  cursor: pointer;
+  user-select: none;
+}
+.corpLogBody {
+  margin: var(--space-2) 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

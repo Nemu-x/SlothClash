@@ -686,6 +686,7 @@ export namespace main {
     dnsServers: string[]
     dnsDomains: string[]
     fullTunnel: boolean
+    logTail: string[]
     supported: boolean
 
     static createFrom(source: any = {}) {
@@ -701,6 +702,7 @@ export namespace main {
       this.dnsServers = source['dnsServers']
       this.dnsDomains = source['dnsDomains']
       this.fullTunnel = source['fullTunnel']
+      this.logTail = source['logTail']
       this.supported = source['supported']
     }
   }

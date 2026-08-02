@@ -236,9 +236,16 @@ func (a *App) GetCorpVpnStatus() (CorpVpnStatus, error) {
 }
 
 // applyCorpSplitAndReload records the split for the config overlay and triggers a
-// hot-reload + connection flush so it takes effect on live traffic. The reload
-// is a no-op when mihomo is not connected in TUN mode; the split is still stored
-// so the next Connect applies it.
+// hot-reload so it takes effect. The reload is a no-op when mihomo is not
+// connected in TUN mode; the split is still stored so the next Connect applies it.
+//
+// Deliberately does NOT flush live connections. New routes/DNS apply to new
+// connections, and existing mihomo-proxied sessions (the browser's keep-alives,
+// HTTP/2, etc.) keep working. Flushing here was actively harmful: on a flaky corp
+// tunnel the self-heal path fired repeatedly and nuked all browser connections
+// each time, so the terminal (fresh sockets) worked while the browser (reused
+// sockets) appeared dead. A corp connect/disconnect is not a routing-policy
+// change that needs live traffic torn down.
 func (a *App) applyCorpSplitAndReload(split corpVpnSplit) {
 	setCorpVpnSplit(split)
 	a.mu.RLock()
@@ -249,7 +256,6 @@ func (a *App) applyCorpSplitAndReload(split corpVpnSplit) {
 	if activeID == "" || !connected || traffic != "tun" {
 		return
 	}
-	a.reconnectFlushConns.Store(true)
 	go a.reconnectActiveProfile()
 }
 

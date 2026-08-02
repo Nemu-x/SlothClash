@@ -178,8 +178,12 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 
 	// Learned the split → record it and hot-reload mihomo so the exclude/DNS
 	// overlay lands, flushing live sockets so existing corp-bound connections
-	// re-route immediately (same mechanism as a rules change).
-	a.applyCorpSplitAndReload(corpSplitFromStatus(status))
+	// re-route immediately (same mechanism as a rules change). Thread the gateway
+	// host so the overlay can keep it on public DNS (else the corp DNS policy
+	// would capture the gateway and deadlock the next connect).
+	split := corpSplitFromStatus(status)
+	split.Gateway = gateway
+	a.applyCorpSplitAndReload(split)
 	return status, nil
 }
 
@@ -212,7 +216,17 @@ func (a *App) GetCorpVpnStatus() (CorpVpnStatus, error) {
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("query corp vpn service: %w", err)
 	}
-	return parseCorpEnvelope(httpStatus, body)
+	status, perr := parseCorpEnvelope(httpStatus, body)
+	// Self-heal: if the sidecar is down but we still hold a corp overlay (e.g.
+	// OpenConnect dropped on its own, not via Disconnect), clear it and reload so
+	// the corp DNS policy / route-exclude don't linger pointing at a dead tunnel —
+	// which would otherwise make the whole corp domain (incl. the gateway)
+	// unresolvable and block the next connect. Fires once per drop: after the
+	// clear, currentCorpVpnSplit is inactive.
+	if perr == nil && !status.Connected && !status.NeedsCertTrust && currentCorpVpnSplit().active() {
+		a.applyCorpSplitAndReload(corpVpnSplit{})
+	}
+	return status, perr
 }
 
 // applyCorpSplitAndReload records the split for the config overlay and triggers a

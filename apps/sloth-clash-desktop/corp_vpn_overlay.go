@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"strings"
 	"sync"
 )
@@ -26,6 +27,7 @@ type corpVpnSplit struct {
 	DNSServers []string // corp resolvers
 	DNSDomains []string // corp search domains resolved via the corp resolvers
 	Tundev     string   // corp tunnel interface (e.g. "utun4") for the DNS interface-bind
+	Gateway    string   // the corp gateway host (e.g. "vpn.corp.example") the user connects to
 }
 
 // active reports whether there is anything to overlay. A full-tunnel corp
@@ -128,6 +130,17 @@ func applyCorpVpnOverlay(m map[string]any, split corpVpnSplit) {
 				}
 			}
 		}
+		// The gateway host itself usually lives in the corp domain (e.g.
+		// vpn.corp.example ⊂ +.corp.example) but MUST resolve via public DNS —
+		// it is how we reach the tunnel in the first place. Sending it to the
+		// corp resolver deadlocks: that resolver is only reachable once the tunnel
+		// is up, which needs the gateway resolved. An exact-match entry wins over
+		// the +.domain wildcard in mihomo, so pin the gateway to bootstrap
+		// resolvers, and keep it out of fake-ip so OpenConnect gets its real IP.
+		if gw := strings.TrimSpace(split.Gateway); gw != "" && net.ParseIP(gw) == nil {
+			policy[gw] = bootstrapResolvers(dns)
+			dns["fake-ip-filter"] = mergeStringListInto(dns["fake-ip-filter"], []string{gw})
+		}
 		dns["nameserver-policy"] = policy
 	}
 
@@ -187,4 +200,25 @@ func toAnyList(ss []string) []any {
 		out = append(out, s)
 	}
 	return out
+}
+
+// bootstrapResolvers returns plain public resolvers used to resolve the corp
+// gateway host OUTSIDE any tunnel. Prefers the config's own dns.default-nameserver
+// (the bootstrap set mihomo already trusts for plain-IP resolution); falls back
+// to well-known public resolvers. Must be plain IPs (no DoH/hostname) so there is
+// no recursive resolution dependency.
+func bootstrapResolvers(dns map[string]any) []any {
+	if v, ok := dns["default-nameserver"]; ok {
+		switch list := v.(type) {
+		case []any:
+			if len(list) > 0 {
+				return append([]any(nil), list...)
+			}
+		case []string:
+			if len(list) > 0 {
+				return toAnyList(list)
+			}
+		}
+	}
+	return []any{"1.1.1.1", "8.8.8.8"}
 }

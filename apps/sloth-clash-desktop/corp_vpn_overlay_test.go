@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,7 @@ func TestApplyCorpVpnOverlay_InjectsRoutesDNSAndFakeIPFilter(t *testing.T) {
 		DNSServers: []string{"10.16.32.100"},
 		DNSDomains: []string{"corp.example"},
 		Tundev:     "utun4",
+		Gateway:    "vpn.corp.example",
 	}
 	applyCorpVpnOverlay(m, split)
 
@@ -79,13 +81,32 @@ func TestApplyCorpVpnOverlay_InjectsRoutesDNSAndFakeIPFilter(t *testing.T) {
 	// fake-ip-filter must include the corp domain (as +.domain) so it resolves real.
 	filter := asStrings(t, dns["fake-ip-filter"])
 	found := false
+	gwFiltered := false
 	for _, p := range filter {
 		if p == "+.corp.example" {
 			found = true
 		}
+		if p == "vpn.corp.example" {
+			gwFiltered = true
+		}
 	}
 	if !found {
 		t.Fatalf("fake-ip-filter missing +.corp.example: %v", filter)
+	}
+	if !gwFiltered {
+		t.Fatalf("gateway must be in fake-ip-filter for a real IP: %v", filter)
+	}
+
+	// The gateway must NOT be sent to the corp resolver (deadlock) — it gets an
+	// exact-match public-DNS override that wins over the +.domain wildcard.
+	gw := asStrings(t, policy["vpn.corp.example"])
+	for _, ns := range gw {
+		if strings.Contains(ns, "10.16.32.100") {
+			t.Fatalf("gateway pinned to corp resolver (deadlock): %v", gw)
+		}
+	}
+	if len(gw) == 0 {
+		t.Fatalf("gateway must have a public-DNS override in nameserver-policy")
 	}
 }
 

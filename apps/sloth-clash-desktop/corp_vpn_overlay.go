@@ -28,6 +28,7 @@ type corpVpnSplit struct {
 	DNSDomains []string // corp search domains resolved via the corp resolvers
 	Tundev     string   // corp tunnel interface (e.g. "utun4") for the DNS interface-bind
 	Gateway    string   // the corp gateway host (e.g. "vpn.corp.example") the user connects to
+	GatewayIP  string   // the gateway's public IP — excluded from mihomo TUN (goes physical)
 }
 
 // active reports whether there is anything to overlay. A full-tunnel corp
@@ -79,12 +80,22 @@ func applyCorpVpnOverlay(m map[string]any, split corpVpnSplit) {
 		return
 	}
 
-	// (1) route-exclude-address on the tun block.
+	// (1) route-exclude-address on the tun block: the corp subnets (so mihomo's
+	// TUN never claims them — OpenConnect owns them) PLUS the gateway's own IP.
+	// Excluding the gateway is essential: without it OpenConnect's own traffic to
+	// the gateway (CSTP/DTLS) rides mihomo's default route into the proxy, which
+	// kills DTLS and flaps the tunnel (DPD dead peer). Excluded, it egresses the
+	// physical NIC directly — matching what the stock vpnc-script's
+	// `add host <gw> gateway <phys>` used to do.
+	excludes := append([]string(nil), split.Routes...)
+	if ip := strings.TrimSpace(split.GatewayIP); net.ParseIP(ip) != nil {
+		excludes = append(excludes, ip+"/32")
+	}
 	tun, ok := m["tun"].(map[string]any)
 	if !ok || tun == nil {
 		tun = map[string]any{}
 	}
-	tun["route-exclude-address"] = mergeStringListInto(tun["route-exclude-address"], split.Routes)
+	tun["route-exclude-address"] = mergeStringListInto(tun["route-exclude-address"], excludes)
 	m["tun"] = tun
 
 	// DNS bits only make sense when there is a dns block to extend. It is always

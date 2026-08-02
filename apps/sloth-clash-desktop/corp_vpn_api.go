@@ -42,6 +42,9 @@ type CorpVpnStatus struct {
 	// Tundev is the corp tunnel interface (e.g. "utun4"); the DNS overlay binds
 	// corp resolvers to it so their queries egress the corp tunnel.
 	Tundev string `json:"tundev"`
+	// GatewayIP is the gateway's public IP; excluded from mihomo's TUN so the
+	// tunnel's own traffic to it goes out the physical NIC (not via the proxy).
+	GatewayIP string `json:"gatewayIp"`
 	// LogTail is recent OpenConnect stderr (most recent last), for the log view.
 	LogTail []string `json:"logTail"`
 	// Supported is false on platforms where the feature is not available yet, so
@@ -65,6 +68,7 @@ type corpVpnDataWire struct {
 	DNSDomains       []string `json:"dns_domains"`
 	FullTunnel       bool     `json:"full_tunnel"`
 	Tundev           string   `json:"tundev"`
+	GatewayIP        string   `json:"gateway_ip"`
 	LogTail          []string `json:"log_tail"`
 }
 
@@ -82,6 +86,7 @@ func corpStatusFromWire(d *corpVpnDataWire) CorpVpnStatus {
 		DNSDomains:       append([]string(nil), d.DNSDomains...),
 		FullTunnel:       d.FullTunnel,
 		Tundev:           d.Tundev,
+		GatewayIP:        d.GatewayIP,
 		LogTail:          append([]string(nil), d.LogTail...),
 		Supported:        true,
 	}
@@ -99,6 +104,7 @@ func corpSplitFromStatus(s CorpVpnStatus) corpVpnSplit {
 		DNSServers: append([]string(nil), s.DNSServers...),
 		DNSDomains: append([]string(nil), s.DNSDomains...),
 		Tundev:     s.Tundev,
+		GatewayIP:  s.GatewayIP,
 	}
 }
 

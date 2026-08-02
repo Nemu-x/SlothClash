@@ -77,6 +77,8 @@ export function GetAdvancedPaths(): Promise<main.AdvancedPaths>
 
 export function GetAppState(): Promise<main.AppState>
 
+export function GetCorpVpnCredentials(): Promise<main.CorpVpnCredentials>
+
 export function GetCorpVpnStatus(): Promise<main.CorpVpnStatus>
 
 export function GetDesktopPrefs(): Promise<main.DesktopPrefs>

@@ -678,6 +678,20 @@ export namespace main {
     }
   }
 
+  export class CorpVpnCredentials {
+    gateway?: string
+    username?: string
+
+    static createFrom(source: any = {}) {
+      return new CorpVpnCredentials(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.gateway = source['gateway']
+      this.username = source['username']
+    }
+  }
   export class CorpVpnStatus {
     connected: boolean
     needsCertTrust: boolean
@@ -779,6 +793,7 @@ export namespace main {
     privacy: PrivacySettings
     appUpdate: AppUpdateSettings
     experimental: ExperimentalSettings
+    corpVpn: CorpVpnCredentials
     lang?: string
 
     static createFrom(source: any = {}) {
@@ -802,6 +817,7 @@ export namespace main {
         source['experimental'],
         ExperimentalSettings,
       )
+      this.corpVpn = this.convertValues(source['corpVpn'], CorpVpnCredentials)
       this.lang = source['lang']
     }
 

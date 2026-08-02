@@ -38,7 +38,8 @@
     "trustConnect": "Доверять и подключить",
     "cancel": "Отмена",
     "logs": "Журнал подключения",
-    "homeIndicator": "Корп. VPN включён"
+    "homeIndicator": "Корп. VPN включён",
+    "remember": "Запомнить сервер и логин"
   },
   "settings": {
     "title": "Настройки",

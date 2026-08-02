@@ -102,6 +102,10 @@ export function FetchRulesOverview() {
   return window['go']['main']['App']['FetchRulesOverview']()
 }
 
+export function ForgetCorpVpnCredentials() {
+  return window['go']['main']['App']['ForgetCorpVpnCredentials']()
+}
+
 export function GenerateAgeKeyPair(arg1) {
   return window['go']['main']['App']['GenerateAgeKeyPair'](arg1)
 }

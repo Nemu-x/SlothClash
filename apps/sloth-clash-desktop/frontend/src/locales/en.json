@@ -39,7 +39,10 @@
     "cancel": "Cancel",
     "logs": "Connection log",
     "homeIndicator": "Corporate VPN on",
-    "remember": "Remember server & username"
+    "remember": "Remember server & username",
+    "howTitle": "How it works",
+    "howCorp": "Company networks → corporate VPN",
+    "howRest": "Everything else → your proxy"
   },
   "settings": {
     "title": "Settings",

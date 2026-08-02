@@ -177,6 +177,11 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 		return status, err
 	}
 
+	// Remember server + username (never the password) so the form pre-fills next
+	// time. Save once we've gotten far enough that the inputs are known-good
+	// (connected or a cert-trust prompt — both mean the gateway/user were valid).
+	saveCorpVpnCredentials(gateway, username)
+
 	// Cert-trust round trip: nothing to route yet.
 	if status.NeedsCertTrust {
 		return status, nil
@@ -209,6 +214,27 @@ func (a *App) StopCorpVpn() error {
 		return fmt.Errorf("stop corp vpn service: %w", err)
 	}
 	return nil
+}
+
+// GetCorpVpnCredentials returns the remembered corp server + username (never a
+// password) so the UI can pre-fill the login form.
+func (a *App) GetCorpVpnCredentials() CorpVpnCredentials {
+	_ = a
+	return currentDesktopPrefs().CorpVpn
+}
+
+// saveCorpVpnCredentials persists the corp server + username (never the password).
+func saveCorpVpnCredentials(gateway, username string) {
+	gateway = strings.TrimSpace(gateway)
+	username = strings.TrimSpace(username)
+	if gateway == "" && username == "" {
+		return
+	}
+	prefsMu.Lock()
+	prefsCurrent.CorpVpn = CorpVpnCredentials{Gateway: gateway, Username: username}
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
 }
 
 // GetCorpVpnStatus reports the current sidecar state (for the UI to poll/refresh).

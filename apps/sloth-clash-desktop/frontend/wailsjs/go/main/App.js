@@ -122,6 +122,10 @@ export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
 }
 
+export function GetCorpVpnCredentials() {
+  return window['go']['main']['App']['GetCorpVpnCredentials']()
+}
+
 export function GetCorpVpnStatus() {
   return window['go']['main']['App']['GetCorpVpnStatus']()
 }

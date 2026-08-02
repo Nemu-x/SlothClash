@@ -89,12 +89,13 @@ func (c ConnectionSettings) FixedMixedPort() (int, bool) {
 
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
 type DesktopPrefs struct {
-	TUN        TunSettings        `json:"tun"`
-	Traffic    TrafficSettings    `json:"traffic"`
+	TUN          TunSettings          `json:"tun"`
+	Traffic      TrafficSettings      `json:"traffic"`
 	Connection   ConnectionSettings   `json:"connection"`
 	Privacy      PrivacySettings      `json:"privacy"`
 	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
 	Experimental ExperimentalSettings `json:"experimental"`
+	CorpVpn      CorpVpnCredentials   `json:"corpVpn"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -154,6 +155,14 @@ type ExperimentalSettings struct {
 // default (nil pointer or absent field) is false — opt-in only.
 func (s ExperimentalSettings) IsCorpVpnEnabled() bool {
 	return s.CorpVpnEnabled != nil && *s.CorpVpnEnabled
+}
+
+// CorpVpnCredentials remembers the corporate VPN server + username so the login
+// form pre-fills next time. The PASSWORD is deliberately never stored — it is
+// always entered fresh.
+type CorpVpnCredentials struct {
+	Gateway  string `json:"gateway,omitempty"`
+	Username string `json:"username,omitempty"`
 }
 
 const slothPrefsFile = "prefs.json"

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
+  GetCorpVpnCredentials,
   GetCorpVpnStatus,
   StartCorpVpn,
   StopCorpVpn,
@@ -34,6 +35,15 @@ export function CorpVpnPage() {
 
   useEffect(() => {
     refresh()
+    // Pre-fill the saved server + username (password is never stored).
+    GetCorpVpnCredentials()
+      .then((c) => {
+        const gw = c?.gateway ?? ''
+        const un = c?.username ?? ''
+        if (gw) setGateway((g) => g || gw)
+        if (un) setUsername((u) => u || un)
+      })
+      .catch(() => {})
   }, [refresh])
 
   // While connected, poll so the log view and status stay live.

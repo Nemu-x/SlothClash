@@ -31,20 +31,32 @@ type ipcEnvelope struct {
 }
 
 func ipcSlothServiceClient() *http.Client {
+	return ipcSlothServiceClientTimeout(30 * time.Second)
+}
+
+// ipcSlothServiceClientTimeout builds a service client with an explicit overall
+// timeout. Corp-VPN connects run up to ~35 s (OpenConnect handshake) and the
+// service gives its handler 45 s, so the corp-start call needs a longer client
+// timeout than the 30 s default or it would give up first and the connect would
+// spuriously fail.
+func ipcSlothServiceClientTimeout(d time.Duration) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "unix", slothDarwinServiceSocket)
+				var dl net.Dialer
+				return dl.DialContext(ctx, "unix", slothDarwinServiceSocket)
 			},
 			DisableKeepAlives: true,
 		},
-		Timeout: 30 * time.Second,
+		Timeout: d,
 	}
 }
 
 func ipcSlothDo(ctx context.Context, method, path string, body []byte) (status int, bodyOut []byte, err error) {
-	cli := ipcSlothServiceClient()
+	return ipcSlothDoWith(ipcSlothServiceClient(), ctx, method, path, body)
+}
+
+func ipcSlothDoWith(cli *http.Client, ctx context.Context, method, path string, body []byte) (status int, bodyOut []byte, err error) {
 	var rdr io.Reader
 	if len(body) > 0 {
 		rdr = bytes.NewReader(body)
@@ -259,7 +271,10 @@ func ipcSlothRemoveTun(ctx context.Context) (int, error) {
 // Corp-VPN sidecar transport (macOS-only in P1). These just relay to the
 // privileged service, which owns the OpenConnect process.
 func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, error) {
-	return ipcSlothDo(ctx, http.MethodPost, "/corp/start", payload)
+	// 55 s > the service's 45 s handler ceiling > OpenConnect's ~35 s connect, so
+	// the client never gives up before the service resolves the connect.
+	cli := ipcSlothServiceClientTimeout(55 * time.Second)
+	return ipcSlothDoWith(cli, ctx, http.MethodPost, "/corp/start", payload)
 }
 
 func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {

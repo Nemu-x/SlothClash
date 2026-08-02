@@ -39,6 +39,8 @@ type CorpVpnStatus struct {
 	DNSServers       []string `json:"dnsServers"`
 	DNSDomains       []string `json:"dnsDomains"`
 	FullTunnel       bool     `json:"fullTunnel"`
+	// LogTail is recent OpenConnect stderr (most recent last), for the log view.
+	LogTail []string `json:"logTail"`
 	// Supported is false on platforms where the feature is not available yet, so
 	// the UI can hide/disable the tab instead of surfacing errors.
 	Supported bool `json:"supported"`
@@ -59,6 +61,7 @@ type corpVpnDataWire struct {
 	DNSServers       []string `json:"dns_servers"`
 	DNSDomains       []string `json:"dns_domains"`
 	FullTunnel       bool     `json:"full_tunnel"`
+	LogTail          []string `json:"log_tail"`
 }
 
 // corpStatusFromWire maps the service payload to the Wails-facing status. Pure.
@@ -74,6 +77,7 @@ func corpStatusFromWire(d *corpVpnDataWire) CorpVpnStatus {
 		DNSServers:       append([]string(nil), d.DNSServers...),
 		DNSDomains:       append([]string(nil), d.DNSDomains...),
 		FullTunnel:       d.FullTunnel,
+		LogTail:          append([]string(nil), d.LogTail...),
 		Supported:        true,
 	}
 }

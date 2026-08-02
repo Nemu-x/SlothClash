@@ -36,6 +36,13 @@ export function CorpVpnPage() {
     refresh()
   }, [refresh])
 
+  // While connected, poll so the log view and status stay live.
+  useEffect(() => {
+    if (!status?.connected) return
+    const id = window.setInterval(refresh, 3000)
+    return () => window.clearInterval(id)
+  }, [status?.connected, refresh])
+
   const connect = useCallback(
     async (servercert: string) => {
       setBusy(true)
@@ -226,6 +233,15 @@ export function CorpVpnPage() {
           </div>
         </form>
       )}
+
+      {(status?.logTail ?? []).length > 0 ? (
+        <details className="corpCard corpLogs" open={connected}>
+          <summary className="muted small">{t('corp.logs')}</summary>
+          <pre className="corpLogBody">
+            {(status?.logTail ?? []).join('\n')}
+          </pre>
+        </details>
+      ) : null}
     </div>
   )
 }

@@ -36,7 +36,9 @@
     "certTitle": "信任此服务器？",
     "certBody": "VPN 服务器出示了我们未见过的证书。请与你的 IT 团队核对指纹，确认后再继续。",
     "trustConnect": "信任并连接",
-    "cancel": "取消"
+    "cancel": "取消",
+    "logs": "连接日志",
+    "homeIndicator": "企业 VPN 已开启"
   },
   "settings": {
     "title": "设置",

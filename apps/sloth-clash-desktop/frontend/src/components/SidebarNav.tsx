@@ -10,6 +10,7 @@ export function SidebarNav({
   collapsed,
   onToggleCollapse,
   hiddenScreens,
+  activeScreens,
 }: {
   screen: Screen
   onChange: (next: Screen) => void
@@ -17,6 +18,8 @@ export function SidebarNav({
   onToggleCollapse: () => void
   // Brand hide flags (presentation-only): screens dropped from the nav.
   hiddenScreens?: Screen[]
+  // Screens showing a live "active" dot (e.g. Corporate VPN connected).
+  activeScreens?: Screen[]
 }) {
   const { t } = useTranslation()
   return (
@@ -33,6 +36,9 @@ export function SidebarNav({
             >
               <span className="navIcon" aria-hidden>
                 <Icon />
+                {activeScreens?.includes(id) ? (
+                  <span className="navActiveDot" aria-hidden />
+                ) : null}
               </span>
               <span className="navLabel">{t(labelKey)}</span>
             </button>

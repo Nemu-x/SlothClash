@@ -22,6 +22,7 @@ import {
   SetConnectionSettings,
   SetTunSettings,
 } from './api/core'
+import { GetCorpVpnStatus } from './api/corp'
 import {
   GetRuntimeDiagEvents,
   OpenPathInExplorer,
@@ -314,6 +315,8 @@ function App() {
   const [appUpdateEnabled, setAppUpdateEnabled] = useState<boolean>(true)
   // Experimental: Corporate VPN (OpenConnect) tab is opt-in, hidden by default.
   const [corpVpnEnabled, setCorpVpnEnabled] = useState<boolean>(false)
+  // Live corp-VPN connection state, for the nav dot + Home indicator.
+  const [corpConnected, setCorpConnected] = useState<boolean>(false)
   const [updateProgress, setUpdateProgress] = useState<{
     downloaded: number
     total: number
@@ -507,6 +510,30 @@ function App() {
       }
     })()
   }, [])
+
+  // Poll corp-VPN status (only when the feature is on) to drive the nav dot and
+  // the Home indicator. Cheap: one call every few seconds, and nothing at all
+  // for the 95% of users who never enable it.
+  useEffect(() => {
+    if (!corpVpnEnabled) {
+      setCorpConnected(false)
+      return
+    }
+    let alive = true
+    const tick = () => {
+      GetCorpVpnStatus()
+        .then((s) => {
+          if (alive) setCorpConnected(!!s?.connected)
+        })
+        .catch(() => {})
+    }
+    tick()
+    const id = window.setInterval(tick, 5000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [corpVpnEnabled])
 
   useEffect(() => {
     const off = EventsOn('app:state', () => {
@@ -1796,6 +1823,7 @@ function App() {
           ...(brandManifest?.hideAdvanced ? (['advanced'] as const) : []),
           ...(corpVpnEnabled ? [] : (['corp'] as const)),
         ]}
+        activeScreens={corpConnected ? ['corp'] : []}
       />
 
       <section className="content">
@@ -1887,6 +1915,8 @@ function App() {
                 })()
               }}
               onSwitchTraffic={(m) => switchTraffic(m)}
+              corpConnected={corpVpnEnabled && corpConnected}
+              onOpenCorp={() => setScreen('corp')}
               onConnectClick={connectAction}
               onInstallService={() => void installService()}
               onRefreshService={() =>

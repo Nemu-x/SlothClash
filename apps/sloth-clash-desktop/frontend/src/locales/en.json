@@ -21,7 +21,7 @@
     "title": "Corporate VPN",
     "subtitle": "Connect your corporate VPN alongside SlothClash. Company networks go through the corporate VPN; everything else keeps using your proxy.",
     "protocols": "Works with SSL-VPN gateways: Cisco AnyConnect, FortiGate, GlobalProtect, Juniper.",
-    "unsupported": "Corporate VPN is available on macOS in this release.",
+    "unsupported": "Corporate VPN isn’t available on this platform yet.",
     "connected": "Connected",
     "disconnected": "Not connected",
     "gateway": "Server address",

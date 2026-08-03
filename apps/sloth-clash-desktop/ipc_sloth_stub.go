@@ -37,6 +37,10 @@ func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
 	return 0, nil, errCorpVpnUnsupported
 }
 
+// ipcSlothEnsureCorpDriver: no TAP driver on these platforms (never reached — the
+// caller gates on the Windows-only component spec). Present for compilation.
+func ipcSlothEnsureCorpDriver(_ context.Context, _ string) error { return nil }
+
 func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
 	_ = ctx
 	return 0, nil, errCorpVpnUnsupported

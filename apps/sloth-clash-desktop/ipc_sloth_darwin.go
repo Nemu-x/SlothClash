@@ -281,6 +281,11 @@ func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
 	return ipcSlothDo(ctx, http.MethodDelete, "/corp/stop", nil)
 }
 
+// ipcSlothEnsureCorpDriver is a no-op on macOS (native utun needs no driver). The
+// cross-platform caller gates on tapWindowsComponentSpec (Windows-only), so this
+// is never reached; it exists only so the shared corp code compiles here.
+func ipcSlothEnsureCorpDriver(_ context.Context, _ string) error { return nil }
+
 func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
 	return ipcSlothDo(ctx, http.MethodGet, "/corp/status", nil)
 }

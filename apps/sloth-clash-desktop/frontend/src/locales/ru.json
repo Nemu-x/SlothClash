@@ -21,7 +21,7 @@
     "title": "Корпоративный VPN",
     "subtitle": "Подключите корпоративный VPN вместе со SlothClash. Корпоративные сети идут через корпоративный VPN, всё остальное — через ваш прокси.",
     "protocols": "Работает с SSL-VPN шлюзами: Cisco AnyConnect, FortiGate, GlobalProtect, Juniper.",
-    "unsupported": "Корпоративный VPN в этой версии доступен на macOS.",
+    "unsupported": "Корпоративный VPN пока недоступен на этой платформе.",
     "connected": "Подключено",
     "disconnected": "Не подключено",
     "gateway": "Адрес сервера",

@@ -197,20 +197,43 @@ func ipcSlothRemoveTun(ctx context.Context) (int, error) {
 	return env.Data, nil
 }
 
-// Corp-VPN sidecar is macOS-only in P1. openconnectComponentSpec reports
-// unsupported on Windows so these are never reached; keep them total so the
-// cross-platform orchestration compiles.
+// Corp-VPN sidecar over the Windows named-pipe IPC. The service owns the
+// OpenConnect process; the desktop just relays.
 func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, error) {
-	_, _ = ctx, payload
-	return 0, nil, errCorpVpnUnsupported
+	// 55 s > the service's 45 s handler ceiling > OpenConnect's ~35 s connect, so
+	// the client never gives up before the service resolves the connect.
+	cli := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return winio.DialPipeContext(ctx, slothWindowsServicePipe)
+			},
+			DisableKeepAlives: true,
+		},
+		Timeout: 55 * time.Second,
+	}
+	var rdr io.Reader
+	if len(payload) > 0 {
+		rdr = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://sloth/corp/start", rdr)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set(slothIPCHeaderMagic, slothIPCAuthExpect)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	return resp.StatusCode, b, err
 }
 
 func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
-	_ = ctx
-	return 0, nil, errCorpVpnUnsupported
+	return ipcSlothDo(ctx, http.MethodDelete, "/corp/stop", nil)
 }
 
 func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
-	_ = ctx
-	return 0, nil, errCorpVpnUnsupported
+	return ipcSlothDo(ctx, http.MethodGet, "/corp/status", nil)
 }

@@ -27,7 +27,7 @@ import (
 
 // errCorpVpnUnsupported is returned on platforms where P1 does not ship the
 // sidecar yet (everything but macOS).
-var errCorpVpnUnsupported = errors.New("corporate VPN is only available on macOS in this release")
+var errCorpVpnUnsupported = errors.New("corporate VPN is not available on this platform")
 
 // CorpVpnStatus is the Wails-facing view of the sidecar state. camelCase JSON so
 // the generated TS model reads naturally in the frontend.

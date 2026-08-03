@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -160,6 +161,13 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	binPath, err := ensureComponent(ctx, spec, a.componentHTTPClient())
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("prepare OpenConnect: %w", err)
+	}
+
+	// On Windows OpenConnect runs on the TAP-Windows driver (mihomo owns wintun,
+	// and two wintun users collide), so install it before the first connect.
+	// No-op on macOS/Linux (native tun). Auto — no extra step for the user.
+	if err := a.ensureCorpDriver(ctx); err != nil {
+		return CorpVpnStatus{Supported: true}, fmt.Errorf("prepare corp driver: %w", err)
 	}
 
 	payload, err := json.Marshal(map[string]any{
@@ -331,4 +339,21 @@ func (a *App) componentHTTPClient() *http.Client {
 		}
 	}
 	return http.DefaultClient
+}
+
+// ensureCorpDriver installs the corp tunnel driver on platforms that need one
+// (Windows: TAP-Windows, so OpenConnect runs on TAP instead of colliding with
+// mihomo's wintun). Fetches the SHA-verified driver component on demand, then
+// asks the privileged service to install it (idempotent). No-op on macOS/Linux
+// (native tun → tapWindowsComponentSpec ok=false).
+func (a *App) ensureCorpDriver(ctx context.Context) error {
+	spec, ok := tapWindowsComponentSpec()
+	if !ok {
+		return nil
+	}
+	driverPath, err := ensureComponent(ctx, spec, a.componentHTTPClient())
+	if err != nil {
+		return fmt.Errorf("fetch tap-windows driver: %w", err)
+	}
+	return ipcSlothEnsureCorpDriver(ctx, filepath.Dir(driverPath))
 }

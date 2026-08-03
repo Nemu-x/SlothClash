@@ -234,6 +234,32 @@ func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
 	return ipcSlothDo(ctx, http.MethodDelete, "/corp/stop", nil)
 }
 
+// ipcSlothEnsureCorpDriver asks the SYSTEM service to install the signed
+// TAP-Windows driver (from the SHA-verified component dir) so OpenConnect runs on
+// TAP instead of wintun. Idempotent server-side; a no-op once the adapter exists.
+func ipcSlothEnsureCorpDriver(ctx context.Context, driverDir string) error {
+	payload, err := json.Marshal(map[string]string{"driver_dir": driverDir})
+	if err != nil {
+		return err
+	}
+	st, b, err := ipcSlothDo(ctx, http.MethodPost, "/corp/ensure-driver", payload)
+	if err != nil {
+		return err
+	}
+	var env ipcEnvelope
+	_ = json.Unmarshal(b, &env)
+	if st < 200 || st >= 300 {
+		if env.Message != "" {
+			return fmt.Errorf("POST /corp/ensure-driver: HTTP %d — %s", st, env.Message)
+		}
+		return fmt.Errorf("POST /corp/ensure-driver: HTTP %d — %s", st, strings.TrimSpace(string(b)))
+	}
+	if env.Code != 0 {
+		return fmt.Errorf("ensure corp driver: %s", env.Message)
+	}
+	return nil
+}
+
 func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
 	return ipcSlothDo(ctx, http.MethodGet, "/corp/status", nil)
 }

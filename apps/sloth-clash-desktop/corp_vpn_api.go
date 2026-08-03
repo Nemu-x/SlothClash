@@ -122,6 +122,13 @@ func parseCorpEnvelope(httpStatus int, body []byte) (CorpVpnStatus, error) {
 		// Cert-trust prompt: surface the fingerprint, not an error.
 		return status, nil
 	}
+	// An old service (< 2.7.0) has no /corp/* routes and answers 404. That is not a
+	// connect failure — it means the privileged helper predates the corporate-VPN
+	// feature, so give the actionable remedy instead of a raw "HTTP 404". The
+	// global reinstall banner (expectedSlothServiceVersion) nudges the same fix.
+	if httpStatus == http.StatusNotFound {
+		return status, fmt.Errorf("the Sloth service is outdated and does not support Corporate VPN — reinstall the service (Settings → reinstall) to update it")
+	}
 	if httpStatus < 200 || httpStatus >= 300 {
 		msg := strings.TrimSpace(env.Message)
 		if msg == "" {

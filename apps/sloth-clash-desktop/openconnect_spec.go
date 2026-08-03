@@ -20,7 +20,7 @@ func openconnectComponentSpec() (componentSpec, bool) {
 			Name:    "openconnect",
 			Version: "9.12-macos-arm64",
 			URL:     openconnectBundleBase + "/openconnect-macos-arm64.tar.gz",
-			SHA256:  "54d9a626731fbf774356e60ae050c31c4792759bad5b15fb0a7225d395a4a968",
+			SHA256:  "99bff9c0c0d06f3bf73a8e6be7a5d09db8461412c80dcd9500d309a6aa3af839",
 			BinRel:  "openconnect",
 		}, true
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
@@ -36,7 +36,15 @@ func openconnectComponentSpec() (componentSpec, bool) {
 			Name:    "openconnect",
 			Version: "9.12-windows-amd64",
 			URL:     openconnectBundleBase + "/openconnect-windows-amd64.tar.gz",
-			SHA256:  "681ec3ba253dd1e1a4409a4eaa7e60f6380de4e010e474a9bff761acbd07fef2",
+			SHA256:  "aa8f41d56f2ccf0329b0ddd6975c737c9b7aa8802f943f0d4ccd73e0187f92fb",
+			BinRel:  "openconnect.exe",
+		}, true
+	case runtime.GOOS == "windows" && runtime.GOARCH == "arm64":
+		return componentSpec{
+			Name:    "openconnect",
+			Version: "9.12-windows-arm64",
+			URL:     openconnectBundleBase + "/openconnect-windows-arm64.tar.gz",
+			SHA256:  "", // TODO: paste sha once the windows-arm64 job publishes
 			BinRel:  "openconnect.exe",
 		}, true
 	// Linux: the service platform backend + CI bundle are ready, but the desktop
@@ -47,7 +55,7 @@ func openconnectComponentSpec() (componentSpec, bool) {
 	// 	return componentSpec{
 	// 		Name: "openconnect", Version: "9.21-linux-amd64",
 	// 		URL: openconnectBundleBase + "/openconnect-linux-amd64.tar.gz",
-	// 		SHA256: "", BinRel: "openconnect",
+	// 		SHA256: "5dee1c4d88ee09763756d91242c9eb75ccccf1b0b11352a61f6ffb0da5a08f44", BinRel: "openconnect",
 	// 	}, true
 	default:
 		return componentSpec{}, false

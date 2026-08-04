@@ -36,9 +36,19 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // Requiring 2.4.2 makes existing installs surface the reinstall banner so every
 // user gets the recovery path.
 //
-// ⚠️ SEQUENCING: only ship this bump once the 2.4.2 service binaries are actually
-// published and pulled by prebuild — otherwise the banner can never clear.
-const expectedSlothServiceVersion = "2.4.2"
+// 2.5.0 is the clean next release after the one actually in production (2.4.2) —
+// the 2.5/2.6/2.7 bumps in git history were never shipped, so we collapse all the
+// corporate-VPN work into a single 2.5.0. It carries the Windows coexistence
+// fixes: /corp/ensure-driver (installs OpenVPN's TAP-Windows driver so OpenConnect
+// avoids wintun) and the vpnc-script that sets the TAP interface IP. Requiring
+// 2.5.0 makes any install still on 2.4.2 surface the reinstall banner — closing
+// the "old service silently runs after a reinstall" trap where the bundled/rolling
+// service lagged the code.
+//
+// ⚠️ SEQUENCING: only ship this bump once the 2.5.0 service binaries are actually
+// published (Release CI → rolling per-triple tags) and pulled by prebuild —
+// otherwise the banner can never clear.
+const expectedSlothServiceVersion = "2.5.0"
 
 // ServiceRuntimeInfo is the health/version snapshot the UI uses to decide
 // whether to nudge the user to update the privileged helper service.

@@ -245,6 +245,8 @@ export function SettingsPage({
   updateProgress,
   appUpdateEnabled,
   onToggleAppUpdate,
+  corpVpnEnabled,
+  onToggleCorpVpn,
 }: {
   theme: ThemeMode
   lang: Lang
@@ -295,6 +297,8 @@ export function SettingsPage({
   updateProgress: { downloaded: number; total: number; pct: number } | null
   appUpdateEnabled: boolean
   onToggleAppUpdate: (next: boolean) => void
+  corpVpnEnabled: boolean
+  onToggleCorpVpn: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -754,6 +758,17 @@ export function SettingsPage({
                     checked={appUpdateEnabled}
                     label={t('settings.autoUpdate')}
                     onToggle={() => onToggleAppUpdate(!appUpdateEnabled)}
+                  />
+                </div>
+                <div className="settingsToggleRow">
+                  <div>
+                    <span>{t('settings.corpVpnToggle')}</span>
+                    <p className="small muted">{t('settings.corpVpnHint')}</p>
+                  </div>
+                  <SettingsSwitch
+                    checked={corpVpnEnabled}
+                    label={t('settings.corpVpnToggle')}
+                    onToggle={() => onToggleCorpVpn(!corpVpnEnabled)}
                   />
                 </div>
                 {updateSnap?.hasUpdate ? (

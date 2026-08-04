@@ -342,4 +342,11 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	prefs := currentDesktopPrefs()
 	applyUserTunOverlay(m, prefs.TUN)
 	applyUserTrafficOverlay(m, prefs.Traffic)
+
+	// Corp-VPN coexistence LAST: corp route-exclude / split-DNS are mandatory for
+	// no-conflict and must survive any user/subscription overlay. A strict no-op
+	// when no corp sidecar is active, so config parity is unaffected when off.
+	if enableTun {
+		applyCorpVpnOverlay(m, currentCorpVpnSplit())
+	}
 }

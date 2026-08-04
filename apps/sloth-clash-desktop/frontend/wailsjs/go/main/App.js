@@ -102,6 +102,10 @@ export function FetchRulesOverview() {
   return window['go']['main']['App']['FetchRulesOverview']()
 }
 
+export function ForgetCorpVpnCredentials() {
+  return window['go']['main']['App']['ForgetCorpVpnCredentials']()
+}
+
 export function GenerateAgeKeyPair(arg1) {
   return window['go']['main']['App']['GenerateAgeKeyPair'](arg1)
 }
@@ -120,6 +124,14 @@ export function GetAdvancedPaths() {
 
 export function GetAppState() {
   return window['go']['main']['App']['GetAppState']()
+}
+
+export function GetCorpVpnCredentials() {
+  return window['go']['main']['App']['GetCorpVpnCredentials']()
+}
+
+export function GetCorpVpnStatus() {
+  return window['go']['main']['App']['GetCorpVpnStatus']()
 }
 
 export function GetDesktopPrefs() {
@@ -266,6 +278,10 @@ export function SetConnectionSettings(arg1) {
   return window['go']['main']['App']['SetConnectionSettings'](arg1)
 }
 
+export function SetExperimentalSettings(arg1) {
+  return window['go']['main']['App']['SetExperimentalSettings'](arg1)
+}
+
 export function SetHwidEnabled(arg1) {
   return window['go']['main']['App']['SetHwidEnabled'](arg1)
 }
@@ -322,8 +338,16 @@ export function SetUpdateChannel(arg1) {
   return window['go']['main']['App']['SetUpdateChannel'](arg1)
 }
 
+export function StartCorpVpn(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StartCorpVpn'](arg1, arg2, arg3, arg4)
+}
+
 export function StartedMinimized() {
   return window['go']['main']['App']['StartedMinimized']()
+}
+
+export function StopCorpVpn() {
+  return window['go']['main']['App']['StopCorpVpn']()
 }
 
 export function TestProxyDelay(arg1) {

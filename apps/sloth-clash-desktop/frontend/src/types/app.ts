@@ -6,6 +6,7 @@ export type Screen =
   | 'rules'
   | 'logs'
   | 'devices'
+  | 'corp'
   | 'advanced'
   | 'settings'
 

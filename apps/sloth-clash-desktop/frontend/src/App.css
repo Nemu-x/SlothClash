@@ -5601,3 +5601,196 @@
   gap: 10px;
   margin-top: 6px;
 }
+
+/* ── Company VPN (corp-vpn-coexistence) ─────────────────────────── */
+.corp .corpHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.corpPillOn {
+  color: var(--ok, #16a34a);
+  border-color: currentColor;
+}
+.corpCard {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel-deep);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.corpForm {
+  max-width: 420px;
+}
+.corpField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.corpActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.corpStatusRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.corpChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.corpWarn {
+  color: var(--warn, #d97706);
+  margin: 0;
+}
+.corpFingerprint {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  font-family: var(--font-mono, monospace);
+  word-break: break-all;
+  font-size: var(--font-size-sm);
+}
+
+/* Corporate VPN — live indicators + log view */
+.navIcon {
+  position: relative;
+}
+.navActiveDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px var(--panel, #111);
+}
+.homeCorpPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 4px 10px;
+  margin-top: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--panel-deep);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.homeCorpPill:hover {
+  border-color: var(--ok, #16a34a);
+}
+.homeCorpDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok, #16a34a);
+}
+.corpLogs {
+  gap: var(--space-2);
+}
+.corpLogs summary {
+  cursor: pointer;
+  user-select: none;
+}
+.corpLogBody {
+  margin: var(--space-2) 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.corpRemember {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+.corpRemember input {
+  cursor: pointer;
+}
+
+/* Corporate VPN — two-column layout (form + info) */
+.corpGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  gap: var(--space-4);
+  align-items: start;
+  margin-top: var(--space-4);
+}
+@media (max-width: 860px) {
+  .corpGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.corpMain .corpCard,
+.corpMain .corpForm {
+  margin-top: 0;
+  max-width: none;
+}
+.corpAside {
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel-deep);
+}
+.corpAsideTitle {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.corpHow {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.corpHow li {
+  position: relative;
+  padding-left: 18px;
+  font-size: var(--font-size-sm);
+  color: var(--text);
+}
+.corpHow li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #c9a86c);
+}
+.corpAside .corpProtocols {
+  margin: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}

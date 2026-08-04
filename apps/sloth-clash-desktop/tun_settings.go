@@ -89,11 +89,13 @@ func (c ConnectionSettings) FixedMixedPort() (int, bool) {
 
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
 type DesktopPrefs struct {
-	TUN        TunSettings        `json:"tun"`
-	Traffic    TrafficSettings    `json:"traffic"`
-	Connection ConnectionSettings `json:"connection"`
-	Privacy    PrivacySettings    `json:"privacy"`
-	AppUpdate  AppUpdateSettings  `json:"appUpdate"`
+	TUN          TunSettings          `json:"tun"`
+	Traffic      TrafficSettings      `json:"traffic"`
+	Connection   ConnectionSettings   `json:"connection"`
+	Privacy      PrivacySettings      `json:"privacy"`
+	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
+	Experimental ExperimentalSettings `json:"experimental"`
+	CorpVpn      CorpVpnCredentials   `json:"corpVpn"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -138,6 +140,33 @@ func (s AppUpdateSettings) IsAutoCheckEnabled() bool {
 		return true
 	}
 	return *s.AutoCheckEnabled
+}
+
+// ExperimentalSettings gates optional, off-by-default features so they don't
+// clutter the UI for regular users.
+type ExperimentalSettings struct {
+	// CorpVpnEnabled reveals the Corporate VPN (OpenConnect sidecar) tab. Off by
+	// default: OpenConnect is an optional power-user add-on downloaded on demand,
+	// so a regular user should never see it unless they opt in here.
+	CorpVpnEnabled *bool `json:"corpVpnEnabled,omitempty"`
+}
+
+// IsCorpVpnEnabled reports whether the Corporate VPN tab should be shown. The
+// default (nil pointer or absent field) is false — opt-in only.
+func (s ExperimentalSettings) IsCorpVpnEnabled() bool {
+	return s.CorpVpnEnabled != nil && *s.CorpVpnEnabled
+}
+
+// CorpVpnCredentials remembers the corporate VPN server + username so the login
+// form pre-fills next time. The PASSWORD is deliberately never stored — it is
+// always entered fresh.
+type CorpVpnCredentials struct {
+	Gateway  string `json:"gateway,omitempty"`
+	Username string `json:"username,omitempty"`
+	// Servercert is the trusted certificate pin (`pin-sha256:…` / `sha256:…`) from
+	// the last successful connect. Not a secret (it's a public fingerprint); stored
+	// so trust-on-first-use only prompts once. Never store the password.
+	Servercert string `json:"servercert,omitempty"`
 }
 
 const slothPrefsFile = "prefs.json"
@@ -243,6 +272,19 @@ func savePrefsBestEffort(snapshot DesktopPrefs) {
 func (a *App) GetDesktopPrefs() DesktopPrefs {
 	_ = a
 	return currentDesktopPrefs()
+}
+
+// SetExperimentalSettings is the Wails-exposed setter for the Experimental
+// section of the Settings UI (e.g. revealing the Corporate VPN tab). Persisted
+// to prefs.json; no core reload needed — it only toggles UI surface.
+func (a *App) SetExperimentalSettings(next ExperimentalSettings) DesktopPrefs {
+	_ = a
+	prefsMu.Lock()
+	prefsCurrent.Experimental = next
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+	return snapshot
 }
 
 // SetTunSettings is the Wails-exposed setter for the TUN section of the

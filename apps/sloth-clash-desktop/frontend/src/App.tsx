@@ -22,6 +22,7 @@ import {
   SetConnectionSettings,
   SetTunSettings,
 } from './api/core'
+import { GetCorpVpnStatus } from './api/corp'
 import {
   GetRuntimeDiagEvents,
   OpenPathInExplorer,
@@ -39,6 +40,7 @@ import {
   OnWindowBecameVisible,
   SetAppAutoUpdateEnabled,
   SetCloseToTrayPreference,
+  SetExperimentalSettings,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetUiLanguage,
@@ -126,6 +128,9 @@ const ConnectionsPage = lazy(() =>
 )
 const DevicesPage = lazy(() =>
   import('./pages/Devices').then((m) => ({ default: m.DevicesPage })),
+)
+const CorpVpnPage = lazy(() =>
+  import('./pages/CorpVpn').then((m) => ({ default: m.CorpVpnPage })),
 )
 const LogsPage = lazy(() =>
   import('./pages/Logs').then((m) => ({ default: m.LogsPage })),
@@ -308,6 +313,10 @@ function App() {
   // import / refresh — other identity headers remain.
   const [hwidEnabled, setHwidEnabled] = useState<boolean>(true)
   const [appUpdateEnabled, setAppUpdateEnabled] = useState<boolean>(true)
+  // Experimental: Corporate VPN (OpenConnect) tab is opt-in, hidden by default.
+  const [corpVpnEnabled, setCorpVpnEnabled] = useState<boolean>(false)
+  // Live corp-VPN connection state, for the nav dot + Home indicator.
+  const [corpConnected, setCorpConnected] = useState<boolean>(false)
   const [updateProgress, setUpdateProgress] = useState<{
     downloaded: number
     total: number
@@ -489,11 +498,42 @@ function App() {
         // AppUpdate.autoCheckEnabled is *bool too: undefined/null → default on.
         const rawAppUpd = (prefs as any)?.appUpdate?.autoCheckEnabled
         setAppUpdateEnabled(rawAppUpd === false ? false : true)
+        // Experimental.corpVpnEnabled is opt-in: only an explicit true shows it.
+        const rawCorp = (prefs as any)?.experimental?.corpVpnEnabled
+        const corpOn = rawCorp === true
+        setCorpVpnEnabled(corpOn)
+        // If it was disabled while the tab was open, fall back to Home so the
+        // user isn't stranded on a now-hidden screen.
+        if (!corpOn) setScreen((s) => (s === 'corp' ? 'home' : s))
       } catch {
         /* ignore: prefs API unavailable */
       }
     })()
   }, [])
+
+  // Poll corp-VPN status (only when the feature is on) to drive the nav dot and
+  // the Home indicator. Cheap: one call every few seconds, and nothing at all
+  // for the 95% of users who never enable it.
+  useEffect(() => {
+    if (!corpVpnEnabled) {
+      setCorpConnected(false)
+      return
+    }
+    let alive = true
+    const tick = () => {
+      GetCorpVpnStatus()
+        .then((s) => {
+          if (alive) setCorpConnected(!!s?.connected)
+        })
+        .catch(() => {})
+    }
+    tick()
+    const id = window.setInterval(tick, 5000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [corpVpnEnabled])
 
   useEffect(() => {
     const off = EventsOn('app:state', () => {
@@ -1779,7 +1819,11 @@ function App() {
         onChange={setScreen}
         collapsed={navCollapsed}
         onToggleCollapse={() => setNavCollapsed((v) => !v)}
-        hiddenScreens={brandManifest?.hideAdvanced ? ['advanced'] : undefined}
+        hiddenScreens={[
+          ...(brandManifest?.hideAdvanced ? (['advanced'] as const) : []),
+          ...(corpVpnEnabled ? [] : (['corp'] as const)),
+        ]}
+        activeScreens={corpConnected ? ['corp'] : []}
       />
 
       <section className="content">
@@ -1871,6 +1915,8 @@ function App() {
                 })()
               }}
               onSwitchTraffic={(m) => switchTraffic(m)}
+              corpConnected={corpVpnEnabled && corpConnected}
+              onOpenCorp={() => setScreen('corp')}
               onConnectClick={connectAction}
               onInstallService={() => void installService()}
               onRefreshService={() =>
@@ -1965,6 +2011,12 @@ function App() {
           {screen === 'devices' ? (
             <Suspense fallback={<div className="panel" />}>
               <DevicesPage />
+            </Suspense>
+          ) : null}
+
+          {screen === 'corp' && corpVpnEnabled ? (
+            <Suspense fallback={<div className="panel" />}>
+              <CorpVpnPage />
             </Suspense>
           ) : null}
 
@@ -2244,6 +2296,17 @@ function App() {
                       setAppUpdateEnabled(raw === false ? false : true)
                     })
                     .catch(() => setAppUpdateEnabled(!next))
+                }}
+                corpVpnEnabled={corpVpnEnabled}
+                onToggleCorpVpn={(next: boolean) => {
+                  setCorpVpnEnabled(next)
+                  void SetExperimentalSettings({ corpVpnEnabled: next } as any)
+                    .then((prefs: any) => {
+                      setCorpVpnEnabled(
+                        prefs?.experimental?.corpVpnEnabled === true,
+                      )
+                    })
+                    .catch(() => setCorpVpnEnabled(!next))
                 }}
               />
             </Suspense>

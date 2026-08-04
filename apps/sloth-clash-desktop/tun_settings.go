@@ -40,10 +40,17 @@ type ConnectionSettings struct {
 	// LAN lets any device on the network egress through the user's tunnel.
 	// Turning it on is an explicit, informed user choice.
 	AllowLan *bool `json:"allowLan,omitempty"`
-	// DNSIPv6 controls `dns.ipv6`: whether the resolver answers AAAA queries.
-	// nil = off. Off by default because a broken/half-working IPv6 path is a
-	// classic source of "some sites hang" reports; users on real IPv6 networks
-	// turn it on. Pairs with dns.fake-ip-range6 in the generated config.
+	// DNSIPv6 is the master IPv6 switch: it drives BOTH the top-level `ipv6`
+	// flag AND `dns.ipv6` (the overlay force-aligns them — see
+	// subscription_overlay.go). nil = ON, matching clash-verge-rev, whose
+	// template ships top-level `ipv6: true`. This is deliberate: with `ipv6:
+	// false` mihomo does not process IPv6, so the TUN gets no inet6-address and
+	// auto-route installs no v6 route — native IPv6 then bypasses the tunnel and
+	// blocked sites leak over real v6 (architecture/ipv6.md). With it ON, fake-ip
+	// returns a fake v6 from `dns.fake-ip-range6` that is routed into the tunnel
+	// and proxied over the node's own transport, so the node needs no real v6.
+	// Users on a broken/half-working IPv6 path can turn it OFF (→ back to the
+	// no-v6 posture). JSON key kept as `dnsIpv6` for settings backward-compat.
 	DNSIPv6 *bool `json:"dnsIpv6,omitempty"`
 	// SmartDNS controls `dns.respect-rules`: resolve proxied domains through the
 	// proxy (no DNS leak / ISP poisoning for them) while direct domains stay
@@ -64,9 +71,11 @@ func (c ConnectionSettings) IsAllowLanEnabled() bool {
 	return c.AllowLan != nil && *c.AllowLan
 }
 
-// IsDNSIPv6Enabled reports the effective value (default: false).
+// IsDNSIPv6Enabled reports the effective value (default: true — verge parity).
+// Master IPv6 switch: drives top-level `ipv6` + `dns.ipv6`. nil means the user
+// never touched it → ON, so IPv6 is captured by the TUN and cannot leak.
 func (c ConnectionSettings) IsDNSIPv6Enabled() bool {
-	return c.DNSIPv6 != nil && *c.DNSIPv6
+	return c.DNSIPv6 == nil || *c.DNSIPv6
 }
 
 // IsSmartDNSEnabled reports the effective value (default: false).

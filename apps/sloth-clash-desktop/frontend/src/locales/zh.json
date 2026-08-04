@@ -81,7 +81,7 @@
     "closeToTray": "关闭到托盘（否则退出）",
     "connection": "连接",
     "smartDns": "智能 DNS 回退",
-    "ipv6Dns": "启用 IPv6 DNS",
+    "ipv6Dns": "启用 IPv6",
     "allowLanBinding": "允许 LAN 绑定",
     "lockPort": "锁定代理端口",
     "lockPortValue": "端口",

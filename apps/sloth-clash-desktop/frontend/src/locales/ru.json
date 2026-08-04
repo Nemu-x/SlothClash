@@ -81,7 +81,7 @@
     "closeToTray": "Закрывать в трей (иначе выход)",
     "connection": "Подключение",
     "smartDns": "Умный DNS fallback",
-    "ipv6Dns": "Включить IPv6 DNS",
+    "ipv6Dns": "Включить IPv6",
     "allowLanBinding": "Разрешить LAN binding",
     "lockPort": "Фиксировать порт прокси",
     "lockPortValue": "Порт",

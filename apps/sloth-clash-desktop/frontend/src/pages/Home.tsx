@@ -162,17 +162,6 @@ export function HomePage({
           {linkToast}
         </p>
       ) : null}
-      {corpConnected ? (
-        <button
-          type="button"
-          className="homeCorpPill"
-          onClick={() => onOpenCorp?.()}
-          title={t('corp.title')}
-        >
-          <span className="homeCorpDot" aria-hidden />
-          {t('corp.homeIndicator')}
-        </button>
-      ) : null}
       <header className="homeHeader">
         <div>
           <p className="eyebrow">{t('ui.home.activeProfile')}</p>
@@ -210,6 +199,17 @@ export function HomePage({
               ? t('ui.common.subscription')
               : t('ui.common.local')}
           </p>
+          {corpConnected ? (
+            <button
+              type="button"
+              className="homeCorpPill"
+              onClick={() => onOpenCorp?.()}
+              title={t('corp.title')}
+            >
+              <span className="homeCorpDot" aria-hidden />
+              {t('corp.homeIndicator')}
+            </button>
+          ) : null}
         </div>
         <div className="homeHeaderActions">
           {/* Operator (brand) entry point — opens the dialog with the panel's

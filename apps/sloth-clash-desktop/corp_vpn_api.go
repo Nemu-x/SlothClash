@@ -156,6 +156,14 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 		return CorpVpnStatus{Supported: true}, errors.New("gateway and username are required")
 	}
 
+	// Trust-on-first-use: if the caller didn't pass a pin, reuse the one we
+	// remembered from a prior successful connect — so the user trusts the server
+	// certificate once, not every session.
+	servercert = strings.TrimSpace(servercert)
+	if servercert == "" {
+		servercert = strings.TrimSpace(currentDesktopPrefs().CorpVpn.Servercert)
+	}
+
 	ctx := a.baseCtx()
 	spec, _ := openconnectComponentSpec()
 	binPath, err := a.ensureCorpComponent(ctx, spec)
@@ -175,7 +183,7 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 		"gateway":    gateway,
 		"username":   username,
 		"password":   password,
-		"servercert": strings.TrimSpace(servercert),
+		"servercert": servercert,
 	})
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, err
@@ -200,6 +208,12 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	// Cert-trust round trip: nothing to route yet.
 	if status.NeedsCertTrust {
 		return status, nil
+	}
+
+	// Connected against a pinned certificate → remember the pin so future
+	// connects skip the trust prompt entirely (trust-on-first-use).
+	if servercert != "" {
+		saveCorpVpnServercert(servercert)
 	}
 
 	// Learned the split → record it and hot-reload mihomo so the exclude/DNS
@@ -249,7 +263,9 @@ func (a *App) ForgetCorpVpnCredentials() {
 	prefsMu.Unlock()
 }
 
-// saveCorpVpnCredentials persists the corp server + username (never the password).
+// saveCorpVpnCredentials persists the corp server + username (never the
+// password). Updates only those fields so a previously remembered cert pin
+// survives.
 func saveCorpVpnCredentials(gateway, username string) {
 	gateway = strings.TrimSpace(gateway)
 	username = strings.TrimSpace(username)
@@ -257,7 +273,22 @@ func saveCorpVpnCredentials(gateway, username string) {
 		return
 	}
 	prefsMu.Lock()
-	prefsCurrent.CorpVpn = CorpVpnCredentials{Gateway: gateway, Username: username}
+	prefsCurrent.CorpVpn.Gateway = gateway
+	prefsCurrent.CorpVpn.Username = username
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+}
+
+// saveCorpVpnServercert remembers the trusted certificate pin from a successful
+// connect so trust-on-first-use only prompts once.
+func saveCorpVpnServercert(pin string) {
+	pin = strings.TrimSpace(pin)
+	if pin == "" {
+		return
+	}
+	prefsMu.Lock()
+	prefsCurrent.CorpVpn.Servercert = pin
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()

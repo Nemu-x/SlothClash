@@ -163,6 +163,10 @@ func (s ExperimentalSettings) IsCorpVpnEnabled() bool {
 type CorpVpnCredentials struct {
 	Gateway  string `json:"gateway,omitempty"`
 	Username string `json:"username,omitempty"`
+	// Servercert is the trusted certificate pin (`pin-sha256:…` / `sha256:…`) from
+	// the last successful connect. Not a secret (it's a public fingerprint); stored
+	// so trust-on-first-use only prompts once. Never store the password.
+	Servercert string `json:"servercert,omitempty"`
 }
 
 const slothPrefsFile = "prefs.json"

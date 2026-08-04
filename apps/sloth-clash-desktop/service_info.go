@@ -36,13 +36,6 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // Requiring 2.4.2 makes existing installs surface the reinstall banner so every
 // user gets the recovery path.
 //
-// 2.7.0 adds the corporate-VPN sidecar endpoints (/corp/start|stop|status): the
-// SYSTEM/root service owns the OpenConnect process, installs the corp routes onto
-// the tunnel interface, and owns the split-DNS overlay. An older service has no
-// /corp/* routes and answers 404, so the corp tab could never function; requiring
-// 2.7.0 makes existing installs surface the reinstall banner (the "update service"
-// nudge) that migrates them to the corp-capable build.
-//
 // 2.5.0 is the clean next release after the one actually in production (2.4.2) —
 // the 2.5/2.6/2.7 bumps in git history were never shipped, so we collapse all the
 // corporate-VPN work into a single 2.5.0. It carries the Windows coexistence

@@ -2212,7 +2212,7 @@ function App() {
                 onSetAllowLan={(next) =>
                   void commitConnectionPrefs({ allowLan: next })
                 }
-                dnsIpv6={connectionPrefs.dnsIpv6 === true}
+                dnsIpv6={connectionPrefs.dnsIpv6 !== false}
                 onSetDnsIpv6={(next) =>
                   void commitConnectionPrefs({ dnsIpv6: next })
                 }

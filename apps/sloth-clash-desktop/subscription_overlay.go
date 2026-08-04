@@ -18,7 +18,9 @@ const tunWindowsDeviceName = "SlothClash"
 const tunDefaultDNSYAML = `dns:
   enable: true
   listen: ":1053"
-  ipv6: false
+  # ipv6 here is always overwritten by the master toggle in ensureDefaultDNSForTun
+  # (default ON — verge parity). Kept true so the raw template is coherent on its own.
+  ipv6: true
   respect-rules: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
@@ -88,6 +90,13 @@ func ensureDefaultDNSForTun(m map[string]any) {
 			dns = dm
 		}
 	}
+	// The master IPv6 switch (default ON — verge parity) drives BOTH top-level
+	// `ipv6` and `dns.ipv6`; align them in EVERY branch so the no-dns-block path
+	// below can't ship the incoherent state that once caused the assets.msn.com
+	// dial failure (architecture/ipv6.md).
+	topIPv6 := currentDesktopPrefs().Connection.IsDNSIPv6Enabled()
+	m["ipv6"] = topIPv6
+
 	if dns == nil {
 		var wrap map[string]any
 		if err := yaml.Unmarshal([]byte(tunDefaultDNSYAML), &wrap); err != nil {
@@ -95,6 +104,7 @@ func ensureDefaultDNSForTun(m map[string]any) {
 		}
 		if d, ok := wrap["dns"].(map[string]any); ok {
 			d["fake-ip-filter"] = append([]any(nil), defaultFakeIPFilter...)
+			d["ipv6"] = topIPv6
 			m["dns"] = d
 		}
 		return
@@ -141,16 +151,16 @@ func ensureDefaultDNSForTun(m map[string]any) {
 			dns["fake-ip-filter-mode"] = "blacklist"
 		}
 	}
-	// verge parity (enhance/tun.rs): dns.ipv6 follows the top-level `ipv6` flag,
-	// defaulting to false. A machine with no working IPv6 route that receives AAAA
-	// records dials v6 and fails "address not valid in its context" (real user
-	// log: assets.msn.com). Force-align to top-level rather than defaulting true.
+	// verge parity (enhance/tun.rs): dns.ipv6 mirrors the top-level `ipv6` flag,
+	// which we default ON (verge's template ships `ipv6: true`). With it OFF,
+	// mihomo does not process IPv6, the TUN gets no inet6-address / v6 route, and
+	// native IPv6 bypasses the tunnel — blocked sites leak over real v6. With it
+	// ON, fake-ip returns a fake v6 (fake-ip-range6) routed into the tunnel, so
+	// the node needs no real v6 and nothing leaks (architecture/ipv6.md).
 	//
-	// The Settings toggle overrides both: an explicit user choice beats whatever
-	// the subscription ships, in either direction, so a broken-IPv6 machine can
-	// switch it off even when the profile enables it.
-	topIPv6 := currentDesktopPrefs().Connection.IsDNSIPv6Enabled()
-	m["ipv6"] = topIPv6
+	// The Settings toggle overrides both in either direction: a broken-IPv6
+	// machine can switch it OFF even when the subscription enables it, and vice
+	// versa. topIPv6 + m["ipv6"] were already set at the top of this function.
 	dns["ipv6"] = topIPv6
 	// "Smart DNS fallback" in Settings maps to dns.respect-rules: proxied domains
 	// resolve through the proxy (no leak / ISP poisoning for them), direct ones

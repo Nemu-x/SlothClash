@@ -81,7 +81,7 @@
     "closeToTray": "Close to tray (else quit)",
     "connection": "Connection",
     "smartDns": "Smart DNS fallback",
-    "ipv6Dns": "Enable IPv6 DNS",
+    "ipv6Dns": "Enable IPv6",
     "allowLanBinding": "Allow LAN binding",
     "lockPort": "Lock proxy port",
     "lockPortValue": "Port",

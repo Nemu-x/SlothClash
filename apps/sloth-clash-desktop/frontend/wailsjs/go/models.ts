@@ -678,6 +678,64 @@ export namespace main {
     }
   }
 
+  export class CorpVpnCredentials {
+    gateway?: string
+    username?: string
+
+    static createFrom(source: any = {}) {
+      return new CorpVpnCredentials(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.gateway = source['gateway']
+      this.username = source['username']
+    }
+  }
+  export class CorpVpnStatus {
+    connected: boolean
+    needsCertTrust: boolean
+    servercertSha256: string
+    routes: string[]
+    dnsServers: string[]
+    dnsDomains: string[]
+    fullTunnel: boolean
+    tundev: string
+    gatewayIp: string
+    logTail: string[]
+    supported: boolean
+
+    static createFrom(source: any = {}) {
+      return new CorpVpnStatus(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.connected = source['connected']
+      this.needsCertTrust = source['needsCertTrust']
+      this.servercertSha256 = source['servercertSha256']
+      this.routes = source['routes']
+      this.dnsServers = source['dnsServers']
+      this.dnsDomains = source['dnsDomains']
+      this.fullTunnel = source['fullTunnel']
+      this.tundev = source['tundev']
+      this.gatewayIp = source['gatewayIp']
+      this.logTail = source['logTail']
+      this.supported = source['supported']
+    }
+  }
+  export class ExperimentalSettings {
+    corpVpnEnabled?: boolean
+
+    static createFrom(source: any = {}) {
+      return new ExperimentalSettings(source)
+    }
+
+    constructor(source: any = {}) {
+      if ('string' === typeof source) source = JSON.parse(source)
+      this.corpVpnEnabled = source['corpVpnEnabled']
+    }
+  }
   export class PrivacySettings {
     hwidEnabled?: boolean
 
@@ -734,6 +792,8 @@ export namespace main {
     connection: ConnectionSettings
     privacy: PrivacySettings
     appUpdate: AppUpdateSettings
+    experimental: ExperimentalSettings
+    corpVpn: CorpVpnCredentials
     lang?: string
 
     static createFrom(source: any = {}) {
@@ -753,6 +813,11 @@ export namespace main {
         source['appUpdate'],
         AppUpdateSettings,
       )
+      this.experimental = this.convertValues(
+        source['experimental'],
+        ExperimentalSettings,
+      )
+      this.corpVpn = this.convertValues(source['corpVpn'], CorpVpnCredentials)
       this.lang = source['lang']
     }
 

@@ -148,29 +148,69 @@ function main() {
       `failed to parse mounted device from hdiutil output:\n${attachOut}`,
     )
   }
+  // The mount point is the tail of the attach line (e.g. "/Volumes/SlothClash").
+  const mountPoint = deviceLine
+    ? (deviceLine.match(/(\/Volumes\/[^\t]+)\s*$/)?.[1]?.trim() ?? '')
+    : ''
   styleMountedDmg(volumeName, appName, fs.existsSync(dmgBg))
+
+  const quiet = (cmd, args) => {
+    try {
+      execFileSync(cmd, args, { stdio: 'ignore' })
+    } catch {
+      /* best-effort */
+    }
+  }
+  const sleep = (secs) => quiet('sleep', [String(secs)])
+
   // hdiutil detach transiently fails with "Resource busy" on CI runners when
-  // Spotlight (mds) / Finder is still holding the freshly-styled volume. Retry
-  // with a short wait, escalating to -force, instead of failing the whole job.
+  // Spotlight (mds) / Finder / an antivirus is still holding the freshly-styled
+  // volume. Proactively quiesce the volume, then retry with escalating backoff,
+  // falling back to `diskutil` which reaps holders more aggressively than
+  // hdiutil. Only fail the job if every strategy is exhausted.
+  if (mountPoint) {
+    quiet('mdutil', ['-i', 'off', mountPoint]) // stop Spotlight indexing
+    quiet('mdutil', ['-E', mountPoint])
+  }
+  quiet('sync', [])
+  sleep(2)
+
   {
     let detached = false
-    for (let attempt = 0; attempt < 4 && !detached; attempt++) {
+    let lastErr = null
+    const backoff = [0, 3, 5, 8, 12, 15]
+    for (let attempt = 0; attempt < backoff.length && !detached; attempt++) {
+      if (backoff[attempt] > 0) sleep(backoff[attempt])
       try {
         const args =
           attempt === 0 ? ['detach', device] : ['detach', device, '-force']
         execFileSync('hdiutil', args, { stdio: 'inherit' })
         detached = true
       } catch (err) {
-        if (attempt === 3) throw err
+        lastErr = err
         console.warn(
-          `[create-macos-dmg] hdiutil detach attempt ${attempt + 1} failed (likely "Resource busy"); waiting then retrying with -force...`,
+          `[create-macos-dmg] hdiutil detach attempt ${attempt + 1}/${backoff.length} failed (likely "Resource busy"); quiescing and retrying...`,
         )
-        try {
-          execFileSync('sleep', ['2'], { stdio: 'inherit' })
-        } catch {
-          /* sleep is best-effort */
-        }
+        // Escalate: ask diskutil to unmount/eject — it force-terminates holders.
+        quiet('diskutil', ['unmountDisk', 'force', device])
+        quiet('diskutil', ['eject', device])
       }
+    }
+    if (!detached) {
+      // Last resort: if diskutil actually ejected it above, the device is gone
+      // and convert can proceed. Verify before giving up.
+      let stillAttached
+      try {
+        stillAttached = execFileSync('hdiutil', ['info'], {
+          encoding: 'utf8',
+        }).includes(device)
+      } catch {
+        stillAttached = false
+      }
+      if (stillAttached) throw lastErr
+      console.warn(
+        '[create-macos-dmg] device no longer attached after diskutil eject; continuing.',
+      )
     }
   }
   execFileSync(

@@ -102,6 +102,16 @@ export function IconDevices(p: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function IconCorp(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...stroke(p)}>
+      <rect x="4" y="2" width="12" height="20" rx="1" />
+      <path d="M16 8h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4" />
+      <path d="M8 6h4M8 10h4M8 14h4" />
+    </svg>
+  )
+}
+
 export function IconChevronNav(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...stroke(p)}>

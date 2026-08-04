@@ -158,7 +158,7 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 
 	ctx := a.baseCtx()
 	spec, _ := openconnectComponentSpec()
-	binPath, err := ensureComponent(ctx, spec, a.componentHTTPClient())
+	binPath, err := a.ensureCorpComponent(ctx, spec)
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("prepare OpenConnect: %w", err)
 	}
@@ -351,9 +351,30 @@ func (a *App) ensureCorpDriver(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	driverPath, err := ensureComponent(ctx, spec, a.componentHTTPClient())
+	driverPath, err := a.ensureCorpComponent(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("fetch tap-windows driver: %w", err)
 	}
 	return ipcSlothEnsureCorpDriver(ctx, filepath.Dir(driverPath))
+}
+
+// ensureCorpComponent fetches a corp component, trying the proxy-aware client
+// first (works on networks that can't resolve github.com directly) and falling
+// back to a direct client if the proxy path fails — e.g. mihomo is down or its
+// TUN is stuck, so the local mixed-port proxy refuses. Without the fallback a
+// flaky core would block the corp download entirely (the "proxyconnect refused"
+// error users hit while the TUN adapter was wedged).
+func (a *App) ensureCorpComponent(ctx context.Context, spec componentSpec) (string, error) {
+	proxyCli := a.componentHTTPClient()
+	path, err := ensureComponent(ctx, spec, proxyCli)
+	if err == nil {
+		return path, nil
+	}
+	// Only worth retrying if the first attempt actually went through the proxy.
+	if proxyCli != http.DefaultClient {
+		if p2, e2 := ensureComponent(ctx, spec, http.DefaultClient); e2 == nil {
+			return p2, nil
+		}
+	}
+	return "", err
 }

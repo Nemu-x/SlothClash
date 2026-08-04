@@ -29,6 +29,11 @@
     "password": "Пароль",
     "connect": "Подключить",
     "connecting": "Подключение…",
+    "phase": {
+      "preparing": "Подготовка OpenConnect…",
+      "driver": "Установка драйвера…",
+      "connecting": "Подключение к серверу…"
+    },
     "disconnect": "Отключить",
     "routes": "Корпоративные сети",
     "dnsDomains": "Корпоративные домены",

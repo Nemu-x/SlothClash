@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Corp-VPN coexistence lifecycle (corp-vpn-coexistence, task 4b).
@@ -165,6 +167,7 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	}
 
 	ctx := a.baseCtx()
+	a.emitCorpPhase("preparing")
 	spec, _ := openconnectComponentSpec()
 	binPath, err := a.ensureCorpComponent(ctx, spec)
 	if err != nil {
@@ -174,9 +177,11 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	// On Windows OpenConnect runs on the TAP-Windows driver (mihomo owns wintun,
 	// and two wintun users collide), so install it before the first connect.
 	// No-op on macOS/Linux (native tun). Auto — no extra step for the user.
+	a.emitCorpPhase("driver")
 	if err := a.ensureCorpDriver(ctx); err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("prepare corp driver: %w", err)
 	}
+	a.emitCorpPhase("connecting")
 
 	payload, err := json.Marshal(map[string]any{
 		"bin_path":   binPath,
@@ -349,6 +354,17 @@ func (a *App) baseCtx() context.Context {
 		return a.ctx
 	}
 	return context.Background()
+}
+
+// emitCorpPhase tells the UI which step of the connect is running ("preparing" →
+// "driver" → "connecting"), so the user sees live progress instead of a frozen
+// "Connecting…" and doesn't spam the button. Best-effort; no-op before the Wails
+// runtime has attached a.ctx.
+func (a *App) emitCorpPhase(phase string) {
+	if a.ctx == nil {
+		return
+	}
+	wailsrt.EventsEmit(a.ctx, "corp:phase", phase)
 }
 
 // componentHTTPClient returns the client used to download the OpenConnect

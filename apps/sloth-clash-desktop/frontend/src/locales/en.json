@@ -29,6 +29,11 @@
     "password": "Password",
     "connect": "Connect",
     "connecting": "Connecting…",
+    "phase": {
+      "preparing": "Preparing OpenConnect…",
+      "driver": "Installing driver…",
+      "connecting": "Connecting to server…"
+    },
     "disconnect": "Disconnect",
     "routes": "Company networks",
     "dnsDomains": "Company domains",

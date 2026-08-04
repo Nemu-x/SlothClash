@@ -9,6 +9,7 @@ import {
   StopCorpVpn,
   type main,
 } from '../api/corp'
+import { EventsOn } from '../api/runtime'
 
 type Status = main.CorpVpnStatus
 
@@ -24,6 +25,9 @@ export function CorpVpnPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  // Live connect step ("preparing" | "driver" | "connecting"), so the button
+  // shows progress instead of a frozen "Connecting…" and users don't spam it.
+  const [phase, setPhase] = useState('')
   const [error, setError] = useState('')
   // Remember server + username (never the password) between sessions.
   const [remember, setRemember] = useState(true)
@@ -56,6 +60,18 @@ export function CorpVpnPage() {
     return () => window.clearInterval(id)
   }, [status?.connected, refresh])
 
+  // Live connect-progress step from the backend, so the button reflects what's
+  // actually happening (preparing → driver → connecting) during the long first
+  // connect instead of looking frozen.
+  useEffect(() => {
+    const off = EventsOn('corp:phase', (p: unknown) =>
+      setPhase(String(p ?? '')),
+    )
+    return () => {
+      if (typeof off === 'function') off()
+    }
+  }, [])
+
   const connect = useCallback(
     async (servercert: string) => {
       setBusy(true)
@@ -83,6 +99,7 @@ export function CorpVpnPage() {
         setError(errText(e))
       } finally {
         setBusy(false)
+        setPhase('')
       }
     },
     [gateway, username, password, remember],
@@ -256,7 +273,9 @@ export function CorpVpnPage() {
                   className="btn"
                   disabled={busy || !gateway.trim() || !username.trim()}
                 >
-                  {busy ? t('corp.connecting') : t('corp.connect')}
+                  {busy
+                    ? t(phase ? `corp.phase.${phase}` : 'corp.connecting')
+                    : t('corp.connect')}
                 </button>
               </div>
             </form>

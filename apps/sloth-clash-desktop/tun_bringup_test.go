@@ -78,21 +78,24 @@ func TestScanTunBringUpLog(t *testing.T) {
 func TestClassifyTunFailure(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name    string
-		log     string
-		wantSub string
+		name     string
+		log      string
+		recovery tunRecoverOutcome
+		wantSub  string
 	}{
-		{"anyconnect", "Start TUN listening error: configure tun interface: operation not permitted", "AnyConnect"},
-		{"access-denied", "configure tun interface: Access is denied.", "leftover network adapter"},
-		{"in-use", "configure tun interface: the adapter already exists", "already in use"},
-		{"wintun", "failed to load wintun.dll", "wintun driver"},
-		{"generic", "some unexpected tun failure text", "could not be brought up"},
+		{"anyconnect", "Start TUN listening error: configure tun interface: operation not permitted", tunRecoverNotAttempted, "AnyConnect"},
+		{"access-denied-removed", "configure tun interface: Access is denied.", tunRecoverRemoved, "asked the service to remove it"},
+		{"access-denied-outdated", "configure tun interface: Access is denied.", tunRecoverServiceOutdated, "too old to clear it"},
+		{"access-denied-failed", "configure tun interface: Access is denied.", tunRecoverFailed, "didn't go through"},
+		{"in-use", "configure tun interface: the adapter already exists", tunRecoverNotAttempted, "already in use"},
+		{"wintun", "failed to load wintun.dll", tunRecoverNotAttempted, "wintun driver"},
+		{"generic", "some unexpected tun failure text", tunRecoverNotAttempted, "could not be brought up"},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := classifyTunFailure(tc.log)
+			got := classifyTunFailure(tc.log, tc.recovery)
 			if !containsFold(got, tc.wantSub) {
 				t.Fatalf("classifyTunFailure(%s) = %q, want substring %q", tc.name, got, tc.wantSub)
 			}

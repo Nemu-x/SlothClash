@@ -213,7 +213,7 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	// real user. Before restarting, ask the SYSTEM service to force-remove the
 	// stale adapter so the restart below creates a fresh one. Targeted at the
 	// access-denied signature only, best-effort, and a no-op off Windows.
-	a.maybeRecoverStuckTunAdapter(profile.ID, gen)
+	recovery := a.maybeRecoverStuckTunAdapter(profile.ID, gen)
 	for attempt := 1; attempt <= maxRestarts; attempt++ {
 		if a.connectGen.Load() != gen {
 			return errConnectAborted
@@ -237,11 +237,23 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 	}
 	hint := "The TUN adapter could not be brought up. Try reconnecting or use Proxy mode."
 	if logPath, err := coreLogPathForProfile(profile.ID); err == nil {
-		hint = classifyTunFailure(currentBootLog(readFileTail(logPath, 64*1024)))
+		hint = classifyTunFailure(currentBootLog(readFileTail(logPath, 64*1024)), recovery)
 	}
 	a.traceEvent("pipeline.connect.tun_verify", "fail", 0, map[string]any{"gen": gen, "hint": hint})
 	return errors.New(hint)
 }
+
+// tunRecoverOutcome records what the stale-adapter recovery attempt actually did,
+// so the final failure hint can be honest about it instead of always claiming the
+// service was asked to remove the adapter (it may be too old to have the endpoint).
+type tunRecoverOutcome int
+
+const (
+	tunRecoverNotAttempted tunRecoverOutcome = iota // not Windows, or no access-denied signature
+	tunRecoverRemoved                               // service accepted the removal (0+ adapters cleared)
+	tunRecoverServiceOutdated                       // service too old — no /tun/remove endpoint (404)
+	tunRecoverFailed                                // removal attempted but errored otherwise
+)
 
 // maybeRecoverStuckTunAdapter asks the privileged service to force-remove a
 // stale wintun adapter when the core.log tail shows the "access is denied"
@@ -250,17 +262,20 @@ func (a *App) ensureTunUpWithRetry(profile Profile, gen uint64) error {
 // best-effort: any failure is logged into the connect diagnostics and the caller
 // proceeds to its restart attempts regardless. Scoped to the current boot's log
 // so a stale line from a previous session never triggers a needless removal.
-func (a *App) maybeRecoverStuckTunAdapter(profileID string, gen uint64) {
+// Returns the outcome so the caller can tailor a truthful failure message: a
+// service too old to expose /tun/remove (404) needs a one-time admin update, not
+// another reconnect.
+func (a *App) maybeRecoverStuckTunAdapter(profileID string, gen uint64) tunRecoverOutcome {
 	if runtime.GOOS != "windows" {
-		return
+		return tunRecoverNotAttempted
 	}
 	logPath, err := coreLogPathForProfile(profileID)
 	if err != nil {
-		return
+		return tunRecoverNotAttempted
 	}
 	tail := strings.ToLower(currentBootLog(readFileTail(logPath, 64*1024)))
 	if !strings.Contains(tail, "access is denied") {
-		return
+		return tunRecoverNotAttempted
 	}
 	a.appendRuntimeDiag("tun.recover", "stale wintun adapter suspected (access denied) — asking the service to remove it")
 	a.traceEvent("pipeline.connect.tun_recover", "start", 0, map[string]any{"gen": gen})
@@ -270,23 +285,45 @@ func (a *App) maybeRecoverStuckTunAdapter(profileID string, gen uint64) {
 	defer cancel()
 	removed, err := ipcSlothRemoveTun(ctx)
 	if err != nil {
+		// An old service (< 2.4.2) has no /tun/remove route and answers 404. That
+		// is a distinct, actionable state ("update the helper service"), not a
+		// generic failure — surface it so the hint can say so instead of promising
+		// a removal that never happened.
+		if strings.Contains(err.Error(), "404") {
+			a.appendRuntimeDiag("tun.recover", "helper service is outdated (no /tun/remove) — a one-time service update is needed to clear the stale adapter")
+			a.traceEvent("pipeline.connect.tun_recover", "outdated", 0, map[string]any{"gen": gen, "error": err.Error()})
+			return tunRecoverServiceOutdated
+		}
 		a.appendRuntimeDiag("tun.recover", "adapter removal via service failed: "+err.Error())
 		a.traceEvent("pipeline.connect.tun_recover", "fail", 0, map[string]any{"gen": gen, "error": err.Error()})
-		return
+		return tunRecoverFailed
 	}
 	a.appendRuntimeDiag("tun.recover", fmt.Sprintf("service removed %d stale wintun adapter(s)", removed))
 	a.traceEvent("pipeline.connect.tun_recover", "ok", 0, map[string]any{"gen": gen, "removed": removed})
+	return tunRecoverRemoved
 }
 
 // classifyTunFailure maps a core.log failure tail to a human-readable hint so
-// the UI can tell the user the likely cause instead of a false "connected".
-func classifyTunFailure(logTail string) string {
+// the UI can tell the user the likely cause instead of a false "connected". The
+// recovery outcome tailors the access-denied hint so it never promises a removal
+// that didn't happen (e.g. when the helper service is too old to have the
+// /tun/remove endpoint).
+func classifyTunFailure(logTail string, recovery tunRecoverOutcome) string {
 	l := strings.ToLower(logTail)
 	switch {
 	case strings.Contains(l, "operation not permitted"):
 		return "The TUN adapter couldn't be created (operation not permitted) — usually a previous tunnel is still releasing. Click Connect again; it typically succeeds on the next try. If it keeps failing, another VPN or network filter (e.g. Cisco AnyConnect) may be blocking it — disable it or reinstall the SlothClash service. You can also use Proxy mode."
 	case strings.Contains(l, "access is denied"):
-		return "The TUN adapter couldn't be created (access denied) — a leftover network adapter from a previous session was blocking it. SlothClash asked the service to remove it; click Connect again and it should succeed. If it still fails, reinstall the service or use Proxy mode."
+		switch recovery {
+		case tunRecoverServiceOutdated:
+			return "The TUN adapter couldn't be created (access denied) — a leftover network adapter from a previous session is blocking it, and your helper service is too old to clear it. Use the \"Update service\" banner to update the SlothClash helper (it needs administrator approval), then click Connect again. Use Proxy mode in the meantime."
+		case tunRecoverFailed:
+			return "The TUN adapter couldn't be created (access denied) — a leftover network adapter from a previous session is blocking it, and automatic removal didn't go through. Reinstall the SlothClash service, or use Proxy mode, then try again."
+		default:
+			// tunRecoverRemoved / tunRecoverNotAttempted: the service accepted the
+			// removal (or none was needed), so the next connect should succeed.
+			return "The TUN adapter couldn't be created (access denied) — a leftover network adapter from a previous session was blocking it. SlothClash asked the service to remove it; click Connect again and it should succeed. If it still fails, reinstall the service or use Proxy mode."
+		}
 	case strings.Contains(l, "already exists"), strings.Contains(l, "in use"):
 		return "The TUN adapter is already in use. Another Clash/wintun client may be holding it — close it (e.g. clash-verge, v2rayN) and try again."
 	case strings.Contains(l, "wintun"):

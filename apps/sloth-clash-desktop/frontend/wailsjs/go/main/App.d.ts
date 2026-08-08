@@ -67,6 +67,8 @@ export function FetchConnectionsOverview(): Promise<main.ConnectionsOverview>
 
 export function FetchRulesOverview(): Promise<main.RulesOverview>
 
+export function ForgetCorpVpnCredentials(): Promise<void>
+
 export function GenerateAgeKeyPair(arg1: string): Promise<main.AgeKeyPair>
 
 export function GetActiveBranding(): Promise<main.ActiveBranding>
@@ -76,6 +78,10 @@ export function GetAdvancedGeoStatus(): Promise<main.AdvancedGeoStatus>
 export function GetAdvancedPaths(): Promise<main.AdvancedPaths>
 
 export function GetAppState(): Promise<main.AppState>
+
+export function GetCorpVpnCredentials(): Promise<main.CorpVpnCredentials>
+
+export function GetCorpVpnStatus(): Promise<main.CorpVpnStatus>
 
 export function GetDesktopPrefs(): Promise<main.DesktopPrefs>
 
@@ -170,6 +176,10 @@ export function SetConnectionSettings(
   arg1: main.ConnectionSettings,
 ): Promise<main.DesktopPrefs>
 
+export function SetExperimentalSettings(
+  arg1: main.ExperimentalSettings,
+): Promise<main.DesktopPrefs>
+
 export function SetHwidEnabled(arg1: boolean): Promise<main.DesktopPrefs>
 
 export function SetLaunchOnStartupPreference(arg1: boolean): Promise<void>
@@ -218,7 +228,16 @@ export function SetUiLanguage(arg1: string): Promise<main.DesktopPrefs>
 
 export function SetUpdateChannel(arg1: string): Promise<main.UpdateState>
 
+export function StartCorpVpn(
+  arg1: string,
+  arg2: string,
+  arg3: string,
+  arg4: string,
+): Promise<main.CorpVpnStatus>
+
 export function StartedMinimized(): Promise<boolean>
+
+export function StopCorpVpn(): Promise<void>
 
 export function TestProxyDelay(arg1: string): Promise<number>
 

@@ -1,3 +1,85 @@
+## Sloth Clash desktop `0.9.0` — Unreleased
+
+> ⚠️ **After updating you'll be asked once to reinstall the helper service** (this release needs helper service **2.5.0**, which powers the new Corporate VPN and the latest fixes). Click the banner, accept the UAC prompt — it won't come back.
+
+### English
+
+**🏢 Corporate VPN (OpenConnect) alongside your tunnel — new**
+- A new opt-in **Corporate VPN** tab runs a corporate SSL-VPN (Cisco AnyConnect protocol, via bundled OpenConnect) at the same time as your regular tunnel — split-tunnel: your company's subnets go through the corporate VPN, everything else keeps flowing through SlothClash. Dead-simple login (server + username), remembers your server and username (never the password), and trusts the gateway certificate once. Works on **Windows** (bundled TAP driver, installed on demand) and **macOS**. Turn it on in Settings → Experimental.
+
+**🛡️ IPv6 leak closed**
+- With TUN active, blocked sites could still leak over your real IPv6 connection — the tunnel only captured IPv4, so a site could quietly load over IPv6 outside the VPN (invisible until your network actually had working IPv6). IPv6 is now routed through the tunnel by default, so nothing leaks. You can still turn it off in Settings → Connection ("Enable IPv6") if your network's IPv6 is broken.
+
+**🚀 Auto-connect on startup (opt-in) — reliable on a cold boot**
+- A new **"Auto-connect on startup"** switch brings the VPN up automatically when the app launches. On a cold boot it now waits for the privileged helper service to be ready and retries, instead of firing once too early and silently not connecting ("launched but the adapter never came up").
+
+**🐛 Switching Proxy ↔ TUN no longer strands you**
+- If applying a traffic-mode switch to the running core fails, the app now rolls back to the previous mode (and restores the system proxy) instead of leaving you with no working connection.
+
+**🩹 Clearer TUN adapter errors**
+- When the TUN adapter can't be created, the message now matches what actually happened — e.g. if the helper service is too old to clear a leftover adapter, it points you to the "Update service" banner instead of promising a fix that can't run.
+
+**🔒 Lock the proxy port**
+- The local mixed-port is random by default (a fresh free port each start, which avoids collisions but changes on reconnect / subscription switch). New **"Lock proxy port"** switch in Settings → Connection pins it to a fixed value, so apps you point at `127.0.0.1:<port>` manually keep working. If the pinned port is busy, we fall back to a random one for that session and note it in diagnostics.
+
+**🔁 Rule toggles apply to live traffic immediately**
+- Enabling/disabling a rule (or editing rules) now closes existing connections after the reload, so the change takes effect on already-open sockets (e.g. a browser's) instead of only new ones — no more toggling the VPN off and on to make it stick.
+
+**🎨 Proxy group icons**
+- Proxy groups now show the `icon` from your subscription (as many providers set) next to the group name. Broken image URLs are hidden gracefully; emoji icons are supported too.
+
+**🐛 Rules can target a proxy node directly**
+- A rule whose policy is an individual proxy (not a group), e.g. `IP-CIDR,…,HK-FL-Mieru`, no longer fails validation with *"references unknown policy"*. mihomo accepts it, so we do too now.
+
+**🐛 First Connect after launch is reliable**
+- Fixed a startup race where the first Connect could race the background core warm-up and show green while traffic didn't route (a reconnect fixed it). Connect now waits for the warm-up to settle and the warm-up steps aside once you hit Connect.
+
+**🛡️ A crash in one screen no longer blanks the whole app**
+- Each screen is wrapped in an error boundary: if a page hits a render error, it shows a recoverable message (with a copyable error and a reload button) while the sidebar stays usable, instead of leaving a blank window.
+
+**🐛 Update button on macOS/Linux opens the release page**
+- The "update available" action on non-Windows no longer tries to download the Windows installer (on an Apple-silicon Mac it was grabbing the arm64 Windows `.exe`); it now opens the release page, where the right build lives. Direct download+install stays Windows-only.
+
+### Русский
+
+> ⚠️ **После обновления один раз попросит переустановить вспомогательный сервис** (этому релизу нужен сервис **2.5.0** — он питает новый Корпоративный VPN и свежие фиксы). Нажми баннер, прими запрос UAC — больше не появится.
+
+**🏢 Корпоративный VPN (OpenConnect) рядом с твоим туннелем — новое**
+- Новая опциональная вкладка **Корпоративный VPN** поднимает корпоративный SSL-VPN (протокол Cisco AnyConnect, через встроенный OpenConnect) одновременно с обычным туннелем — split-tunnel: подсети твоей компании идут через корпоративный VPN, всё остальное продолжает течь через SlothClash. Простой вход (сервер + логин), запоминает сервер и логин (пароль — никогда) и один раз доверяет сертификату шлюза. Работает на **Windows** (встроенный TAP-драйвер ставится по требованию) и **macOS**. Включается в Настройки → Экспериментальное.
+
+**🛡️ Закрыта утечка IPv6**
+- При активном TUN заблокированные сайты могли утекать через твой реальный IPv6 — туннель захватывал только IPv4, и сайт мог тихо открыться по IPv6 мимо VPN (незаметно, пока в сети реально не появлялся рабочий IPv6). Теперь IPv6 заворачивается в туннель по умолчанию — утечки нет. Если IPv6 в твоей сети сломан, можно выключить в Настройки → Подключение («Включить IPv6»).
+
+**🚀 Авто-подключение при запуске (опция) — надёжно на холодном старте**
+- Новый переключатель **«Авто-подключение при запуске»** сам поднимает VPN при старте приложения. На холодном boot теперь дожидается готовности привилегированного сервиса и ретраит, вместо одной слишком ранней попытки, которая молча не подключалась («запустился, но адаптер не поднялся»).
+
+**🐛 Переключение Proxy ↔ TUN больше не оставляет без связи**
+- Если применение смены режима к работающему ядру падает, приложение теперь откатывается к прежнему режиму (и восстанавливает системный прокси), вместо того чтобы оставить тебя без рабочего соединения.
+
+**🩹 Понятные ошибки TUN-адаптера**
+- Когда TUN-адаптер не удаётся создать, сообщение теперь соответствует тому, что реально произошло — например, если сервис слишком старый, чтобы убрать зависший адаптер, оно указывает на баннер «Обновить сервис», а не обещает починку, которая не может отработать.
+
+**🔒 Фиксация порта прокси**
+- Локальный mixed-port по умолчанию случайный (свежий свободный порт на каждый старт — это избегает конфликтов, но меняется при переподключении / смене подписки). Новый переключатель **«Фиксировать порт прокси»** в Настройки → Подключение закрепляет его, чтобы приложения, которым ты вручную указал `127.0.0.1:<порт>`, продолжали работать. Если порт занят — на эту сессию берём случайный и пишем это в диагностику.
+
+**🔁 Переключение правил применяется к живому трафику сразу**
+- Включение/выключение правила (и правки правил) теперь сбрасывает существующие соединения после reload — изменение применяется к уже открытым сокетам (например, браузера), а не только к новым. Больше не нужно дёргать VPN off/on.
+
+**🎨 Иконки proxy-групп**
+- У групп прокси теперь показывается `icon` из твоей подписки (как ставят многие провайдеры) рядом с именем группы. Битые ссылки на картинку скрываются, emoji-иконки тоже поддерживаются.
+
+**🐛 Правило может целить прямо в ноду**
+- Правило, чья политика — отдельная прокси (а не группа), например `IP-CIDR,…,HK-FL-Mieru`, больше не падает на валидации с *«references unknown policy»*. mihomo это принимает — теперь и мы.
+
+**🐛 Первый Connect после запуска надёжен**
+- Починена гонка на старте, из-за которой первый Connect мог наложиться на фоновый прогрев ядра и показать зелёный, хотя трафик не шёл (лечилось реконнектом). Теперь Connect дожидается прогрева, а прогрев уступает, как только нажали Connect.
+
+**🛡️ Краш одного экрана больше не гасит всё приложение**
+- Каждый экран обёрнут в error boundary: если страница падает на отрисовке, показывается восстановимое сообщение (с копируемой ошибкой и кнопкой перезагрузки), а сайдбар остаётся рабочим — вместо пустого окна.
+
+**🐛 Кнопка обновления на macOS/Linux открывает страницу релиза**
+- Действие «доступно обновление» на не-Windows больше не пытается качать Windows-инсталлятор (на Mac с Apple-silicon оно тянуло arm64 Windows `.exe`); теперь открывает страницу релиза, где лежит правильная сборка. Прямая загрузка+установка остаётся только для Windows.
+
 ## Sloth Clash desktop `0.8.1` — 2026-07-29
 
 > ⚠️ **After updating you'll be asked once to reinstall the helper service** (requires helper service **2.4.2+**, which powers the TUN recovery below). Click the banner, accept the UAC prompt — it won't come back.

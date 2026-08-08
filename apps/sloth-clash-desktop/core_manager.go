@@ -58,6 +58,33 @@ func pickFreePort() (int, error) {
 	return strconv.Atoi(p)
 }
 
+// portIsFree reports whether TCP port p can be bound on loopback right now.
+func portIsFree(p int) bool {
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
+}
+
+// resolveMixedPort chooses the mixed-port for a core start. When the user has
+// pinned a fixed port (Settings → Connection, the "lock port" switch) and it is
+// free, it is used verbatim so external tools pointed at 127.0.0.1:<port> keep
+// working across reconnects and subscription switches. If the pinned port is
+// busy we fall back to a random free port and record a diagnostic — connecting
+// still succeeds, just not on the requested port. With no pin, behaviour is
+// unchanged: a random free port every start.
+func (a *App) resolveMixedPort() (int, error) {
+	if fp, ok := currentDesktopPrefs().Connection.FixedMixedPort(); ok {
+		if portIsFree(fp) {
+			return fp, nil
+		}
+		a.appendRuntimeDiag("mixed-port", fmt.Sprintf("fixed port %d is in use — using a random free port this session", fp))
+	}
+	return pickFreePort()
+}
+
 // winPipePathPrefix is the canonical Windows named-pipe path prefix (\\.\pipe\name).
 // See: https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names
 const winPipePathPrefix = `\\.\pipe\`
@@ -1231,7 +1258,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		parent = context.Background()
 	}
 
-	mixedPort, err := pickFreePort()
+	mixedPort, err := a.resolveMixedPort()
 	if err != nil {
 		return err
 	}

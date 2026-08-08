@@ -1,6 +1,6 @@
 {
   "name": "sloth-clash",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "license": "GPL-3.0-only",
   "scripts": {
     "prepare": "husky || true",
@@ -56,7 +56,7 @@
     "foxact": "^0.3.8",
     "foxts": "^5.8.0",
     "i18next": "^26.3.6",
-    "js-yaml": "^4.3.0",
+    "js-yaml": "^4.3.1",
     "lodash-es": "^4.18.1",
     "meta-json-schema": "^1.19.29",
     "monaco-editor": "^0.55.1",

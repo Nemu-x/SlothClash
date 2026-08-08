@@ -2,5 +2,6 @@
 export {
   GetServiceInfo,
   InstallService,
+  IsBootSettled,
   RefreshSlothServiceStatus,
 } from '../../wailsjs/go/main/App'

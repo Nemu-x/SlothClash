@@ -1,4 +1,16 @@
-## Sloth Clash desktop `0.9.0` — Unreleased
+## Sloth Clash desktop `0.9.1` — Unreleased
+
+### English
+
+**🐛 Auto-connect on startup could hang on "connecting" — fixed**
+- With **Auto-connect on startup** enabled, the connection could get stuck on "connecting" after launch. A background startup task claimed a connect "generation" *after* the auto-connect had already fired, which aborted the auto-connect's attempt and left the status hanging. The startup ordering is fixed so auto-connect — and a fast manual Connect — can no longer be superseded that way, and auto-connect now waits for the background boot to settle before firing and retries only on a real failure. (Auto-connect is off by default; only users who enabled it were affected.)
+
+### Русский
+
+**🐛 Авто-подключение при запуске могло виснуть на «подключении» — исправлено**
+- При включённом **Авто-подключении при запуске** соединение могло застрять на «подключении» после запуска. Фоновая стартовая задача забирала connect-«поколение» уже *после* того, как авто-коннект выстрелил, из-за чего его попытку обрывало, а статус зависал. Порядок старта исправлен — авто-коннект (и быстрый ручной Connect) больше нельзя так перебить; авто-коннект дожидается оседания фонового boot перед выстрелом и ретраит только при реальной ошибке. (По умолчанию авто-подключение выключено — задело только тех, кто его включил.)
+
+## Sloth Clash desktop `0.9.0` — 2026-08-09
 
 > ⚠️ **After updating you'll be asked once to reinstall the helper service** (this release needs helper service **2.5.0**, which powers the new Corporate VPN and the latest fixes). Click the banner, accept the UAC prompt — it won't come back.
 

@@ -68,6 +68,7 @@ import { BrowserOpenURL, EventsOn, WindowHide } from './api/runtime'
 import {
   GetServiceInfo,
   InstallService,
+  IsBootSettled,
   RefreshSlothServiceStatus,
 } from './api/service'
 import { GetAppState, RefreshHomeInsight } from './api/state'
@@ -1770,7 +1771,18 @@ function App() {
           if (cancelled) return
           const cur = (await GetAppState())?.connection?.status
           if (isUpish(cur)) return // user or a prior attempt already brought it up
-          if (svcReady) break
+          // Wait for the background startup boot to finish claiming its connect
+          // generation. Firing before it does gets our connect aborted the moment
+          // the boot bumps the gen ("connect.aborted skip" → status stuck at
+          // "connecting", the reported cold-boot hang). See App.IsBootSettled.
+          let bootSettled: boolean
+          try {
+            bootSettled = await IsBootSettled()
+          } catch {
+            bootSettled = true
+          }
+          if (cancelled) return
+          if (svcReady && bootSettled) break
           if (Date.now() > deadline) break // give up waiting; try anyway
           await sleep(1000)
         }
@@ -1779,9 +1791,18 @@ function App() {
         // already connected, so never call it when the tunnel is up.
         if (isUpish((await GetAppState())?.connection?.status)) return
         await connectActionRef.current()
-        await sleep(1500) // let the connect settle
-        if (cancelled) return
-        if ((await GetAppState())?.connection?.status === 'connected') return // success → done
+        // Wait for the connect to reach a TERMINAL state before deciding to retry.
+        // Never re-fire while it is still "connecting" — a second connect supersedes
+        // and aborts the first, which is exactly the stuck-on-connecting failure.
+        const settleDeadline = Date.now() + 30000
+        for (;;) {
+          if (cancelled) return
+          const st = (await GetAppState())?.connection?.status
+          if (st === 'connected') return // success → done
+          if (st === 'error' || st === 'disconnected') break // genuine failure → retry
+          if (Date.now() > settleDeadline) return // still settling after 30s → don't spam more connects
+          await sleep(700) // connecting/reconnecting → keep waiting, do NOT re-fire
+        }
         await sleep(BACKOFF_MS) // failed → back off, then retry
       }
     })()

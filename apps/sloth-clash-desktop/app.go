@@ -145,10 +145,18 @@ func (a *App) startup(ctx context.Context) {
 	// (see field doc). Created here, on the single-threaded startup path, before
 	// the webview can trigger a Connect.
 	a.bootDone = make(chan struct{})
+	// Claim the boot's connect generation NOW, synchronously, before the webview
+	// can fire a Connect. If we claimed it later (inside the goroutine, AFTER the
+	// IPC-heavy orphan reconcile), a Connect fired in that window would get a LOWER
+	// generation and be aborted the instant the boot bumped the gen — the
+	// "connect.aborted skip" cold-boot hang (auto-connect made it reproducible, but
+	// a fast manual Connect hit it too). Claiming first means any Connect (auto or
+	// manual) supersedes the boot cleanly, never the reverse.
+	bootGen := a.connectGen.Add(1)
 	go func() {
 		defer close(a.bootDone)
 		a.reconcileOrphanServiceCoreOnStartup()
-		a.bootActiveProfileCoreInBackground()
+		a.bootActiveProfileCoreInBackground(bootGen)
 	}()
 	// Deep link may arrive before the webview attaches EventsOn — short delay on cold start only.
 	args := os.Args[1:]
@@ -164,7 +172,7 @@ func (a *App) startup(ctx context.Context) {
 // profile if one is present. Any error is logged to the debug channel but not
 // surfaced to the UI — the user still sees "disconnected" and the core will
 // be started on demand when they click Connect.
-func (a *App) bootActiveProfileCoreInBackground() {
+func (a *App) bootActiveProfileCoreInBackground(bootGen uint64) {
 	a.mu.RLock()
 	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
 	traffic := strings.TrimSpace(a.state.Traffic)
@@ -181,10 +189,11 @@ func (a *App) bootActiveProfileCoreInBackground() {
 	if !found {
 		return
 	}
-	// Claim a connect generation up front so a concurrent Connect (which bumps
-	// connectGen) cleanly supersedes us: we then skip our late config sync
-	// instead of applying it on top of Connect's work.
-	bootGen := a.connectGen.Add(1)
+	// bootGen was claimed synchronously in OnStartup (before the webview could fire
+	// a Connect) and passed in, so a concurrent Connect — which bumps connectGen to
+	// a HIGHER value — cleanly supersedes us: we then skip our late config sync
+	// instead of applying it on top of Connect's work, and we never abort the
+	// Connect by bumping the gen out from under it.
 	// Boot cores with TUN disabled — the user has not clicked Connect yet.
 	// Connect() will bring TUN up via applyRuntimeConfig+PUT /configs force-reload
 	// (matches clash-verge-rev's init path: start_core with current verge state,
@@ -353,6 +362,27 @@ func (a *App) SetLaunchOnStartupPreference(enabled bool) error {
 func (a *App) GetLaunchOnStartupPreference() bool {
 	v, _ := getLaunchOnStartup()
 	return v
+}
+
+// IsBootSettled reports whether the background startup boot has finished
+// (reconcileOrphanServiceCoreOnStartup + bootActiveProfileCoreInBackground, which
+// claims a connect generation). Auto-connect-on-startup MUST wait for this before
+// firing: the boot claims its connectGen AFTER an IPC-heavy orphan reconcile, so a
+// connect fired earlier gets a LOWER generation and is aborted the moment the boot
+// bumps the gen ("connect.aborted skip" → status stuck at "connecting"). Gating the
+// auto-connect on this keeps the boot→connect ordering the design assumes. Returns
+// true when bootDone is closed (or was never set, e.g. no active profile).
+func (a *App) IsBootSettled() bool {
+	bd := a.bootDone
+	if bd == nil {
+		return true
+	}
+	select {
+	case <-bd:
+		return true
+	default:
+		return false
+	}
 }
 
 // StartedMinimized reports whether the current process was launched with

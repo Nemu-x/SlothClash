@@ -128,6 +128,13 @@ async function main() {
       repoRoot,
     )
   }
+  // Regenerate the Wails bindings from the current Go App BEFORE the frontend
+  // build so a newly-added App method (e.g. IsBootSettled) is present for tsc.
+  // The generated bindings are NOT committed (build artifacts), so a stale
+  // checked-in copy would otherwise fail the production build with
+  // "Module '.../App' has no exported member '<new method>'". Go is set up in
+  // the workflow before this gate, so `pnpm run bindings` can run here.
+  await step('Generate Wails bindings', pnpmBin, ['run', 'bindings'], repoRoot)
   const indexHtml = path.join(frontendDir, 'dist', 'index.html')
   if (!fs.existsSync(indexHtml)) {
     await step(

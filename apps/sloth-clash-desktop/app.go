@@ -754,9 +754,28 @@ func (a *App) SetTrafficMode(mode string) (AppState, error) {
 		// never thrash wintun with PATCH flips.
 		enableTun := mode == "tun"
 		if err := a.applyRuntimeConfig(active, mode, enableTun); err != nil {
+			// Rollback (audit D3-1): the reload failed, so the core did NOT switch —
+			// but we already flipped state.Traffic AND the OS proxy toward the new
+			// mode. A failed proxy→tun would otherwise strand the user with the OS
+			// proxy cleared and no TUN (no egress at all). Undo both, then
+			// best-effort re-apply the PREVIOUS runtime config so the core returns
+			// to the working prev mode. If the rollback reload also fails, surface
+			// broken; if it succeeds, the user stays connected as before.
 			a.mu.Lock()
-			if a.state.Connection.Status == "connected" {
-				a.markConnectionBrokenLocked("Traffic mode could not be applied to the running core: " + strings.TrimSpace(err.Error()))
+			a.state.Traffic = prev
+			if prev == "tun" {
+				a.clearSystemProxyLocked()
+			} else {
+				_ = a.applySystemProxyIfNeededLocked()
+			}
+			_ = a.persistProfilesLocked()
+			a.state.UpdatedAt = time.Now().Unix()
+			a.mu.Unlock()
+
+			rollbackErr := a.applyRuntimeConfig(active, prev, prev == "tun")
+			a.mu.Lock()
+			if rollbackErr != nil && a.state.Connection.Status == "connected" {
+				a.markConnectionBrokenLocked("Traffic mode could not be applied to the running core, and reverting to the previous mode also failed: " + strings.TrimSpace(err.Error()))
 			}
 			a.mu.Unlock()
 			a.emitAppStateChanged()

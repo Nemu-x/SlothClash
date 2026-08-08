@@ -40,16 +40,30 @@ type ConnectionSettings struct {
 	// LAN lets any device on the network egress through the user's tunnel.
 	// Turning it on is an explicit, informed user choice.
 	AllowLan *bool `json:"allowLan,omitempty"`
-	// DNSIPv6 controls `dns.ipv6`: whether the resolver answers AAAA queries.
-	// nil = off. Off by default because a broken/half-working IPv6 path is a
-	// classic source of "some sites hang" reports; users on real IPv6 networks
-	// turn it on. Pairs with dns.fake-ip-range6 in the generated config.
+	// DNSIPv6 is the master IPv6 switch: it drives BOTH the top-level `ipv6`
+	// flag AND `dns.ipv6` (the overlay force-aligns them — see
+	// subscription_overlay.go). nil = ON, matching clash-verge-rev, whose
+	// template ships top-level `ipv6: true`. This is deliberate: with `ipv6:
+	// false` mihomo does not process IPv6, so the TUN gets no inet6-address and
+	// auto-route installs no v6 route — native IPv6 then bypasses the tunnel and
+	// blocked sites leak over real v6 (architecture/ipv6.md). With it ON, fake-ip
+	// returns a fake v6 from `dns.fake-ip-range6` that is routed into the tunnel
+	// and proxied over the node's own transport, so the node needs no real v6.
+	// Users on a broken/half-working IPv6 path can turn it OFF (→ back to the
+	// no-v6 posture). JSON key kept as `dnsIpv6` for settings backward-compat.
 	DNSIPv6 *bool `json:"dnsIpv6,omitempty"`
 	// SmartDNS controls `dns.respect-rules`: resolve proxied domains through the
 	// proxy (no DNS leak / ISP poisoning for them) while direct domains stay
 	// local. nil = off, matching verge's default; enabling it also requires
 	// proxy-server-nameserver, which the overlay fills in automatically.
 	SmartDNS *bool `json:"smartDns,omitempty"`
+	// MixedPort pins the local mixed-port to a fixed value ("lock the port").
+	// nil/0/out-of-range = auto: we pick a random free port on every core start
+	// (the default), which avoids collisions with stale binds but changes across
+	// reconnects / subscription switches. Users who point external tools at a
+	// specific 127.0.0.1:<port> lock it here so it stays constant. Overrides the
+	// port from the subscription config.
+	MixedPort *int `json:"mixedPort,omitempty"`
 }
 
 // IsAllowLanEnabled reports the effective value (default: false).
@@ -57,9 +71,11 @@ func (c ConnectionSettings) IsAllowLanEnabled() bool {
 	return c.AllowLan != nil && *c.AllowLan
 }
 
-// IsDNSIPv6Enabled reports the effective value (default: false).
+// IsDNSIPv6Enabled reports the effective value (default: true — verge parity).
+// Master IPv6 switch: drives top-level `ipv6` + `dns.ipv6`. nil means the user
+// never touched it → ON, so IPv6 is captured by the TUN and cannot leak.
 func (c ConnectionSettings) IsDNSIPv6Enabled() bool {
-	return c.DNSIPv6 != nil && *c.DNSIPv6
+	return c.DNSIPv6 == nil || *c.DNSIPv6
 }
 
 // IsSmartDNSEnabled reports the effective value (default: false).
@@ -67,13 +83,28 @@ func (c ConnectionSettings) IsSmartDNSEnabled() bool {
 	return c.SmartDNS != nil && *c.SmartDNS
 }
 
+// FixedMixedPort returns the user-pinned mixed-port and true when a valid one is
+// set (1–65535); otherwise (0, false), meaning "auto — pick a random free port".
+func (c ConnectionSettings) FixedMixedPort() (int, bool) {
+	if c.MixedPort == nil {
+		return 0, false
+	}
+	p := *c.MixedPort
+	if p < 1 || p > 65535 {
+		return 0, false
+	}
+	return p, true
+}
+
 // DesktopPrefs holds app-level preferences persisted to prefs.json alongside profiles.json.
 type DesktopPrefs struct {
-	TUN        TunSettings        `json:"tun"`
-	Traffic    TrafficSettings    `json:"traffic"`
-	Connection ConnectionSettings `json:"connection"`
-	Privacy    PrivacySettings    `json:"privacy"`
-	AppUpdate  AppUpdateSettings  `json:"appUpdate"`
+	TUN          TunSettings          `json:"tun"`
+	Traffic      TrafficSettings      `json:"traffic"`
+	Connection   ConnectionSettings   `json:"connection"`
+	Privacy      PrivacySettings      `json:"privacy"`
+	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
+	Experimental ExperimentalSettings `json:"experimental"`
+	CorpVpn      CorpVpnCredentials   `json:"corpVpn"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -118,6 +149,33 @@ func (s AppUpdateSettings) IsAutoCheckEnabled() bool {
 		return true
 	}
 	return *s.AutoCheckEnabled
+}
+
+// ExperimentalSettings gates optional, off-by-default features so they don't
+// clutter the UI for regular users.
+type ExperimentalSettings struct {
+	// CorpVpnEnabled reveals the Corporate VPN (OpenConnect sidecar) tab. Off by
+	// default: OpenConnect is an optional power-user add-on downloaded on demand,
+	// so a regular user should never see it unless they opt in here.
+	CorpVpnEnabled *bool `json:"corpVpnEnabled,omitempty"`
+}
+
+// IsCorpVpnEnabled reports whether the Corporate VPN tab should be shown. The
+// default (nil pointer or absent field) is false — opt-in only.
+func (s ExperimentalSettings) IsCorpVpnEnabled() bool {
+	return s.CorpVpnEnabled != nil && *s.CorpVpnEnabled
+}
+
+// CorpVpnCredentials remembers the corporate VPN server + username so the login
+// form pre-fills next time. The PASSWORD is deliberately never stored — it is
+// always entered fresh.
+type CorpVpnCredentials struct {
+	Gateway  string `json:"gateway,omitempty"`
+	Username string `json:"username,omitempty"`
+	// Servercert is the trusted certificate pin (`pin-sha256:…` / `sha256:…`) from
+	// the last successful connect. Not a secret (it's a public fingerprint); stored
+	// so trust-on-first-use only prompts once. Never store the password.
+	Servercert string `json:"servercert,omitempty"`
 }
 
 const slothPrefsFile = "prefs.json"
@@ -225,6 +283,19 @@ func (a *App) GetDesktopPrefs() DesktopPrefs {
 	return currentDesktopPrefs()
 }
 
+// SetExperimentalSettings is the Wails-exposed setter for the Experimental
+// section of the Settings UI (e.g. revealing the Corporate VPN tab). Persisted
+// to prefs.json; no core reload needed — it only toggles UI surface.
+func (a *App) SetExperimentalSettings(next ExperimentalSettings) DesktopPrefs {
+	_ = a
+	prefsMu.Lock()
+	prefsCurrent.Experimental = next
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+	return snapshot
+}
+
 // SetTunSettings is the Wails-exposed setter for the TUN section of the
 // Settings UI. The update is persisted to prefs.json and the running core (if
 // any) is reloaded via the standard applyRuntimeConfig → PUT /configs path so
@@ -253,13 +324,49 @@ func (a *App) SetTunSettings(next TunSettings) DesktopPrefs {
 // running core so `allow-lan` takes effect without a restart.
 func (a *App) SetConnectionSettings(next ConnectionSettings) DesktopPrefs {
 	prefsMu.Lock()
+	prevPort, _ := prefsCurrent.Connection.FixedMixedPort()
 	prefsCurrent.Connection = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
 
-	a.triggerRuntimeReloadForPrefs()
+	// allow-lan / DNS toggles apply via a hot-reload, but the mixed-port only
+	// rebinds on a fresh listen — a hot-reload reuses the running port. So when
+	// the port pin changed, do a full core restart; otherwise the usual reload.
+	newPort, _ := next.FixedMixedPort()
+	if newPort != prevPort {
+		a.restartActiveProfileCore()
+	} else {
+		a.triggerRuntimeReloadForPrefs()
+	}
 	return snapshot
+}
+
+// restartActiveProfileCore does a full core restart for the active profile when
+// connected. Used for settings that only take effect on a fresh listen (the
+// fixed mixed-port), which a hot-reload cannot change. No-op when disconnected —
+// the new value is picked up on the next connect.
+func (a *App) restartActiveProfileCore() {
+	a.mu.RLock()
+	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	connected := a.state.Connection.Status == "connected"
+	traffic := strings.TrimSpace(a.state.Traffic)
+	var active Profile
+	for _, p := range a.profiles {
+		if p.ID == activeID {
+			active = p
+			break
+		}
+	}
+	a.mu.RUnlock()
+	if !connected || active.ID == "" {
+		return
+	}
+	go func() {
+		if err := a.forceRestartCoreForProfile(active, 0, traffic == "tun"); err != nil {
+			a.appendRuntimeDiag("mixed-port", "core restart after port change failed: "+err.Error())
+		}
+	}()
 }
 
 // SetUiLanguage is called by the frontend at i18n init and whenever the user

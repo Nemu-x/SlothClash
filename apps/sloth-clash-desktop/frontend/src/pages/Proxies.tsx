@@ -106,6 +106,33 @@ function lsSet(key: string, value: string): void {
   }
 }
 
+// GroupIcon renders a proxy group's `icon` from mihomo: a URL (http/https/data)
+// becomes an <img> that hides itself if it fails to load; anything else (e.g. an
+// emoji a provider set) renders as text. Empty/absent icon renders nothing.
+function GroupIcon({ icon }: { icon: unknown }) {
+  const s = String(icon ?? '').trim()
+  if (!s) return null
+  if (/^(https?:|data:)/i.test(s)) {
+    return (
+      <img
+        className="proxyGroupIcon"
+        src={s}
+        alt=""
+        loading="lazy"
+        aria-hidden
+        onError={(e) => {
+          e.currentTarget.style.display = 'none'
+        }}
+      />
+    )
+  }
+  return (
+    <span className="proxyGroupIconEmoji" aria-hidden>
+      {s}
+    </span>
+  )
+}
+
 export function ProxiesPage({
   groups,
   connectionStatus,
@@ -414,6 +441,7 @@ function ProxyGroupsAccordion({
                 aria-expanded={isOpen}
                 onClick={() => setOpenName(isOpen ? '' : name)}
               >
+                <GroupIcon icon={g.icon} />
                 <span className="proxyAccName">{name}</span>
                 {g.hidden === true ? (
                   <span

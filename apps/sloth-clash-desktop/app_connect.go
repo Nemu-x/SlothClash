@@ -93,6 +93,17 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 		}
 	}()
 
+	// Wait for the startup warm-boot to settle before we touch the core, so the
+	// first Connect never reuses a half-started boot core or races the boot's own
+	// late config sync (the "green but not connected on first launch" bug).
+	a.awaitBootSettled(gen)
+	if a.connectGen.Load() != gen {
+		a.traceEvent("pipeline.connect.aborted", "skip", 0, map[string]any{
+			"gen": gen, "where": "after_boot_wait",
+		})
+		return
+	}
+
 	a.mu.RLock()
 	traffic := strings.TrimSpace(a.state.Traffic)
 	a.mu.RUnlock()
@@ -211,6 +222,23 @@ func (a *App) runConnectJob(active Profile, gen uint64) {
 	})
 	a.emitAppStateChanged()
 	a.safeGo("insight", func() { _, _ = a.RefreshHomeInsight() })
+}
+
+// awaitBootSettled blocks until the startup background boot (orphan-reconcile +
+// warm cold-start of the active profile) has finished, so the first Connect
+// operates on a settled core instead of racing it. Bounded so a slow or hung
+// boot can never wedge Connect; a no-op once boot has completed (channel closed)
+// or if boot was never started.
+func (a *App) awaitBootSettled(gen uint64) {
+	bd := a.bootDone
+	if bd == nil {
+		return
+	}
+	select {
+	case <-bd:
+	case <-time.After(8 * time.Second):
+		a.traceEvent("pipeline.connect.boot_wait", "timeout", 0, map[string]any{"gen": gen})
+	}
 }
 
 func (a *App) finishConnectJobFailed(gen uint64, err error) {

@@ -11,10 +11,43 @@
     "rules": "Rules",
     "logs": "Logs",
     "devices": "Devices",
+    "corp": "Corporate VPN",
     "advanced": "Advanced",
     "settings": "Settings",
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar"
+  },
+  "corp": {
+    "title": "Corporate VPN",
+    "subtitle": "Connect your corporate VPN alongside SlothClash. Company networks go through the corporate VPN; everything else keeps using your proxy.",
+    "protocols": "Works with SSL-VPN gateways: Cisco AnyConnect, FortiGate, GlobalProtect, Juniper.",
+    "unsupported": "Corporate VPN isn’t available on this platform yet.",
+    "connected": "Connected",
+    "disconnected": "Not connected",
+    "gateway": "Server address",
+    "username": "Username",
+    "password": "Password",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "phase": {
+      "preparing": "Preparing OpenConnect…",
+      "driver": "Installing driver…",
+      "connecting": "Connecting to server…"
+    },
+    "disconnect": "Disconnect",
+    "routes": "Company networks",
+    "dnsDomains": "Company domains",
+    "fullTunnelWarn": "This VPN carries all traffic, so no split is possible — SlothClash traffic will also go through it while connected.",
+    "certTitle": "Trust this server?",
+    "certBody": "The VPN server presented a certificate we haven't seen before. Check the fingerprint with your IT team, then trust it to continue.",
+    "trustConnect": "Trust & connect",
+    "cancel": "Cancel",
+    "logs": "Connection log",
+    "homeIndicator": "Corporate VPN on",
+    "remember": "Remember server & username",
+    "howTitle": "How it works",
+    "howCorp": "Company networks → corporate VPN",
+    "howRest": "Everything else → your proxy"
   },
   "settings": {
     "title": "Settings",
@@ -48,8 +81,11 @@
     "closeToTray": "Close to tray (else quit)",
     "connection": "Connection",
     "smartDns": "Smart DNS fallback",
-    "ipv6Dns": "Enable IPv6 DNS",
+    "ipv6Dns": "Enable IPv6",
     "allowLanBinding": "Allow LAN binding",
+    "lockPort": "Lock proxy port",
+    "lockPortValue": "Port",
+    "lockPortHint": "By default the local proxy uses a random free port that changes on reconnect. Lock it to a fixed port if you point apps at 127.0.0.1:<port> manually.",
     "dnsHint": "Applied to the runtime config. \"Default\" inherits profile/core values.",
     "installService": "Install service",
     "guidedTun": "Guided TUN setup",
@@ -74,6 +110,8 @@
     "info": "Info",
     "checkUpdates": "Check for updates",
     "autoUpdate": "Automatic updates",
+    "corpVpnToggle": "Corporate VPN",
+    "corpVpnHint": "Show the Corporate VPN tab (Cisco AnyConnect, FortiGate…). Downloads OpenConnect on first use.",
     "whatsNew": "What's new",
     "updatePlatformNote": "Automatic install is Windows-only — open the release page to update on this platform.",
     "updateDownloading": "Downloading… {{pct}}%",
@@ -164,6 +202,12 @@
     },
     "errors": {
       "chooseProfileOrImport": "Choose a profile under Profiles, or import a new one."
+    },
+    "errorBoundary": {
+      "title": "This screen ran into a problem",
+      "body": "Something went wrong rendering this page. Other screens still work — switch tabs in the sidebar, or reload the app.",
+      "copy": "Copy error",
+      "reload": "Reload app"
     },
     "import": {
       "connectNeedsProfile": "Connect needs a profile",

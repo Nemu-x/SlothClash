@@ -26,6 +26,24 @@ func validateRulePoliciesExist(m map[string]any) error {
 			}
 		}
 	}
+	// A rule's policy may target an individual proxy directly, not only a
+	// proxy-group — mihomo resolves rule targets against proxies AND groups. A
+	// config with `rules: [IP-CIDR,...,HK-FL-Mieru]` where HK-FL-Mieru is a proxy
+	// node is valid (and works in other clients); include proxy names so we don't
+	// reject it.
+	if proxies, ok := m["proxies"].([]any); ok {
+		for _, p := range proxies {
+			pm, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := pm["name"].(string)
+			name = strings.TrimSpace(name)
+			if name != "" {
+				known[name] = true
+			}
+		}
+	}
 	rules, ok := m["rules"].([]any)
 	if !ok {
 		return nil

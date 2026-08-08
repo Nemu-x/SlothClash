@@ -330,7 +330,14 @@ func fetchLatestGitHubRelease() (tag, htmlURL, notes, assetName, assetURL string
 	tag = strings.TrimSpace(rel.TagName)
 	htmlURL = strings.TrimSpace(rel.HTMLURL)
 	notes = strings.TrimSpace(rel.Body)
-	assetName, assetURL = pickWindowsInstallerAsset(rel.Assets)
+	// Direct-download+install is Windows-only. On macOS/Linux we must NOT expose
+	// an asset URL, or the UI's download button would pull the Windows installer
+	// (it matches "installer"+arch, so on an arm64 Mac it grabs the arm64 Windows
+	// .exe). Leaving it empty makes both Home and Settings fall back to "open
+	// release page", which is the correct path on those platforms.
+	if runtime.GOOS == "windows" {
+		assetName, assetURL = pickWindowsInstallerAsset(rel.Assets)
+	}
 	return tag, htmlURL, notes, assetName, assetURL, nil
 }
 

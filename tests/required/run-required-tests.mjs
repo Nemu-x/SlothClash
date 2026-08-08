@@ -61,14 +61,19 @@ async function step(title, command, args, cwd) {
  * placeholders until prebuild seeds real service binaries.
  */
 async function ensureDesktopEmbedDirsForGoTest(desktopDir) {
-  for (const rel of ['build/resources', 'build/sidecar']) {
+  // frontend/dist is required by `//go:embed all:frontend/dist` in main.go — it
+  // must be non-empty for BOTH the go tests AND `wails generate module` (which
+  // compiles the package) to succeed. The real dist is produced later by the
+  // frontend build, but the bindings step runs BEFORE that, so seed a placeholder
+  // here; vite overwrites it during the actual build.
+  for (const rel of ['build/resources', 'build/sidecar', 'frontend/dist']) {
     const dir = path.join(desktopDir, rel)
     await fsp.mkdir(dir, { recursive: true })
     const entries = await fsp.readdir(dir)
     if (entries.length === 0) {
       await fsp.writeFile(
         path.join(dir, '_embed_placeholder.txt'),
-        'Placeholder for go:embed until prebuild adds service binaries.\n',
+        'Placeholder for go:embed until the real build populates this dir.\n',
       )
     }
   }

@@ -1724,24 +1724,72 @@ function App() {
     await refresh()
   }
 
-  // Auto-connect on startup (opt-in). Once, when enabled and an active profile
-  // exists and we are not already connecting/connected, bring the connection up
-  // in the last-active traffic mode. Reuses connectAction so it shares all the
-  // usual guards + error toasts.
-  const autoConnectFiredRef = useRef(false)
+  // Auto-connect on startup (opt-in), hardened against the cold-boot race.
+  //
+  // The app is registered in HKCU\Run and launches in PARALLEL with the
+  // AutoStart privileged service, so a single naive fire can hit the core /
+  // adapter bring-up before the service (or the network) is ready: it fails once
+  // and, with a plain one-shot latch, never retries — the user ends up "launched
+  // but not connected, adapter never came up". Instead we run a small
+  // once-per-session loop that (1) waits (bounded) for the service to be running
+  // before the first attempt and (2) retries a few times with backoff, latching
+  // only on an actual success. Reuses connectAction (via a ref so retries call
+  // the freshest closure) for all the usual guards + error toasts.
+  const connectActionRef = useRef(connectAction)
+  connectActionRef.current = connectAction
+  const canAutoConnect =
+    settings.autoConnectOnStartup === true && hasActiveProfile
   useEffect(() => {
-    if (autoConnectFiredRef.current) return
-    if (!settings.autoConnectOnStartup) return
-    if (!hasActiveProfile) return
-    const status = state?.connection?.status
-    if (status === 'connected' || status === 'connecting') return
-    autoConnectFiredRef.current = true
-    void connectAction()
-  }, [
-    settings.autoConnectOnStartup,
-    hasActiveProfile,
-    state?.connection?.status,
-  ])
+    if (!canAutoConnect) return
+    let cancelled = false
+    const sleep = (ms: number) =>
+      new Promise<void>((res) => setTimeout(res, ms))
+    const isUpish = (s?: string) =>
+      s === 'connected' || s === 'connecting' || s === 'reconnecting'
+
+    void (async () => {
+      const MAX_ATTEMPTS = 4
+      const SERVICE_WAIT_MS = 20000
+      const BACKOFF_MS = 3000
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !cancelled; attempt++) {
+        // Wait (bounded) for the privileged service to be running before firing,
+        // so we don't race the boot. RefreshSlothServiceStatus re-queries the
+        // service directly — GetAppState only returns cached state, refreshed on
+        // a 45s tick, so it would stay stale-false for most of the boot window.
+        // A non-service install reports installed=false and proceeds at once.
+        const deadline = Date.now() + SERVICE_WAIT_MS
+        for (;;) {
+          if (cancelled) return
+          let svcReady: boolean
+          try {
+            const svc = await RefreshSlothServiceStatus()
+            svcReady = svc?.installed !== true || svc?.running === true
+          } catch {
+            svcReady = true // can't tell → don't block; the attempt + retries cover it
+          }
+          if (cancelled) return
+          const cur = (await GetAppState())?.connection?.status
+          if (isUpish(cur)) return // user or a prior attempt already brought it up
+          if (svcReady) break
+          if (Date.now() > deadline) break // give up waiting; try anyway
+          await sleep(1000)
+        }
+        if (cancelled) return
+        // Re-check right before firing: connectAction would DISCONNECT if we are
+        // already connected, so never call it when the tunnel is up.
+        if (isUpish((await GetAppState())?.connection?.status)) return
+        await connectActionRef.current()
+        await sleep(1500) // let the connect settle
+        if (cancelled) return
+        if ((await GetAppState())?.connection?.status === 'connected') return // success → done
+        await sleep(BACKOFF_MS) // failed → back off, then retry
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [canAutoConnect])
 
   const refreshRuleProviderOne = useCallback(
     async (name: string) => {

@@ -165,7 +165,7 @@ async function updateHashCache(targetPath) {
 // Pinned mihomo (Clash.Meta) core version — single source of truth.
 // To bump: edit this constant, then run `pnpm run prebuild --force` to refresh
 // the embedded sidecar. Override at build time with MIHOMO_CORE_VERSION (CI/testing).
-const META_VERSION_PINNED = 'v1.19.29'
+const META_VERSION_PINNED = 'v1.19.30'
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 

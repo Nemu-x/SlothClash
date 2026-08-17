@@ -1,4 +1,16 @@
-## Sloth Clash desktop `0.9.1` — Unreleased
+## Sloth Clash desktop `0.9.2` — Unreleased
+
+> ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS/Linux click the banner and accept the prompt.
+
+### English
+
+- **Mihomo core updated to `v1.19.30`.** Brings a security fix in the core's Go TLS stack (CVE-2026-56862) and a TUN fix where hijacked DNS replies could be sent zero-filled or stale. New protocol coverage lands with it: ZeroTier outbound, AmneziaWG 3.0/3.1, an `ip-stack` option for WireGuard/OpenVPN/MASQUE/ZeroTier, H2C and QUICv2 sniffing, `handshake-timeout` for Hysteria2, `client-metadata` for AnyTLS and `rate-limit` for the restls listener. Config generation and the runtime pipeline were verified against the new core.
+
+### Русский
+
+- **Ядро Mihomo обновлено до `v1.19.30`.** Приносит фикс безопасности в Go-стеке TLS внутри ядра (CVE-2026-56862) и починку TUN, где перехваченные DNS-ответы могли уходить пустыми (забитыми нулями) или устаревшими. Вместе с ним — поддержка новых протоколов: outbound ZeroTier, AmneziaWG 3.0/3.1, опция `ip-stack` для WireGuard/OpenVPN/MASQUE/ZeroTier, сниффинг H2C и QUICv2, `handshake-timeout` для Hysteria2, `client-metadata` для AnyTLS и `rate-limit` для listener restls. Генерация конфига и рантайм-пайплайн проверены на новом ядре.
+
+## Sloth Clash desktop `0.9.1` — 2026-08-09
 
 ### English
 

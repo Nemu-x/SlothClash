@@ -185,6 +185,11 @@ func finalizeRuntimeConfigPipeline(
 	if err := validateFinalConfigSemantics(m); err != nil {
 		return err
 	}
+	// Last word on the fake-ip v6 pool: it may only survive if the final tun
+	// block actually routes it (see dropUnroutableFakeIPRange6). Deliberately
+	// after validation — validateDNSInvariants self-heals the DNS block, which
+	// re-injects the pool.
+	dropUnroutableFakeIPRange6(m)
 	overlayBundledGeoData(m, dataDir)
 	return nil
 }

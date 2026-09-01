@@ -877,7 +877,22 @@ func repairRuntimeConfigDNS(cfgPath string) error {
 	if len(m) == 0 {
 		return nil
 	}
+	// A `dns:` key that is not a mapping means the file is broken (usually a
+	// hand-edited merge template). Healing it here would REPLACE it with our
+	// default block and hand the core a config that parses — masking the real
+	// error instead of showing it. Leave it alone so the `-t` preflight below
+	// reports what the core actually rejects.
+	if raw, has := m["dns"]; has {
+		if _, isMap := raw.(map[string]any); !isMap && raw != nil {
+			return nil
+		}
+	}
 	ensureDefaultDNSForTun(m)
+	// The self-heal above fills dns.fake-ip-range6 unconditionally, so the guard
+	// has to run here too — this is the LAST writer of config.yaml before the
+	// core reads it, and without this it would silently undo the pipeline's
+	// decision (see dropUnroutableFakeIPRange6).
+	dropUnroutableFakeIPRange6(m)
 	out, err := marshalRuntimeYAML(m)
 	if err != nil {
 		return err

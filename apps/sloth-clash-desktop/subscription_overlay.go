@@ -139,6 +139,9 @@ func ensureDefaultDNSForTun(m map[string]any) {
 		// (clash-verge-rev #7373). Filled unconditionally so a profile that
 		// flips ipv6 on later is still correct. Empty string counts as missing
 		// so a hand-edited YAML gets repaired.
+		// The pool is only KEPT if the final tun block actually routes it —
+		// dropUnroutableFakeIPRange6 has the last word at the end of the
+		// pipeline (a black-holed pool stalls every dual-stack site).
 		if v, ok := dns["fake-ip-range6"].(string); !ok || strings.TrimSpace(v) == "" {
 			dns["fake-ip-range6"] = "fdfe:dcba:9876::1/64"
 		}
@@ -359,4 +362,5 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	if enableTun {
 		applyCorpVpnOverlay(m, currentCorpVpnSplit())
 	}
+
 }

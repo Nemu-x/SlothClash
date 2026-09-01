@@ -1,4 +1,28 @@
-## Sloth Clash desktop `0.9.1` — Unreleased
+## Sloth Clash desktop `0.9.2` — Unreleased
+
+> ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS/Linux click the banner and accept the prompt.
+
+### English
+
+**🐛 Sites felt slower than they should — dead IPv6 addresses handed to apps, fixed**
+- On profiles whose TUN section excludes the private IPv6 range (`fc00::/7` — a very common default), the IPv6 addresses we handed out for every domain had no route into the tunnel. Apps still tried them first: the browser burned a full connection timeout on the IPv6 attempt of every dual-stack site before falling back to IPv4, which showed up as pages (YouTube, Google Fonts and friends) taking seconds to pull assets, with nothing in the logs. Measured: `curl -6` hung for 21 s where `curl -4` finished in 0.27 s. We now drop the IPv6 fake-address pool whenever the profile's own routing rules would leave it unreachable, so apps go straight to the working path. IPv6 itself stays enabled and still travels inside the tunnel — nothing leaks.
+
+**🐛 A broken `dns:` section in a hand-edited profile was silently swallowed**
+- If a profile's DNS section was malformed (a list where a mapping belongs, typically from a hand-edited merge template), the pre-launch check quietly replaced it with defaults instead of telling you the core had rejected it. The real error is now surfaced.
+
+- **Mihomo core updated to `v1.19.30`.** Brings a security fix in the core's Go TLS stack (CVE-2026-56862) and a TUN fix where hijacked DNS replies could be sent zero-filled or stale. New protocol coverage lands with it: ZeroTier outbound, AmneziaWG 3.0/3.1, an `ip-stack` option for WireGuard/OpenVPN/MASQUE/ZeroTier, H2C and QUICv2 sniffing, `handshake-timeout` for Hysteria2, `client-metadata` for AnyTLS and `rate-limit` for the restls listener. Config generation and the runtime pipeline were verified against the new core.
+
+### Русский
+
+**🐛 Сайты грузились медленнее, чем должны — приложениям выдавались «мёртвые» IPv6-адреса, исправлено**
+- Если в TUN-секции профиля исключён приватный диапазон IPv6 (`fc00::/7` — очень частый дефолт), то IPv6-адреса, которые мы выдавали на каждый домен, не имели маршрута в туннель. Приложения всё равно пробовали их первыми: браузер тратил полный таймаут соединения на IPv6-попытку для каждого dual-stack сайта, прежде чем откатиться на IPv4 — отсюда «страницы (YouTube, Google Fonts и т.п.) секундами тянут ресурсы», причём в логах чисто. Замерено: `curl -6` висел 21 с там, где `curl -4` отрабатывал за 0.27 с. Теперь пул фейковых IPv6-адресов убирается, если правила маршрутизации самого профиля делают его недостижимым, и приложения сразу идут рабочим путём. Сам IPv6 остаётся включённым и по-прежнему идёт внутри туннеля — утечки нет.
+
+**🐛 Сломанная секция `dns:` в отредактированном вручную профиле молча проглатывалась**
+- Если DNS-секция профиля была битой (список там, где ожидается словарь — обычно из ручного merge-шаблона), предстартовая проверка тихо подменяла её дефолтами вместо того, чтобы показать, что ядро конфиг отвергло. Теперь настоящая ошибка доходит до пользователя.
+
+- **Ядро Mihomo обновлено до `v1.19.30`.** Приносит фикс безопасности в Go-стеке TLS внутри ядра (CVE-2026-56862) и починку TUN, где перехваченные DNS-ответы могли уходить пустыми (забитыми нулями) или устаревшими. Вместе с ним — поддержка новых протоколов: outbound ZeroTier, AmneziaWG 3.0/3.1, опция `ip-stack` для WireGuard/OpenVPN/MASQUE/ZeroTier, сниффинг H2C и QUICv2, `handshake-timeout` для Hysteria2, `client-metadata` для AnyTLS и `rate-limit` для listener restls. Генерация конфига и рантайм-пайплайн проверены на новом ядре.
+
+## Sloth Clash desktop `0.9.1` — 2026-08-09
 
 ### English
 

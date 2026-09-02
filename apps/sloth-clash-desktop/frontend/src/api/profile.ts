@@ -1,9 +1,11 @@
 /**
  * Profile lifecycle: CRUD, activation, subscription refresh, baselines,
- * extend-config / proxy / rules templates, auto-update preference.
+ * extend-config / proxy / rules templates, the JavaScript override, auto-update
+ * preference.
  */
 export {
   ActivateProfile,
+  ClearProfileScriptOverride,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,
@@ -12,6 +14,7 @@ export {
   GetProfileRulesBaseline,
   ImportProfileFromText,
   ImportProfileFromURL,
+  PreviewProfileScript,
   ReadProfileConfig,
   RefreshProfileSubscription,
   SetProfileAgeSecretKey,
@@ -19,6 +22,7 @@ export {
   SetProfileMergeTemplate,
   SetProfileProxyTemplate,
   SetProfileRulesTemplate,
+  SetProfileScriptOverride,
   UpdateProfileInfo,
   WriteProfileConfig,
 } from '../../wailsjs/go/main/App'

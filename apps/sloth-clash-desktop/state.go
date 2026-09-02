@@ -44,10 +44,10 @@ type ModeState struct {
 }
 
 type Profile struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Type             string `json:"type"`
-	URL              string `json:"url,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	URL  string `json:"url,omitempty"`
 	// AgeSecretKey is the optional age identity (AGE-SECRET-KEY-…) used to
 	// decrypt an age-encrypted subscription body; empty = plain subscription.
 	// Same trust domain as URL (both are bearer secrets in profiles.json).
@@ -62,7 +62,25 @@ type Profile struct {
 	MergeTemplate             string `json:"mergeTemplate,omitempty"`             // Extend config YAML
 	RulesTemplate             string `json:"rulesTemplate,omitempty"`             // Rules editor YAML (prepend/append/delete)
 	ProxyTemplate             string `json:"proxyTemplate,omitempty"`             // Proxy groups editor YAML (prepend/append/delete)
-	SkipAutoConfig            bool   `json:"skipAutoConfig,omitempty"`            // after manual config.yaml edit, skip regeneration on connect
+	// ScriptOverride is the per-profile JavaScript config transform
+	// (`function main(config, ctx) { return config }`), the fourth member of the
+	// override family above. It runs after our runtime overlays and before final
+	// validation; the invariants the app needs to reach its own core are
+	// re-asserted afterwards, so a script can reshape the config but never cut
+	// us off. Empty = the pipeline behaves exactly as it did before this field
+	// existed. It may ONLY ever be written by the user's own editing action:
+	// subscriptions, brand headers, share links and imports must never set it.
+	ScriptOverride string `json:"scriptOverride,omitempty"`
+	// ScriptError / ScriptConsole record what the last generation did with the
+	// script, so the UI can badge the profile and show the reason without
+	// re-running anything.
+	ScriptError          string   `json:"scriptError,omitempty"`
+	ScriptErrorLine      int      `json:"scriptErrorLine,omitempty"`
+	ScriptErrorColumn    int      `json:"scriptErrorColumn,omitempty"`
+	ScriptConsole        []string `json:"scriptConsole,omitempty"`
+	ScriptConsoleCut     bool     `json:"scriptConsoleTruncated,omitempty"`
+	ScriptLastDurationMS int64    `json:"scriptLastDurationMs,omitempty"`
+	SkipAutoConfig       bool     `json:"skipAutoConfig,omitempty"` // after manual config.yaml edit, skip regeneration on connect
 	// LastGoodGroup remembers the user's last manually picked proxy group
 	// for this specific profile. It is the authoritative source for the
 	// auto-select routine: if the same group still exists in /proxies when

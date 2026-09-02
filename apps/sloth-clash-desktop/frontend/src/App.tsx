@@ -89,6 +89,7 @@ import { ProfileFileModal } from './components/ProfileFileModal'
 import { ProfileMergeModal } from './components/ProfileMergeModal'
 import { ProfileProxyModal } from './components/ProfileProxyModal'
 import { ProfileRulesModal } from './components/ProfileRulesModal'
+import { ProfileScriptModal } from './components/ProfileScriptModal'
 import { SettingsResetModal } from './components/SettingsResetModal'
 import { SidebarNav } from './components/SidebarNav'
 import { ToastHub } from './components/ToastHub'
@@ -259,6 +260,10 @@ function App() {
   } | null>(null)
   // Proxy / Rules edit drafts now live inside ProfileProxyModal / ProfileRulesModal.
   const [profileRulesModal, setProfileRulesModal] = useState<{
+    id: string
+    name: string
+  } | null>(null)
+  const [profileScriptModal, setProfileScriptModal] = useState<{
     id: string
     name: string
   } | null>(null)
@@ -2496,6 +2501,18 @@ function App() {
         }}
         onError={(msg) => setError(msg)}
       />
+      <ProfileScriptModal
+        key={`psm-${profileScriptModal?.id ?? 'closed'}`}
+        target={profileScriptModal}
+        profiles={state?.profile?.profiles}
+        onClose={() => setProfileScriptModal(null)}
+        onSaved={(banner) => {
+          setProfileScriptModal(null)
+          setTunBanner(banner)
+          void refresh()
+        }}
+        onError={(msg) => setError(msg)}
+      />
       <ProfileEditInfoModal
         target={profileEditInfo}
         name={profileEditName}
@@ -2611,6 +2628,10 @@ function App() {
         onOpenProxyGroups={(id, name) => {
           setProfileMenu(null)
           setProfileProxyModal({ id, name })
+        }}
+        onOpenScript={(id, name) => {
+          setProfileMenu(null)
+          setProfileScriptModal({ id, name })
         }}
         onOpenEditFile={(id, name) => {
           setProfileMenu(null)

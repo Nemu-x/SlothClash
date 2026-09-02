@@ -18,6 +18,7 @@ export function ProfileContextMenu({
   onDelete,
   onOpenExtendConfig,
   onOpenProxyGroups,
+  onOpenScript,
   onOpenEditFile,
 }: {
   target: ProfileMenuTarget | null
@@ -31,6 +32,7 @@ export function ProfileContextMenu({
   onDelete: (id: string, name: string) => void
   onOpenExtendConfig: (id: string, name: string) => void
   onOpenProxyGroups: (id: string, name: string) => void
+  onOpenScript: (id: string, name: string) => void
   onOpenEditFile: (id: string, name: string) => void
 }) {
   const { t } = useTranslation()
@@ -145,6 +147,13 @@ export function ProfileContextMenu({
         onClick={() => onOpenProxyGroups(target.id, target.name)}
       >
         {t('ui.profiles.contextMenu.proxyGroups')}
+      </button>
+      <button
+        type="button"
+        className="ctxItem ctxItemSub"
+        onClick={() => onOpenScript(target.id, target.name)}
+      >
+        {t('ui.profiles.contextMenu.script')}
       </button>
       <button
         type="button"

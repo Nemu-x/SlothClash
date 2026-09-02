@@ -5794,3 +5794,77 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--hairline);
 }
+
+/* === Per-profile JavaScript override (js-script-override) === */
+.scriptEditorModal {
+  gap: var(--space-2);
+}
+
+.scriptEditorField,
+.scriptPreviewBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scriptPreviewBody > .eyebrow {
+  flex: 0 0 auto;
+  margin: 0 0 var(--space-2);
+}
+
+/* Failure line: same red as the YAML error, but it carries a line:column so it
+   needs to wrap instead of clipping a long engine message. */
+.scriptErrorLine {
+  margin: 0;
+  padding: var(--space-1) 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.scriptConsole {
+  flex: 0 0 auto;
+  max-height: 22vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scriptConsole > .eyebrow {
+  margin: 0 0 var(--space-1);
+}
+
+.scriptConsoleOut {
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shell[data-theme="light"] .scriptConsoleOut {
+  background: rgba(74, 55, 30, 0.05);
+}
+
+/* "JS" badge on a profile card whose script failed on the last generation. */
+.profileScriptBadge {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: var(--space-1);
+  padding: 0 6px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  cursor: help;
+}

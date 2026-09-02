@@ -286,7 +286,8 @@
         "advanced": "高级",
         "extendConfig": "扩展配置",
         "proxyGroups": "代理分组",
-        "editFile": "编辑文件"
+        "editFile": "编辑文件",
+        "script": "脚本 (JS)"
       },
       "importModal": {
         "tabUrl": "订阅 URL",
@@ -385,6 +386,26 @@
         "title": "删除配置",
         "bodyPrefix": "从本设备移除",
         "bodySuffix": "？这不会取消远程订阅。"
+      },
+      "scriptModal": {
+        "title": "JavaScript 覆写",
+        "editorTab": "编辑器",
+        "diffTab": "预览差异",
+        "editorLabel": "function main(config, ctx) — 返回要使用的配置",
+        "preview": "预览",
+        "previewing": "运行中…",
+        "clear": "清除脚本",
+        "diffChanged": "左侧：不含脚本。右侧：含脚本。所示端口与密钥为预览占位值。",
+        "diffUnchanged": "脚本没有改动任何内容 — 两侧完全一致。",
+        "consoleLabel": "脚本输出",
+        "consoleTruncated": "… 输出已截断",
+        "failed": "脚本失败：{{error}}",
+        "failedAt": "脚本在 {{position}} 处失败：{{error}}",
+        "recordedError": "上次运行失败：{{error}}",
+        "recordedErrorAt": "上次运行在第 {{line}}:{{column}} 行失败：{{error}}",
+        "savedBanner": "脚本已保存",
+        "clearedBanner": "脚本已清除",
+        "badgeTitle": "该配置文件的脚本在上次运行时失败"
       }
     },
     "proxies": {

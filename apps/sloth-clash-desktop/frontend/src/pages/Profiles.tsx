@@ -86,6 +86,15 @@ export function ProfilesPage({
                   <div className="profileTitle" title={String(p.name ?? '')}>
                     {p.name}
                   </div>
+                  {String(p.scriptError ?? '').trim() ? (
+                    <span
+                      className="profileScriptBadge"
+                      title={t('ui.profiles.scriptModal.badgeTitle')}
+                      aria-label={t('ui.profiles.scriptModal.badgeTitle')}
+                    >
+                      JS
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     className={`profileRefreshIcon${refreshBusyId === p.id ? ' isBusy' : ''}`}

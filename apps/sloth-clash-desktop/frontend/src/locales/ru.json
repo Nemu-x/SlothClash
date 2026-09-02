@@ -286,7 +286,8 @@
         "advanced": "Дополнительно",
         "extendConfig": "Расширить конфиг",
         "proxyGroups": "Группы прокси",
-        "editFile": "Редактировать файл"
+        "editFile": "Редактировать файл",
+        "script": "Скрипт (JS)"
       },
       "importModal": {
         "tabUrl": "URL подписки",
@@ -385,6 +386,26 @@
         "title": "Удалить профиль",
         "bodyPrefix": "Удалить",
         "bodySuffix": "с этого устройства? Это не отменяет удалённую подписку."
+      },
+      "scriptModal": {
+        "title": "JavaScript-переопределение",
+        "editorTab": "Редактор",
+        "diffTab": "Дифф превью",
+        "editorLabel": "function main(config, ctx) — верните конфиг, который применить",
+        "preview": "Превью",
+        "previewing": "Выполняется…",
+        "clear": "Очистить скрипт",
+        "diffChanged": "Слева — без скрипта, справа — со скриптом. Порт и секрет в превью — заглушки.",
+        "diffUnchanged": "Скрипт ничего не изменил — обе стороны одинаковые.",
+        "consoleLabel": "Вывод скрипта",
+        "consoleTruncated": "… вывод обрезан",
+        "failed": "Скрипт упал: {{error}}",
+        "failedAt": "Скрипт упал на {{position}}: {{error}}",
+        "recordedError": "Прошлый запуск упал: {{error}}",
+        "recordedErrorAt": "Прошлый запуск упал на строке {{line}}:{{column}}: {{error}}",
+        "savedBanner": "Скрипт сохранён",
+        "clearedBanner": "Скрипт очищен",
+        "badgeTitle": "Скрипт этого профиля упал на последнем запуске"
       }
     },
     "proxies": {

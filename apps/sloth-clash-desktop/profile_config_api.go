@@ -247,19 +247,21 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 	// Snapshot is generated on demand for the profile-edit UI; no live session
 	// yet, so the YAML carries tun.enable=false. Connect/SetTrafficMode will
 	// rewrite it with the correct intent before Mihomo sees it.
-	return a.writeRuntimeConfig(
+	return a.writeRuntimeConfigWithScript(
 		dataDir,
 		target.URL,
 		target.AgeSecretKey,
 		target.MergeTemplate,
 		target.ProxyTemplate,
 		target.RulesTemplate,
+		target.ScriptOverride,
 		0,
 		7890,
 		secret,
 		traffic,
 		false,
 		false,
+		nil,
 	)
 }
 

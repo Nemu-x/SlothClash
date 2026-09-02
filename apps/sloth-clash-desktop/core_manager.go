@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -28,7 +29,47 @@ import (
 // errConnectAborted is returned when connect context is cancelled or a newer connect/disconnect superseded this attempt.
 var errConnectAborted = errors.New("connect aborted")
 
+// runningUnderGoTest reports whether this binary is a `go test` binary.
+//
+// Detected from the executable name rather than by importing `testing`, which
+// has no business being linked into the shipped GUI binary.
+func runningUnderGoTest() bool {
+	exe := strings.ToLower(filepath.Base(os.Args[0]))
+	return strings.HasSuffix(exe, ".test") || strings.HasSuffix(exe, ".test.exe")
+}
+
+// testDataRootOnce holds the throwaway root handed to test binaries, so every
+// call inside one test process agrees on the same directory.
+var (
+	testDataRootOnce sync.Once
+	testDataRootPath string
+)
+
+// slothDataRoot is the app's data directory (profiles.json, runtime/, prefs).
+//
+// Under `go test` it returns a throwaway directory instead of the real one.
+// This is not paranoia: App methods persist through persistProfilesLocked, and
+// a single test that calls one of them rewrites the developer's REAL
+// profiles.json — after which the next app start treats every real runtime dir
+// as an orphan and deletes it (pruneOrphanRuntimeDirs). That happened once, on
+// 2026-09-02, and cost three profiles. A test that genuinely wants the real
+// root must ask for it with SLOTH_ALLOW_REAL_DATA_ROOT=1.
 func slothDataRoot() (string, error) {
+	if runningUnderGoTest() && os.Getenv("SLOTH_ALLOW_REAL_DATA_ROOT") != "1" {
+		var err error
+		testDataRootOnce.Do(func() {
+			dir, mkErr := os.MkdirTemp("", "sloth-test-data-root-*")
+			if mkErr != nil {
+				err = mkErr
+				return
+			}
+			testDataRootPath = dir
+		})
+		if err != nil {
+			return "", err
+		}
+		return testDataRootPath, nil
+	}
 	d, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -540,11 +581,21 @@ func tunBlockForTraffic(enable bool) string {
 `
 }
 
+// writeRuntimeConfig generates this profile's runtime config with no script.
+// Kept as the narrow entry point for callers that have no profile in hand
+// (and for the parity/e2e suites, which assert un-scripted generation).
 func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
+	return a.writeRuntimeConfigWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil)
+}
+
+// writeRuntimeConfigWithScript is the same generation with the profile's
+// JavaScript override threaded through, exactly like the declarative templates
+// beside it. scriptOut, when non-nil, receives what the script did.
+func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, script string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool, scriptOut *scriptResult) error {
 	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
 
-	outcome, err := tryWriteMergedFullProfile(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun)
+	outcome, err := tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, scriptOut)
 	if outcome == pipelineOK {
 		return nil
 	}
@@ -686,7 +737,10 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 	if err := applyProfileMergeTemplate(m, rulesTemplate); err != nil {
 		return err
 	}
-	if err := finalizeRuntimeConfigPipeline(
+	// The bare-provider fallback runs the script too: the user's declarative
+	// templates are applied on this path (just above), so silently skipping only
+	// the script would be the surprising half-measure.
+	if err := finalizeRuntimeConfigPipelineWithScript(
 		m,
 		dataDir,
 		mixedPort,
@@ -695,6 +749,8 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 		traffic,
 		withExternalController,
 		enableTun,
+		script,
+		scriptOut,
 	); err != nil {
 		return err
 	}
@@ -736,7 +792,8 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 			if err := yaml.Unmarshal(b, &m); err != nil {
 				return err
 			}
-			if err := finalizeRuntimeConfigPipeline(
+			var scriptRes scriptResult
+			if err := finalizeRuntimeConfigPipelineWithScript(
 				m,
 				dataDir,
 				mixedPort,
@@ -745,9 +802,12 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 				traffic,
 				withEC,
 				enableTun,
+				profile.ScriptOverride,
+				&scriptRes,
 			); err != nil {
 				return err
 			}
+			a.recordProfileScriptResult(profile.ID, scriptRes)
 			out, err := marshalRuntimeYAML(m)
 			if err != nil {
 				return err
@@ -758,22 +818,28 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 			return runConfigPreflight(binPath, dataDir)
 		}
 	}
-	if err := a.writeRuntimeConfig(
+	var scriptRes scriptResult
+	if err := a.writeRuntimeConfigWithScript(
 		dataDir,
 		profile.URL,
 		profile.AgeSecretKey,
 		profile.MergeTemplate,
 		profile.ProxyTemplate,
 		profile.RulesTemplate,
+		profile.ScriptOverride,
 		ctrlPort,
 		mixedPort,
 		secret,
 		traffic,
 		withEC,
 		enableTun,
+		&scriptRes,
 	); err != nil {
 		return err
 	}
+	// Record BEFORE preflight: if a script failure is followed by a preflight
+	// error, the user needs to see both, not just the second one.
+	a.recordProfileScriptResult(profile.ID, scriptRes)
 	return runConfigPreflight(binPath, dataDir)
 }
 

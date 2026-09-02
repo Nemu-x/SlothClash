@@ -288,7 +288,13 @@ func ensureRealtimeRoutingDefaults(m map[string]any) {
 	_ = m
 }
 
-func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool) {
+// applyCoreEndpointInvariants writes the values the APP itself depends on to
+// reach its own core: the local mixed port, the external-controller endpoint
+// (or its removal when we run the core without one) and the controller secret.
+// Lose any of these and the UI goes blind — no proxies list, no delay tests, no
+// traffic graph, no mode switching — so they are also what gets re-asserted
+// after a user script runs (see reassertCriticalRuntimeInvariants).
+func applyCoreEndpointInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool) {
 	m["mixed-port"] = mixedPort
 	m["socks-port"] = 0
 	m["port"] = 0
@@ -299,6 +305,29 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 		delete(m, "external-controller")
 	}
 	m["secret"] = secret
+}
+
+// applyCorpVpnSplitInvariant re-applies the corporate-VPN split. A strict no-op
+// when no corp sidecar is active. It is an invariant rather than a preference
+// because it is a correctness contract with a SECOND live tunnel: silently
+// losing it strands the user's corporate routes.
+func applyCorpVpnSplitInvariant(m map[string]any, enableTun bool) {
+	if !enableTun {
+		return
+	}
+	applyCorpVpnOverlay(m, currentCorpVpnSplit())
+}
+
+// reassertCriticalRuntimeInvariants re-applies everything a user script must not
+// be able to win, in the same order the overlay applies it. Both callers share
+// these two helpers, so the scripted and un-scripted paths cannot drift apart.
+func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool) {
+	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
+	applyCorpVpnSplitInvariant(m, enableTun)
+}
+
+func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool) {
+	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 
 	// LAN exposure is a user decision (default off = localhost only). When it
 	// is on, a loopback `bind-address` inherited from the profile would silently
@@ -357,10 +386,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	applyUserTrafficOverlay(m, prefs.Traffic)
 
 	// Corp-VPN coexistence LAST: corp route-exclude / split-DNS are mandatory for
-	// no-conflict and must survive any user/subscription overlay. A strict no-op
-	// when no corp sidecar is active, so config parity is unaffected when off.
-	if enableTun {
-		applyCorpVpnOverlay(m, currentCorpVpnSplit())
-	}
+	// no-conflict and must survive any user/subscription overlay.
+	applyCorpVpnSplitInvariant(m, enableTun)
 
 }

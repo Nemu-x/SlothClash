@@ -286,7 +286,8 @@
         "advanced": "Advanced",
         "extendConfig": "Extend config",
         "proxyGroups": "Proxy groups",
-        "editFile": "Edit file"
+        "editFile": "Edit file",
+        "script": "Script (JS)"
       },
       "importModal": {
         "tabUrl": "Subscription URL",
@@ -385,6 +386,26 @@
         "title": "Delete profile",
         "bodyPrefix": "Remove",
         "bodySuffix": "from this device? This does not cancel a remote subscription."
+      },
+      "scriptModal": {
+        "title": "JavaScript override",
+        "editorTab": "Editor",
+        "diffTab": "Preview diff",
+        "editorLabel": "function main(config, ctx) — return the config to use",
+        "preview": "Preview",
+        "previewing": "Running…",
+        "clear": "Clear script",
+        "diffChanged": "Left: without the script. Right: with it. The port and secret shown are preview placeholders.",
+        "diffUnchanged": "The script changed nothing — both sides are identical.",
+        "consoleLabel": "Script output",
+        "consoleTruncated": "… output truncated",
+        "failed": "Script failed: {{error}}",
+        "failedAt": "Script failed at {{position}}: {{error}}",
+        "recordedError": "Last run failed: {{error}}",
+        "recordedErrorAt": "Last run failed at line {{line}}:{{column}}: {{error}}",
+        "savedBanner": "Script saved",
+        "clearedBanner": "Script cleared",
+        "badgeTitle": "This profile’s script failed on the last run"
       }
     },
     "proxies": {

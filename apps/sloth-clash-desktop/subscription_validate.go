@@ -158,8 +158,14 @@ func cleanupUnusedProxyProviders(m map[string]any) {
 //  2. proxy-group reference cleanup
 //  3. fallback-group pruning
 //  4. runtime overlay (ports/secret/tun)
+//  4a. the profile's JavaScript override, when it has one
+//  4b. re-assertion of the invariants a script must not be able to win
 //  5. semantic validation
 //  6. geodata fallback injection
+//
+// This no-script form is what every caller that has no profile in hand uses
+// (and what the parity suite asserts against); the write paths call
+// finalizeRuntimeConfigPipelineWithScript.
 func finalizeRuntimeConfigPipeline(
 	m map[string]any,
 	dataDir string,
@@ -167,6 +173,23 @@ func finalizeRuntimeConfigPipeline(
 	secret, traffic string,
 	withExternalController bool,
 	enableTun bool,
+) error {
+	return finalizeRuntimeConfigPipelineWithScript(m, dataDir, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun, "", nil)
+}
+
+// finalizeRuntimeConfigPipelineWithScript is the pipeline with the per-profile
+// JavaScript override wired in. scriptOut, when non-nil, receives what happened
+// (applied / failed + reason + captured console) so the caller can record it on
+// the profile and show it in the editor.
+func finalizeRuntimeConfigPipelineWithScript(
+	m map[string]any,
+	dataDir string,
+	mixedPort, ctrlPort int,
+	secret, traffic string,
+	withExternalController bool,
+	enableTun bool,
+	script string,
+	scriptOut *scriptResult,
 ) error {
 	if fixed, ok := normalizeEscapedUnicodeStrings(m).(map[string]any); ok {
 		for k := range m {
@@ -182,6 +205,9 @@ func finalizeRuntimeConfigPipeline(
 	pruneFallbackAutoManualIfCustom(m)
 	cleanupUnusedProxyProviders(m)
 	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun)
+	if res := applyProfileScriptStep(m, script, traffic, mixedPort, ctrlPort, secret, withExternalController, enableTun); scriptOut != nil {
+		*scriptOut = res
+	}
 	if err := validateFinalConfigSemantics(m); err != nil {
 		return err
 	}

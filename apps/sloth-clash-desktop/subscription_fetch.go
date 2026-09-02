@@ -226,12 +226,26 @@ func kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey string) {
 // The returned pipelineOutcome explicitly tells the caller which branch was
 // taken — replaces the prior `(bool, error)` return that conflated "not a
 // full profile" with "fetch failed" with "merge template malformed".
+// tryWriteMergedFullProfile builds the merged full profile with no script.
 func tryWriteMergedFullProfile(
 	dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate string,
 	ctrlPort, mixedPort int,
 	secret, traffic string,
 	withExternalController bool,
 	enableTun bool,
+) (pipelineOutcome, error) {
+	return tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil)
+}
+
+// tryWriteMergedFullProfileWithScript is the same build with the profile's
+// JavaScript override threaded through to the pipeline.
+func tryWriteMergedFullProfileWithScript(
+	dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script string,
+	ctrlPort, mixedPort int,
+	secret, traffic string,
+	withExternalController bool,
+	enableTun bool,
+	scriptOut *scriptResult,
 ) (pipelineOutcome, error) {
 	overallStart := time.Now()
 	traceFields := map[string]any{
@@ -326,7 +340,7 @@ func tryWriteMergedFullProfile(
 	traceEvent("pipeline.subscription.merge", "ok", time.Since(mergeStart), traceFields)
 
 	finalizeStart := time.Now()
-	if err := finalizeRuntimeConfigPipeline(
+	if err := finalizeRuntimeConfigPipelineWithScript(
 		doc,
 		dataDir,
 		mixedPort,
@@ -335,6 +349,8 @@ func tryWriteMergedFullProfile(
 		traffic,
 		withExternalController,
 		enableTun,
+		script,
+		scriptOut,
 	); err != nil {
 		traceEvent("pipeline.subscription.finalize", "fail", time.Since(finalizeStart), map[string]any{
 			"dataDir": dataDir,

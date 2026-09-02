@@ -2,7 +2,7 @@ module SlothClashDesktop
 
 go 1.26.1
 
-toolchain go1.26.5
+toolchain go1.26.7
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -51,5 +51,5 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.23 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )

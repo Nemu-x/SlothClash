@@ -125,9 +125,20 @@ async function main() {
     )
   }
   const winTrayIco = path.join(desktopDir, 'build', 'windows', 'icon.ico')
-  if (process.platform === 'win32' && !fs.existsSync(winTrayIco)) {
+  // The state-aware tray variants are embedded on Windows (.ico) and macOS
+  // (.png); a missing set breaks `go build` on that platform, so seed them the
+  // same way icon.ico is seeded.
+  const trayStateProbe =
+    process.platform === 'darwin'
+      ? path.join(desktopDir, 'trayicons', 'state', 'mono-idle.png')
+      : path.join(desktopDir, 'build', 'windows', 'tray', 'colorful-idle.ico')
+  const needsWinIco = process.platform === 'win32' && !fs.existsSync(winTrayIco)
+  const needsTrayState =
+    (process.platform === 'win32' || process.platform === 'darwin') &&
+    !fs.existsSync(trayStateProbe)
+  if (needsWinIco || needsTrayState) {
     await step(
-      'Windows icon (ico) for go:embed',
+      'App + tray icons for go:embed',
       pnpmBin,
       ['run', 'icons:windows'],
       repoRoot,

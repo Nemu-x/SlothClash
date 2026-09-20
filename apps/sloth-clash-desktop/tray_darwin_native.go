@@ -13,6 +13,8 @@ void SlothTrayConfigureLabels(const char *showWindow, const char *settings, cons
 void SlothTrayStart(void);
 void SlothTrayStop(void);
 void SlothTraySetConnectTitle(const char *title);
+void SlothTraySetIcon(const unsigned char *p, int n, int isTemplate);
+void SlothTraySetToolTip(const char *tip);
 void slothTrayDispatch(int op);
 */
 import "C"
@@ -110,6 +112,7 @@ func trayConnectTitlePoll(stopCh <-chan struct{}) {
 	tick := time.NewTicker(1500 * time.Millisecond)
 	defer tick.Stop()
 	last := ""
+	lastIcon := ""
 	for {
 		select {
 		case <-stopCh:
@@ -133,15 +136,51 @@ func trayConnectTitlePoll(stopCh <-chan struct{}) {
 			default:
 				desired = labels.Connect
 			}
-			if desired == last {
-				continue
+			if desired != last {
+				last = desired
+				ctitle := C.CString(desired)
+				C.SlothTraySetConnectTitle(ctitle)
+				C.free(unsafe.Pointer(ctitle))
 			}
-			last = desired
-			ctitle := C.CString(desired)
-			C.SlothTraySetConnectTitle(ctitle)
-			C.free(unsafe.Pointer(ctitle))
+
+			// State icon + tooltip: swap only when the resolved asset name
+			// changes (connection state or the user's style preference).
+			kind := trayIconKindFor(st.Connection.Status, st.Traffic)
+			style := currentTrayIconStyle()
+			name := trayIconAssetBase(style, kind)
+			if name != lastIcon {
+				if applyDarwinTrayIcon(name, style == trayIconStyleMono) {
+					lastIcon = name
+				}
+				ctip := C.CString(trayTooltipFor(kind, labels))
+				C.SlothTraySetToolTip(ctip)
+				C.free(unsafe.Pointer(ctip))
+			}
 		}
 	}
+}
+
+// applyDarwinTrayIcon hands the embedded state PNG to the status item. Mono
+// assets are template images (alpha-only, tinted by the menu bar); colorful
+// ones are drawn as-is. Returns false when the asset is missing so the caller
+// retries on the next tick instead of latching a broken name.
+func applyDarwinTrayIcon(name string, template bool) bool {
+	data, err := darwinTrayStatePNGs.ReadFile("trayicons/state/" + name + ".png")
+	if err != nil || len(data) == 0 {
+		writeTrayLog(fmt.Sprintf("[tray] state icon %s missing from embed: %v", name, err))
+		return false
+	}
+	tmpl := C.int(0)
+	if template {
+		tmpl = 1
+	}
+	C.SlothTraySetIcon(
+		(*C.uchar)(unsafe.Pointer(&data[0])),
+		C.int(len(data)),
+		tmpl,
+	)
+	runtime.KeepAlive(data)
+	return true
 }
 
 func stopAppTray() {

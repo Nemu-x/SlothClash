@@ -17,6 +17,10 @@ type trayStrings struct {
 	Settings   string
 	Quit       string
 	Tooltip    string
+	// Mode suffixes for the tooltip ("Sloth Clash · TUN"), see trayTooltipFor.
+	ModeIdle  string
+	ModeProxy string
+	ModeTun   string
 }
 
 var trayStringsEN = trayStrings{
@@ -27,6 +31,9 @@ var trayStringsEN = trayStrings{
 	Settings:   "Settings…",
 	Quit:       "Quit Sloth Clash",
 	Tooltip:    "Sloth Clash",
+	ModeIdle:   "Disconnected",
+	ModeProxy:  "Proxy mode",
+	ModeTun:    "TUN mode",
 }
 
 var trayStringsRU = trayStrings{
@@ -37,6 +44,9 @@ var trayStringsRU = trayStrings{
 	Settings:   "Настройки…",
 	Quit:       "Выйти из Sloth Clash",
 	Tooltip:    "Sloth Clash",
+	ModeIdle:   "Отключено",
+	ModeProxy:  "Режим Proxy",
+	ModeTun:    "Режим TUN",
 }
 
 var trayStringsZH = trayStrings{
@@ -47,6 +57,9 @@ var trayStringsZH = trayStrings{
 	Settings:   "设置…",
 	Quit:       "退出 Sloth Clash",
 	Tooltip:    "Sloth Clash",
+	ModeIdle:   "未连接",
+	ModeProxy:  "代理模式",
+	ModeTun:    "TUN 模式",
 }
 
 // currentTrayStrings returns the active translation table. Order of

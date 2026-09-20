@@ -14,6 +14,7 @@ export {
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetTraySettings,
+  SetUISettings,
   SetUiLanguage,
   StartedMinimized,
 } from '../../wailsjs/go/main/App'

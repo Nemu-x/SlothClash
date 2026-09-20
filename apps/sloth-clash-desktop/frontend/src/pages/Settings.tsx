@@ -232,6 +232,7 @@ export function SettingsPage({
   onSetTheme,
   onSetLang,
   onSetSetting,
+  onSetUiPref,
   onSetLaunchOnStartup,
   onInstallService,
   serviceInfo,
@@ -286,6 +287,12 @@ export function SettingsPage({
   onSetSetting: <K extends keyof CompactSettings>(
     key: K,
     value: CompactSettings[K],
+  ) => void
+  // Backend-owned (prefs.json) startup/window toggles — written atomically
+  // by Go rather than cached in localStorage.
+  onSetUiPref: (
+    key: 'startMinimized' | 'autoConnectOnStartup' | 'closeToTray',
+    value: boolean,
   ) => void
   onSetLaunchOnStartup: (next: boolean) => void
   onInstallService: () => void
@@ -437,7 +444,7 @@ export function SettingsPage({
                 checked={settings.startMinimized}
                 label={t('settings.startMinimized')}
                 onToggle={() =>
-                  onSetSetting('startMinimized', !settings.startMinimized)
+                  onSetUiPref('startMinimized', !settings.startMinimized)
                 }
               />
             </div>
@@ -455,7 +462,7 @@ export function SettingsPage({
                 checked={settings.autoConnectOnStartup}
                 label={t('settings.autoConnectOnStartup')}
                 onToggle={() =>
-                  onSetSetting(
+                  onSetUiPref(
                     'autoConnectOnStartup',
                     !settings.autoConnectOnStartup,
                   )
@@ -469,7 +476,7 @@ export function SettingsPage({
                 disabled={!trayAvailable}
                 label={t('settings.closeToTray')}
                 onToggle={() =>
-                  onSetSetting('closeToTray', !settings.closeToTray)
+                  onSetUiPref('closeToTray', !settings.closeToTray)
                 }
               />
             </div>

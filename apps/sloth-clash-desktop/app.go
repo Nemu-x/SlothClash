@@ -123,6 +123,11 @@ func (a *App) startup(ctx context.Context) {
 	registerDarwinLifecycleApp(a)
 	installDockReopenHook()
 	loadDesktopPrefs()
+	// Close-to-tray must be right before the frontend has had a chance to push
+	// it (the first window close can happen while the webview is still loading).
+	a.mu.Lock()
+	a.closeToTray = currentDesktopPrefs().UI.IsCloseToTray()
+	a.mu.Unlock()
 	a.loadProfilesFromDisk()
 	// Reclaim runtime dirs of profiles deleted in earlier sessions (audit R3).
 	a.pruneOrphanRuntimeDirs()

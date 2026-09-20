@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // TunSettings mirrors clash-verge-rev's user-facing TUN fields (src/components/setting/mods/tun-viewer.tsx)
@@ -106,6 +107,7 @@ type DesktopPrefs struct {
 	Experimental ExperimentalSettings `json:"experimental"`
 	CorpVpn      CorpVpnCredentials   `json:"corpVpn"`
 	Tray         TraySettings         `json:"tray"`
+	UI           UISettings           `json:"ui"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
@@ -410,6 +412,71 @@ func (a *App) SetHwidEnabled(enabled bool) DesktopPrefs {
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
+	return snapshot
+}
+
+// UISettings holds the startup / window behaviour toggles that used to live only
+// in the webview's localStorage. They moved here because (a) Go needs them
+// before the webview exists (StartHidden, close-to-tray on the very first
+// close) and (b) localStorage is a browser cache: Chromium commits it to disk
+// on a delay and only flushes on a graceful shutdown, so a reboot with the
+// app parked in the tray, the updater's os.Exit or a crash could silently
+// revert a toggle — while Launch on startup (registry-backed) kept sticking.
+// prefs.json is written atomically on every change.
+//
+// Pointer fields: nil = never written by this build → the frontend migrates
+// the localStorage value once (see App.tsx), after which all three are set.
+type UISettings struct {
+	StartMinimized       *bool `json:"startMinimized,omitempty"`
+	AutoConnectOnStartup *bool `json:"autoConnectOnStartup,omitempty"`
+	CloseToTray          *bool `json:"closeToTray,omitempty"`
+}
+
+// IsSet reports whether the section has ever been written (migration marker).
+func (u UISettings) IsSet() bool {
+	return u.StartMinimized != nil || u.AutoConnectOnStartup != nil || u.CloseToTray != nil
+}
+
+// IsStartMinimized: default false (window shows on launch).
+func (u UISettings) IsStartMinimized() bool {
+	return u.StartMinimized != nil && *u.StartMinimized
+}
+
+// IsAutoConnectOnStartup: default false (opt-in).
+func (u UISettings) IsAutoConnectOnStartup() bool {
+	return u.AutoConnectOnStartup != nil && *u.AutoConnectOnStartup
+}
+
+// IsCloseToTray: default true (closing the window parks the app in the tray).
+func (u UISettings) IsCloseToTray() bool {
+	return u.CloseToTray == nil || *u.CloseToTray
+}
+
+// normalized returns a copy with every field explicitly set, so one write
+// marks the section as migrated and later reads never see a half-set state.
+func (u UISettings) normalized() UISettings {
+	sm := u.IsStartMinimized()
+	ac := u.IsAutoConnectOnStartup()
+	ct := u.IsCloseToTray()
+	return UISettings{StartMinimized: &sm, AutoConnectOnStartup: &ac, CloseToTray: &ct}
+}
+
+// SetUISettings is the Wails-exposed setter for the startup / window toggles.
+// Persisted atomically to prefs.json and mirrored into the live close-to-tray
+// flag so the very next window close honours it without a frontend roundtrip.
+func (a *App) SetUISettings(next UISettings) DesktopPrefs {
+	norm := next.normalized()
+	prefsMu.Lock()
+	prefsCurrent.UI = norm
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+	if a != nil {
+		a.mu.Lock()
+		a.closeToTray = norm.IsCloseToTray()
+		a.state.UpdatedAt = time.Now().Unix()
+		a.mu.Unlock()
+	}
 	return snapshot
 }
 

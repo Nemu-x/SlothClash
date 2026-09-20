@@ -827,6 +827,13 @@ func (a *App) EnsureTunReady() TunSetupResult {
 		}
 		return TunSetupResult{Success: true, Message: "TUN enabled", InstallAction: false}
 	}
+	if !privilegedServiceSupported(runtime.GOOS) {
+		return TunSetupResult{
+			Success:       false,
+			Message:       privilegedServiceUnsupportedMessage,
+			InstallAction: false,
+		}
+	}
 	return TunSetupResult{
 		Success:       false,
 		Message:       "Service required. Install service to continue or use Proxy mode.",
@@ -1301,6 +1308,17 @@ func (a *App) SetProfileRulesTemplate(profileID string, template string) (AppSta
 }
 
 func (a *App) InstallService() (TunSetupResult, error) {
+	// The Linux build never talks to the helper (ipc_sloth_stub.go), so
+	// installing it would only add a root service nobody uses. Say so instead
+	// of launching the installer unprivileged and failing on /usr/local/lib
+	// with a permission error (issue #73).
+	if !privilegedServiceSupported(runtime.GOOS) {
+		return TunSetupResult{
+			Success:       false,
+			Message:       privilegedServiceUnsupportedMessage,
+			InstallAction: false,
+		}, nil
+	}
 	tmpDir, err := os.MkdirTemp("", "sloth-clash-service-*")
 	if err != nil {
 		return TunSetupResult{}, err

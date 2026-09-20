@@ -20,9 +20,17 @@ func main() {
 	// Create an instance of the app structure
 	app := NewApp(bundledResources)
 
+	// Prefs are needed before the window exists: "Start minimized" must be a
+	// native StartHidden, not a WindowHide() fired from the webview after the
+	// window has already flashed on screen. Only honoured where a tray backend
+	// exists — starting hidden without a tray would strand the user.
+	loadDesktopPrefs()
+	startHidden := trayEnabled() && currentDesktopPrefs().UI.IsStartMinimized()
+
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title: "Sloth Clash",
+		Title:       "Sloth Clash",
+		StartHidden: startHidden,
 		// 1100x720 leaves comfortable margins on 1366x768 laptops and on
 		// scaled-up 4K monitors (150%/175% DPI) alike. The previous 1200x820
 		// covered ~88%×107% of a 1366x768 screen which made the window taller

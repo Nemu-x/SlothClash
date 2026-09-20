@@ -1,3 +1,25 @@
+## Sloth Clash desktop `0.9.3` — Unreleased
+
+> ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS click the banner and accept the prompt.
+
+### English
+
+**✨ The tray icon now shows what is actually running**
+- Requested by users: like the other Clash desktops, the tray icon changes with the live mode instead of always showing the same sloth. Disconnected: plain icon. Connected with the system proxy set: a green dot. TUN mode: a blue ring. The dot-versus-ring difference is deliberate so the two connected states stay distinguishable on monochrome menu bars. Hovering the icon spells it out ("Sloth Clash · TUN mode"). Windows and macOS.
+- New Settings → Appearance option **Tray icon**: system default (colorful on Windows, monochrome template on macOS), colorful, or monochrome. Applies within a second, no restart.
+
+- **Mihomo core updated to `v1.19.31`.** Fixes in the core: Hysteria v1 UDP handling restored, Hysteria2 UDP sessions no longer leak when a connection closes, IPv6 URL parsing in XHTTP, a nil-pointer crash in WireGuard initialisation, a VLESS decryption cleanup panic, AmneziaWG v3 `RandomPaddingAddition` / `DisableCookies`, OpenVPN `tls-auth` HMAC digest, DomainSet wildcard matching with overlapping rules, and a batch of "connection not closed after error" leaks across outbounds (DoQ, mKCP, Snell, KCPTun, TUIC). New: EasyTier outbound, `stack: mips` for TUN, `identity-secret` for ZeroTier. Also lower memory use in gVisor and the config converter, and updated Tailscale (1.102.3), Mieru and Sudoku (0.5.0) libraries. Config generation and the runtime pipeline were verified against the new core.
+- **Linux: "Install service" now tells the truth.** The Linux build runs the core in-process and does not talk to the privileged helper yet, so the button used to launch an installer without elevation, trigger a stray password prompt from `systemctl` and then fail with a permission error nobody could act on. It now says that the helper service is not wired on Linux yet and that Proxy mode is the supported path, instead of pretending to install something the app would never use. Privileged TUN on Linux is tracked as its own change.
+
+### Русский
+
+**✨ Иконка в трее теперь показывает, что реально работает**
+- По просьбе пользователей: как в других Clash-клиентах, иконка в трее меняется вместе с режимом, а не показывает вечно одного и того же ленивца. Отключено: обычная иконка. Подключено с системным прокси: зелёная точка. Режим TUN: синее кольцо. Точка и кольцо различаются формой специально, чтобы два подключённых состояния были различимы и на монохромных строках меню. При наведении подпись говорит прямо («Sloth Clash · Режим TUN»). Windows и macOS.
+- Новая опция в Настройки → Внешний вид, **Иконка в трее**: как в системе (цветная на Windows, монохромная template-иконка на macOS), цветная или монохромная. Применяется в течение секунды, без перезапуска.
+
+- **Ядро Mihomo обновлено до `v1.19.31`.** Починки в ядре: восстановлена обработка UDP в Hysteria v1, UDP-сессии Hysteria2 больше не текут при закрытии соединения, разбор IPv6-URL в XHTTP, nil-pointer при инициализации WireGuard, паника при очистке VLESS-дешифровки, `RandomPaddingAddition` / `DisableCookies` для AmneziaWG v3, HMAC-дайджест `tls-auth` в OpenVPN, wildcard-матчинг DomainSet при пересекающихся правилах и пачка утечек «соединение не закрыто после ошибки» в outbound'ах (DoQ, mKCP, Snell, KCPTun, TUIC). Новое: outbound EasyTier, `stack: mips` для TUN, `identity-secret` для ZeroTier. Плюс меньше памяти в gVisor и конвертере конфигов, обновлены библиотеки Tailscale (1.102.3), Mieru и Sudoku (0.5.0). Генерация конфига и рантайм-пайплайн проверены на новом ядре.
+- **Linux: кнопка «Установить сервис» теперь говорит правду.** Linux-сборка запускает ядро внутри процесса и с привилегированным помощником пока не общается, поэтому кнопка запускала инсталлер без повышения прав, вызывала левый запрос пароля от `systemctl` и падала с ошибкой доступа, с которой нечего было делать. Теперь она сообщает, что сервис на Linux ещё не подключён и поддерживаемый путь — режим Proxy, вместо того чтобы изображать установку того, чем приложение никогда не воспользуется. Привилегированный TUN на Linux заведён отдельным изменением.
+
 ## Sloth Clash desktop `0.9.2` — 2026-09-03
 
 > ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS/Linux click the banner and accept the prompt.

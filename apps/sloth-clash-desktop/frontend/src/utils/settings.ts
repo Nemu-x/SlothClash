@@ -1,6 +1,10 @@
 import { LS_SETTINGS } from '../constants'
 import type { CompactSettings } from '../types/app'
 
+// startMinimized / autoConnectOnStartup / closeToTray are backend-owned since
+// 0.9.3 (prefs.json, `SetUISettings`): the values here and in localStorage
+// are only the first-render seed and the one-time migration source. After
+// migration App.tsx overwrites them from Go on every mount.
 export const DEFAULT_SETTINGS: CompactSettings = {
   startMinimized: false,
   launchOnStartup: false,

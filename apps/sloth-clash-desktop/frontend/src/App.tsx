@@ -44,6 +44,7 @@ import {
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
   SetTraySettings,
+  SetUISettings,
   SetUiLanguage,
 } from './api/prefs'
 import {
@@ -65,7 +66,7 @@ import {
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
 import { UpdateRuleProvider } from './api/rules'
-import { BrowserOpenURL, EventsOn, WindowHide } from './api/runtime'
+import { BrowserOpenURL, EventsOn } from './api/runtime'
 import {
   GetServiceInfo,
   InstallService,
@@ -471,10 +472,10 @@ function App() {
     setProfileFileYamlErr(yamlValidationError(profileFileText, true))
   }, [profileFileText])
 
-  // Sync the persisted autostart state with the OS-level registry on mount
-  // and honour Start Minimized by hiding the window immediately when the
-  // app was either launched with --minimized (autostart) or the user has
-  // toggled the "Start minimized" preference.
+  // Sync the persisted autostart state with the OS-level registry on mount.
+  // "Start minimized" is honoured natively by Go (StartHidden from prefs.json)
+  // before the window exists — the old WindowHide() here fired after the window
+  // had already flashed, and depended on localStorage having survived.
   useEffect(() => {
     void (async () => {
       try {
@@ -483,15 +484,34 @@ function App() {
       } catch {
         /* ignore: registry not available (non-Windows / permission denied) */
       }
-      // Honour ONLY the user's "Start minimized" preference. The autostart Run
-      // key launches the app with --minimized, but that flag must NOT override
-      // the setting — it used to force the window to the tray on every boot even
-      // when "Start minimized" was off, so the app ran headless.
-      if (settings.startMinimized) {
-        WindowHide()
-      }
       try {
         const prefs = await GetDesktopPrefs()
+        // Startup / window toggles are backend-owned (prefs.json). A build that
+        // never wrote the section reports every field null: migrate the
+        // localStorage values once, after which prefs.json is the only source
+        // and localStorage is just a stale cache.
+        const ui = (prefs as any)?.ui
+        const uiIsSet =
+          ui &&
+          (ui.startMinimized != null ||
+            ui.autoConnectOnStartup != null ||
+            ui.closeToTray != null)
+        if (uiIsSet) {
+          applyUiPrefs(ui)
+        } else {
+          try {
+            const migrated = await SetUISettings(
+              new main.UISettings({
+                startMinimized: settings.startMinimized,
+                autoConnectOnStartup: settings.autoConnectOnStartup,
+                closeToTray: settings.closeToTray,
+              }),
+            )
+            applyUiPrefs((migrated as any)?.ui)
+          } catch {
+            /* keep the localStorage values for this session; retried next launch */
+          }
+        }
         const nextTun = new main.TunSettings(prefs?.tun ?? {})
         const nextTraffic = new main.TrafficSettings(prefs?.traffic ?? {})
         setTunPrefs(nextTun)
@@ -1092,6 +1112,44 @@ function App() {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
 
+  // Mirror the backend-owned startup/window toggles into `settings` so every
+  // consumer (auto-connect effect, close-to-tray push, Settings page) keeps
+  // reading one object. Go normalizes nulls to defaults on write, so a
+  // missing field here only happens before migration.
+  const applyUiPrefs = (ui: any) => {
+    if (!ui) return
+    setSettings((prev) => ({
+      ...prev,
+      startMinimized: ui.startMinimized === true,
+      autoConnectOnStartup: ui.autoConnectOnStartup === true,
+      closeToTray: ui.closeToTray !== false,
+    }))
+  }
+
+  // Toggle one of the backend-owned startup/window prefs: optimistic flip,
+  // then the backend's echo is authoritative; rolled back with a toast on
+  // error. The write is atomic on the Go side, which is the whole point —
+  // localStorage could silently lose these on an abrupt shutdown.
+  const setUiPref = (
+    key: 'startMinimized' | 'autoConnectOnStartup' | 'closeToTray',
+    value: boolean,
+  ) => {
+    const prevValue = settings[key]
+    setSetting(key, value)
+    const next = {
+      startMinimized: settings.startMinimized,
+      autoConnectOnStartup: settings.autoConnectOnStartup,
+      closeToTray: settings.closeToTray,
+      [key]: value,
+    }
+    void SetUISettings(new main.UISettings(next))
+      .then((prefs) => applyUiPrefs((prefs as any)?.ui))
+      .catch((e) => {
+        setSetting(key, prevValue)
+        pushToast({ kind: 'error', message: String(e) })
+      })
+  }
+
   const commitTunPrefs = async (
     patch: Partial<main.TunSettings>,
     drafts?: {
@@ -1279,6 +1337,19 @@ function App() {
       setCustomAccent(null)
       setLang('en')
       setSettings(DEFAULT_SETTINGS)
+      // Backend-owned toggles reset too, otherwise the next launch would
+      // restore them from prefs.json over the defaults shown here.
+      try {
+        await SetUISettings(
+          new main.UISettings({
+            startMinimized: DEFAULT_SETTINGS.startMinimized,
+            autoConnectOnStartup: DEFAULT_SETTINGS.autoConnectOnStartup,
+            closeToTray: DEFAULT_SETTINGS.closeToTray,
+          }),
+        )
+      } catch {
+        /* non-fatal: the localStorage reset below still applies */
+      }
       localStorage.removeItem(LS_THEME)
       localStorage.removeItem(LS_ACCENT)
       localStorage.removeItem(LS_LANG)
@@ -2330,6 +2401,7 @@ function App() {
                 onSetTheme={setTheme}
                 onSetLang={setLang}
                 onSetSetting={setSetting}
+                onSetUiPref={setUiPref}
                 onSetLaunchOnStartup={(next) => {
                   setSetting('launchOnStartup', next)
                   void (async () => {

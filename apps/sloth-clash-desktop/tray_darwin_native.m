@@ -238,6 +238,41 @@ void SlothTraySetConnectTitle(const char *title) {
     });
 }
 
+// SlothTraySetIcon replaces the status item image with an embedded PNG (the
+// state-aware idle/proxy/tun variants). The bytes are copied into an NSData
+// before hopping to the main queue, so the Go slice may be released as soon as
+// this returns. isTemplate selects the menu-bar tint behaviour (mono glyphs)
+// versus drawing the PNG's own colours (colorful style). No-op once the tray
+// has been torn down.
+void SlothTraySetIcon(const unsigned char *bytes, int length, int isTemplate) {
+    if (bytes == NULL || length <= 0) return;
+    NSData *png = [NSData dataWithBytes:bytes length:(NSUInteger)length];
+    BOOL tmpl = isTemplate != 0;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gStatusItem == nil || gStatusItem.button == nil) return;
+        NSImage *img = [[NSImage alloc] initWithData:png];
+        if (img == nil || !img.valid) return;
+        NSSize s = SlothTrayNormalisedIconSize(img);
+        [img setSize:s];
+        [img setTemplate:tmpl];
+        gStatusItem.button.image = img;
+        gStatusItem.button.imagePosition = NSImageOnly;
+        gStatusItem.button.title = @"";
+        [img release];
+    });
+}
+
+// SlothTraySetToolTip updates the hover text ("Sloth Clash · TUN mode").
+void SlothTraySetToolTip(const char *tip) {
+    if (tip == NULL) return;
+    NSString *t = [NSString stringWithUTF8String:tip];
+    if (t == nil) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gStatusItem == nil || gStatusItem.button == nil) return;
+        gStatusItem.button.toolTip = t;
+    });
+}
+
 void SlothTrayStart(void) {
     gTrayWanted = YES;
     gTrayGeneration++;

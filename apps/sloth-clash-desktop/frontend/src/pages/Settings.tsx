@@ -209,6 +209,8 @@ export function SettingsPage({
   settings,
   settingsBusy,
   trayAvailable,
+  trayIconStyle,
+  onSetTrayIconStyle,
   tunStackValue,
   tunPrefs,
   trafficPrefs,
@@ -253,6 +255,9 @@ export function SettingsPage({
   settings: CompactSettings
   settingsBusy: boolean
   trayAvailable: boolean
+  // Backend-owned (prefs.json): '' = platform default, 'colorful' | 'mono'.
+  trayIconStyle: string
+  onSetTrayIconStyle: (style: string) => void
   tunStackValue: string
   tunPrefs: main.TunSettings
   trafficPrefs: main.TrafficSettings
@@ -407,6 +412,25 @@ export function SettingsPage({
                 ))}
               </select>
             </label>
+            {trayAvailable ? (
+              <label className="field">
+                <span className="fieldLab">{t('settings.trayIcon')}</span>
+                <select
+                  className="selectModern"
+                  value={trayIconStyle}
+                  onChange={(e) => onSetTrayIconStyle(e.target.value)}
+                >
+                  <option value="">{t('settings.trayIconAuto')}</option>
+                  <option value="colorful">
+                    {t('settings.trayIconColorful')}
+                  </option>
+                  <option value="mono">{t('settings.trayIconMono')}</option>
+                </select>
+                <p className="muted settingsMicroHint">
+                  {t('settings.trayIconHint')}
+                </p>
+              </label>
+            ) : null}
             <div className="settingsToggleRow">
               <span>{t('settings.startMinimized')}</span>
               <SettingsSwitch

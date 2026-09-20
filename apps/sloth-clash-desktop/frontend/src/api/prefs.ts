@@ -13,6 +13,7 @@ export {
   SetExperimentalSettings,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
+  SetTraySettings,
   SetUiLanguage,
   StartedMinimized,
 } from '../../wailsjs/go/main/App'

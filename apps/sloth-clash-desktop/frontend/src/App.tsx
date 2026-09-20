@@ -43,6 +43,7 @@ import {
   SetExperimentalSettings,
   SetHwidEnabled,
   SetLaunchOnStartupPreference,
+  SetTraySettings,
   SetUiLanguage,
 } from './api/prefs'
 import {
@@ -329,6 +330,9 @@ function App() {
     pct: number
   } | null>(null)
   const [hwidSaving, setHwidSaving] = useState(false)
+  // Tray icon look, backend-owned (prefs.json): '' = platform default,
+  // 'colorful' | 'mono'. The native tray reads it directly; we only mirror it.
+  const [trayIconStyle, setTrayIconStyle] = useState<string>('')
   const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
   const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
   const [tunDeviceDraft, setTunDeviceDraft] = useState<string>('')
@@ -501,6 +505,7 @@ function App() {
         // toggle off.
         const rawHwid = prefs?.privacy?.hwidEnabled
         setHwidEnabled(rawHwid === false ? false : true)
+        setTrayIconStyle(String((prefs as any)?.tray?.iconStyle ?? ''))
         // AppUpdate.autoCheckEnabled is *bool too: undefined/null → default on.
         const rawAppUpd = (prefs as any)?.appUpdate?.autoCheckEnabled
         setAppUpdateEnabled(rawAppUpd === false ? false : true)
@@ -2279,6 +2284,23 @@ function App() {
                 settings={settings}
                 settingsBusy={settingsBusy}
                 trayAvailable={trayAvailable}
+                trayIconStyle={trayIconStyle}
+                onSetTrayIconStyle={(next) => {
+                  // Optimistic; the backend echoes the normalized value back
+                  // and the native tray re-reads prefs on its next tick.
+                  setTrayIconStyle(next)
+                  void SetTraySettings(
+                    new main.TraySettings({ iconStyle: next }),
+                  )
+                    .then((prefs) => {
+                      setTrayIconStyle(
+                        String((prefs as any)?.tray?.iconStyle ?? ''),
+                      )
+                    })
+                    .catch((e) => {
+                      pushToast({ kind: 'error', message: String(e) })
+                    })
+                }}
                 tunStackValue={tunStackValue}
                 tunPrefs={tunPrefs}
                 trafficPrefs={trafficPrefs}

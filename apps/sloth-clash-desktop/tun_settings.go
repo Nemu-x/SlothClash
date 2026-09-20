@@ -105,10 +105,21 @@ type DesktopPrefs struct {
 	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
 	Experimental ExperimentalSettings `json:"experimental"`
 	CorpVpn      CorpVpnCredentials   `json:"corpVpn"`
+	Tray         TraySettings         `json:"tray"`
 	// Lang is the current UI language ("en"/"ru"/"zh"/""). Frontend pushes
 	// this on i18n init / change so the native tray menu can localize its
 	// labels without a separate IPC roundtrip on each redraw.
 	Lang string `json:"lang,omitempty"`
+}
+
+// TraySettings holds the native tray look. The tray is built in Go before the
+// webview attaches, so this lives in prefs.json (not localStorage) and the
+// tray pollers read it directly.
+type TraySettings struct {
+	// IconStyle is "colorful" (full-colour app icon with a coloured state
+	// badge) or "mono" (template glyph with a shape-only badge). "" = platform
+	// default: mono on macOS, colorful on Windows. See tray_icon_state.go.
+	IconStyle string `json:"iconStyle,omitempty"`
 }
 
 // PrivacySettings holds opt-out toggles for client metadata sent to subscription
@@ -396,6 +407,21 @@ func (a *App) SetHwidEnabled(enabled bool) DesktopPrefs {
 	v := enabled
 	prefsMu.Lock()
 	prefsCurrent.Privacy.HwidEnabled = &v
+	snapshot := prefsCurrent
+	savePrefsBestEffort(snapshot)
+	prefsMu.Unlock()
+	return snapshot
+}
+
+// SetTraySettings is the Wails-exposed setter for the tray look. Persisted to
+// prefs.json; the tray state pollers pick the new style up on their next tick
+// (≤1.5 s), no restart needed. Unknown style values are stored as "" (platform
+// default) rather than rejected, so a stale UI can never wedge the tray.
+func (a *App) SetTraySettings(next TraySettings) DesktopPrefs {
+	_ = a
+	next.IconStyle = normalizeTrayIconStyle(next.IconStyle)
+	prefsMu.Lock()
+	prefsCurrent.Tray = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()

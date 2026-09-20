@@ -11,6 +11,7 @@ import fs from 'node:fs/promises'
 import sharp from 'sharp'
 import toIco from 'to-ico'
 
+import { generateTrayIcons } from './generate-tray-icons.mjs'
 import { log_info, log_success } from './utils.mjs'
 
 const SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
@@ -48,6 +49,11 @@ export async function generateWindowsIcon() {
   log_success(
     `[icon] wrote ${outIco} (${SIZES.join(', ')} px from appicon.png)`,
   )
+
+  // State-aware tray variants (Windows .ico + macOS .png) come from the same
+  // sources and are embedded by the tray code, so they are always produced
+  // together with icon.ico.
+  await generateTrayIcons()
 }
 
 const selfName = path.basename(fileURLToPath(import.meta.url))

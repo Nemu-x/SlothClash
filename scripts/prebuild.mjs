@@ -165,7 +165,7 @@ async function updateHashCache(targetPath) {
 // Pinned mihomo (Clash.Meta) core version — single source of truth.
 // To bump: edit this constant, then run `pnpm run prebuild --force` to refresh
 // the embedded sidecar. Override at build time with MIHOMO_CORE_VERSION (CI/testing).
-const META_VERSION_PINNED = 'v1.19.31'
+const META_VERSION_PINNED = 'v1.19.32'
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 
@@ -275,6 +275,19 @@ async function resolveSidecar(binInfo) {
   const { name, targetFile, zipFile, exeFile, downloadURL } = binInfo
   const sidecarPath = path.join(SIDECAR_DIR, targetFile)
   await fsp.mkdir(SIDECAR_DIR, { recursive: true })
+
+  // Record the pinned core version next to the binary. main.go embeds
+  // build/sidecar wholesale, so Go can name the exact core (subscription
+  // User-Agent: panels gate protocol output on it) without spawning it.
+  // Written on every run, including cache hits, so the file can never lag
+  // behind the pin.
+  if (name === 'sloth-mihomo') {
+    await fsp.writeFile(
+      path.join(SIDECAR_DIR, 'core-version.txt'),
+      `${META_VERSION}
+`,
+    )
+  }
 
   if (!FORCE && fs.existsSync(sidecarPath)) {
     log_success(`"${name}" already exists, skipping download`)

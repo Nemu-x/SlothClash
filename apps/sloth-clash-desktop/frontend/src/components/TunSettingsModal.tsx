@@ -44,6 +44,7 @@ export function TunSettingsModal({
 
   const tunStackOptions: { id: string; label: string }[] = [
     { id: '', label: t('settings.tun.inherit') },
+    { id: 'mips', label: 'mips' },
     { id: 'gvisor', label: 'gvisor' },
     { id: 'system', label: 'system' },
     { id: 'mixed', label: 'mixed' },

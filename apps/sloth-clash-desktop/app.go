@@ -478,6 +478,8 @@ func (a *App) refreshServiceStatus() {
 		installed, running, lastErr = queryWindowsServiceStatus("sloth_clash_service")
 	case "darwin":
 		installed, running, lastErr = queryDarwinServiceStatus()
+	case "linux":
+		installed, running, lastErr = queryLinuxServiceStatus()
 	default:
 		return
 	}
@@ -1324,10 +1326,8 @@ func (a *App) SetProfileRulesTemplate(profileID string, template string) (AppSta
 }
 
 func (a *App) InstallService() (TunSetupResult, error) {
-	// The Linux build never talks to the helper (ipc_sloth_stub.go), so
-	// installing it would only add a root service nobody uses. Say so instead
-	// of launching the installer unprivileged and failing on /usr/local/lib
-	// with a permission error (issue #73).
+	// Platforms without an IPC transport (ipc_sloth_stub.go) must not run the
+	// installer: it would add a root service nobody uses.
 	if !privilegedServiceSupported(runtime.GOOS) {
 		return TunSetupResult{
 			Success:       false,
@@ -1335,7 +1335,15 @@ func (a *App) InstallService() (TunSetupResult, error) {
 			InstallAction: false,
 		}, nil
 	}
-	tmpDir, err := os.MkdirTemp("", "sloth-clash-service-*")
+	var tmpDir string
+	var err error
+	if runtime.GOOS == "linux" {
+		// Stable, exec-able staging dir (see linuxServiceStagingDir); kept on
+		// failure so the manual `sudo ...` fallback still points at real files.
+		tmpDir, err = linuxServiceStagingDir()
+	} else {
+		tmpDir, err = os.MkdirTemp("", "sloth-clash-service-*")
+	}
 	if err != nil {
 		return TunSetupResult{}, err
 	}
@@ -1391,19 +1399,19 @@ func (a *App) InstallService() (TunSetupResult, error) {
 	} else if runtime.GOOS == "darwin" {
 		out, runErr = installServiceElevatedDarwin(installPath, tmpDir, coreHashesArg)
 	} else {
-		args := []string{}
-		if coreHashesArg != "" {
-			args = append(args, "--core-sha256", coreHashesArg)
-		}
-		cmd := exec.Command(installPath, args...)
-		cmd.Dir = tmpDir
-		out, runErr = cmd.CombinedOutput()
+		// Linux: pkexec (polkit). The error text already carries the manual
+		// sudo fallback when polkit is missing or refused (issue #73).
+		out, runErr = installServiceElevatedLinux(installPath, tmpDir, coreHashesArg)
 	}
 	if runErr != nil {
-		_ = os.RemoveAll(tmpDir)
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = runErr.Error()
+		if runtime.GOOS != "linux" {
+			_ = os.RemoveAll(tmpDir)
+		}
+		msg := runErr.Error()
+		if runtime.GOOS != "linux" {
+			if o := strings.TrimSpace(string(out)); o != "" {
+				msg = o
+			}
 		}
 		hint := ""
 		if runtime.GOOS == "windows" && (strings.Contains(strings.ToLower(msg), "access is denied") ||
@@ -1425,16 +1433,9 @@ func (a *App) InstallService() (TunSetupResult, error) {
 	a.state.Service.Unreachable = false
 	a.mu.Unlock()
 
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		a.refreshServiceStatus()
-	} else {
-		a.mu.Lock()
-		a.state.Service.Installed = true
-		a.state.Service.Running = true
-		a.state.Service.LastError = ""
-		a.state.UpdatedAt = time.Now().Unix()
-		a.mu.Unlock()
-	}
+	// Every supported platform now has a real status query (sc / launchctl /
+	// systemctl), so never assume "installed+running" on a successful exit.
+	a.refreshServiceStatus()
 
 	_ = os.RemoveAll(tmpDir)
 	msg := "Service installed. If you also use another Clash client, stop its Windows service while using Sloth TUN to avoid conflicts."

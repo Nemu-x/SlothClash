@@ -215,6 +215,17 @@ func (a *App) bootActiveProfileCoreInBackground(bootGen uint64) {
 				"error":     err.Error(),
 			},
 		)
+		// A stale core pin (core bumped by the upgrade, service still pinned to
+		// the old hash) shows up here first, before the user ever clicks
+		// Connect. Flag it now so the reinstall banner is already up when the
+		// window opens instead of after a failed connect.
+		if isCorePinMismatchError(err) {
+			a.mu.Lock()
+			a.state.Service.CorePinMismatch = true
+			a.state.UpdatedAt = time.Now().Unix()
+			a.mu.Unlock()
+			a.emitAppStateChanged()
+		}
 		return
 	}
 	// Only sync the runtime config when the core was REUSED (survived an unclean

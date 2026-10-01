@@ -1746,6 +1746,21 @@ function App() {
     void refreshServiceInfo()
   }, [refreshServiceInfo])
 
+  // The backend flags a stale core pin / unreachable service on the *app
+  // state* when a connect fails (finishConnectJobFailed). serviceInfo is only
+  // fetched on mount and after an install, so without this hook the flag never
+  // reached the banner within the session and the user was left with a raw
+  // "HTTP 503 … does not match any pinned hash" and no action (seen on macOS
+  // after the 0.9.3 core bump). Re-probe as soon as either flag turns on.
+  const livePinMismatch = state?.service?.corePinMismatch === true
+  const liveUnreachable = state?.service?.unreachable === true
+  useEffect(() => {
+    if (livePinMismatch || liveUnreachable) {
+      setServiceBannerDismissed(false)
+      void refreshServiceInfo()
+    }
+  }, [livePinMismatch, liveUnreachable, refreshServiceInfo])
+
   const installService = async () => {
     setError('')
     const result = await InstallService()
@@ -1979,7 +1994,9 @@ function App() {
       <section className="content">
         {(serviceInfo?.updateRequired ||
           serviceInfo?.corePinMismatch ||
-          serviceInfo?.unreachable) &&
+          serviceInfo?.unreachable ||
+          livePinMismatch ||
+          liveUnreachable) &&
         !serviceBannerDismissed ? (
           <div className="serviceUpdateBar" role="alert">
             <span className="serviceUpdateBarIcon" aria-hidden>
@@ -1988,7 +2005,7 @@ function App() {
             <span className="serviceUpdateBarText">
               {serviceInfo?.updateRequired
                 ? t('settings.serviceUpdateTitle')
-                : serviceInfo?.corePinMismatch
+                : serviceInfo?.corePinMismatch || livePinMismatch
                   ? t('settings.serviceRepinTitle')
                   : t('settings.serviceUnreachableTitle')}{' '}
               — {t('settings.serviceUpdateAdminHint')}

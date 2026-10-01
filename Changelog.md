@@ -1,4 +1,4 @@
-## Sloth Clash desktop `0.9.4` — Unreleased
+## Sloth Clash desktop `0.9.4` — 2026-10-02
 
 > ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS click the banner and accept the prompt.
 

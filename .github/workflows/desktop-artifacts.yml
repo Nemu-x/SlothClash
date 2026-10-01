@@ -337,6 +337,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # The checkout is owned by the runner's uid while the container runs as
+      # root; git then refuses the "dubious" repo and `go build` (VCS stamping)
+      # and the Wails build fail with "error obtaining VCS status: exit 128".
+      - name: Trust the workspace checkout inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'

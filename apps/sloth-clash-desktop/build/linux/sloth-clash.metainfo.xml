@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the AppImage (usr/share/metainfo). @VERSION@ and
+     @DATE@ are filled in by build/linux/build-appimage.sh from the release tag.
+     The AppImage catalog (appimage.github.io) and desktop app stores read the
+     screenshots and description from here. -->
+<component type="desktop-application">
+  <id>io.github.nemu_x.SlothClash</id>
+  <launchable type="desktop-id">sloth-clash.desktop</launchable>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Sloth Clash</name>
+  <summary>Clash Meta (Mihomo) desktop client with TUN and system-proxy modes</summary>
+  <developer id="io.github.nemu-x">
+    <name>Nemu-x</name>
+  </developer>
+  <description>
+    <p>
+      Sloth Clash is a desktop client for the Mihomo (Clash Meta) proxy core. Import a
+      subscription or a share link, pick a node, and route traffic either through the
+      system proxy or through a TUN adapter that captures every application. Rules,
+      proxy groups, connections and logs are editable and inspectable in place.
+    </p>
+    <p>
+      The app ships its own pinned core and a small privileged helper for TUN mode,
+      updates subscriptions in the background, and can rewrite the generated
+      configuration with a per-profile JavaScript hook for the cases the editors do
+      not cover.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/Nemu-x/SlothClash</url>
+  <url type="bugtracker">https://github.com/Nemu-x/SlothClash/issues</url>
+  <url type="help">https://github.com/Nemu-x/SlothClash/blob/main/README.md</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Home: connection state, mode and traffic path</caption>
+      <image>https://raw.githubusercontent.com/Nemu-x/SlothClash/main/docs/screenshots/home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Live connections</caption>
+      <image>https://raw.githubusercontent.com/Nemu-x/SlothClash/main/docs/screenshots/connections.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Rule editor</caption>
+      <image>https://raw.githubusercontent.com/Nemu-x/SlothClash/main/docs/screenshots/edit_rules.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Advanced settings</caption>
+      <image>https://raw.githubusercontent.com/Nemu-x/SlothClash/main/docs/screenshots/advanced.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Network</category>
+  </categories>
+  <keywords>
+    <keyword>Clash</keyword>
+    <keyword>Mihomo</keyword>
+    <keyword>Proxy</keyword>
+    <keyword>VPN</keyword>
+    <keyword>TUN</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

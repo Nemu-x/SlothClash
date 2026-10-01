@@ -186,13 +186,13 @@ def main():
 <a href="{DL}/SlothClash-macOS-arm64.dmg">Apple Silicon (.dmg)</a>
 <a href="{DL}/SlothClash-macOS-x64.dmg">Intel (.dmg)</a></div>
 <div class="card"><h3>🐧 Linux x64</h3>
-<a href="{DL}/SlothClash-linux-amd64.AppImage">{IC_APPIMAGE}AppImage</a>
+<a href="{DL}/SlothClash-x86_64.AppImage">{IC_APPIMAGE}AppImage</a>
 <a href="{DL}/sloth-clash-linux-amd64.deb">{IC_DEB}.deb</a>
 <a href="{DL}/sloth-clash-linux-amd64.rpm">{IC_RPM}.rpm</a>
 <a href="{DL}/sloth-clash-linux-amd64.pkg.tar.zst">{IC_ARCH}Arch package</a>
 <a href="{DL}/sloth-clash-linux-amd64.tar.gz">{IC_TARGZ}tar.gz</a></div>
 <div class="card"><h3>🐧 Linux ARM64</h3>
-<a href="{DL}/SlothClash-linux-arm64.AppImage">{IC_APPIMAGE}AppImage</a>
+<a href="{DL}/SlothClash-aarch64.AppImage">{IC_APPIMAGE}AppImage</a>
 <a href="{DL}/sloth-clash-linux-arm64.deb">{IC_DEB}.deb</a>
 <a href="{DL}/sloth-clash-linux-arm64.rpm">{IC_RPM}.rpm</a>
 <a href="{DL}/sloth-clash-linux-arm64.pkg.tar.zst">{IC_ARCH}Arch package</a>

@@ -311,8 +311,37 @@ jobs:
             runner: ubuntu-24.04-arm
             aitool: aarch64
     runs-on: ${{ matrix.runner }}
+    # Built inside Ubuntu 22.04: the AppImage bundles GTK and WebKitGTK from
+    # this image, so the oldest glibc the binary (and the deb/rpm) needs on a
+    # user's machine is 2.35 (Ubuntu 22.04, Debian 12) instead of the runner's
+    # 2.39 — which is also what the AppImage catalog tests against.
+    container: ubuntu:22.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
     steps:
+      - name: Linux build deps (GTK + WebKit2GTK 4.1, AppImage tooling)
+        # git/curl/ca-certificates first: actions/checkout runs inside this
+        # container. glib-networking + the *-bin tools are what
+        # linuxdeploy-plugin-gtk bundles/needs; desktop-file-utils + appstream
+        # validate the metadata; xvfb, mesa and a font are for the smoke test.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config git curl ca-certificates file patchelf perl \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libglib2.0-bin libgdk-pixbuf2.0-bin libgtk-3-bin glib-networking gsettings-desktop-schemas \
+            desktop-file-utils appstream xvfb xauth libgl1 libegl1 libgl1-mesa-dri fonts-dejavu-core
+
       - uses: actions/checkout@v4
+
+      # The checkout is owned by the runner's uid while the container runs as
+      # root; git then refuses the "dubious" repo and `go build` (VCS stamping)
+      # and the Wails build fail with "error obtaining VCS status: exit 128".
+      - name: Trust the workspace checkout inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: actions/setup-go@v5
         with:
@@ -325,11 +354,6 @@ jobs:
           node-version: '20'
 
       - uses: pnpm/action-setup@v4
-
-      - name: Linux GUI deps (GTK + WebKit2GTK 4.1)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -369,18 +393,21 @@ jobs:
           NFPM_VERSION="${{ steps.pkgver.outputs.arch_version }}" nfpm package -f "$CFG" -p archlinux -t "dist/sloth-clash-linux-${{ matrix.arch }}.pkg.tar.zst"
           ls -la dist/
 
-      - name: Build AppImage
+      # Self-contained AppImage (GTK + WebKitGTK bundled, gh-releases-zsync
+      # update info, AppStream metainfo) — what the AppImage catalog requires.
+      # Named SlothClash-<arch>.AppImage per catalog nomenclature (no "linux").
+      - name: Build AppImage (self-contained)
+        id: appimage
         run: |
-          APPDIR=AppDir
-          mkdir -p "$APPDIR/usr/bin"
-          cp apps/sloth-clash-desktop/build/bin/sloth-clash-desktop "$APPDIR/usr/bin/"
-          cp apps/sloth-clash-desktop/build/linux/sloth-clash.desktop "$APPDIR/"
-          cp apps/sloth-clash-desktop/build/appicon.png "$APPDIR/sloth-clash.png"
-          ln -s usr/bin/sloth-clash-desktop "$APPDIR/AppRun"
-          curl -fsSL -o appimagetool             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.aitool }}.AppImage
-          chmod +x appimagetool
-          ARCH=${{ matrix.aitool }} ./appimagetool --appimage-extract-and-run "$APPDIR" "dist/SlothClash-linux-${{ matrix.arch }}.AppImage"
+          VER="${{ steps.pkgver.outputs.version }}"
+          [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || VER="0.0.0"
+          bash apps/sloth-clash-desktop/build/linux/build-appimage.sh "${{ matrix.aitool }}" "$VER" dist
           ls -la dist/
+
+      # Must run LAST: it purges the host WebKit so only the bundled copy can
+      # satisfy the loader, exactly like a machine without webkit2gtk.
+      - name: Smoke-test AppImage without host WebKit
+        run: bash apps/sloth-clash-desktop/build/linux/test-appimage.sh "dist/SlothClash-${{ matrix.aitool }}.AppImage" "${{ steps.appimage.outputs.appdir }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -390,7 +417,8 @@ jobs:
             dist/sloth-clash-linux-${{ matrix.arch }}.deb
             dist/sloth-clash-linux-${{ matrix.arch }}.rpm
             dist/sloth-clash-linux-${{ matrix.arch }}.pkg.tar.zst
-            dist/SlothClash-linux-${{ matrix.arch }}.AppImage
+            dist/SlothClash-${{ matrix.aitool }}.AppImage
+            dist/SlothClash-${{ matrix.aitool }}.AppImage.zsync
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -480,6 +508,7 @@ jobs:
             dist/**/*.tar.gz
             dist/**/*.dmg
             dist/**/*.AppImage
+            dist/**/*.AppImage.zsync
             dist/**/*.deb
             dist/**/*.rpm
             dist/**/*.pkg.tar.zst

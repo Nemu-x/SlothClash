@@ -1,0 +1,29 @@
+#!/bin/bash
+# AppRun for the Sloth Clash AppImage.
+#
+# linuxdeploy-plugin-gtk drops environment hooks (GTK/GLib/GIO/pixbuf paths)
+# into apprun-hooks/; they are sourced first. The process then runs from usr/
+# on purpose: build-appimage.sh patches the absolute helper-process path that
+# WebKitGTK compiles into libwebkit2gtk-4.1.so.0 into a *relative* one of the
+# same length (/usr/libexec/webkit2gtk-4.1 -> ././/libexec/webkit2gtk-4.1, or
+# the multiarch variant, whichever the distro compiled in), and that relative
+# path resolves against the working directory. Without this the bundled WebKit
+# would look for WebKitWebProcess on the host and crash on every distro whose
+# layout differs from the build host (Fedora, Arch, ...).
+APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+export APPDIR
+
+for hook in "$APPDIR"/apprun-hooks/*.sh; do
+  # shellcheck disable=SC1090
+  [ -r "$hook" ] && . "$hook"
+done
+
+# Honoured by WebKitGTK builds with developer mode on; harmless otherwise.
+webkit_libexec="$(find "$APPDIR/usr" -maxdepth 3 -type d -name 'webkit2gtk-4.1' -print -quit 2>/dev/null)"
+if [ -n "$webkit_libexec" ]; then
+  export WEBKIT_EXEC_PATH="$webkit_libexec"
+  export WEBKIT_INJECTED_BUNDLE_PATH="$webkit_libexec/injected-bundle"
+fi
+
+cd "$APPDIR/usr" || exit 1
+exec "$APPDIR/usr/bin/sloth-clash-desktop" "$@"

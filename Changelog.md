@@ -9,6 +9,9 @@
 - No polkit on your system, or the prompt was dismissed? The app shows the exact `sudo …` command to run once instead; the files it points at are kept in the app data directory, not in `/tmp` (which is often mounted no-exec).
 - If the service is installed but its socket is not up, you get the same "reinstall the helper service" banner as on the other platforms instead of a bare connection error.
 
+**📦 Linux AppImage is now self-contained and updatable**
+- The AppImage bundles GTK and WebKitGTK, so it runs on any distro from Ubuntu 22.04 up without installing `webkit2gtk-4.1` first (the old one needed it from the system). It carries update information, so AppImageUpdate and compatible tools can fetch new releases as deltas, and ships AppStream metadata for app stores. Asset names follow the AppImage convention: `SlothClash-x86_64.AppImage` and `SlothClash-aarch64.AppImage` (the old `SlothClash-linux-*.AppImage` links stop working with this release). Submitted to the AppImage catalog.
+
 **🐛 "Reinstall the helper service" banner did not appear when it was needed — fixed**
 - After a core update, macOS users saw a raw `HTTP 503 … does not match any pinned hash` error on Connect and no hint what to do. The app already knew this meant "the helper service is pinned to the previous core, reinstall it", but that flag only reached the banner on the next app start. The banner now appears the moment the condition is detected — at startup, before you even press Connect, or right after a failed connect — with the one-click reinstall.
 
@@ -23,6 +26,9 @@
 - До сих пор Linux-сборка запускала ядро внутри процесса и с привилегированным помощником не общалась вовсе, так что у TUN не было root-пути, а «Установить сервис» не мог сделать ничего полезного (сообщили с Arch/Garuda, issue #73). Теперь Linux-приложение использует тот же помощник, что и macOS, через unix-сокет: **Установить сервис** запрашивает авторизацию через polkit (`pkexec`), ставит systemd-юнит, до которого может достучаться только группа вашего пользователя, пинует поставляемое ядро по хешу ровно как на других платформах, и приложение гоняет ядро через него. После этого доступен режим TUN; режим Proxy по-прежнему работает и без помощника.
 - Нет polkit, или запрос закрыли? Приложение показывает точную команду `sudo …`, которую нужно выполнить один раз; файлы, на которые она указывает, лежат в каталоге данных приложения, а не в `/tmp` (который часто смонтирован no-exec).
 - Если сервис установлен, но его сокет не поднялся, вы получите ту же плашку «переустановите сервис», что и на других платформах, вместо голой ошибки подключения.
+
+**📦 Linux AppImage теперь самодостаточный и обновляемый**
+- AppImage несёт внутри GTK и WebKitGTK, так что запускается на любом дистрибутиве от Ubuntu 22.04 и новее без установки `webkit2gtk-4.1` (старому он был нужен из системы). В него встроена информация об обновлениях: AppImageUpdate и совместимые инструменты могут забирать новые версии дельтами, плюс AppStream-метаданные для магазинов приложений. Имена ассетов по соглашению AppImage: `SlothClash-x86_64.AppImage` и `SlothClash-aarch64.AppImage` (старые ссылки `SlothClash-linux-*.AppImage` с этого релиза перестают работать). Подано в каталог AppImage.
 
 **🐛 Плашка «переустановите сервис» не появлялась, когда была нужна — исправлено**
 - После обновления ядра пользователи macOS видели на Connect голую ошибку `HTTP 503 … does not match any pinned hash` и никакой подсказки, что делать. Приложение уже знало, что это «сервис запинован на прошлое ядро, переустановите», но флаг доходил до плашки только при следующем запуске. Теперь плашка появляется сразу, как только состояние обнаружено: при старте, ещё до нажатия Connect, или сразу после неудачного подключения, с переустановкой в один клик.

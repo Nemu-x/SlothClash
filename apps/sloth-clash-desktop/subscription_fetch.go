@@ -45,7 +45,7 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("User-Agent", "clash.meta/mihomo; SlothClash/1.0")
+	req.Header.Set("User-Agent", subscriptionUserAgentCurrent())
 	applySubscriptionIdentityHeaders(req)
 
 	client := &http.Client{

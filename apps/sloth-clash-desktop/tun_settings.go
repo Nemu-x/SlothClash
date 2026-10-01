@@ -249,8 +249,10 @@ func currentDesktopPrefs() DesktopPrefs {
 	return prefsCurrent
 }
 
-// normalizeTunStack accepts gvisor / system / mixed (case-insensitive) and returns
-// the canonical lowercase form. Any other value is rejected → "" (inherit).
+// normalizeTunStack accepts gvisor / system / mixed / mips (case-insensitive)
+// and returns the canonical lowercase form. Any other value is rejected → ""
+// (inherit). `mips` is mihomo's own userspace stack (added in 1.19.31, the
+// default since 1.19.32); inheriting therefore means mips on current cores.
 func normalizeTunStack(v string) string {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "gvisor":
@@ -259,6 +261,8 @@ func normalizeTunStack(v string) string {
 		return "system"
 	case "mixed":
 		return "mixed"
+	case "mips":
+		return "mips"
 	default:
 		return ""
 	}

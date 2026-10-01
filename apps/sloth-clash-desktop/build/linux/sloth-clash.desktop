@@ -6,5 +6,6 @@ Exec=sloth-clash-desktop %u
 Icon=sloth-clash
 Terminal=false
 Categories=Network;
+Keywords=Clash;Mihomo;Proxy;VPN;TUN;
 MimeType=x-scheme-handler/slothclash;
 StartupWMClass=SlothClashDesktop

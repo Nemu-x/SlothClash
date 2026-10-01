@@ -271,12 +271,7 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 	cctx, cancel := context.WithTimeout(ctx, 26*time.Second)
 	defer cancel()
 
-	userAgents := []string{
-		"clash.meta/mihomo; SlothClash/1.0",
-		"ClashMeta/2.10.1.Meta-Alpha",
-		"ClashForWindows/0.20.39",
-		"SlothClash/1.0 (compatible; mihomo-like-client)",
-	}
+	userAgents := subscriptionProbeUserAgents()
 
 	var bestErr SubscriptionPeek
 	var lastErr error

@@ -1,3 +1,27 @@
+## Sloth Clash desktop `0.9.4` — Unreleased
+
+> ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS click the banner and accept the prompt.
+
+### English
+
+**🐛 "Reinstall the helper service" banner did not appear when it was needed — fixed**
+- After a core update, macOS users saw a raw `HTTP 503 … does not match any pinned hash` error on Connect and no hint what to do. The app already knew this meant "the helper service is pinned to the previous core, reinstall it", but that flag only reached the banner on the next app start. The banner now appears the moment the condition is detected — at startup, before you even press Connect, or right after a failed connect — with the one-click reinstall.
+
+**🔧 Subscription requests now identify the real core and app version**
+- The `User-Agent` on subscription downloads is now `clash.meta/v<core> SlothClash/<version>` (for example `clash.meta/v1.19.32 SlothClash/0.9.4`) instead of a hard-coded `clash.meta/mihomo; SlothClash/1.0`. Panels that pick which protocols to hand out by the client's core version (mikan, among others, gates mieru, sudoku, trusttunnel, shadowquic and Hysteria2 Gecko on it) now receive the right answer. The leading `clash.meta/` is kept on purpose: Marzban and Remnawave select the clash-meta output format by that prefix. If a build has no core version baked in, the UA falls back to `clash.meta/mihomo SlothClash/<version>` rather than inventing a number.
+
+- **Mihomo core updated to `v1.19.32`.** Fixes: effective MSS now accounts for TCP options, a race in AnyTLS idle-session cleanup, OpenVPN `P_DATA_V1` AEAD additional data, sing-mux half-close, a nil dereference when an H2 connection setup is cancelled, mieru inbound UDP user metadata, EasyTier restart after a silent overlay failure, and HWCap detection on Linux. New: `load-balance` `hash-key` to pin a session on the inbound user, `congestion-controller` option for TUN, and the core's own `mips` userspace stack is now the default TUN stack. The TUN settings dialog gained `mips` as an explicit choice; "Default" inherits it on this core.
+
+### Русский
+
+**🐛 Плашка «переустановите сервис» не появлялась, когда была нужна — исправлено**
+- После обновления ядра пользователи macOS видели на Connect голую ошибку `HTTP 503 … does not match any pinned hash` и никакой подсказки, что делать. Приложение уже знало, что это «сервис запинован на прошлое ядро, переустановите», но флаг доходил до плашки только при следующем запуске. Теперь плашка появляется сразу, как только состояние обнаружено: при старте, ещё до нажатия Connect, или сразу после неудачного подключения, с переустановкой в один клик.
+
+**🔧 Запросы подписок теперь называют настоящую версию ядра и приложения**
+- `User-Agent` при загрузке подписки стал `clash.meta/v<ядро> SlothClash/<версия>` (например `clash.meta/v1.19.32 SlothClash/0.9.4`) вместо захардкоженного `clash.meta/mihomo; SlothClash/1.0`. Панели, которые выбирают выдаваемые протоколы по версии ядра клиента (mikan, в частности, по ней отдаёт mieru, sudoku, trusttunnel, shadowquic и Hysteria2 Gecko), теперь получают правильный ответ. Префикс `clash.meta/` сохранён намеренно: Marzban и Remnawave по нему выбирают формат clash-meta. Если в сборке нет зашитой версии ядра, UA откатывается на `clash.meta/mihomo SlothClash/<версия>`, а не выдумывает число.
+
+- **Ядро Mihomo обновлено до `v1.19.32`.** Починки: эффективный MSS теперь учитывает TCP-опции, гонка в очистке idle-сессий AnyTLS, AEAD additional data для `P_DATA_V1` в OpenVPN, half-close в sing-mux, nil-разыменование при отмене установки H2-соединения, UDP user metadata для mieru inbound, перезапуск EasyTier после тихого сбоя overlay, определение HWCap на Linux. Новое: `hash-key` у `load-balance` для закрепления сессии за inbound-пользователем, опция `congestion-controller` для TUN, и собственный userspace-стек ядра `mips` стал стеком TUN по умолчанию. В диалоге настроек TUN появился явный пункт `mips`; «По умолчанию» на этом ядре наследует его.
+
 ## Sloth Clash desktop `0.9.3` — 2026-09-20
 
 > ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS click the banner and accept the prompt.

@@ -52,6 +52,11 @@ func TestIsServiceUnreachableError(t *testing.T) {
 			errors.New("sloth IPC service pipe not reachable (...); is `sloth_clash_service` installed and running? (sc query: ...)"),
 			true,
 		},
+		{
+			"linux unit present but socket never came up",
+			errors.New("Sloth service socket unreachable at /tmp/slothclash/sloth-clash-service.sock (unit sloth-clash-service loaded=true active=false): dial unix: connect: no such file or directory [socket-stat=...]"),
+			true,
+		},
 		{"pin mismatch is not unreachable", errors.New("does not match any pinned hash"), false},
 		{"generic 500", errors.New("POST /clash/start: HTTP 500 — internal error"), false},
 	}

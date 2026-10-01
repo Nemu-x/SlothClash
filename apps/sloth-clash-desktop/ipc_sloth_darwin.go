@@ -2,15 +2,14 @@
 
 package main
 
+// macOS-specific half of the unix-socket IPC: launchd kickstart and the
+// privileged socket/launchd heal. The transport itself is in ipc_sloth_unix.go.
+
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,77 +17,11 @@ import (
 	"time"
 )
 
-const (
-	slothDarwinServiceSocket = "/tmp/slothclash/sloth-clash-service.sock"
-	slothDarwinServiceID     = "dev.slothclash.desktop.ipc.service"
-	slothIPCHeaderMagic      = "X-IPC-Magic"
-	slothIPCAuthExpect       = `Like as the waves make towards the pebbl'd shore, So do our minutes hasten to their end;`
-)
-
-type ipcEnvelope struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func ipcSlothServiceClient() *http.Client {
-	return ipcSlothServiceClientTimeout(30 * time.Second)
-}
-
-// ipcSlothServiceClientTimeout builds a service client with an explicit overall
-// timeout. Corp-VPN connects run up to ~35 s (OpenConnect handshake) and the
-// service gives its handler 45 s, so the corp-start call needs a longer client
-// timeout than the 30 s default or it would give up first and the connect would
-// spuriously fail.
-func ipcSlothServiceClientTimeout(d time.Duration) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var dl net.Dialer
-				return dl.DialContext(ctx, "unix", slothDarwinServiceSocket)
-			},
-			DisableKeepAlives: true,
-		},
-		Timeout: d,
-	}
-}
-
-func ipcSlothDo(ctx context.Context, method, path string, body []byte) (status int, bodyOut []byte, err error) {
-	return ipcSlothDoWith(ipcSlothServiceClient(), ctx, method, path, body)
-}
-
-func ipcSlothDoWith(cli *http.Client, ctx context.Context, method, path string, body []byte) (status int, bodyOut []byte, err error) {
-	var rdr io.Reader
-	if len(body) > 0 {
-		rdr = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, "http://sloth"+path, rdr)
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set(slothIPCHeaderMagic, slothIPCAuthExpect)
-	if len(body) > 0 {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return 0, nil, err
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
-	return resp.StatusCode, b, err
-}
+const slothDarwinServiceID = "dev.slothclash.desktop.ipc.service"
 
 func windowsEnsureSlothIPCReachable(ctx context.Context) error {
-	var d net.Dialer
 	tryDial := func(timeout time.Duration) error {
-		dctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		c, err := d.DialContext(dctx, "unix", slothDarwinServiceSocket)
-		if err == nil {
-			_ = c.Close()
-			return nil
-		}
-		return err
+		return dialSlothServiceSocket(ctx, timeout)
 	}
 
 	origErr := tryDial(2 * time.Second)
@@ -131,10 +64,10 @@ func windowsEnsureSlothIPCReachable(ctx context.Context) error {
 
 	return fmt.Errorf(
 		"Sloth IPC socket unreachable at %s (service id %s): %w [%s]",
-		slothDarwinServiceSocket,
+		slothServiceSocketPath,
 		slothDarwinServiceID,
 		origErr,
-		describeDarwinSocket(slothDarwinServiceSocket),
+		describeUnixSocket(slothServiceSocketPath),
 	)
 }
 
@@ -155,7 +88,7 @@ func isDarwinSocketAccessIssue(err error) bool {
 	return strings.Contains(msg, "permission denied") || strings.Contains(msg, "operation not permitted")
 }
 
-func describeDarwinSocket(p string) string {
+func describeUnixSocket(p string) string {
 	st, err := os.Stat(p)
 	if err != nil {
 		return "socket-stat=" + err.Error()
@@ -179,7 +112,7 @@ func darwinHealServiceIPCWithPrivileges(ctx context.Context) error {
 		fmt.Sprintf("/usr/sbin/chown root:wheel '%s' >/dev/null 2>&1 || true", esc("/tmp/slothclash")),
 		fmt.Sprintf("/bin/chmod -N '%s' >/dev/null 2>&1 || true", esc("/tmp/slothclash")),
 		fmt.Sprintf("/bin/chmod 1777 '%s' >/dev/null 2>&1 || true", esc("/tmp/slothclash")),
-		fmt.Sprintf("/bin/rm -f '%s' >/dev/null 2>&1 || true", esc(slothDarwinServiceSocket)),
+		fmt.Sprintf("/bin/rm -f '%s' >/dev/null 2>&1 || true", esc(slothServiceSocketPath)),
 		fmt.Sprintf("/bin/launchctl bootstrap system '/Library/LaunchDaemons/%s.plist' >/dev/null 2>&1 || true", esc(slothDarwinServiceID)),
 		fmt.Sprintf("/bin/launchctl kickstart -k system/%s", esc(slothDarwinServiceID)),
 		"/bin/sleep 1",
@@ -198,94 +131,4 @@ func darwinHealServiceIPCWithPrivileges(ctx context.Context) error {
 		return errors.New(msg)
 	}
 	return nil
-}
-
-func ipcSlothStartClash(ctx context.Context, p slothIPCStartParams) error {
-	payload := map[string]any{
-		"core_config": map[string]string{
-			"core_path":     p.CorePath,
-			"core_ipc_path": p.CoreIpcPath,
-			"config_path":   p.ConfigPath,
-			"config_dir":    p.ConfigDir,
-		},
-		"log_config": map[string]any{
-			"directory":     p.LogDirectory,
-			"max_log_size":  10 * 1024 * 1024,
-			"max_log_files": 8,
-		},
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	st, b, err := ipcSlothDo(ctx, http.MethodPost, "/clash/start", raw)
-	if err != nil {
-		return err
-	}
-	var env ipcEnvelope
-	_ = json.Unmarshal(b, &env)
-	if st < 200 || st >= 300 {
-		if env.Message != "" {
-			return fmt.Errorf("POST /clash/start: HTTP %d - %s", st, env.Message)
-		}
-		return fmt.Errorf("POST /clash/start: HTTP %d - %s", st, strings.TrimSpace(string(b)))
-	}
-	if env.Code != 0 {
-		if env.Message != "" {
-			return fmt.Errorf("start core via service: %s", env.Message)
-		}
-		return fmt.Errorf("start core via service: code %d", env.Code)
-	}
-	return nil
-}
-
-func ipcSlothStopCore(ctx context.Context) error {
-	st, b, err := ipcSlothDo(ctx, http.MethodDelete, "/clash/stop", nil)
-	if err != nil {
-		return err
-	}
-	var env ipcEnvelope
-	_ = json.Unmarshal(b, &env)
-	if st < 200 || st >= 300 {
-		if env.Message != "" {
-			return fmt.Errorf("DELETE /clash/stop: HTTP %d - %s", st, env.Message)
-		}
-		return fmt.Errorf("DELETE /clash/stop: HTTP %d - %s", st, strings.TrimSpace(string(b)))
-	}
-	if env.Code != 0 {
-		if env.Message != "" {
-			return fmt.Errorf("stop core via service: %s", env.Message)
-		}
-		return fmt.Errorf("stop core via service: code %d", env.Code)
-	}
-	return nil
-}
-
-// ipcSlothRemoveTun is a no-op on macOS: there is no wintun and mihomo tears its
-// own utun down on stop. Present so cross-platform recovery code compiles.
-func ipcSlothRemoveTun(ctx context.Context) (int, error) {
-	_ = ctx
-	return 0, nil
-}
-
-// Corp-VPN sidecar transport (macOS-only in P1). These just relay to the
-// privileged service, which owns the OpenConnect process.
-func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, error) {
-	// 55 s > the service's 45 s handler ceiling > OpenConnect's ~35 s connect, so
-	// the client never gives up before the service resolves the connect.
-	cli := ipcSlothServiceClientTimeout(55 * time.Second)
-	return ipcSlothDoWith(cli, ctx, http.MethodPost, "/corp/start", payload)
-}
-
-func ipcSlothStopCorpVpn(ctx context.Context) (int, []byte, error) {
-	return ipcSlothDo(ctx, http.MethodDelete, "/corp/stop", nil)
-}
-
-// ipcSlothEnsureCorpDriver is a no-op on macOS (native utun needs no driver). The
-// cross-platform caller gates on tapWindowsComponentSpec (Windows-only), so this
-// is never reached; it exists only so the shared corp code compiles here.
-func ipcSlothEnsureCorpDriver(_ context.Context, _ string) error { return nil }
-
-func ipcSlothCorpVpnStatus(ctx context.Context) (int, []byte, error) {
-	return ipcSlothDo(ctx, http.MethodGet, "/corp/status", nil)
 }

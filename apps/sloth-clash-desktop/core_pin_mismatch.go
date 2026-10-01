@@ -39,5 +39,7 @@ func isServiceUnreachableError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "pipe still unreachable after attempting to start") ||
 		strings.Contains(msg, "pipe not reachable") ||
-		strings.Contains(msg, "is `sloth_clash_service` installed and running")
+		strings.Contains(msg, "is `sloth_clash_service` installed and running") ||
+		// Linux (ipc_sloth_linux.go): unit present but the socket never came up.
+		strings.Contains(msg, "service socket unreachable")
 }

@@ -13,7 +13,7 @@ func TestPrivilegedServiceSupportedMatchesIPCBuildTags(t *testing.T) {
 	cases := map[string]bool{
 		"windows": true,
 		"darwin":  true,
-		"linux":   false,
+		"linux":   true,
 		"freebsd": false,
 		"openbsd": false,
 		"":        false,
@@ -26,10 +26,10 @@ func TestPrivilegedServiceSupportedMatchesIPCBuildTags(t *testing.T) {
 }
 
 // On a supported platform the current build must agree with itself: the
-// compiled-in IPC transport (ipc_sloth_windows.go / ipc_sloth_darwin.go) is
+// compiled-in IPC transport (ipc_sloth_windows.go / ipc_sloth_unix.go) is
 // exactly what privilegedServiceSupported promises for runtime.GOOS.
 func TestPrivilegedServiceSupportedForCurrentOS(t *testing.T) {
-	want := runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+	want := runtime.GOOS == "windows" || runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 	if got := privilegedServiceSupported(runtime.GOOS); got != want {
 		t.Fatalf("privilegedServiceSupported(%q) = %v, want %v", runtime.GOOS, got, want)
 	}

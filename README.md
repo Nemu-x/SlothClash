@@ -80,7 +80,7 @@ Sloth Clash is a **GPL-3.0** GUI around **Mihomo** (Clash Meta). This repository
 | Linux (ARM64, Arch) | [sloth-clash-linux-arm64.pkg.tar.zst](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.pkg.tar.zst) |
 | Linux (ARM64, tar.gz) | [sloth-clash-linux-arm64.tar.gz](https://github.com/Nemu-x/SlothClash/releases/latest/download/sloth-clash-linux-arm64.tar.gz) |
 
-Linux packages install a menu entry, the app icon, and the `slothclash://` link handler; the AppImage and tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro.
+Linux packages install a menu entry, the app icon, and the `slothclash://` link handler; the AppImage and tar.gz need `webkit2gtk-4.1` + `gtk3` from your distro. TUN mode needs the helper service: Settings → **Install service** asks for authorisation via polkit (`pkexec`) and installs a systemd unit; without polkit the app shows the one-time `sudo` command to run instead.
 
 All releases & changelog: [SlothClash releases](https://github.com/Nemu-x/SlothClash/releases). Verify integrity against [`SHA256SUMS`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS) (signed — [`SHA256SUMS.minisig`](https://github.com/Nemu-x/SlothClash/releases/latest/download/SHA256SUMS.minisig)).  
 Service binaries used at build time: [sloth-clash-service-ipc releases](https://github.com/Nemu-x/sloth-clash-service-ipc/releases).

@@ -1347,16 +1347,19 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	runID := "gen-" + strconv.FormatUint(gen, 10)
 
 	useServiceCore := runtime.GOOS == "windows" && serviceInstalled
-	if runtime.GOOS == "darwin" && serviceInstalled {
+	// Unix-socket platforms: the helper may be installed but not reachable
+	// (first boot after install, stale socket). Probe first; TUN cannot work
+	// without it, Proxy mode can fall back to the in-process core.
+	if (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && serviceInstalled {
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			if traffic == "tun" {
-				return fmt.Errorf("darwin service IPC unavailable for TUN mode: %w", err)
+				return fmt.Errorf("service IPC unavailable for TUN mode: %w", err)
 			}
 			// Safe fallback for proxy mode: keep app usable even if privileged helper is temporarily unreachable.
 			a.mu.Lock()
 			a.state.Connection.LastWarning = "Sloth service IPC unreachable, falling back to user-process core for Proxy mode: " + err.Error()
 			a.mu.Unlock()
-			a.appendRuntimeDiag("ipc.error", "darwin service IPC unreachable, using embedded core")
+			a.appendRuntimeDiag("ipc.error", "service IPC unreachable, using embedded core")
 			useServiceCore = false
 		} else {
 			useServiceCore = true

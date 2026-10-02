@@ -523,3 +523,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run package-repos.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
+
+  # winget: once Nemu-x.SlothClash exists in microsoft/winget-pkgs (first version
+  # is submitted by hand, see packaging/winget/README.md), every tag opens the
+  # version-bump PR from the Nemu-x/winget-pkgs fork. Skipped without the token
+  # so releases never depend on it.
+  winget:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check WINGET_TOKEN present
+        id: gate
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -n "$WINGET_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "WINGET_TOKEN not set — skipping winget publish."
+          fi
+      - name: Publish to winget (Nemu-x.SlothClash)
+        if: steps.gate.outputs.enabled == 'true'
+        uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: Nemu-x.SlothClash
+          installers-regex: 'SlothClash-windows-(amd64|arm64)-installer\.exe$'
+          max-versions-to-keep: 5
+          token: ${{ secrets.WINGET_TOKEN }}

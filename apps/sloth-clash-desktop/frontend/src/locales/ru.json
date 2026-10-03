@@ -152,7 +152,24 @@
     "serviceUnreachableTitle": "Служебный сервис недоступен — переустановите, чтобы восстановить",
     "serviceUpdateBody": "Привилегированный сервис устарел (v{{version}}, нужен v{{expected}}+). В нём важные исправления безопасности.",
     "serviceUpdateAdminHint": "Переустановка требует прав администратора — подтвердите запрос или обратитесь к администратору.",
-    "serviceUpdateAction": "Обновить сервис"
+    "serviceUpdateAction": "Обновить сервис",
+    "reality": {
+      "title": "REALITY",
+      "mlkem": "Ключ ML-KEM (X25519MLKEM768)",
+      "mlkemAuto": "Авто (учится для каждого сервера)",
+      "mlkemAlways": "Всегда",
+      "mlkemNever": "Никогда",
+      "clientVersion": "Версия клиента",
+      "clientVersionPlaceholder": "по умолчанию ядра",
+      "clientVersionInvalid": "Формат x.y.z, каждая часть 0–255",
+      "hint": "Новые серверы Xray (26.9.8+) требуют ключ ML-KEM, старые (до 25.x) его отбрасывают. В режиме «Авто» ядро пробует один вариант, запоминает, что принимает каждый сервер, и переключается после сбоя. Версию клиента проверяют серверы с minClientVer / maxClientVer; оставьте поле пустым, если провайдер не просит конкретную.",
+      "applyHint": "Сохраняется сразу. При активном подключении ядро перезагружает конфиг, и новые соединения используют новую настройку."
+    },
+    "coreBuildPatched": "mihomo {{version}} + патчи SlothClash: {{count}}",
+    "coreBuildStock": "mihomo {{version}} (стоковое, без патчей SlothClash)",
+    "coreBuildLocal": "mihomo {{version}}, локальная сборка ядра",
+    "coreBuildPatches": "Патчи",
+    "coreBuildDoc": "Как собрано ядро"
   },
   "tour": {
     "back": "Назад",

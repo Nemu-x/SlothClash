@@ -20,6 +20,7 @@ import {
   SetTrafficMode,
   SetTrafficSettings,
   SetConnectionSettings,
+  SetRealitySettings,
   SetTunSettings,
 } from './api/core'
 import { GetCorpVpnStatus } from './api/corp'
@@ -315,6 +316,11 @@ function App() {
   // core binds to, so the Go side must be the source of truth.
   const [connectionPrefs, setConnectionPrefs] =
     useState<main.ConnectionSettings>(() => new main.ConnectionSettings({}))
+  // Backend-owned (prefs.json): REALITY key-share mode + client version, written
+  // into the core config (core patch series).
+  const [realityPrefs, setRealityPrefs] = useState<main.RealitySettings>(
+    () => new main.RealitySettings({}),
+  )
   // HWID is enabled by default; the prefs.json field uses an optional bool so
   // a fresh install (or any pre-0.4.1 prefs file lacking `privacy`) lands on
   // `true` here. Setting this to false omits the x-hwid header on subscription
@@ -517,6 +523,7 @@ function App() {
         setTunPrefs(nextTun)
         setTrafficPrefs(nextTraffic)
         setConnectionPrefs(new main.ConnectionSettings(prefs?.connection ?? {}))
+        setRealityPrefs(new main.RealitySettings(prefs?.reality ?? {}))
         setTunDnsHijackDraft((nextTun.dnsHijack ?? []).join(', '))
         setTunMtuDraft(nextTun.mtu ? String(nextTun.mtu) : '')
         setTunDeviceDraft(nextTun.device ?? '')
@@ -1205,6 +1212,19 @@ function App() {
       setError(String(e))
     } finally {
       setTunPrefsSaving(false)
+    }
+  }
+
+  // Invalid input is rejected by Go (the card validates first); on error the
+  // card resyncs to the last saved value.
+  const commitRealityPrefs = async (patch: Partial<main.RealitySettings>) => {
+    try {
+      const updated = await SetRealitySettings(
+        new main.RealitySettings({ ...realityPrefs, ...patch }),
+      )
+      setRealityPrefs(new main.RealitySettings(updated?.reality ?? {}))
+    } catch (e: any) {
+      pushToast({ kind: 'error', message: String(e) })
     }
   }
 
@@ -2409,6 +2429,8 @@ function App() {
                 onSetMixedPort={(next) =>
                   void commitConnectionPrefs({ mixedPort: next })
                 }
+                realityPrefs={realityPrefs}
+                onSetReality={(patch) => void commitRealityPrefs(patch)}
                 tunBanner={tunBanner}
                 onDismissBanner={() => setTunBanner('')}
                 state={state}

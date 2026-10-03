@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { main } from '../api/models'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
+import { useCoreBuild } from '../hooks/queries/useCoreBuild'
 import type { CompactSettings } from '../types/app'
 import {
   STOCK_ACCENTS,
@@ -117,6 +118,95 @@ function PortLockRow({
   )
 }
 
+// REALITY handshake policy, handed to the core through two config keys (core
+// patch series, docs/core-patches.md). Auto lets the core learn per server
+// which key share it needs; Always / Never pin it. The client version is what
+// Xray's minClientVer / maxClientVer compare against; empty = core default.
+// Saving reloads the core config, so new connections use it right away.
+function isValidRealityVersion(raw: string): boolean {
+  const v = raw.trim()
+  if (v === '') return true
+  const m = v.match(/^v?(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  return !!m && m.slice(1).every((p) => Number(p) <= 255)
+}
+
+function RealityCard({
+  prefs,
+  onCommit,
+}: {
+  prefs: main.RealitySettings
+  onCommit: (patch: Partial<main.RealitySettings>) => void
+}) {
+  const { t } = useTranslation()
+  const saved = prefs.clientVersion ?? ''
+  const [draft, setDraft] = useState<string>(saved)
+  // Adjust-during-render (not an effect): a saved value from the backend
+  // (normalized, or reset) resyncs the text draft.
+  const [lastSaved, setLastSaved] = useState(saved)
+  if (saved !== lastSaved) {
+    setLastSaved(saved)
+    setDraft(saved)
+  }
+  const invalid = !isValidRealityVersion(draft)
+  const commit = () => {
+    if (invalid) {
+      setDraft(saved) // revert invalid input to the saved value
+      return
+    }
+    if (draft.trim() !== saved) onCommit({ clientVersion: draft.trim() })
+  }
+  return (
+    <div className="homeCard settingsCardCompact">
+      <h3 className="homeCardTitle">
+        <span className="settingsCardIcon" aria-hidden>
+          🔐
+        </span>
+        {t('settings.reality.title')}
+      </h3>
+      <label className="field">
+        <span className="fieldLab">{t('settings.reality.mlkem')}</span>
+        <select
+          className="selectModern"
+          value={prefs.mlkem || 'auto'}
+          onChange={(e) => onCommit({ mlkem: e.target.value })}
+        >
+          <option value="auto">{t('settings.reality.mlkemAuto')}</option>
+          <option value="always">{t('settings.reality.mlkemAlways')}</option>
+          <option value="never">{t('settings.reality.mlkemNever')}</option>
+        </select>
+      </label>
+      <div className="settingsToggleRow">
+        <span>{t('settings.reality.clientVersion')}</span>
+        <input
+          type="text"
+          className={
+            invalid
+              ? 'input realityVersionInput invalid'
+              : 'input realityVersionInput'
+          }
+          value={draft}
+          placeholder={t('settings.reality.clientVersionPlaceholder')}
+          spellCheck={false}
+          aria-label={t('settings.reality.clientVersion')}
+          aria-invalid={invalid}
+          title={
+            invalid ? t('settings.reality.clientVersionInvalid') : undefined
+          }
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+        />
+      </div>
+      <p className="muted settingsMicroHint">{t('settings.reality.hint')}</p>
+      <p className="muted settingsMicroHint">
+        {t('settings.reality.applyHint')}
+      </p>
+    </div>
+  )
+}
+
 // Accent color field: picker + hex input + per-theme applied previews + reset.
 // The stored value is the raw user hex; swatches show what actually renders
 // after the contrast guard per theme.
@@ -225,6 +315,8 @@ export function SettingsPage({
   mixedPort,
   runningMixedPort,
   onSetMixedPort,
+  realityPrefs,
+  onSetReality,
   state,
   updateSnap,
   error,
@@ -275,6 +367,9 @@ export function SettingsPage({
   mixedPort: number
   runningMixedPort: number
   onSetMixedPort: (next: number) => void
+  // Backend-owned (prefs.json): REALITY key-share mode + client version.
+  realityPrefs: main.RealitySettings
+  onSetReality: (patch: Partial<main.RealitySettings>) => void
   state: any
   updateSnap: any
   error: string | null
@@ -313,6 +408,7 @@ export function SettingsPage({
   onToggleCorpVpn: (next: boolean) => void
 }) {
   const { t } = useTranslation()
+  const coreBuild = useCoreBuild()
   return (
     <div className="panel settingsPanel">
       <div className="settingsTopBar">
@@ -562,6 +658,8 @@ export function SettingsPage({
             </div>
           </div>
 
+          <RealityCard prefs={realityPrefs} onCommit={onSetReality} />
+
           <div className="homeCard settingsCardCompact">
             <h3 className="homeCardTitle">
               <span className="settingsCardIcon" aria-hidden>
@@ -782,6 +880,42 @@ export function SettingsPage({
                   </strong>
                 </div>
               </div>
+              {coreBuild?.source ? (
+                <p className="small muted settingsCoreBuild">
+                  <span>
+                    {coreBuild.source === 'patched'
+                      ? t('settings.coreBuildPatched', {
+                          version: coreBuild.version,
+                          count: coreBuild.patches?.length ?? 0,
+                        })
+                      : coreBuild.source === 'stock'
+                        ? t('settings.coreBuildStock', {
+                            version: coreBuild.version,
+                          })
+                        : t('settings.coreBuildLocal', {
+                            version: coreBuild.version,
+                          })}
+                  </span>
+                  {coreBuild.source !== 'stock' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="linkBtn"
+                        onClick={() => onBrowserOpen(coreBuild.patchesUrl)}
+                      >
+                        {t('settings.coreBuildPatches')}
+                      </button>
+                      <button
+                        type="button"
+                        className="linkBtn"
+                        onClick={() => onBrowserOpen(coreBuild.docUrl)}
+                      >
+                        {t('settings.coreBuildDoc')}
+                      </button>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
               <div className="settingsInfoDevActions">
                 <div className="settingsToggleRow">
                   <span>{t('settings.autoUpdate')}</span>

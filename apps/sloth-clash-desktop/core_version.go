@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"regexp"
 	"strings"
@@ -54,4 +55,54 @@ func embeddedCoreVersion() string {
 		embeddedCoreVersionValue = coreVersionFromFS(bundledResources)
 	})
 	return embeddedCoreVersionValue
+}
+
+// CoreBuildInfo says what the shipped core is made of: the upstream mihomo tag
+// plus the SlothClash patch series (core/patches/mihomo). prebuild writes it to
+// build/sidecar/core-build.json next to the binary; Settings → Info shows it so
+// users can see the core is upstream + N patches and follow the link to them.
+type CoreBuildInfo struct {
+	Version    string   `json:"version"`
+	Source     string   `json:"source"` // patched | stock | local; "" = unknown build
+	Release    string   `json:"release,omitempty"`
+	Patches    []string `json:"patches"`
+	PatchesURL string   `json:"patchesUrl"`
+	DocURL     string   `json:"docUrl"`
+}
+
+const (
+	embeddedCoreBuildFile = "build/sidecar/core-build.json"
+	slothRepoURL          = "https://github.com/Nemu-x/SlothClash"
+)
+
+func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
+	info := CoreBuildInfo{Patches: []string{}}
+	if bundle != nil {
+		if b, err := fs.ReadFile(bundle, embeddedCoreBuildFile); err == nil {
+			var raw CoreBuildInfo
+			if json.Unmarshal(b, &raw) == nil {
+				info.Source = strings.TrimSpace(raw.Source)
+				info.Release = strings.TrimSpace(raw.Release)
+				if raw.Patches != nil {
+					info.Patches = raw.Patches
+				}
+			}
+		}
+		info.Version = coreVersionFromFS(bundle)
+	}
+	// Link the patches as of the core release tag when there is one, so the
+	// page shows exactly the series this binary was built from.
+	ref := "main"
+	if info.Release != "" {
+		ref = info.Release
+	}
+	info.PatchesURL = slothRepoURL + "/tree/" + ref + "/core/patches/mihomo"
+	info.DocURL = slothRepoURL + "/blob/" + ref + "/docs/core-patches.md"
+	return info
+}
+
+// GetCoreBuild is the Wails-exposed description of the embedded core.
+func (a *App) GetCoreBuild() CoreBuildInfo {
+	_ = a
+	return coreBuildInfoFromFS(bundledResources)
 }

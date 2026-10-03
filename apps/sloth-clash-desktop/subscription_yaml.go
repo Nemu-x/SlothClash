@@ -90,6 +90,9 @@ var canonicalRuntimeKeyOrder = []string{
 	"geosite",
 	"hosts",
 	"experimental",
+	// SlothClash core keys (core patch 0003) — see slothRuntimeKeys.
+	"reality-mlkem",
+	"reality-client-version",
 	// Inbound listener APIs (mihomo's modern way to expose multiple inbounds
 	// without bouncing the global `mixed-port`). These go between hosts and
 	// the routing payload because they are "what the core listens on" rather
@@ -108,6 +111,16 @@ var canonicalRuntimeKeyOrder = []string{
 	"rules",
 	"sub-rules",
 	"script",
+}
+
+// slothRuntimeKeys are top-level keys that only the SlothClash core reads
+// (core/patches/mihomo, docs/core-patches.md); an unpatched mihomo ignores them.
+// They sit in canonicalRuntimeKeyOrder for layout, but are not upstream keys:
+// the upstream-coverage guard skips them and separately fails if mihomo ever
+// declares a key of the same name (its semantics would then have to be checked).
+var slothRuntimeKeys = []string{
+	"reality-mlkem",
+	"reality-client-version",
 }
 
 // reorderTopLevelMapping rewrites the top-level key sequence of a

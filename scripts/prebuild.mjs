@@ -162,10 +162,29 @@ async function updateHashCache(targetPath) {
 // Meta maps (stable)
 // =======================
 
-// Pinned mihomo (Clash.Meta) core version — single source of truth.
-// To bump: edit this constant, then run `pnpm run prebuild --force` to refresh
-// the embedded sidecar. Override at build time with MIHOMO_CORE_VERSION (CI/testing).
-const META_VERSION_PINNED = 'v1.19.32'
+// The shipped core is the patched mihomo described by core/mihomo/manifest.json
+// (upstream tag + core/patches/mihomo), built and published as release
+// core-<tag>-sloth.<series> by .github/workflows/core-build.yml. prebuild only
+// downloads it and refuses any bytes whose SHA-256 differs from the manifest.
+// See docs/core-patches.md for the bump flow.
+//
+// Escape hatches (both log loudly and are never used by release CI):
+//   SLOTH_CORE_FILE=<path>        use a locally built core as-is
+//   MIHOMO_CORE_VERSION=<vX.Y.Z>  stock, unpatched upstream build (comparison/rollback)
+const CORE_MANIFEST = JSON.parse(
+  fs.readFileSync(path.join(cwd, 'core', 'mihomo', 'manifest.json'), 'utf8'),
+)
+const CORE_RELEASE = `core-${CORE_MANIFEST.tag}-sloth.${CORE_MANIFEST.series}`
+const CORE_RELEASE_URL = `https://github.com/Nemu-x/SlothClash/releases/download/${CORE_RELEASE}`
+const CORE_TARGETS = {
+  'win32-x64': 'windows-amd64',
+  'win32-arm64': 'windows-arm64',
+  'darwin-x64': 'darwin-amd64',
+  'darwin-arm64': 'darwin-arm64',
+  'linux-x64': 'linux-amd64',
+  'linux-arm64': 'linux-arm64',
+}
+const META_VERSION_PINNED = CORE_MANIFEST.tag
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
 let META_VERSION
 
@@ -201,6 +220,105 @@ async function getLatestReleaseVersion() {
 // =======================
 if (!META_MAP[`${platform}-${arch}`]) {
   throw new Error(`clash meta unsupported platform "${platform}-${arch}"`)
+}
+
+// =======================
+// Patched core (default)
+// =======================
+async function sha256File(p) {
+  return createHash('sha256')
+    .update(await fsp.readFile(p))
+    .digest('hex')
+}
+
+// core-build.json travels with the binary (main.go embeds build/sidecar) so
+// About can say exactly what core this build ships: upstream tag + patches.
+async function writeCoreBuildInfo(source, sha256) {
+  await fsp.writeFile(
+    path.join(SIDECAR_DIR, 'core-version.txt'),
+    `${source === 'stock' ? META_VERSION : CORE_MANIFEST.tag}\n`,
+  )
+  const info = {
+    version: source === 'stock' ? META_VERSION : CORE_MANIFEST.tag,
+    source, // patched | stock | local
+    release: source === 'patched' ? CORE_RELEASE : '',
+    patches: source === 'stock' ? [] : CORE_MANIFEST.patches.map((p) => p.file),
+    sha256,
+  }
+  await fsp.writeFile(
+    path.join(SIDECAR_DIR, 'core-build.json'),
+    JSON.stringify(info, null, 2) + '\n',
+  )
+}
+
+async function resolveCore() {
+  await fsp.mkdir(SIDECAR_DIR, { recursive: true })
+  const isWin = platform === 'win32'
+  const sidecarPath = path.join(
+    SIDECAR_DIR,
+    `sloth-mihomo-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
+  )
+
+  const local = (process.env.SLOTH_CORE_FILE || '').trim()
+  if (local) {
+    await fsp.copyFile(local, sidecarPath)
+    if (!isWin) execSync(`chmod 755 ${sidecarPath}`)
+    const sha = await sha256File(sidecarPath)
+    log_info(
+      `[core] SLOTH_CORE_FILE: using local core ${local} (sha256 ${sha}) — not for release`,
+    )
+    await writeCoreBuildInfo('local', sha)
+    return
+  }
+
+  if ((process.env.MIHOMO_CORE_VERSION || '').trim()) {
+    await getLatestReleaseVersion()
+    // resolveSidecar keeps an existing file; drop it so the label can't lie.
+    await fsp.rm(sidecarPath, { force: true })
+    log_info(
+      '[core] MIHOMO_CORE_VERSION set: STOCK upstream core, without the patch series',
+    )
+    await resolveSidecar(clashMeta())
+    await writeCoreBuildInfo('stock', await sha256File(sidecarPath))
+    return
+  }
+
+  const target = CORE_TARGETS[`${platform}-${arch}`]
+  const asset = target && CORE_MANIFEST.assets[target]
+  if (!asset) {
+    throw new Error(
+      `[core] no patched core for ${platform}-${arch} in core/mihomo/manifest.json`,
+    )
+  }
+  if (!/^[0-9a-f]{64}$/.test(asset.sha256 || '')) {
+    throw new Error(
+      `[core] ${CORE_RELEASE} ${target} has no pinned sha256 in core/mihomo/manifest.json — ` +
+        'publish it with the "Core build" workflow, then run `node scripts/core-manifest.mjs`',
+    )
+  }
+  // Re-download whenever the bytes on disk are not the pinned ones (a stale
+  // stock core, an older series) — no --force needed, never a silent mix.
+  if (
+    fs.existsSync(sidecarPath) &&
+    (await sha256File(sidecarPath)) === asset.sha256
+  ) {
+    log_success(`[core] ${CORE_RELEASE} ${target} already in place`)
+  } else {
+    const tmp = path.join(TEMP_DIR, 'core', asset.file)
+    await fsp.rm(tmp, { force: true })
+    await downloadFile(`${CORE_RELEASE_URL}/${asset.file}`, tmp)
+    const got = await sha256File(tmp)
+    if (got !== asset.sha256) {
+      await fsp.rm(tmp, { force: true })
+      throw new Error(
+        `[core] ${asset.file}: sha256 ${got} does not match the manifest pin ${asset.sha256}`,
+      )
+    }
+    await fsp.copyFile(tmp, sidecarPath)
+    if (!isWin) execSync(`chmod 755 ${sidecarPath}`)
+    log_success(`[core] installed ${CORE_RELEASE} ${target} (sha256 verified)`)
+  }
+  await writeCoreBuildInfo('patched', asset.sha256)
 }
 
 // =======================
@@ -572,8 +690,7 @@ const resolveUnSetDnsScript = () =>
 const tasks = [
   {
     name: 'sloth-mihomo',
-    func: () =>
-      getLatestReleaseVersion().then(() => resolveSidecar(clashMeta())),
+    func: resolveCore,
     retry: 5,
   },
   { name: 'plugin', func: resolvePlugin, retry: 5, winOnly: true },

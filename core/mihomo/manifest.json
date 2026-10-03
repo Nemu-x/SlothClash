@@ -1,0 +1,29 @@
+{
+  "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by .github/workflows/core-build.yml. See docs/core-patches.md. Bump: edit tag/commit/series, run the workflow, then `node scripts/core-manifest.mjs`.",
+  "upstream": "https://github.com/MetaCubeX/mihomo",
+  "tag": "v1.19.32",
+  "commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+  "series": 1,
+  "patches": [
+    {
+      "file": "0001-reality-configurable-client-version.patch",
+      "sha256": "2f646761ebdbd243a6c32652fd63aba87d96bff6e989667fc5eef548286e9bde"
+    },
+    {
+      "file": "0002-reality-adaptive-mlkem.patch",
+      "sha256": "39dae2c2327581f8c2802f5fbe83fce784d9f8fdd2c842286d5ad196b756eda6"
+    },
+    {
+      "file": "0003-reality-config-keys.patch",
+      "sha256": "8524faf333caa15214b4b87ba3a7a8ca0d039defd54a26b8148260a57a6f1b07"
+    }
+  ],
+  "assets": {
+    "windows-amd64": { "file": "mihomo-windows-amd64.exe", "sha256": "" },
+    "windows-arm64": { "file": "mihomo-windows-arm64.exe", "sha256": "" },
+    "darwin-amd64": { "file": "mihomo-darwin-amd64", "sha256": "" },
+    "darwin-arm64": { "file": "mihomo-darwin-arm64", "sha256": "" },
+    "linux-amd64": { "file": "mihomo-linux-amd64", "sha256": "" },
+    "linux-arm64": { "file": "mihomo-linux-arm64", "sha256": "" }
+  }
+}

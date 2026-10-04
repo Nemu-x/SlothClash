@@ -13,18 +13,35 @@ with links to the patches and to this page.
 
 | Piece | Role |
 |---|---|
-| [`core/mihomo/manifest.json`](../core/mihomo/manifest.json) | MetaCubeX tag + its commit, series number, every patch with its SHA-256, every built binary with its SHA-256 |
-| [`scripts/core-build.sh`](../scripts/core-build.sh) | clones the tag, checks the commit, applies the series, runs the patch tests, cross-compiles all targets |
-| [`.github/workflows/core-build.yml`](../.github/workflows/core-build.yml) | runs the script, runs the REALITY lab, publishes release `core-<tag>-sloth.<series>` |
-| [`scripts/core-manifest.mjs`](../scripts/core-manifest.mjs) | copies the published hashes into the manifest after checking the minisign signature |
-| [`scripts/prebuild.mjs`](../scripts/prebuild.mjs) | downloads the binary for the build target and refuses any bytes whose SHA-256 differs from the manifest |
+| [`core/mihomo/manifest.json`](../core/mihomo/manifest.json) | MetaCubeX tag + its commit, every patch with its SHA-256, the binary name per target |
+| [`core/mihomo/.tool-versions`](../core/mihomo/.tool-versions) | the Go release every core is built with |
+| [`scripts/core-build.mjs`](../scripts/core-build.mjs) | clones the tag, checks the commit, applies the series, runs the patch tests, cross-compiles |
+| [`.github/workflows/core-build.yml`](../.github/workflows/core-build.yml) | builds every target in parallel, runs the REALITY lab, hands the result on as the `core-dist` artifact |
+| [`.github/workflows/desktop-artifacts.yml`](../.github/workflows/desktop-artifacts.yml) | on a `v*` tag: runs the core build first, then builds the app for every OS from that `core-dist` |
+| [`scripts/prebuild.mjs`](../scripts/prebuild.mjs) | puts the core for the build target next to the app (see below) |
 
-The desktop build never compiles the core. Every app release of one series embeds byte-identical
-cores, so the privileged service's SHA-256 pin only changes when the core really changes (the
-in-app "reinstall service" banner appears once per core change, not once per app release).
+A release is one tag push. The core is built from source in the same run, before any app build,
+and a patch that no longer applies, a failing patch test or a REALITY lab regression stops the
+release: no app is built and nothing is published. There are no separate core releases.
 
-Core releases are prereleases and never marked latest. The in-app updater, the download site and
-the package repositories only look at app releases (`v*` tags).
+The trust anchor is the source, not a binary: the manifest pins the upstream commit and the hash of
+every patch, `.tool-versions` pins Go, and the build is reproducible. The same inputs give the same
+bytes on any machine, so the privileged service's SHA-256 pin only changes when one of those
+inputs changes (the "reinstall service" banner appears once per core change, not once per app
+release).
+
+`prebuild` gets the core in one of three ways:
+
+- **Release CI**: `SLOTH_CORE_DIR` points at `core-dist` from the same run. prebuild checks that its
+  `BUILDINFO.txt` names the pinned tag, commit and patch hashes and that the binary matches its
+  `SHA256SUMS` line. In CI without `SLOTH_CORE_DIR` it fails instead of building an untested core.
+- **Local build** (default): builds the host target with `core-build.mjs` (git and Go needed; Go
+  fetches the pinned toolchain itself if the installed one differs). It takes a minute once, then
+  comes from `node_modules/.verge/core` until the tag, a patch or the Go pin changes. The bytes
+  equal the release's.
+- **Escape hatches**, never used by release CI: `SLOTH_CORE_FILE=<path>` embeds that binary as-is
+  (Settings → Info says "local build"); `MIHOMO_CORE_VERSION=<tag>` embeds the stock MetaCubeX
+  build of that tag (Settings → Info says "stock").
 
 ### Build flags
 
@@ -32,41 +49,37 @@ The same as MetaCubeX release builds: `CGO_ENABLED=0`, `-tags with_gvisor`, `-tr
 `-ldflags "-extldflags --static -X constant.Version=<tag> -X constant.BuildTime=… -w -s -buildid="`,
 `GOAMD64=v2` on amd64. Two differences, both deliberate:
 
-- **Toolchain:** stock Go (the version is recorded in `BUILDINFO.txt` of each release) for every
-  target. MetaCubeX builds with its own Go fork and ships extra builds for old Windows and macOS;
-  the app itself needs Windows 10 / macOS 12 or later, so those builds buy nothing here.
+- **Toolchain:** stock Go, the release pinned in `core/mihomo/.tool-versions`, for every target.
+  MetaCubeX builds with its own Go fork and ships extra builds for old Windows and macOS; the app
+  itself needs Windows 10 / macOS 12 or later, so those builds buy nothing here.
 - **BuildTime:** the tag's commit time instead of the wall clock, so the build is reproducible.
 
 `constant.Version` stays the plain tag (`v1.19.32`). The core's `/version`, the User-Agent it
 uses for providers and everything panels match on are identical to an unpatched core.
 
-### Reproducing a core release
+### Reproducing a release core
 
 ```bash
-# Go version from BUILDINFO.txt of the release
-bash scripts/core-build.sh out
-cat out/SHA256SUMS   # equals SHA256SUMS of the release and the hashes in the manifest
+node scripts/core-build.mjs out        # all targets; or: node scripts/core-build.mjs out linux-amd64
+cat out/SHA256SUMS
 ```
 
-`SHA256SUMS` of a release is signed with the SlothClash release key (the same key the in-app
-updater trusts):
-
-```bash
-minisign -Vm SHA256SUMS -P RWQaeqnvGRd4kI2tkOi4JGfiD5IM5gXw3X5ZJ8cohs0dWAmEoav+AprY
-```
+The hashes equal those in `BUILDINFO.txt`/`SHA256SUMS` of the `core-dist` artifact of the release
+run, and the binary embedded in the app.
 
 ## Rules for a patch
 
 - One concern per patch, numbered, with a comment in the code explaining why it exists.
 - Behaviour that users may need to change is read from the config, not baked in (see 0003).
-- Logic ships with a Go test inside the patch; `core-build.sh` runs it on every build.
+- Logic ships with a Go test inside the patch; the core build runs it on every PR that touches the
+  core and on every release.
 - Record the related mihomo issue or PR below, and the condition under which the patch goes away.
 - Never edit a patch without updating its hash in the manifest; the build refuses the mismatch.
 
 ## Bumping the core or changing the series
 
-1. Edit `core/mihomo/manifest.json`: `tag` and `commit` (for a bump), increase `series`, update
-   patch hashes if a patch changed. Clear the `assets[*].sha256` values.
+1. Edit `core/mihomo/manifest.json`: `tag` and `commit` for a bump, the patch hashes if a patch
+   changed.
 2. Open the PR. The "Core build" workflow builds every target and runs the REALITY lab. If a
    patch no longer applies it stops with `patch <name> does not apply to mihomo <tag>`; no core is
    produced.
@@ -74,17 +87,14 @@ minisign -Vm SHA256SUMS -P RWQaeqnvGRd4kI2tkOi4JGfiD5IM5gXw3X5ZJ8cohs0dWAmEoav+A
    with the earlier patches applied, resolve, then regenerate it with `git diff` against a tree
    that has only the earlier patches. If mihomo fixed the problem, delete the patch and its entry
    below.
-4. After merge, run "Core build" on `main` with `publish` checked. It creates
-   `core-<tag>-sloth.<series>` and refuses to overwrite an existing release.
-5. `node scripts/core-manifest.mjs` fills the asset hashes (verifying the signature and every
-   file), commit the manifest. App builds now pick up the new core.
+4. Merge. The next tag ships it; nothing else to run.
+
+The Go pin moves the same way: Renovate opens a PR for `core/mihomo/.tool-versions` (never
+automerged, since it changes the core bytes and the service pin). Take it when the Go release fixes
+something the core uses (`crypto/tls`, `net`, …).
 
 The tag is pinned; nothing forces a bump. If an area a patch touches was rewritten, stay on the
 previous tag until the patch is redone.
-
-Local escape hatches, never used by release CI: `SLOTH_CORE_FILE=<path> pnpm run prebuild` uses a
-locally built core; `MIHOMO_CORE_VERSION=<tag> pnpm run prebuild` uses the stock MetaCubeX build
-of that tag (Settings → Info then says "stock").
 
 ## Verifying behaviour
 
@@ -93,7 +103,7 @@ of that tag (Settings → Info then says "stock").
 probes every combination of key share, fingerprint, policy and client version through the core
 under test. The expected result of each cell comes from a model of the server generations, so a
 regression in either direction fails the test. "Core build" runs it against the freshly built
-core and the stock core of the same tag.
+core and the stock core of the same tag, on every core PR and on every release.
 
 ```bash
 cd tests/reality-lab

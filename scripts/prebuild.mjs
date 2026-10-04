@@ -11,6 +11,13 @@ import { HttpsProxyAgent } from 'https-proxy-agent'
 import fetch from 'node-fetch'
 import { extract } from 'tar'
 
+import {
+  buildCore,
+  coreBuildKey,
+  readManifest as readCoreManifest,
+  verifyBuiltCore,
+  verifyPatchSeries,
+} from './core-build.mjs'
 import { log_debug, log_error, log_info, log_success } from './utils.mjs'
 
 /**
@@ -163,19 +170,18 @@ async function updateHashCache(targetPath) {
 // =======================
 
 // The shipped core is the patched mihomo described by core/mihomo/manifest.json
-// (upstream tag + core/patches/mihomo), built and published as release
-// core-<tag>-sloth.<series> by .github/workflows/core-build.yml. prebuild only
-// downloads it and refuses any bytes whose SHA-256 differs from the manifest.
+// (upstream tag + core/patches/mihomo), built by scripts/core-build.mjs:
+//   - release CI: the "core" job of desktop-artifacts.yml builds every target
+//     and runs the REALITY lab; app jobs get it as SLOTH_CORE_DIR and prebuild
+//     only checks it against the manifest (CI without it is an error);
+//   - local: prebuild builds the host target (git + Go, no tests), cached by
+//     upstream commit + patch hashes + Go version under node_modules/.verge/core.
 // See docs/core-patches.md for the bump flow.
 //
 // Escape hatches (both log loudly and are never used by release CI):
 //   SLOTH_CORE_FILE=<path>        use a locally built core as-is
 //   MIHOMO_CORE_VERSION=<vX.Y.Z>  stock, unpatched upstream build (comparison/rollback)
-const CORE_MANIFEST = JSON.parse(
-  fs.readFileSync(path.join(cwd, 'core', 'mihomo', 'manifest.json'), 'utf8'),
-)
-const CORE_RELEASE = `core-${CORE_MANIFEST.tag}-sloth.${CORE_MANIFEST.series}`
-const CORE_RELEASE_URL = `https://github.com/Nemu-x/SlothClash/releases/download/${CORE_RELEASE}`
+const CORE_MANIFEST = readCoreManifest()
 const CORE_TARGETS = {
   'win32-x64': 'windows-amd64',
   'win32-arm64': 'windows-arm64',
@@ -233,6 +239,8 @@ async function sha256File(p) {
 
 // core-build.json travels with the binary (main.go embeds build/sidecar) so
 // About can say exactly what core this build ships: upstream tag + patches.
+// ref = the commit the build came from (CI), so the patch links show exactly
+// that series; empty for local builds (links fall back to main).
 async function writeCoreBuildInfo(source, sha256) {
   await fsp.writeFile(
     path.join(SIDECAR_DIR, 'core-version.txt'),
@@ -241,7 +249,11 @@ async function writeCoreBuildInfo(source, sha256) {
   const info = {
     version: source === 'stock' ? META_VERSION : CORE_MANIFEST.tag,
     source, // patched | stock | local
-    release: source === 'patched' ? CORE_RELEASE : '',
+    ref:
+      source === 'patched' &&
+      /^[0-9a-f]{40}$/.test(process.env.GITHUB_SHA || '')
+        ? process.env.GITHUB_SHA
+        : '',
     patches: source === 'stock' ? [] : CORE_MANIFEST.patches.map((p) => p.file),
     sha256,
   }
@@ -249,6 +261,39 @@ async function writeCoreBuildInfo(source, sha256) {
     path.join(SIDECAR_DIR, 'core-build.json'),
     JSON.stringify(info, null, 2) + '\n',
   )
+}
+
+async function installCore(from, sidecarPath, isWin) {
+  await fsp.copyFile(from, sidecarPath)
+  if (!isWin) execSync(`chmod 755 ${sidecarPath}`)
+}
+
+// Local build of the host target, reused while the inputs are unchanged.
+async function localPatchedCore(target) {
+  verifyPatchSeries(CORE_MANIFEST)
+  const key = coreBuildKey(CORE_MANIFEST, target)
+  const cacheDir = path.join(TEMP_DIR, 'core', key)
+  const cached = path.join(cacheDir, CORE_MANIFEST.assets[target].file)
+  if (fs.existsSync(path.join(cacheDir, 'SHA256SUMS'))) {
+    try {
+      const { sha256 } = verifyBuiltCore(cacheDir, target, CORE_MANIFEST)
+      log_success(
+        `[core] patched ${target} from the local build cache (${key})`,
+      )
+      return { file: cached, sha256 }
+    } catch (err) {
+      log_info(
+        `[core] build cache ${key} unusable (${err.message}); rebuilding`,
+      )
+    }
+  }
+  log_info(
+    `[core] building mihomo ${CORE_MANIFEST.tag} + ${CORE_MANIFEST.patches.length} patches for ${target} ` +
+      '(git + Go; once per core/patch/Go change; release CI also runs the patch tests and the REALITY lab)',
+  )
+  await fsp.rm(cacheDir, { recursive: true, force: true })
+  buildCore({ outDir: cacheDir, targets: [target], skipTests: true })
+  return verifyBuiltCore(cacheDir, target, CORE_MANIFEST)
 }
 
 async function resolveCore() {
@@ -261,8 +306,7 @@ async function resolveCore() {
 
   const local = (process.env.SLOTH_CORE_FILE || '').trim()
   if (local) {
-    await fsp.copyFile(local, sidecarPath)
-    if (!isWin) execSync(`chmod 755 ${sidecarPath}`)
+    await installCore(local, sidecarPath, isWin)
     const sha = await sha256File(sidecarPath)
     log_info(
       `[core] SLOTH_CORE_FILE: using local core ${local} (sha256 ${sha}) — not for release`,
@@ -284,41 +328,38 @@ async function resolveCore() {
   }
 
   const target = CORE_TARGETS[`${platform}-${arch}`]
-  const asset = target && CORE_MANIFEST.assets[target]
-  if (!asset) {
+  if (!target || !CORE_MANIFEST.assets[target]) {
     throw new Error(
       `[core] no patched core for ${platform}-${arch} in core/mihomo/manifest.json`,
     )
   }
-  if (!/^[0-9a-f]{64}$/.test(asset.sha256 || '')) {
+
+  const dir = (process.env.SLOTH_CORE_DIR || '').trim()
+  let core
+  if (dir) {
+    // The core built and lab-tested earlier in this CI run.
+    verifyPatchSeries(CORE_MANIFEST)
+    core = verifyBuiltCore(path.resolve(dir), target, CORE_MANIFEST)
+    log_success(`[core] patched ${target} from ${dir} (matches the manifest)`)
+  } else if (process.env.GITHUB_ACTIONS === 'true') {
     throw new Error(
-      `[core] ${CORE_RELEASE} ${target} has no pinned sha256 in core/mihomo/manifest.json — ` +
-        'publish it with the "Core build" workflow, then run `node scripts/core-manifest.mjs`',
+      '[core] SLOTH_CORE_DIR is not set: release CI must embed the core built and tested ' +
+        'by the "core" job (core-build.yml), never an untested local build',
     )
-  }
-  // Re-download whenever the bytes on disk are not the pinned ones (a stale
-  // stock core, an older series) — no --force needed, never a silent mix.
-  if (
-    fs.existsSync(sidecarPath) &&
-    (await sha256File(sidecarPath)) === asset.sha256
-  ) {
-    log_success(`[core] ${CORE_RELEASE} ${target} already in place`)
   } else {
-    const tmp = path.join(TEMP_DIR, 'core', asset.file)
-    await fsp.rm(tmp, { force: true })
-    await downloadFile(`${CORE_RELEASE_URL}/${asset.file}`, tmp)
-    const got = await sha256File(tmp)
-    if (got !== asset.sha256) {
-      await fsp.rm(tmp, { force: true })
-      throw new Error(
-        `[core] ${asset.file}: sha256 ${got} does not match the manifest pin ${asset.sha256}`,
-      )
-    }
-    await fsp.copyFile(tmp, sidecarPath)
-    if (!isWin) execSync(`chmod 755 ${sidecarPath}`)
-    log_success(`[core] installed ${CORE_RELEASE} ${target} (sha256 verified)`)
+    core = await localPatchedCore(target)
   }
-  await writeCoreBuildInfo('patched', asset.sha256)
+
+  if (
+    !fs.existsSync(sidecarPath) ||
+    (await sha256File(sidecarPath)) !== core.sha256
+  ) {
+    await installCore(core.file, sidecarPath, isWin)
+    log_success(`[core] installed patched ${target} (sha256 ${core.sha256})`)
+  } else {
+    log_success(`[core] patched ${target} already in place`)
+  }
+  await writeCoreBuildInfo('patched', core.sha256)
 }
 
 // =======================

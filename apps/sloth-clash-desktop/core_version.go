@@ -64,7 +64,7 @@ func embeddedCoreVersion() string {
 type CoreBuildInfo struct {
 	Version    string   `json:"version"`
 	Source     string   `json:"source"` // patched | stock | local; "" = unknown build
-	Release    string   `json:"release,omitempty"`
+	Ref        string   `json:"ref,omitempty"` // commit the build came from; "" = local build
 	Patches    []string `json:"patches"`
 	PatchesURL string   `json:"patchesUrl"`
 	DocURL     string   `json:"docUrl"`
@@ -82,7 +82,7 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 			var raw CoreBuildInfo
 			if json.Unmarshal(b, &raw) == nil {
 				info.Source = strings.TrimSpace(raw.Source)
-				info.Release = strings.TrimSpace(raw.Release)
+				info.Ref = strings.TrimSpace(raw.Ref)
 				if raw.Patches != nil {
 					info.Patches = raw.Patches
 				}
@@ -90,11 +90,11 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 		}
 		info.Version = coreVersionFromFS(bundle)
 	}
-	// Link the patches as of the core release tag when there is one, so the
-	// page shows exactly the series this binary was built from.
+	// Link the patches as of the commit the release was built from, so the
+	// page shows exactly the series this binary carries.
 	ref := "main"
-	if info.Release != "" {
-		ref = info.Release
+	if info.Ref != "" {
+		ref = info.Ref
 	}
 	info.PatchesURL = slothRepoURL + "/tree/" + ref + "/core/patches/mihomo"
 	info.DocURL = slothRepoURL + "/blob/" + ref + "/docs/core-patches.md"

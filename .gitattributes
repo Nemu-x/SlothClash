@@ -1,2 +1,5 @@
 .github/workflows/*.lock.yml linguist-generated=true merge=ours
 Changelog.md merge=union
+
+# Core patch series: byte-exact on every OS (hashed in core/mihomo/manifest.json, applied with git apply).
+core/patches/** -text

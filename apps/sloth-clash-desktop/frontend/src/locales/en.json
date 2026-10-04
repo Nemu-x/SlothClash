@@ -152,7 +152,25 @@
     "serviceUnreachableTitle": "Helper service is unavailable — reinstall to restore it",
     "serviceUpdateBody": "The privileged helper service is outdated (v{{version}}, needs v{{expected}}+). It contains important security fixes.",
     "serviceUpdateAdminHint": "Reinstalling requires administrator rights — accept the prompt, or ask your administrator.",
-    "serviceUpdateAction": "Update service"
+    "serviceUpdateAction": "Update service",
+    "reality": {
+      "title": "REALITY",
+      "mlkem": "ML-KEM key share (X25519MLKEM768)",
+      "mlkemAuto": "Auto (learn per server)",
+      "mlkemAlways": "Always",
+      "mlkemNever": "Never",
+      "clientVersion": "Client version",
+      "clientVersionPlaceholder": "core default",
+      "clientVersionInvalid": "Use x.y.z, each part 0–255",
+      "hint": "Newer Xray servers (26.9.8+) require the ML-KEM key share, older ones (before 25.x) drop it. Auto tries one, remembers what each server accepts and switches after a failure. The client version is checked by servers that set minClientVer / maxClientVer; leave it empty unless your provider asks for a specific one.",
+      "applyHint": "Saved immediately. While connected, the core reloads its config and new connections use the new setting."
+    },
+    "coreBuildPatched_one": "mihomo {{version}} + {{count}} SlothClash patch",
+    "coreBuildPatched_other": "mihomo {{version}} + {{count}} SlothClash patches",
+    "coreBuildStock": "mihomo {{version}} (stock, without SlothClash patches)",
+    "coreBuildLocal": "mihomo {{version}}, local core build",
+    "coreBuildPatches": "Patches",
+    "coreBuildDoc": "How the core is built"
   },
   "tour": {
     "back": "Back",

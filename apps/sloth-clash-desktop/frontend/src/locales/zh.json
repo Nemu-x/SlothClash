@@ -152,7 +152,24 @@
     "serviceUnreachableTitle": "辅助服务不可用 — 请重装以恢复",
     "serviceUpdateBody": "特权辅助服务已过时（v{{version}}，需要 v{{expected}}+）。它包含重要的安全修复。",
     "serviceUpdateAdminHint": "重新安装需要管理员权限 — 请接受提示，或联系您的管理员。",
-    "serviceUpdateAction": "更新服务"
+    "serviceUpdateAction": "更新服务",
+    "reality": {
+      "title": "REALITY",
+      "mlkem": "ML-KEM 密钥交换 (X25519MLKEM768)",
+      "mlkemAuto": "自动（按服务器学习）",
+      "mlkemAlways": "始终",
+      "mlkemNever": "从不",
+      "clientVersion": "客户端版本",
+      "clientVersionPlaceholder": "内核默认",
+      "clientVersionInvalid": "格式为 x.y.z，每段 0–255",
+      "hint": "新版 Xray 服务器（26.9.8+）要求 ML-KEM 密钥交换，旧版（25.x 之前）会丢弃它。自动模式先尝试一种，记住每个服务器接受的方式，失败后切换。设置了 minClientVer / maxClientVer 的服务器会检查客户端版本；除非服务商要求，否则请留空。",
+      "applyHint": "立即保存。已连接时内核会重新加载配置，新连接将使用新设置。"
+    },
+    "coreBuildPatched": "mihomo {{version}} + {{count}} 个 SlothClash 补丁",
+    "coreBuildStock": "mihomo {{version}}（原版，未含 SlothClash 补丁）",
+    "coreBuildLocal": "mihomo {{version}}，本地构建内核",
+    "coreBuildPatches": "补丁",
+    "coreBuildDoc": "内核构建说明"
   },
   "tour": {
     "back": "上一步",

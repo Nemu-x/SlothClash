@@ -26,6 +26,9 @@ concurrency:
 
 jobs:
   build-site:
+    # App releases only: core-v* releases (patched mihomo builds) live in the
+    # same repo but are not app versions.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
@@ -43,7 +46,8 @@ jobs:
           mkdir -p pool
           # Version-free asset names collide across releases, so re-name with
           # the tag while pooling (apt/dnf need distinct files per version).
-          gh release list --repo "$GITHUB_REPOSITORY" --limit "$RETAIN_RELEASES" --json tagName -q '.[].tagName' | while read -r tag; do
+          # Over-fetch, then keep app tags only (core-v* releases are not app versions).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName -q '.[].tagName | select(startswith("v"))' | head -n "$RETAIN_RELEASES" | while read -r tag; do
             ver="${tag#v}"
             mkdir -p "tmp-$tag"
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" -D "tmp-$tag" -p '*linux*.deb' -p '*linux*.rpm' || true
@@ -131,7 +135,8 @@ jobs:
     # AUR account yet — infra stays ready for when registration succeeds).
     # Real releases, or a manual/auto dispatch pinned to a version tag. A plain
     # branch dispatch (e.g. a site-only refresh) intentionally skips AUR.
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
+    # core-v* releases (patched mihomo builds) are not app versions.
+    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}

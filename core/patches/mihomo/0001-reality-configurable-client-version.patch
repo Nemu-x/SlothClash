@@ -1,0 +1,30 @@
+diff --git a/component/tls/reality.go b/component/tls/reality.go
+index ff6a0a3d..aad35f7c 100644
+--- a/component/tls/reality.go
++++ b/component/tls/reality.go
+@@ -28,6 +28,12 @@ import (
+ 
+ const RealityMaxShortIDLen = 8
+ 
++// RealityClientVersion is the Xray-style client version carried in the first
++// three bytes of the REALITY ClientHello session id. Xray servers compare it
++// against their optional minClientVer / maxClientVer; nothing else depends on it.
++// Defaults to the Xray release this core was last validated against.
++var RealityClientVersion = [3]byte{26, 9, 9}
++
+ type RealityConfig struct {
+ 	PublicKey *ecdh.PublicKey
+ 	ShortID   [RealityMaxShortIDLen]byte
+@@ -71,9 +77,9 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 		binary.BigEndian.PutUint64(hello.SessionId, uint64(ntp.Now().Unix()))
+ 
+ 		copy(hello.SessionId[8:], realityConfig.ShortID[:])
+-		hello.SessionId[0] = 1
+-		hello.SessionId[1] = 8
+-		hello.SessionId[2] = 2
++		hello.SessionId[0] = RealityClientVersion[0]
++		hello.SessionId[1] = RealityClientVersion[1]
++		hello.SessionId[2] = RealityClientVersion[2]
+ 
+ 		//log.Debugln("REALITY hello.sessionId[:16]: %v", hello.SessionId[:16])
+ 

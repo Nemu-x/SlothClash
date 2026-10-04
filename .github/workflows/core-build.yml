@@ -1,0 +1,158 @@
+# Builds the patched mihomo core (upstream tag + core/patches/mihomo) for every
+# desktop target, runs the REALITY lab against it, and — on a manual run from
+# main with publish=true — publishes it as release core-<tag>-sloth.<series>.
+#
+# The desktop build never compiles the core: scripts/prebuild.mjs downloads the
+# assets of that release and verifies them against core/mihomo/manifest.json.
+# Bump flow and the patch policy: docs/core-patches.md.
+
+name: Core build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the release core-<tag>-sloth.<series> (main only; never overwrites)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'scripts/core-build.sh'
+      - 'tests/reality-lab/**'
+      - '.github/workflows/core-build.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'core/**'
+      - 'scripts/core-build.sh'
+      - 'tests/reality-lab/**'
+      - '.github/workflows/core-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      release: ${{ steps.meta.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - name: Release name from manifest
+        id: meta
+        run: echo "release=$(node -p "const m=require('./core/mihomo/manifest.json'); 'core-'+m.tag+'-sloth.'+m.series")" >> "$GITHUB_OUTPUT"
+
+      # Fails naming the patch when one no longer applies (core bump), and on any
+      # drift between core/patches/mihomo and the manifest hashes.
+      - name: Build patched core (all targets)
+        run: bash scripts/core-build.sh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-dist
+          path: dist/
+          if-no-files-found: error
+
+  reality-lab:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-dist
+          path: dist
+
+      - name: Stock core of the same tag (comparison column)
+        run: |
+          TAG=$(node -p "require('./core/mihomo/manifest.json').tag")
+          curl -fsSL "https://github.com/MetaCubeX/mihomo/releases/download/$TAG/mihomo-linux-amd64-v2-$TAG.gz" | gunzip > stock-mihomo
+          chmod +x stock-mihomo dist/mihomo-linux-amd64
+
+      - name: Pull Xray images
+        run: for v in 24.12.31 25.7.25 26.4.13 26.9.9; do docker pull -q teddysun/xray:$v; done
+
+      - name: REALITY matrix (patched vs stock)
+        working-directory: tests/reality-lab
+        env:
+          XRAY_LAB: '1'
+          SLOTH_MIHOMO_BIN: ${{ github.workspace }}/dist/mihomo-linux-amd64
+          SLOTH_MIHOMO_STOCK_BIN: ${{ github.workspace }}/stock-mihomo
+        run: go test -v -count=1 -timeout 20m .
+
+  publish:
+    needs: [build, reality-lab]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE: ${{ needs.build.outputs.release }}
+      GH_TOKEN: ${{ github.token }}
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      MINISIGN_SIGN_PASSWORD: ${{ secrets.MINISIGN_SIGN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-dist
+          path: dist
+
+      # A published core is immutable: its hashes are pinned in the manifest and
+      # by installed services. A new build is a new series number.
+      - name: Refuse to overwrite an existing release
+        run: |
+          if gh release view "$RELEASE" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::$RELEASE already exists; bump series in core/mihomo/manifest.json"
+            exit 1
+          fi
+
+      - name: Sign SHA256SUMS with minisign
+        run: |
+          test -n "$MINISIGN_SECRET_KEY" || { echo "::error::MINISIGN_SECRET_KEY is required to publish a core"; exit 1; }
+          sudo apt-get update -y && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          printf '%s\n' "$MINISIGN_SIGN_PASSWORD" | minisign -S -s minisign.key -m dist/SHA256SUMS
+          rm -f minisign.key
+          test -f dist/SHA256SUMS.minisig
+
+      - name: Release notes
+        run: |
+          TAG=$(node -p "require('./core/mihomo/manifest.json').tag")
+          {
+            echo "mihomo $TAG (MetaCubeX/mihomo, unmodified tag) + the SlothClash patch series in [core/patches/mihomo](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA/core/patches/mihomo)."
+            echo "What the patches do and how to rebuild these bytes: [docs/core-patches.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/docs/core-patches.md)."
+            echo
+            echo "This is a component release consumed by the desktop build, not an app release."
+            echo
+            echo '```'
+            cat dist/BUILDINFO.txt
+            echo '```'
+          } > notes.md
+
+      # Prerelease and never "latest": the in-app updater, the site and the
+      # package repos read app releases (v*) only.
+      - name: Publish
+        run: |
+          gh release create "$RELEASE" dist/mihomo-* dist/SHA256SUMS dist/SHA256SUMS.minisig dist/BUILDINFO.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Core $RELEASE" --notes-file notes.md --prerelease --latest=false

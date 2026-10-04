@@ -102,6 +102,7 @@ type DesktopPrefs struct {
 	TUN          TunSettings          `json:"tun"`
 	Traffic      TrafficSettings      `json:"traffic"`
 	Connection   ConnectionSettings   `json:"connection"`
+	Reality      RealitySettings      `json:"reality"`
 	Privacy      PrivacySettings      `json:"privacy"`
 	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
 	Experimental ExperimentalSettings `json:"experimental"`

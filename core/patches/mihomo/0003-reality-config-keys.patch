@@ -1,0 +1,280 @@
+diff --git a/component/tls/reality_policy.go b/component/tls/reality_policy.go
+new file mode 100644
+index 00000000..7a4d9774
+--- /dev/null
++++ b/component/tls/reality_policy.go
+@@ -0,0 +1,69 @@
++package tls
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++
++	"github.com/metacubex/mihomo/log"
++)
++
++// defaultRealityClientVersion is the compiled-in client version, kept so that a
++// config without reality-client-version restores it after one that set it.
++var defaultRealityClientVersion = RealityClientVersion
++
++func DefaultRealityClientVersion() [3]byte { return defaultRealityClientVersion }
++
++// ParseRealityClientVersion parses "x.y.z" (each part 0..255). An empty string
++// selects the compiled-in default.
++func ParseRealityClientVersion(s string) ([3]byte, error) {
++	s = strings.TrimSpace(s)
++	if s == "" {
++		return defaultRealityClientVersion, nil
++	}
++	parts := strings.Split(strings.TrimPrefix(s, "v"), ".")
++	if len(parts) != 3 {
++		return [3]byte{}, fmt.Errorf("reality-client-version %q: want x.y.z", s)
++	}
++	var v [3]byte
++	for i, p := range parts {
++		n, err := strconv.ParseUint(p, 10, 8)
++		if err != nil {
++			return [3]byte{}, fmt.Errorf("reality-client-version %q: part %q is not a number in 0..255", s, p)
++		}
++		v[i] = byte(n)
++	}
++	return v, nil
++}
++
++// ParseRealityMLKEMPolicy parses auto | on | off. An empty string means auto.
++func ParseRealityMLKEMPolicy(s string) (RealityMLKEMPolicy, error) {
++	switch strings.ToLower(strings.TrimSpace(s)) {
++	case "", "auto":
++		return RealityMLKEMAuto, nil
++	case "on":
++		return RealityMLKEMOn, nil
++	case "off":
++		return RealityMLKEMOff, nil
++	}
++	return RealityMLKEMAuto, fmt.Errorf("reality-mlkem %q: want auto, on or off", s)
++}
++
++func (p RealityMLKEMPolicy) String() string {
++	switch p {
++	case RealityMLKEMOn:
++		return "on"
++	case RealityMLKEMOff:
++		return "off"
++	}
++	return "auto"
++}
++
++// ApplyRealityPolicy installs the REALITY settings of a loaded config.
++func ApplyRealityPolicy(version [3]byte, policy RealityMLKEMPolicy) {
++	if RealityClientVersion != version {
++		RealityClientVersion = version
++	}
++	SetRealityMLKEMPolicy(policy)
++	log.Infoln("REALITY policy: client version %d.%d.%d, X25519MLKEM768 %s", version[0], version[1], version[2], policy)
++}
+diff --git a/component/tls/reality_policy_test.go b/component/tls/reality_policy_test.go
+new file mode 100644
+index 00000000..d4f321c1
+--- /dev/null
++++ b/component/tls/reality_policy_test.go
+@@ -0,0 +1,58 @@
++package tls
++
++import "testing"
++
++func TestParseRealityClientVersion(t *testing.T) {
++	for in, want := range map[string][3]byte{
++		"":        DefaultRealityClientVersion(),
++		"  ":      DefaultRealityClientVersion(),
++		"1.9.0":   {1, 9, 0},
++		"v25.1.1": {25, 1, 1},
++		"255.0.0": {255, 0, 0},
++	} {
++		got, err := ParseRealityClientVersion(in)
++		if err != nil || got != want {
++			t.Errorf("ParseRealityClientVersion(%q) = %v, %v; want %v", in, got, err, want)
++		}
++	}
++	for _, in := range []string{"1.9", "1.9.0.1", "256.0.0", "-1.0.0", "a.b.c", "1..2", "1.9.0-rc1"} {
++		if _, err := ParseRealityClientVersion(in); err == nil {
++			t.Errorf("ParseRealityClientVersion(%q) accepted an invalid version", in)
++		}
++	}
++}
++
++func TestParseRealityMLKEMPolicy(t *testing.T) {
++	for in, want := range map[string]RealityMLKEMPolicy{
++		"": RealityMLKEMAuto, "auto": RealityMLKEMAuto, "ON": RealityMLKEMOn, " off ": RealityMLKEMOff,
++	} {
++		got, err := ParseRealityMLKEMPolicy(in)
++		if err != nil || got != want {
++			t.Errorf("ParseRealityMLKEMPolicy(%q) = %v, %v; want %v", in, got, err, want)
++		}
++	}
++	for _, in := range []string{"always", "true", "1"} {
++		if _, err := ParseRealityMLKEMPolicy(in); err == nil {
++			t.Errorf("ParseRealityMLKEMPolicy(%q) accepted an invalid policy", in)
++		}
++	}
++}
++
++func TestApplyRealityPolicyRestoresDefaults(t *testing.T) {
++	defer ApplyRealityPolicy(DefaultRealityClientVersion(), RealityMLKEMAuto)
++
++	ApplyRealityPolicy([3]byte{1, 9, 0}, RealityMLKEMOff)
++	if RealityClientVersion != [3]byte{1, 9, 0} || GetRealityMLKEMPolicy() != RealityMLKEMOff {
++		t.Fatalf("apply = %v/%v", RealityClientVersion, GetRealityMLKEMPolicy())
++	}
++	// A later config without the keys parses to the defaults and must restore them.
++	v, _ := ParseRealityClientVersion("")
++	p, _ := ParseRealityMLKEMPolicy("")
++	ApplyRealityPolicy(v, p)
++	if RealityClientVersion != DefaultRealityClientVersion() || GetRealityMLKEMPolicy() != RealityMLKEMAuto {
++		t.Fatalf("defaults not restored: %v/%v", RealityClientVersion, GetRealityMLKEMPolicy())
++	}
++	if DefaultRealityClientVersion() == [3]byte{1, 8, 2} {
++		t.Fatal("default client version is still the legacy 1.8.2")
++	}
++}
+diff --git a/config/config.go b/config/config.go
+index 707114a3..f4f94900 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -211,6 +211,7 @@ type Config struct {
+ 	Tunnels       []LC.Tunnel
+ 	Sniffer       *sniffer.Config
+ 	TLS           *TLS
++	Reality       *Reality
+ }
+ 
+ type RawCors struct {
+@@ -447,6 +448,8 @@ type RawConfig struct {
+ 	KeepAliveIdle                 int                     `yaml:"keep-alive-idle" json:"keep-alive-idle"`
+ 	KeepAliveInterval             int                     `yaml:"keep-alive-interval" json:"keep-alive-interval"`
+ 	DisableKeepAlive              bool                    `yaml:"disable-keep-alive" json:"disable-keep-alive"`
++	RealityClientVersion          string                  `yaml:"reality-client-version" json:"reality-client-version"`
++	RealityMLKEM                  string                  `yaml:"reality-mlkem" json:"reality-mlkem"`
+ 
+ 	ProxyProvider map[string]map[string]any `yaml:"proxy-providers" json:"proxy-providers"`
+ 	RuleProvider  map[string]map[string]any `yaml:"rule-providers" json:"rule-providers"`
+@@ -650,6 +653,12 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
+ 	}
+ 	config.Experimental = experimental
+ 
++	reality, err := parseReality(rawCfg)
++	if err != nil {
++		return nil, err
++	}
++	config.Reality = reality
++
+ 	iptables, err := parseIPTables(rawCfg)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/config/reality.go b/config/reality.go
+new file mode 100644
+index 00000000..ff6651d6
+--- /dev/null
++++ b/config/reality.go
+@@ -0,0 +1,25 @@
++package config
++
++import (
++	tlsC "github.com/metacubex/mihomo/component/tls"
++)
++
++// Reality holds the top-level REALITY settings: reality-client-version and
++// reality-mlkem. Absent keys resolve to the core defaults, so reloading a
++// config without them undoes an earlier one that set them.
++type Reality struct {
++	ClientVersion [3]byte
++	MLKEM         tlsC.RealityMLKEMPolicy
++}
++
++func parseReality(cfg *RawConfig) (*Reality, error) {
++	version, err := tlsC.ParseRealityClientVersion(cfg.RealityClientVersion)
++	if err != nil {
++		return nil, err
++	}
++	policy, err := tlsC.ParseRealityMLKEMPolicy(cfg.RealityMLKEM)
++	if err != nil {
++		return nil, err
++	}
++	return &Reality{ClientVersion: version, MLKEM: policy}, nil
++}
+diff --git a/config/reality_test.go b/config/reality_test.go
+new file mode 100644
+index 00000000..8f0cd68d
+--- /dev/null
++++ b/config/reality_test.go
+@@ -0,0 +1,39 @@
++package config
++
++import (
++	"testing"
++
++	tlsC "github.com/metacubex/mihomo/component/tls"
++)
++
++func TestParseRealityKeys(t *testing.T) {
++	raw, err := UnmarshalRawConfig([]byte("reality-client-version: \"1.9.0\"\nreality-mlkem: on\n"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	r, err := parseReality(raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if r.ClientVersion != [3]byte{1, 9, 0} || r.MLKEM != tlsC.RealityMLKEMOn {
++		t.Fatalf("parsed %+v", r)
++	}
++
++	raw, err = UnmarshalRawConfig([]byte("mode: rule\n"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if r, err = parseReality(raw); err != nil || r.ClientVersion != tlsC.DefaultRealityClientVersion() || r.MLKEM != tlsC.RealityMLKEMAuto {
++		t.Fatalf("absent keys = %+v, %v; want defaults", r, err)
++	}
++
++	for _, bad := range []string{"reality-client-version: \"1.300.0\"\n", "reality-mlkem: always\n"} {
++		raw, err = UnmarshalRawConfig([]byte(bad))
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err = parseReality(raw); err == nil {
++			t.Errorf("%q accepted", bad)
++		}
++	}
++}
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index 796face2..e252ab01 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -26,6 +26,7 @@ import (
+ 	"github.com/metacubex/mihomo/component/resolver"
+ 	"github.com/metacubex/mihomo/component/resource"
+ 	"github.com/metacubex/mihomo/component/sniffer"
++	tlsC "github.com/metacubex/mihomo/component/tls"
+ 	"github.com/metacubex/mihomo/component/trie"
+ 	"github.com/metacubex/mihomo/component/updater"
+ 	"github.com/metacubex/mihomo/config"
+@@ -96,6 +97,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
+ 	}
+ 
+ 	updateExperimental(cfg.Experimental)
++	updateReality(cfg.Reality)
+ 	updateUsers(cfg.Users)
+ 	updateProxies(cfg.Proxies, cfg.Providers)
+ 	updateRules(cfg.Rules, cfg.SubRules, cfg.RuleProviders)
+@@ -211,6 +213,10 @@ func updateTun(general *config.General) {
+ 	listener.ReCreateTun(general.Tun, tunnel.Tunnel)
+ }
+ 
++func updateReality(c *config.Reality) {
++	tlsC.ApplyRealityPolicy(c.ClientVersion, c.MLKEM)
++}
++
+ func updateExperimental(c *config.Experimental) {
+ 	if c.QUICGoDisableGSO {
+ 		_ = os.Setenv("QUIC_GO_DISABLE_GSO", strconv.FormatBool(true))

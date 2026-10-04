@@ -5013,6 +5013,34 @@
   outline-color: rgba(190, 55, 55, 0.35);
 }
 
+/* REALITY client version (x.y.z): same invalid styling as the accent hex. */
+.realityVersionInput {
+  width: 120px;
+  font-family: var(--font-mono, monospace);
+}
+
+.realityVersionInput.invalid {
+  border-color: rgba(190, 55, 55, 0.65);
+}
+
+.settingsCoreBuild {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.settingsCoreBuild .linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Per-theme applied previews: left swatch on a dark chip, right on a light
    chip, so the contrast-guard adjustment is visible at pick time. */
 .accentSwatch {

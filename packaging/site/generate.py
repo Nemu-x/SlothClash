@@ -24,10 +24,12 @@ DL = f"https://github.com/{REPO}/releases/latest/download"
 def gh_releases(limit=5):
     try:
         out = subprocess.run(
-            ["gh", "release", "list", "--repo", REPO, "--limit", str(limit),
+            ["gh", "release", "list", "--repo", REPO, "--limit", "50",
              "--json", "tagName,publishedAt,name"],
             capture_output=True, text=True, check=True).stdout
-        rels = json.loads(out)
+        # App releases only: core-v* releases (patched mihomo builds) share
+        # this repo but are not app versions.
+        rels = [r for r in json.loads(out) if r["tagName"].startswith("v")][:limit]
     except Exception:
         return []
     for r in rels:

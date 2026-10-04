@@ -104,6 +104,23 @@ var canonicalUpstreamExcluded = map[string]string{
 	"proxy": "legacy alias for proxies; rewritten upstream of reorderer",
 }
 
+// TestSlothRuntimeKeysAreOrderedNotExcluded keeps our own core keys explicit:
+// placed in the canonical layout, never parked in the upstream exclusion list.
+func TestSlothRuntimeKeysAreOrderedNotExcluded(t *testing.T) {
+	inOrder := make(map[string]bool, len(canonicalRuntimeKeyOrder))
+	for _, k := range canonicalRuntimeKeyOrder {
+		inOrder[k] = true
+	}
+	for _, k := range slothRuntimeKeys {
+		if !inOrder[k] {
+			t.Errorf("%q is in slothRuntimeKeys but not in canonicalRuntimeKeyOrder", k)
+		}
+		if _, ok := canonicalUpstreamExcluded[k]; ok {
+			t.Errorf("%q is a SlothClash core key, not an excluded upstream key", k)
+		}
+	}
+}
+
 // TestCanonicalKeyOrderCoversUpstreamMihomo fetches mihomo's RawConfig
 // source at the version we ship and asserts that every top-level yaml
 // key it declares is covered by canonicalRuntimeKeyOrder (or explicitly
@@ -135,9 +152,20 @@ func TestCanonicalKeyOrderCoversUpstreamMihomo(t *testing.T) {
 		t.Skipf("mihomo %s config.go layout changed: RawConfig parse returned 0 keys (raw source size = %d)", version, len(src))
 	}
 
+	// Our own core keys must never be mistaken for upstream coverage, and an
+	// upstream key of the same name would need its semantics checked.
+	sloth := make(map[string]bool, len(slothRuntimeKeys))
+	for _, k := range slothRuntimeKeys {
+		sloth[k] = true
+		if upstream[k] {
+			t.Errorf("mihomo %s now declares %q, which is a SlothClash core key (core/patches/mihomo): reconcile the semantics, then drop it from slothRuntimeKeys", version, k)
+		}
+	}
 	canon := make(map[string]bool, len(canonicalRuntimeKeyOrder))
 	for _, k := range canonicalRuntimeKeyOrder {
-		canon[k] = true
+		if !sloth[k] {
+			canon[k] = true
+		}
 	}
 	var missing []string
 	for k := range upstream {

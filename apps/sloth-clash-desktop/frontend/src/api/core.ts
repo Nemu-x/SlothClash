@@ -6,10 +6,12 @@ export {
   Connect,
   Disconnect,
   EnsureTunReady,
+  GetCoreBuild,
   GetTunStatus,
   SetMode,
   SetTrafficMode,
   SetTrafficSettings,
   SetConnectionSettings,
+  SetRealitySettings,
   SetTunSettings,
 } from '../../wailsjs/go/main/App'

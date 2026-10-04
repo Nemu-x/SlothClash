@@ -1,7 +1,7 @@
 {
   "extends": ["config:recommended", ":disableDependencyDashboard"],
   "baseBranches": ["main"],
-  "enabledManagers": ["cargo", "npm", "github-actions"],
+  "enabledManagers": ["cargo", "npm", "github-actions", "asdf"],
   "labels": ["dependencies"],
   "ignorePaths": [
     "**/node_modules/**",
@@ -43,6 +43,20 @@
       "description": "Group all GitHub Actions updates into a single PR",
       "matchManagers": ["github-actions"],
       "groupName": "github actions"
+    },
+    {
+      "description": "asdf (.tool-versions) is enabled only for the Go release the mihomo core is built with",
+      "matchManagers": ["asdf"],
+      "enabled": false
+    },
+    {
+      "description": "Core Go toolchain: a bump changes the core bytes and the service pin, so it is reviewed, never automerged",
+      "matchManagers": ["asdf"],
+      "matchFileNames": ["core/mihomo/.tool-versions"],
+      "matchPackageNames": ["golang"],
+      "enabled": true,
+      "automerge": false,
+      "groupName": "core go toolchain"
     }
   ],
   "postUpdateOptions": ["pnpmDedupe"],

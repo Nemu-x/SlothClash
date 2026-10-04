@@ -8,14 +8,14 @@ import (
 func TestCoreBuildInfoFromFS(t *testing.T) {
 	bundle := fstest.MapFS{
 		"build/sidecar/core-version.txt": {Data: []byte("v1.19.32\n")},
-		"build/sidecar/core-build.json": {Data: []byte(`{"version":"v1.19.32","source":"patched","release":"core-v1.19.32-sloth.1",
+		"build/sidecar/core-build.json": {Data: []byte(`{"version":"v1.19.32","source":"patched","ref":"9a09ac799e9c63ed170cbbc039670be65311afff",
 			"patches":["0001-a.patch","0002-b.patch"],"sha256":"x"}`)},
 	}
 	got := coreBuildInfoFromFS(bundle)
 	if got.Version != "v1.19.32" || got.Source != "patched" || len(got.Patches) != 2 {
 		t.Fatalf("parsed %+v", got)
 	}
-	if got.PatchesURL != slothRepoURL+"/tree/core-v1.19.32-sloth.1/core/patches/mihomo" {
+	if got.PatchesURL != slothRepoURL+"/tree/9a09ac799e9c63ed170cbbc039670be65311afff/core/patches/mihomo" {
 		t.Errorf("patches url %q", got.PatchesURL)
 	}
 

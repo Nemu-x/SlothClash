@@ -25,6 +25,7 @@ def gh_releases(limit=5):
     try:
         out = subprocess.run(
             ["gh", "release", "list", "--repo", REPO, "--limit", "50",
+             "--exclude-pre-releases",
              "--json", "tagName,publishedAt,name"],
             capture_output=True, text=True, check=True).stdout
         # App releases only: core-v* releases (patched mihomo builds) share

@@ -1,0 +1,159 @@
+diff --git a/component/tls/utls.go b/component/tls/utls.go
+index d48a1ba6..6440c708 100644
+--- a/component/tls/utls.go
++++ b/component/tls/utls.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"net"
+ 	"reflect"
++	"strings"
+ 	"unsafe"
+ 
+ 	"github.com/metacubex/mihomo/common/once"
+@@ -40,7 +41,9 @@ func NewListener(inner net.Listener, config *Config) net.Listener {
+ }
+ 
+ func GetFingerprint(clientFingerprint string) (UClientHelloID, bool) {
+-	if len(clientFingerprint) == 0 || clientFingerprint == "none" {
++	clientFingerprint = strings.ToLower(clientFingerprint) // like Xray, ClashFest core patch 0007
++	switch clientFingerprint {
++	case "", "none", "unsafe", "hellogolang": // "unsafe" and "hellogolang" are Xray's names for no uTLS
+ 		return UClientHelloID{}, false
+ 	}
+ 
+diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
+new file mode 100644
+index 00000000..a7b38946
+--- /dev/null
++++ b/component/tls/utls_xray_names.go
+@@ -0,0 +1,83 @@
++package tls
++
++// ClashFest core patch 0007: client-fingerprint accepts the names Xray-core uses
++// (the `fp` of share links and Xray configs), mapped to the nearest utls parrot
++// this core ships. Vanilla mihomo logs an unknown name and dials with Go's own
++// TLS hello instead, which is the one fingerprint a censor can single out.
++// The table follows Xray's transport/internet/tls/tls.go and Citrus commit
++// 9c9b0856 (written for metacubex/utls v1.8.8); no utls fork is involved.
++
++import utls "github.com/metacubex/utls"
++
++var xrayFingerprints = map[string]UClientHelloID{
++	"randomizedalpn":   utls.HelloRandomizedALPN,
++	"randomizednoalpn": utls.HelloRandomizedNoALPN,
++
++	"hellofirefox_120":                 utls.HelloFirefox_120,
++	"hellofirefox_148":                 utls.HelloFirefox_120, // nearest, utls v1.8.8 has no Firefox 148 parrot
++	"hellochrome_120":                  utls.HelloChrome_120,
++	"hellochrome_131":                  utls.HelloChrome_131,
++	"hellochrome_133":                  utls.HelloChrome_133,
++	"helloios_13":                      utls.HelloIOS_13,
++	"helloios_14":                      utls.HelloIOS_14,
++	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 does not work with utls
++	"hellosafari_26_3":                 utls.HelloSafari_16_0, // nearest, utls v1.8.8 has no Safari 26.3 parrot
++	"hello360_11_0":                    utls.Hello360_Auto,    // Hello360_11_0 does not work with utls
++	"helloqq_11_1":                     utls.HelloQQ_11_1,
++	"hellorandomized":                  utls.HelloRandomized,
++	"hellorandomizedalpn":              utls.HelloRandomizedALPN,
++	"hellorandomizednoalpn":            utls.HelloRandomizedNoALPN,
++	"hellofirefox_auto":                utls.HelloFirefox_Auto,
++	"hellofirefox_55":                  utls.HelloFirefox_55,
++	"hellofirefox_56":                  utls.HelloFirefox_56,
++	"hellofirefox_63":                  utls.HelloFirefox_63,
++	"hellofirefox_65":                  utls.HelloFirefox_65,
++	"hellofirefox_99":                  utls.HelloFirefox_99,
++	"hellofirefox_102":                 utls.HelloFirefox_102,
++	"hellofirefox_105":                 utls.HelloFirefox_105,
++	"hellochrome_auto":                 utls.HelloChrome_Auto,
++	"hellochrome_58":                   utls.HelloChrome_58,
++	"hellochrome_62":                   utls.HelloChrome_62,
++	"hellochrome_70":                   utls.HelloChrome_70,
++	"hellochrome_72":                   utls.HelloChrome_72,
++	"hellochrome_83":                   utls.HelloChrome_83,
++	"hellochrome_87":                   utls.HelloChrome_87,
++	"hellochrome_96":                   utls.HelloChrome_96,
++	"hellochrome_100":                  utls.HelloChrome_100,
++	"hellochrome_102":                  utls.HelloChrome_102,
++	"hellochrome_106_shuffle":          utls.HelloChrome_106_Shuffle,
++	"helloios_auto":                    utls.HelloIOS_Auto,
++	"helloios_11_1":                    utls.HelloIOS_11_1,
++	"helloios_12_1":                    utls.HelloIOS_12_1,
++	"helloandroid_11_okhttp":           utls.HelloAndroid_11_OkHttp,
++	"helloedge_85":                     utls.HelloEdge_85,
++	"helloedge_auto":                   utls.HelloEdge_Auto,
++	"hellosafari_16_0":                 utls.HelloSafari_16_0,
++	"hellosafari_auto":                 utls.HelloSafari_Auto,
++	"hello360_auto":                    utls.Hello360_Auto,
++	"hello360_7_5":                     utls.Hello360_7_5,
++	"helloqq_auto":                     utls.HelloQQ_Auto,
++	"hellochrome_100_psk":              utls.HelloChrome_100_PSK,
++	"hellochrome_112_psk_shuf":         utls.HelloChrome_112_PSK_Shuf,
++	"hellochrome_114_padding_psk_shuf": utls.HelloChrome_114_Padding_PSK_Shuf,
++	"hellochrome_115_pq":               utls.HelloChrome_115_PQ,
++	"hellochrome_115_pq_psk":           utls.HelloChrome_115_PQ_PSK,
++	"hellochrome_120_pq":               utls.HelloChrome_120_PQ,
++}
++
++func init() {
++	// the randomized parrots get a seed and the weights of mihomo's "randomized"
++	weights := utls.DefaultWeights
++	weights.TLSVersMax_Set_VersionTLS13 = 1
++	weights.FirstKeyShare_Set_CurveP256 = 0
++	for name, id := range xrayFingerprints {
++		if _, ok := fingerprints[name]; ok {
++			continue // never shadow a mihomo name
++		}
++		if id.Client == utls.HelloRandomized.Client || id.Client == utls.HelloRandomizedALPN.Client || id.Client == utls.HelloRandomizedNoALPN.Client {
++			id.Seed, _ = utls.NewPRNGSeed()
++			id.Weights = &weights
++		}
++		fingerprints[name] = id
++	}
++}
+diff --git a/component/tls/utls_xray_names_test.go b/component/tls/utls_xray_names_test.go
+new file mode 100644
+index 00000000..4c25dfd5
+--- /dev/null
++++ b/component/tls/utls_xray_names_test.go
+@@ -0,0 +1,41 @@
++package tls
++
++import (
++	"strings"
++	"testing"
++
++	utls "github.com/metacubex/utls"
++)
++
++func TestXrayFingerprintNames(t *testing.T) {
++	for name, want := range xrayFingerprints {
++		for _, spelled := range []string{name, strings.ToUpper(name)} {
++			got, ok := GetFingerprint(spelled)
++			if !ok {
++				t.Fatalf("GetFingerprint(%q) is not known", spelled)
++			}
++			if got.Client != want.Client || got.Version != want.Version {
++				t.Fatalf("GetFingerprint(%q) = %s/%s, want %s/%s", spelled, got.Client, got.Version, want.Client, want.Version)
++			}
++		}
++		if strings.HasPrefix(want.Client, "Randomized") {
++			got, _ := GetFingerprint(name)
++			if got.Seed == nil {
++				t.Fatalf("%s has no seed", name)
++			}
++			continue
++		}
++		// a name must map to a parrot utls can build, not to a dead id
++		if _, err := utls.UTLSIdToSpec(want); err != nil {
++			t.Fatalf("%s -> %s/%s: %v", name, want.Client, want.Version, err)
++		}
++	}
++	for _, name := range []string{"", "none", "unsafe", "HelloGolang"} {
++		if _, ok := GetFingerprint(name); ok {
++			t.Fatalf("GetFingerprint(%q) should mean no uTLS", name)
++		}
++	}
++	if got, _ := GetFingerprint("Chrome"); got.Client != utls.HelloChrome_Auto.Client {
++		t.Fatalf("mihomo names changed: chrome = %s", got.Client)
++	}
++}

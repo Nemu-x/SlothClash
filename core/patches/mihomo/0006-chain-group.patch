@@ -1,0 +1,1373 @@
+diff --git a/adapter/outboundgroup/chain.go b/adapter/outboundgroup/chain.go
+new file mode 100644
+index 00000000..9b59074d
+--- /dev/null
++++ b/adapter/outboundgroup/chain.go
+@@ -0,0 +1,292 @@
++package outboundgroup
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/adapter/provider"
++	"github.com/metacubex/mihomo/common/utils"
++	C "github.com/metacubex/mihomo/constant"
++	P "github.com/metacubex/mihomo/constant/provider"
++)
++
++// ClashFest core patch 0005: proxy groups of type chain, from Citrus
++// (getmikan/Citrus commit 8d97eb8c) without its metrics and event bus.
++
++// Chain is a cascade of hops: the configuration wires every hop after the
++// first one to the hop before it (dialer-proxy), so dialing the last hop
++// goes through all of them. A hop can be a proxy or a group.
++//
++// Its health check tests the whole chain (the last hop), and when the chain
++// fails it tests the hops from the first one to find the hop that breaks it:
++// testing hop k goes through hops 1..k.
++type Chain struct {
++	*GroupBase
++	hops           []C.Proxy
++	disableUDP     bool
++	testUrl        string
++	expectedStatus string
++
++	mu    sync.RWMutex
++	state chainState
++}
++
++// chainState is the result of the last health check of a chain.
++type chainState struct {
++	checked time.Time
++	alive   bool
++	// failed is the index of the first hop that failed, -1 when alive
++	failed int
++	err    string
++}
++
++// ChainHop is the state of a hop of a chain, as /proxies shows it.
++type ChainHop struct {
++	Name     string `json:"name"`
++	Position int    `json:"position"`
++	// Alive is nil when the last health check did not tell the state of the
++	// hop: it was not run yet, or an earlier hop failed.
++	Alive *bool `json:"alive"`
++}
++
++// Hops returns the hops of the chain, from the first one.
++func (c *Chain) Hops() []C.Proxy {
++	return c.hops
++}
++
++func (c *Chain) last() C.Proxy {
++	return c.hops[len(c.hops)-1]
++}
++
++func (c *Chain) Now() string {
++	return c.last().Name()
++}
++
++// DialContext implements C.ProxyAdapter
++func (c *Chain) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
++	c.Touch()
++	last := c.last()
++	conn, err := last.DialContext(ctx, metadata)
++	if err == nil {
++		conn.AppendToChains(c)
++	} else {
++		c.onDialFailed(last.Type(), err, c.GroupBase.healthCheck)
++	}
++	return conn, err
++}
++
++// ListenPacketContext implements C.ProxyAdapter
++func (c *Chain) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
++	c.Touch()
++	pc, err := c.last().ListenPacketContext(ctx, metadata)
++	if err == nil {
++		pc.AppendToChains(c)
++	}
++	return pc, err
++}
++
++// SupportUDP implements C.ProxyAdapter
++func (c *Chain) SupportUDP() bool {
++	if c.disableUDP {
++		return false
++	}
++	return c.last().SupportUDP()
++}
++
++// IsL3Protocol implements C.ProxyAdapter
++func (c *Chain) IsL3Protocol(metadata *C.Metadata) bool {
++	return c.last().IsL3Protocol(metadata)
++}
++
++// Unwrap implements C.ProxyAdapter
++func (c *Chain) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
++	if touch {
++		c.Touch()
++	}
++	return c.last()
++}
++
++func (c *Chain) Providers() []P.ProxyProvider {
++	return c.providers
++}
++
++func (c *Chain) Proxies() []C.Proxy {
++	return c.hops
++}
++
++// URLTest tests the chain as its health check does, with url, and returns
++// the delays of what was tested: the chain (under the name of the last hop)
++// and, when it failed, the hops from the first one up to the failed hop. The
++// result is kept as the state of the chain when url is its test URL.
++func (c *Chain) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
++	st, delays := c.check(ctx, url, expectedStatus, 0, url == c.testUrl)
++	if !st.alive {
++		return delays, errors.New(st.err)
++	}
++	return delays, nil
++}
++
++// healthCheck is the Checker of the health check of the chain.
++func (c *Chain) healthCheck(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16], timeout time.Duration) {
++	c.check(ctx, url, expectedStatus, timeout, true)
++}
++
++func (c *Chain) check(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16], timeout time.Duration, record bool) (chainState, map[string]uint16) {
++	delays := map[string]uint16{}
++	test := func(p C.Proxy) bool {
++		tctx := ctx
++		if timeout > 0 {
++			var cancel context.CancelFunc
++			tctx, cancel = context.WithTimeout(ctx, timeout)
++			defer cancel()
++		}
++		delay, err := p.URLTest(tctx, url, expectedStatus)
++		if err != nil || !p.AliveForTestUrl(url) {
++			return false
++		}
++		delays[p.Name()] = delay
++		return true
++	}
++
++	st := chainState{checked: time.Now(), failed: -1}
++	if test(c.last()) {
++		st.alive = true
++	} else {
++		// the chain is down: find the first hop that does not get through
++		st.failed = len(c.hops) - 1
++		for i, hop := range c.hops[:len(c.hops)-1] {
++			if ctx.Err() != nil {
++				break
++			}
++			if !test(hop) {
++				st.failed = i
++				break
++			}
++		}
++		if ctx.Err() != nil {
++			// the time of the test ran out (or the configuration was replaced):
++			// a hop tested now would fail for that, not for itself
++			return chainState{failed: -1, err: fmt.Sprintf("chain %s failed, the test ran out of time before finding the hop", c.Name())}, delays
++		}
++		hop := c.hops[st.failed]
++		if st.failed == 0 {
++			st.err = fmt.Sprintf("chain %s: hop 1 [%s] failed", c.Name(), hop.Name())
++		} else {
++			st.err = fmt.Sprintf("chain %s: hop %d [%s] failed, the hops before it are alive", c.Name(), st.failed+1, hop.Name())
++		}
++	}
++	if !record {
++		return st, delays
++	}
++
++	c.mu.Lock()
++	c.state = st
++	c.mu.Unlock()
++	return st, delays
++}
++
++// ChainStatus is the state of a chain after its last health check.
++type ChainStatus struct {
++	// Checked is false before the first health check; then Alive and the
++	// hops tell nothing.
++	Checked bool
++	Alive   bool
++	// FailedHop is the index of the first hop that failed, -1 when none.
++	FailedHop int
++	Error     string
++	Hops      []ChainHop
++}
++
++// Status returns the state of the chain after its last health check.
++func (c *Chain) Status() ChainStatus {
++	c.mu.RLock()
++	st := c.state
++	c.mu.RUnlock()
++
++	out := ChainStatus{Checked: !st.checked.IsZero(), Alive: st.alive, FailedHop: st.failed, Error: st.err}
++	if !out.Checked {
++		out.FailedHop = -1
++	}
++	yes, no := true, false
++	for i, hop := range c.hops {
++		h := ChainHop{Name: hop.Name(), Position: i + 1}
++		if out.Checked {
++			switch {
++			case st.alive || i < st.failed:
++				h.Alive = &yes
++			case i == st.failed:
++				h.Alive = &no
++			}
++		}
++		out.Hops = append(out.Hops, h)
++	}
++	return out
++}
++
++// MarshalJSON implements C.ProxyAdapter
++func (c *Chain) MarshalJSON() ([]byte, error) {
++	all := make([]string, 0, len(c.hops))
++	for _, hop := range c.hops {
++		all = append(all, hop.Name())
++	}
++	st := c.Status()
++	m := map[string]any{
++		"type":           c.Type().String(),
++		"now":            c.Now(),
++		"all":            all,
++		"testUrl":        c.testUrl,
++		"expectedStatus": c.expectedStatus,
++		"hidden":         c.Hidden(),
++		"icon":           c.Icon(),
++		"hops":           st.Hops,
++	}
++	if st.Checked {
++		m["chainAlive"] = st.Alive
++		if !st.Alive {
++			m["failedHop"] = c.hops[st.FailedHop].Name()
++			m["failedHopPosition"] = st.FailedHop + 1
++			m["chainError"] = st.Error
++		}
++	}
++	return json.Marshal(m)
++}
++
++func newChain(option *GroupCommonOption, hops []C.Proxy, expectedStatus utils.IntRanges[uint16]) (*Chain, error) {
++	if len(hops) < 2 {
++		return nil, fmt.Errorf("%s: a chain needs at least two hops", option.Name)
++	}
++	if option.URL == "" {
++		option.URL = C.DefaultTestURL
++	}
++	if option.Interval == 0 {
++		option.Interval = 300
++	}
++
++	hc := provider.NewHealthCheck(hops, option.URL, uint(option.TestTimeout), uint(option.Interval), option.Lazy, expectedStatus)
++	pd, err := provider.NewCompatibleProvider(option.Name, hops, hc)
++	if err != nil {
++		return nil, fmt.Errorf("%s: %w", option.Name, err)
++	}
++
++	c := &Chain{
++		GroupBase: NewGroupBase(GroupBaseOption{
++			Name:        option.Name,
++			Type:        C.ChainGroup,
++			Hidden:      option.Hidden,
++			Icon:        option.Icon,
++			TestTimeout: option.TestTimeout,
++			Providers:   []P.ProxyProvider{pd},
++		}),
++		hops:           hops,
++		disableUDP:     option.DisableUDP,
++		testUrl:        option.URL,
++		expectedStatus: option.ExpectedStatus,
++		state:          chainState{failed: -1},
++	}
++	hc.SetChecker(c.healthCheck)
++	return c, nil
++}
+diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go
+index e97f8da0..b5e0ca0f 100644
+--- a/adapter/outboundgroup/parser.go
++++ b/adapter/outboundgroup/parser.go
+@@ -129,6 +129,27 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
+ 	}
+ 	groupOption.ExpectedStatus = status
+ 
++	if groupOption.Type == "chain" {
++		// ClashFest core patch 0005: the hops are wired to each other by the
++		// configuration (dialer-proxy, config/chain.go); here they are only looked up
++		if len(groupOption.Use) != 0 {
++			return nil, fmt.Errorf("%s: a chain takes its hops from `proxies`, not `use`", groupName)
++		}
++		hops, err := getProxies(proxyMap, groupOption.Proxies)
++		if err != nil {
++			return nil, fmt.Errorf("%s: %w", groupName, err)
++		}
++		if _, ok := providersMap[groupName]; ok {
++			return nil, fmt.Errorf("%s: %w", groupName, errDuplicateProvider)
++		}
++		chain, err := newChain(&groupOption, hops, expectedStatus)
++		if err != nil {
++			return nil, err
++		}
++		providersMap[groupName] = chain.providers[0]
++		return chain, nil
++	}
++
+ 	if len(groupOption.Use) != 0 {
+ 		PDs, err := getProviders(providersMap, groupOption.Use)
+ 		if err != nil {
+diff --git a/adapter/outboundgroup/util.go b/adapter/outboundgroup/util.go
+index 22d6b189..e64bef5a 100644
+--- a/adapter/outboundgroup/util.go
++++ b/adapter/outboundgroup/util.go
+@@ -26,6 +26,7 @@ var _ ProxyGroup = (*Fallback)(nil)
+ var _ ProxyGroup = (*LoadBalance)(nil)
+ var _ ProxyGroup = (*URLTest)(nil)
+ var _ ProxyGroup = (*Selector)(nil)
++var _ ProxyGroup = (*Chain)(nil)
+ 
+ type SelectAble interface {
+ 	Set(string) error
+diff --git a/adapter/provider/healthcheck.go b/adapter/provider/healthcheck.go
+index 822a00d5..ba484a8c 100644
+--- a/adapter/provider/healthcheck.go
++++ b/adapter/provider/healthcheck.go
+@@ -39,6 +39,17 @@ type HealthCheck struct {
+ 	lastTouch      atomic.TypedValue[time.Time]
+ 	singleDo       *singledo.Single[struct{}]
+ 	timeout        time.Duration
++	checker        Checker
++}
++
++// Checker runs a health check in place of the test of every proxy, for a
++// group whose members are not independent (a chain, ClashFest core patch
++// 0005). It gets the default URL, expected status and timeout of the check.
++type Checker func(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16], timeout time.Duration)
++
++// SetChecker makes the health check run fn instead of testing every proxy.
++func (hc *HealthCheck) SetChecker(fn Checker) {
++	hc.checker = fn
+ }
+ 
+ func (hc *HealthCheck) process() {
+@@ -128,6 +139,11 @@ func (hc *HealthCheck) check() {
+ 	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
+ 		id := utils.NewUUIDV4().String()
+ 		log.Debugln("Start New Health Checking {%s}", id)
++		if hc.checker != nil {
++			hc.checker(hc.ctx, hc.url, hc.expectedStatus, hc.timeout)
++			log.Debugln("Finish A Health Checking {%s}", id)
++			return struct{}{}, nil
++		}
+ 		b := new(errgroup.Group)
+ 		b.SetLimit(10)
+ 
+diff --git a/config/chain.go b/config/chain.go
+new file mode 100644
+index 00000000..ea0bf9a5
+--- /dev/null
++++ b/config/chain.go
+@@ -0,0 +1,287 @@
++package config
++
++import (
++	"fmt"
++	"strings"
++)
++
++// ClashFest core patch 0005: proxy groups of type chain (from Citrus commit
++// 8d97eb8c). expandChains turns them into dialer-proxy wiring before the
++// proxies are parsed; configs without a chain group are not touched.
++
++// chainGroupType is the `type` of a proxy group that is a chain of hops.
++const chainGroupType = "chain"
++
++// builtinProxies are the proxies that exist without being configured.
++var builtinProxies = map[string]bool{
++	"DIRECT": true, "REJECT": true, "REJECT-DROP": true, "COMPATIBLE": true, "PASS": true, "PASS-RULE": true, "GLOBAL": true,
++}
++
++// chainGraph is the raw configuration seen as names: proxies, groups and
++// providers, so that the chain groups can be wired and checked before
++// anything is parsed.
++type chainGraph struct {
++	proxies   map[string]map[string]any
++	groups    map[string]map[string]any
++	providers map[string]map[string]any
++	// wiredBy remembers the chain that set the dialer-proxy of a proxy or a
++	// provider, for the error of a conflict.
++	wiredBy map[string]string
++}
++
++// expandChains wires the chain groups of the configuration: every hop after
++// the first one is dialed through the hop before it, by setting the
++// dialer-proxy of the proxies that make the hop up (the proxy itself, the
++// members of a group, the proxies of the providers of a group). It reports a
++// conflict with a dialer-proxy that is already set and a loop that goes
++// through a chain. The configuration without chain groups is left as it is.
++func expandChains(cfg *RawConfig) error {
++	var chains []map[string]any
++	for _, g := range cfg.ProxyGroup {
++		if t, _ := g["type"].(string); t == chainGroupType {
++			chains = append(chains, g)
++		}
++	}
++	if len(chains) == 0 {
++		return nil
++	}
++
++	cg := &chainGraph{
++		proxies:   make(map[string]map[string]any, len(cfg.Proxy)),
++		groups:    make(map[string]map[string]any, len(cfg.ProxyGroup)),
++		providers: cfg.ProxyProvider,
++		wiredBy:   map[string]string{},
++	}
++	for _, p := range cfg.Proxy {
++		if name, ok := p["name"].(string); ok {
++			cg.proxies[name] = p
++		}
++	}
++	for _, g := range cfg.ProxyGroup {
++		if name, ok := g["name"].(string); ok {
++			cg.groups[name] = g
++		}
++	}
++
++	for _, c := range chains {
++		name, _ := c["name"].(string)
++		hops := stringList(c["proxies"])
++		if len(hops) < 2 {
++			return fmt.Errorf("chain [%s]: needs at least two hops in `proxies`", name)
++		}
++		for _, key := range []string{"use", "include-all", "include-all-proxies", "include-all-providers", "filter", "exclude-filter", "exclude-type"} {
++			if _, ok := c[key]; ok {
++				return fmt.Errorf("chain [%s]: `%s` is not supported, list the hops in `proxies`", name, key)
++			}
++		}
++		seen := map[string]bool{}
++		for i, hop := range hops {
++			if hop == name {
++				return fmt.Errorf("chain [%s]: the chain is one of its own hops", name)
++			}
++			if seen[hop] {
++				return fmt.Errorf("chain [%s]: hop [%s] appears twice", name, hop)
++			}
++			seen[hop] = true
++			if !cg.exists(hop) {
++				return fmt.Errorf("chain [%s]: hop %d [%s] not found", name, i+1, hop)
++			}
++		}
++	}
++
++	// the loops are looked for on the configuration as it is written, so
++	// that the error names what the user wrote; the wiring below only adds
++	// the edges hop -> previous hop, checked again afterwards
++	for _, c := range chains {
++		if err := cg.findLoop(c["name"].(string)); err != nil {
++			return err
++		}
++	}
++
++	for _, c := range chains {
++		name := c["name"].(string)
++		hops := stringList(c["proxies"])
++		for i := 1; i < len(hops); i++ {
++			if err := cg.wire(name, i+1, hops[i], hops[i-1], "", map[string]bool{}); err != nil {
++				return err
++			}
++		}
++	}
++
++	for _, c := range chains {
++		if err := cg.findLoop(c["name"].(string)); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++func (cg *chainGraph) exists(name string) bool {
++	_, isProxy := cg.proxies[name]
++	_, isGroup := cg.groups[name]
++	return isProxy || isGroup || builtinProxies[name]
++}
++
++// wire makes `name`, the hop at position pos of the chain or a member of the
++// group `parent` of that hop, dial through via.
++func (cg *chainGraph) wire(chain string, pos int, name, via, parent string, visiting map[string]bool) error {
++	if visiting[name] {
++		return nil
++	}
++	visiting[name] = true
++
++	if p, ok := cg.proxies[name]; ok {
++		return cg.setDialerProxy(chain, pos, "proxy", name, p, via)
++	}
++	g, ok := cg.groups[name]
++	if !ok {
++		if builtinProxies[name] {
++			if parent != "" {
++				return fmt.Errorf("chain [%s]: group [%s] (hop %d) contains the built-in [%s], which can not go through [%s]; only the first hop may contain it", chain, parent, pos, name, via)
++			}
++			return fmt.Errorf("chain [%s]: the built-in [%s] can not be hop %d, only the first hop", chain, name, pos)
++		}
++		if parent != "" {
++			return fmt.Errorf("chain [%s]: member [%s] of group [%s] (hop %d) not found", chain, name, parent, pos)
++		}
++		return fmt.Errorf("chain [%s]: hop %d [%s] not found", chain, pos, name)
++	}
++
++	if t, _ := g["type"].(string); t == chainGroupType {
++		// a chain inside a chain: its first hop goes through via
++		hops := stringList(g["proxies"])
++		if len(hops) == 0 {
++			return fmt.Errorf("chain [%s]: chain [%s] has no hops", chain, name)
++		}
++		return cg.wire(chain, pos, hops[0], via, name, visiting)
++	}
++
++	for _, key := range []string{"include-all", "include-all-proxies", "include-all-providers"} {
++		if v, _ := g[key].(bool); v {
++			return fmt.Errorf("chain [%s]: group [%s] with `%s` can not be hop %d, list its members in `proxies` or `use`", chain, name, key, pos)
++		}
++	}
++	for _, member := range stringList(g["proxies"]) {
++		if err := cg.wire(chain, pos, member, via, name, visiting); err != nil {
++			return err
++		}
++	}
++	for _, pdName := range stringList(g["use"]) {
++		pd, ok := cg.providers[pdName]
++		if !ok {
++			return fmt.Errorf("chain [%s]: provider [%s] of group [%s] not found", chain, pdName, name)
++		}
++		if ov, ok := pd["override"].(map[string]any); ok {
++			if cur, ok := ov["dialer-proxy"].(string); ok && cur != "" && cur != via {
++				return fmt.Errorf("chain [%s]: provider [%s] (in group [%s], hop %d) already has override.dialer-proxy [%s], the chain needs [%s]", chain, pdName, name, pos, cur, via)
++			}
++		}
++		if err := cg.setDialerProxy(chain, pos, "provider", pdName, pd, via); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++func (cg *chainGraph) setDialerProxy(chain string, pos int, kind, name string, mapping map[string]any, via string) error {
++	if cur, _ := mapping["dialer-proxy"].(string); cur != "" && cur != via {
++		if by, ok := cg.wiredBy[kind+"\x00"+name]; ok {
++			return fmt.Errorf("chain [%s]: %s [%s] (hop %d) must go through [%s], but chain [%s] already sends it through [%s]", chain, kind, name, pos, via, by, cur)
++		}
++		return fmt.Errorf("chain [%s]: %s [%s] (hop %d) already has dialer-proxy [%s], the chain needs [%s]", chain, kind, name, pos, cur, via)
++	}
++	mapping["dialer-proxy"] = via
++	if _, ok := cg.wiredBy[kind+"\x00"+name]; !ok {
++		cg.wiredBy[kind+"\x00"+name] = chain
++	}
++	return nil
++}
++
++// edges lists what a name depends on to dial: the dialer-proxy of a proxy,
++// the members of a group (and the dialer-proxy of its providers), the hops
++// of a chain.
++func (cg *chainGraph) edges(name string) []string {
++	if p, ok := cg.proxies[name]; ok {
++		if dp, _ := p["dialer-proxy"].(string); dp != "" {
++			return []string{dp}
++		}
++		return nil
++	}
++	g, ok := cg.groups[name]
++	if !ok {
++		return nil
++	}
++	out := stringList(g["proxies"])
++	for _, pdName := range stringList(g["use"]) {
++		pd := cg.providers[pdName]
++		if pd == nil {
++			continue
++		}
++		dp, _ := pd["dialer-proxy"].(string)
++		if ov, ok := pd["override"].(map[string]any); ok {
++			if v, _ := ov["dialer-proxy"].(string); v != "" {
++				dp = v
++			}
++		}
++		if dp != "" {
++			out = append(out, dp)
++		}
++	}
++	return out
++}
++
++// findLoop looks for a loop reachable from the chain.
++func (cg *chainGraph) findLoop(start string) error {
++	const (
++		unseen = iota
++		onPath
++		done
++	)
++	state := map[string]int{}
++	var path []string
++	var visit func(name string) []string
++	visit = func(name string) []string {
++		switch state[name] {
++		case onPath:
++			for i, n := range path {
++				if n == name {
++					return append(append([]string{}, path[i:]...), name)
++				}
++			}
++		case done:
++			return nil
++		}
++		state[name] = onPath
++		path = append(path, name)
++		for _, next := range cg.edges(name) {
++			if loop := visit(next); loop != nil {
++				return loop
++			}
++		}
++		path = path[:len(path)-1]
++		state[name] = done
++		return nil
++	}
++	if loop := visit(start); loop != nil {
++		return fmt.Errorf("chain [%s]: loop detected: %s", start, strings.Join(loop, " -> "))
++	}
++	return nil
++}
++
++func stringList(v any) []string {
++	switch l := v.(type) {
++	case []string:
++		return l
++	case []any:
++		out := make([]string, 0, len(l))
++		for _, e := range l {
++			if s, ok := e.(string); ok {
++				out = append(out, s)
++			} else {
++				out = append(out, fmt.Sprint(e))
++			}
++		}
++		return out
++	}
++	return nil
++}
+diff --git a/config/chain_test.go b/config/chain_test.go
+new file mode 100644
+index 00000000..b56e84d8
+--- /dev/null
++++ b/config/chain_test.go
+@@ -0,0 +1,658 @@
++package config
++
++import (
++	"context"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"net/netip"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/adapter/outboundgroup"
++	C "github.com/metacubex/mihomo/constant"
++	P "github.com/metacubex/mihomo/constant/provider"
++	"github.com/metacubex/mihomo/listener/inbound"
++	"github.com/metacubex/mihomo/tunnel"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func parseChainConfig(t *testing.T, yaml string) (map[string]C.Proxy, map[string]P.ProxyProvider, error) {
++	t.Helper()
++	rawCfg, err := UnmarshalRawConfig([]byte(yaml))
++	require.NoError(t, err)
++	return parseProxies(rawCfg)
++}
++
++func dialerProxyOf(t *testing.T, proxies map[string]C.Proxy, name string) string {
++	t.Helper()
++	p, ok := proxies[name]
++	require.True(t, ok, "proxy %s", name)
++	return p.ProxyInfo().DialerProxy
++}
++
++const chainTestProxies = `proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: 1081}
++  - {name: mid, type: socks5, server: 127.0.0.1, port: 1082}
++  - {name: exit-a, type: ss, server: 127.0.0.1, port: 1083, cipher: aes-128-gcm, password: pass}
++  - {name: exit-b, type: ss, server: 127.0.0.1, port: 1084, cipher: aes-128-gcm, password: pass}
++  - {name: other, type: socks5, server: 127.0.0.1, port: 1085}
++`
++
++func TestChainParseWiresHops(t *testing.T) {
++	proxies, providers, err := parseChainConfig(t, chainTestProxies+`proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, mid, exit-a], url: "http://127.0.0.1/", interval: 60}
++`)
++	require.NoError(t, err)
++	assert.Equal(t, "", dialerProxyOf(t, proxies, "entry"))
++	assert.Equal(t, "entry", dialerProxyOf(t, proxies, "mid"))
++	assert.Equal(t, "mid", dialerProxyOf(t, proxies, "exit-a"))
++	assert.Equal(t, "", dialerProxyOf(t, proxies, "exit-b"))
++
++	chain, ok := proxies["cascade"].Adapter().(*outboundgroup.Chain)
++	require.True(t, ok)
++	assert.Equal(t, "Chain", proxies["cascade"].Type().String())
++	assert.Equal(t, "exit-a", chain.Now())
++	var hops []string
++	for _, h := range chain.Hops() {
++		hops = append(hops, h.Name())
++	}
++	assert.Equal(t, []string{"entry", "mid", "exit-a"}, hops)
++	assert.Contains(t, providers, "cascade")
++
++	st := chain.Status()
++	assert.False(t, st.Checked)
++	assert.Equal(t, -1, st.FailedHop)
++}
++
++func TestChainParseGroupHops(t *testing.T) {
++	proxies, _, err := parseChainConfig(t, chainTestProxies+`proxy-providers:
++  subs:
++    type: inline
++    payload:
++      - {name: sub-1, type: ss, server: 127.0.0.1, port: 1090, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: entries, type: fallback, proxies: [entry, other], url: "http://127.0.0.1/"}
++  - {name: exits, type: url-test, proxies: [exit-a, exit-b], use: [subs], url: "http://127.0.0.1/"}
++  - {name: cascade, type: chain, proxies: [entries, exits]}
++`)
++	require.NoError(t, err)
++	// a group as the first hop: the next hop goes through the group
++	assert.Equal(t, "entries", dialerProxyOf(t, proxies, "exit-a"))
++	assert.Equal(t, "entries", dialerProxyOf(t, proxies, "exit-b"))
++	// the members of the first hop are untouched
++	assert.Equal(t, "", dialerProxyOf(t, proxies, "entry"))
++	assert.Equal(t, "", dialerProxyOf(t, proxies, "other"))
++}
++
++func TestChainParseGroupHopProviderIsWired(t *testing.T) {
++	rawCfg, err := UnmarshalRawConfig([]byte(chainTestProxies + `proxy-providers:
++  subs:
++    type: inline
++    payload:
++      - {name: sub-1, type: ss, server: 127.0.0.1, port: 1090, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: exits, type: url-test, use: [subs], url: "http://127.0.0.1/"}
++  - {name: cascade, type: chain, proxies: [entry, exits]}
++`))
++	require.NoError(t, err)
++	require.NoError(t, expandChains(rawCfg))
++	assert.Equal(t, "entry", rawCfg.ProxyProvider["subs"]["dialer-proxy"])
++}
++
++func TestChainParseChainAsHop(t *testing.T) {
++	proxies, _, err := parseChainConfig(t, chainTestProxies+`proxy-groups:
++  - {name: tail, type: chain, proxies: [mid, exit-a]}
++  - {name: cascade, type: chain, proxies: [entry, tail]}
++`)
++	require.NoError(t, err)
++	// the first hop of the inner chain goes through the hop before it
++	assert.Equal(t, "entry", dialerProxyOf(t, proxies, "mid"))
++	assert.Equal(t, "mid", dialerProxyOf(t, proxies, "exit-a"))
++}
++
++func TestChainParseSameWiringTwice(t *testing.T) {
++	proxies, _, err := parseChainConfig(t, chainTestProxies+`proxy-groups:
++  - {name: c1, type: chain, proxies: [entry, exit-a]}
++  - {name: c2, type: chain, proxies: [entry, exit-a]}
++`)
++	require.NoError(t, err)
++	assert.Equal(t, "entry", dialerProxyOf(t, proxies, "exit-a"))
++}
++
++func TestChainParseErrors(t *testing.T) {
++	for name, tc := range map[string]struct {
++		groups string
++		extra  string
++		want   string
++	}{
++		"one hop": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry]}`,
++			want:   "chain [cascade]: needs at least two hops",
++		},
++		"unknown hop": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry, nope]}`,
++			want:   "chain [cascade]: hop 2 [nope] not found",
++		},
++		"self": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry, cascade]}`,
++			want:   "chain [cascade]: the chain is one of its own hops",
++		},
++		"repeated hop": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry, mid, entry]}`,
++			want:   "chain [cascade]: hop [entry] appears twice",
++		},
++		"use": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry, mid], use: [x]}`,
++			want:   "chain [cascade]: `use` is not supported",
++		},
++		"loop through a group": {
++			// entry -> cascade (group member) and cascade -> entry (hop)
++			groups: `  - {name: g, type: select, proxies: [cascade, other]}
++  - {name: cascade, type: chain, proxies: [g, exit-a]}`,
++			want: "chain [cascade]: loop detected: cascade -> g -> cascade",
++		},
++		"loop made by the wiring": {
++			// exits contains the first hop: entry would go through itself
++			groups: `  - {name: exits, type: fallback, proxies: [exit-a, entry]}
++  - {name: cascade, type: chain, proxies: [entry, exits]}`,
++			want: "loop detected: entry -> entry",
++		},
++		"loop through two chains": {
++			groups: `  - {name: c1, type: chain, proxies: [mid, exit-a]}
++  - {name: c2, type: chain, proxies: [exit-a, mid]}`,
++			want: "loop detected",
++		},
++		"dialer-proxy conflict": {
++			extra:  `  - {name: pinned, type: ss, server: 127.0.0.1, port: 1086, cipher: aes-128-gcm, password: pass, dialer-proxy: other}`,
++			groups: `  - {name: cascade, type: chain, proxies: [entry, pinned]}`,
++			want:   "chain [cascade]: proxy [pinned] (hop 2) already has dialer-proxy [other], the chain needs [entry]",
++		},
++		"two chains disagree": {
++			groups: `  - {name: c1, type: chain, proxies: [entry, exit-a]}
++  - {name: c2, type: chain, proxies: [mid, exit-a]}`,
++			want: "chain [c2]: proxy [exit-a] (hop 2) must go through [mid], but chain [c1] already sends it through [entry]",
++		},
++		"builtin after the first hop": {
++			groups: `  - {name: cascade, type: chain, proxies: [entry, DIRECT]}`,
++			want:   "the built-in [DIRECT] can not be hop 2",
++		},
++		"builtin inside a group after the first hop": {
++			groups: `  - {name: exits, type: select, proxies: [exit-a, DIRECT]}
++  - {name: cascade, type: chain, proxies: [entry, exits]}`,
++			want: "chain [cascade]: group [exits] (hop 2) contains the built-in [DIRECT], which can not go through [entry]",
++		},
++		"include-all group as a hop": {
++			groups: `  - {name: all, type: url-test, include-all: true}
++  - {name: cascade, type: chain, proxies: [entry, all]}`,
++			want: "group [all] with `include-all` can not be hop 2",
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			_, _, err := parseChainConfig(t, chainTestProxies+tc.extra+"\nproxy-groups:\n"+tc.groups+"\n")
++			require.Error(t, err)
++			assert.Contains(t, err.Error(), tc.want)
++		})
++	}
++}
++
++func TestChainParseNoChainUntouched(t *testing.T) {
++	// without a chain group, dialer-proxy works as before
++	proxies, _, err := parseChainConfig(t, chainTestProxies+`  - {name: pinned, type: ss, server: 127.0.0.1, port: 1086, cipher: aes-128-gcm, password: pass, dialer-proxy: other}
++`)
++	require.NoError(t, err)
++	assert.Equal(t, "other", dialerProxyOf(t, proxies, "pinned"))
++}
++
++// hopNode is a node of a cascade in the test: an inbound whose tunnel dials
++// the destination directly and records it.
++type hopNode struct {
++	name string
++	in   hopInbound
++	addr string
++	mu   sync.Mutex
++	seen []string
++}
++
++func (h *hopNode) record(network, dst string) {
++	h.mu.Lock()
++	h.seen = append(h.seen, network+" "+dst)
++	h.mu.Unlock()
++}
++
++func (h *hopNode) saw(network, dst string) bool {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++	for _, s := range h.seen {
++		if s == network+" "+dst {
++			return true
++		}
++	}
++	return false
++}
++
++func (h *hopNode) port() int {
++	return int(netip.MustParseAddrPort(h.addr).Port())
++}
++
++func (h *hopNode) HandleTCPConn(conn net.Conn, metadata *C.Metadata) {
++	defer conn.Close()
++	h.record("tcp", metadata.RemoteAddress())
++	out, err := net.DialTimeout("tcp", metadata.RemoteAddress(), 5*time.Second)
++	if err != nil {
++		return
++	}
++	defer out.Close()
++	done := make(chan struct{}, 2)
++	go func() { _, _ = io.Copy(out, conn); done <- struct{}{} }()
++	go func() { _, _ = io.Copy(conn, out); done <- struct{}{} }()
++	<-done
++}
++
++func (h *hopNode) HandleUDPPacket(packet C.UDPPacket, metadata *C.Metadata) {
++	data := append([]byte(nil), packet.Data()...)
++	packet.Drop()
++	h.record("udp", metadata.RemoteAddress())
++	go func() {
++		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
++		if err != nil {
++			return
++		}
++		defer pc.Close()
++		dst := metadata.UDPAddr()
++		if _, err := pc.WriteTo(data, dst); err != nil {
++			return
++		}
++		_ = pc.SetReadDeadline(time.Now().Add(5 * time.Second))
++		buf := make([]byte, 2048)
++		n, from, err := pc.ReadFrom(buf)
++		if err != nil {
++			return
++		}
++		_, _ = packet.WriteBack(buf[:n], from)
++	}()
++}
++
++func (h *hopNode) NatTable() C.NatTable { return nil }
++
++type hopInbound interface {
++	Close() error
++	Address() string
++	Listen(tunnel C.Tunnel) error
++}
++
++// newNode starts an inbound whose TCP and UDP listeners share a port, as a
++// real node does.
++func newNode(t *testing.T, name string, open func(port string) (hopInbound, error)) *hopNode {
++	t.Helper()
++	h := &hopNode{name: name}
++	var err error
++	for i := 0; i < 40; i++ {
++		// free ports come out in runs that can fall inside a range excluded
++		// for the other protocol on Windows: take the port from UDP and from
++		// TCP in turn
++		var addr net.Addr
++		if i%2 == 0 {
++			pc, err := net.ListenPacket("udp", "127.0.0.1:0")
++			require.NoError(t, err)
++			addr = pc.LocalAddr()
++			_ = pc.Close()
++		} else {
++			l, err := net.Listen("tcp", "127.0.0.1:0")
++			require.NoError(t, err)
++			addr = l.Addr()
++			_ = l.Close()
++		}
++		port := netip.MustParseAddrPort(addr.String()).Port()
++		var in hopInbound
++		if in, err = open(fmt.Sprint(port)); err != nil {
++			continue
++		}
++		if err = in.Listen(h); err != nil {
++			// the port is taken for TCP: close what was opened (a shadowsocks
++			// inbound that failed has nothing to close and panics on Close),
++			// then try another port
++			func() {
++				defer func() { _ = recover() }()
++				_ = in.Close()
++			}()
++			continue
++		}
++		h.in = in
++		h.addr = fmt.Sprintf("127.0.0.1:%d", port)
++		t.Cleanup(func() { _ = in.Close() })
++		return h
++	}
++	require.NoError(t, err)
++	return nil
++}
++
++func newSocksNode(t *testing.T, name string) *hopNode {
++	return newNode(t, name, func(port string) (hopInbound, error) {
++		return inbound.NewSocks(&inbound.SocksOption{
++			BaseOption: inbound.BaseOption{NameStr: name, Listen: "127.0.0.1", Port: port},
++			// an empty user list: no authentication, and not the default
++			// listener's LAN filter
++			Users: inbound.AuthUsers{},
++			UDP:   true,
++		})
++	})
++}
++
++func newShadowsocksNode(t *testing.T, name string) *hopNode {
++	return newNode(t, name, func(port string) (hopInbound, error) {
++		return inbound.NewShadowSocks(&inbound.ShadowSocksOption{
++			BaseOption: inbound.BaseOption{NameStr: name, Listen: "127.0.0.1", Port: port},
++			Password:   "pass",
++			Cipher:     "aes-128-gcm",
++			UDP:        true,
++		})
++	})
++}
++
++// loadChainConfig parses the configuration and installs its proxies in the
++// tunnel, where dialer-proxy looks the hops up.
++func loadChainConfig(t *testing.T, yaml string) (map[string]C.Proxy, map[string]P.ProxyProvider) {
++	t.Helper()
++	proxies, providers, err := parseChainConfig(t, yaml)
++	require.NoError(t, err)
++	oldProxies, oldProviders := tunnel.Proxies(), tunnel.Providers()
++	tunnel.UpdateProxies(proxies, providers)
++	t.Cleanup(func() { tunnel.UpdateProxies(oldProxies, oldProviders) })
++	return proxies, providers
++}
++
++func newTCPEcho(t *testing.T) string {
++	t.Helper()
++	l, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = l.Close() })
++	go func() {
++		for {
++			c, err := l.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer c.Close()
++				_, _ = io.Copy(c, c)
++			}()
++		}
++	}()
++	return l.Addr().String()
++}
++
++func newUDPEcho(t *testing.T) string {
++	t.Helper()
++	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = pc.Close() })
++	go func() {
++		buf := make([]byte, 2048)
++		for {
++			n, from, err := pc.ReadFrom(buf)
++			if err != nil {
++				return
++			}
++			_, _ = pc.WriteTo(buf[:n], from)
++		}
++	}()
++	return pc.LocalAddr().String()
++}
++
++func metadataFor(t *testing.T, network C.NetWork, addr string) *C.Metadata {
++	t.Helper()
++	m := &C.Metadata{NetWork: network}
++	require.NoError(t, m.SetRemoteAddress(addr))
++	return m
++}
++
++func chainTCPRoundTrip(t *testing.T, proxy C.Proxy, dst string) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	conn, err := proxy.DialContext(ctx, metadataFor(t, C.TCP, dst))
++	require.NoError(t, err)
++	defer conn.Close()
++	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
++	_, err = conn.Write([]byte("hello chain"))
++	require.NoError(t, err)
++	buf := make([]byte, len("hello chain"))
++	_, err = io.ReadFull(conn, buf)
++	require.NoError(t, err)
++	assert.Equal(t, "hello chain", string(buf))
++}
++
++func TestChainTCPTraversesHopsInOrder(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	exit := newShadowsocksNode(t, "exit")
++	echo := newTCPEcho(t)
++
++	proxies, _ := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d, udp: true}
++  - {name: exit, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass, udp: true}
++proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, exit]}
++`, entry.port(), exit.port()))
++
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	conn, err := proxies["cascade"].DialContext(ctx, metadataFor(t, C.TCP, echo))
++	require.NoError(t, err)
++	// /connections: the outbound that carried the traffic, then the groups
++	assert.Equal(t, C.Chain{"exit", "cascade"}, conn.Chains())
++	_ = conn.Close()
++
++	chainTCPRoundTrip(t, proxies["cascade"], echo)
++
++	// the entry node only saw the exit node, the exit node saw the target
++	assert.True(t, entry.saw("tcp", exit.addr), "entry saw %v", entry.seen)
++	assert.False(t, entry.saw("tcp", echo), "entry saw %v", entry.seen)
++	assert.True(t, exit.saw("tcp", echo), "exit saw %v", exit.seen)
++}
++
++func TestChainThreeHopsTCP(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	mid := newSocksNode(t, "mid")
++	exit := newShadowsocksNode(t, "exit")
++	echo := newTCPEcho(t)
++
++	proxies, _ := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: mid, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: exit, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, mid, exit]}
++`, entry.port(), mid.port(), exit.port()))
++
++	chainTCPRoundTrip(t, proxies["cascade"], echo)
++	assert.True(t, entry.saw("tcp", mid.addr), "entry saw %v", entry.seen)
++	assert.True(t, mid.saw("tcp", exit.addr), "mid saw %v", mid.seen)
++	assert.True(t, exit.saw("tcp", echo), "exit saw %v", exit.seen)
++}
++
++func TestChainUDPTraversesHopsInOrder(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	exit := newShadowsocksNode(t, "exit")
++	echo := newUDPEcho(t)
++
++	proxies, _ := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d, udp: true}
++  - {name: exit, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass, udp: true}
++proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, exit]}
++`, entry.port(), exit.port()))
++
++	cascade := proxies["cascade"]
++	require.True(t, cascade.SupportUDP())
++
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	m := metadataFor(t, C.UDP, echo)
++	pc, err := cascade.ListenPacketContext(ctx, m)
++	require.NoError(t, err)
++	defer pc.Close()
++	assert.Equal(t, C.Chain{"exit", "cascade"}, pc.Chains())
++
++	dst := net.UDPAddrFromAddrPort(netip.MustParseAddrPort(echo))
++	buf := make([]byte, 2048)
++	var got string
++	// UDP may lose the first datagram while the hops set up
++	for i := 0; i < 5 && got == ""; i++ {
++		_, err = pc.WriteTo([]byte("udp over chain"), dst)
++		require.NoError(t, err)
++		_ = pc.SetReadDeadline(time.Now().Add(2 * time.Second))
++		n, _, err := pc.ReadFrom(buf)
++		if err == nil {
++			got = string(buf[:n])
++		}
++	}
++	assert.Equal(t, "udp over chain", got)
++	assert.True(t, entry.saw("udp", exit.addr), "entry saw %v", entry.seen)
++	assert.True(t, exit.saw("udp", echo), "exit saw %v", exit.seen)
++}
++
++func newHealthTarget(t *testing.T) string {
++	t.Helper()
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.WriteHeader(http.StatusNoContent)
++	}))
++	t.Cleanup(srv.Close)
++	return srv.URL + "/generate_204"
++}
++
++func TestChainHealthCheckFindsFailedHop(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	mid := newSocksNode(t, "mid")
++	exit := newShadowsocksNode(t, "exit")
++	target := newHealthTarget(t)
++
++	proxies, providers := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: mid, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: exit, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, mid, exit], url: "%s", timeout: 3000}
++`, entry.port(), mid.port(), exit.port(), target))
++	chain := proxies["cascade"].Adapter().(*outboundgroup.Chain)
++
++	// all hops up
++	healthCheck(providers["cascade"])
++	st := chain.Status()
++	require.True(t, st.Checked)
++	assert.True(t, st.Alive)
++	assert.Equal(t, -1, st.FailedHop)
++	for _, h := range st.Hops {
++		require.NotNil(t, h.Alive)
++		assert.True(t, *h.Alive)
++	}
++
++	// the middle hop goes down
++	require.NoError(t, mid.in.Close())
++	healthCheck(providers["cascade"])
++	st = chain.Status()
++	assert.False(t, st.Alive)
++	assert.Equal(t, 1, st.FailedHop)
++	require.NotNil(t, st.Hops[0].Alive)
++	assert.True(t, *st.Hops[0].Alive)
++	require.NotNil(t, st.Hops[1].Alive)
++	assert.False(t, *st.Hops[1].Alive)
++	assert.Nil(t, st.Hops[2].Alive)
++	assert.Contains(t, st.Error, "hop 2 [mid] failed, the hops before it are alive")
++
++	// /proxies shows it
++	js, err := proxies["cascade"].MarshalJSON()
++	require.NoError(t, err)
++	assert.Contains(t, string(js), `"failedHop":"mid"`)
++	assert.Contains(t, string(js), `"failedHopPosition":2`)
++	assert.Contains(t, string(js), `"chainAlive":false`)
++
++	// the delay test of the group reports the hop too
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	delays, err := chain.URLTest(ctx, target, nil)
++	require.Error(t, err)
++	assert.Contains(t, err.Error(), "hop 2 [mid] failed, the hops before it are alive")
++	assert.Contains(t, delays, "entry")
++}
++
++func TestChainHealthCheckFirstAndLastHop(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	exit := newShadowsocksNode(t, "exit")
++	target := newHealthTarget(t)
++
++	proxies, providers := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: exit, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: cascade, type: chain, proxies: [entry, exit], url: "%s", timeout: 3000}
++`, entry.port(), exit.port(), target))
++	chain := proxies["cascade"].Adapter().(*outboundgroup.Chain)
++
++	// the exit goes down: the entry still works
++	require.NoError(t, exit.in.Close())
++	healthCheck(providers["cascade"])
++	st := chain.Status()
++	assert.False(t, st.Alive)
++	assert.Equal(t, 1, st.FailedHop)
++	assert.True(t, *st.Hops[0].Alive)
++
++	// the entry goes down too: the first hop is reported
++	require.NoError(t, entry.in.Close())
++	healthCheck(providers["cascade"])
++	st = chain.Status()
++	assert.False(t, st.Alive)
++	assert.Equal(t, 0, st.FailedHop)
++	assert.False(t, *st.Hops[0].Alive)
++	assert.Nil(t, st.Hops[1].Alive)
++	assert.Contains(t, st.Error, "hop 1 [entry] failed")
++}
++
++func TestChainFailoverAcrossExits(t *testing.T) {
++	entry := newSocksNode(t, "entry")
++	exitA := newShadowsocksNode(t, "exit-a")
++	exitB := newShadowsocksNode(t, "exit-b")
++	echo := newTCPEcho(t)
++	target := newHealthTarget(t)
++
++	proxies, providers := loadChainConfig(t, fmt.Sprintf(`proxies:
++  - {name: entry, type: socks5, server: 127.0.0.1, port: %d}
++  - {name: exit-a, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass}
++  - {name: exit-b, type: ss, server: 127.0.0.1, port: %d, cipher: aes-128-gcm, password: pass}
++proxy-groups:
++  - {name: exits, type: fallback, proxies: [exit-a, exit-b], url: "%s", timeout: 3000}
++  - {name: cascade, type: chain, proxies: [entry, exits], url: "%s", timeout: 3000}
++`, entry.port(), exitA.port(), exitB.port(), target, target))
++
++	// both exits up: the first one carries the traffic, through the entry
++	healthCheck(providers["exits"])
++	chainTCPRoundTrip(t, proxies["cascade"], echo)
++	assert.True(t, exitA.saw("tcp", echo))
++	assert.False(t, exitB.saw("tcp", echo))
++	assert.True(t, entry.saw("tcp", exitA.addr))
++	// the health check of the exits group went through the entry as well
++	assert.True(t, entry.saw("tcp", exitB.addr), "entry saw %v", entry.seen)
++
++	// exit-a goes down: the group fails over to exit-b, still through the entry
++	require.NoError(t, exitA.in.Close())
++	healthCheck(providers["exits"])
++	assert.Equal(t, "exit-b", proxies["exits"].Adapter().(outboundgroup.ProxyGroup).Now())
++	chainTCPRoundTrip(t, proxies["cascade"], echo)
++	assert.True(t, exitB.saw("tcp", echo), "exit-b saw %v", exitB.seen)
++
++	healthCheck(providers["cascade"])
++	st := proxies["cascade"].Adapter().(*outboundgroup.Chain).Status()
++	assert.True(t, st.Alive)
++}
++
++// healthCheck runs a health check of the provider; a check right after
++// another one is skipped (it is shared for a second), so it waits that out.
++func healthCheck(pd P.ProxyProvider) {
++	time.Sleep(1100 * time.Millisecond)
++	pd.HealthCheck()
++}
+diff --git a/config/config.go b/config/config.go
+index 707114a3..87954e92 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -879,6 +879,13 @@ func parseTLS(cfg *RawConfig) (*TLS, error) {
+ func parseProxies(cfg *RawConfig) (proxies map[string]C.Proxy, providersMap map[string]P.ProxyProvider, err error) {
+ 	proxies = make(map[string]C.Proxy)
+ 	providersMap = make(map[string]P.ProxyProvider)
++
++	// chain groups (ClashFest core patch 0005): wire their hops with
++	// dialer-proxy before anything is parsed
++	if err := expandChains(cfg); err != nil {
++		return nil, nil, err
++	}
++
+ 	proxiesConfig := cfg.Proxy
+ 	groupsConfig := cfg.ProxyGroup
+ 	providersConfig := cfg.ProxyProvider
+diff --git a/constant/adapters.go b/constant/adapters.go
+index 9b0b70ce..d91ef81e 100644
+--- a/constant/adapters.go
++++ b/constant/adapters.go
+@@ -55,6 +55,8 @@ const (
+ 	ZeroTier
+ 	EasyTier
+ 	GostRelay
++
++	ChainGroup // ClashFest core patch 0005
+ )
+ 
+ const (
+@@ -252,6 +254,8 @@ func (at AdapterType) String() string {
+ 		return "URLTest"
+ 	case LoadBalance:
+ 		return "LoadBalance"
++	case ChainGroup:
++		return "Chain"
+ 	default:
+ 		return "Unknown"
+ 	}

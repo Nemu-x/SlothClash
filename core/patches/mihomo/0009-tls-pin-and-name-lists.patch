@@ -1,0 +1,285 @@
+diff --git a/component/ca/config.go b/component/ca/config.go
+index 0ee9995f..fffb7f6a 100644
+--- a/component/ca/config.go
++++ b/component/ca/config.go
+@@ -99,7 +99,7 @@ func GetTLSConfig(opt Option) (tlsConfig *tls.Config, err error) {
+ 	}
+ 
+ 	if len(opt.Fingerprint) > 0 {
+-		verifier, err := NewFingerprintVerifier(opt.Fingerprint, tlsConfig.Time)
++		verifier, err := NewFingerprintNameVerifier(opt.Fingerprint, opt.NameCertVerify, tlsConfig.Time)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -107,11 +107,8 @@ func GetTLSConfig(opt Option) (tlsConfig *tls.Config, err error) {
+ 			// [ConnectionState.ServerName] can return the actual ServerName needed for verification,
+ 			// avoiding inconsistencies caused by [tlsConfig.ServerName] being modified after the [NewFingerprintVerifier] call.
+ 			// https://github.com/golang/go/issues/36736#issuecomment-587925536
+-			serverName := state.ServerName
+-			if opt.NameCertVerify != "" {
+-				serverName = opt.NameCertVerify
+-			}
+-			return verifier(state.PeerCertificates, serverName)
++			// The names of opt.NameCertVerify are used instead of it when set.
++			return verifier(state.PeerCertificates, state.ServerName)
+ 		}
+ 		tlsConfig.InsecureSkipVerify = true
+ 	} else if opt.NameCertVerify != "" {
+diff --git a/component/ca/fingerprint.go b/component/ca/fingerprint.go
+index ceb05a4c..fb8955aa 100644
+--- a/component/ca/fingerprint.go
++++ b/component/ca/fingerprint.go
+@@ -5,24 +5,33 @@ import (
+ 	"crypto/sha256"
+ 	"crypto/x509"
+ 	"encoding/hex"
++	"errors"
+ 	"fmt"
+ 	"strings"
+ 	"time"
+ )
+ 
+ // NewFingerprintVerifier returns a function that verifies whether a certificate's SHA-256 fingerprint matches the given one.
++// Like Xray's `pinnedPeerCertSha256`, fingerprint can be a comma-separated list, any of them matching is enough
++// (ClashFest core patch 0008, from Citrus commit a93079f5).
+ func NewFingerprintVerifier(fingerprint string, time func() time.Time) (func(certs []*x509.Certificate, serverName string) error, error) {
+-	switch fingerprint {
+-	case "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized": // WTF???
+-		return nil, fmt.Errorf("`fingerprint` is used for TLS certificate pinning. If you need to specify the browser fingerprint, use `client-fingerprint`")
+-	}
+-	fingerprint = strings.TrimSpace(strings.Replace(fingerprint, ":", "", -1))
+-	fpByte, err := hex.DecodeString(fingerprint)
+-	if err != nil {
+-		return nil, fmt.Errorf("fingerprint string decode error: %w", err)
+-	}
++	var fpBytes [][]byte
++	for _, fp := range splitList(fingerprint) {
++		switch fp {
++		case "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized": // WTF???
++			return nil, fmt.Errorf("`fingerprint` is used for TLS certificate pinning. If you need to specify the browser fingerprint, use `client-fingerprint`")
++		}
++		fpByte, err := hex.DecodeString(strings.Replace(fp, ":", "", -1))
++		if err != nil {
++			return nil, fmt.Errorf("fingerprint string decode error: %w", err)
++		}
+ 
+-	if len(fpByte) != 32 {
++		if len(fpByte) != 32 {
++			return nil, fmt.Errorf("fingerprint string length error,need sha256 fingerprint")
++		}
++		fpBytes = append(fpBytes, fpByte)
++	}
++	if len(fpBytes) == 0 {
+ 		return nil, fmt.Errorf("fingerprint string length error,need sha256 fingerprint")
+ 	}
+ 
+@@ -30,7 +39,7 @@ func NewFingerprintVerifier(fingerprint string, time func() time.Time) (func(cer
+ 		// ssl pining
+ 		for i, cert := range certs {
+ 			hash := sha256.Sum256(cert.Raw)
+-			if bytes.Equal(fpByte, hash[:]) {
++			if containsFingerprint(fpBytes, hash[:]) {
+ 				if i > 0 {
+ 					// When the fingerprint matches a non-leaf certificate,
+ 					// the certificate chain validity is verified using the certificate as the trusted root certificate.
+@@ -56,6 +65,46 @@ func NewFingerprintVerifier(fingerprint string, time func() time.Time) (func(cer
+ 	}, nil
+ }
+ 
++// NewFingerprintNameVerifier is NewFingerprintVerifier whose chain of a pinned non-leaf certificate is verified
++// for any of the comma-separated names of `name-cert-verify`, or for the serverName when names is empty.
++func NewFingerprintNameVerifier(fingerprint string, names string, time func() time.Time) (func(certs []*x509.Certificate, serverName string) error, error) {
++	verifier, err := NewFingerprintVerifier(fingerprint, time)
++	if err != nil {
++		return nil, err
++	}
++	nameList := splitList(names)
++	if len(nameList) == 0 {
++		return verifier, nil
++	}
++	return func(certs []*x509.Certificate, _ string) (err error) {
++		for _, name := range nameList {
++			if err = verifier(certs, name); err == nil || errors.Is(err, errNotMatch) {
++				return
++			}
++		}
++		return
++	}, nil
++}
++
++func containsFingerprint(fpBytes [][]byte, hash []byte) bool {
++	for _, fpByte := range fpBytes {
++		if bytes.Equal(fpByte, hash) {
++			return true
++		}
++	}
++	return false
++}
++
++// splitList splits a comma-separated list, dropping the empty items.
++func splitList(s string) (list []string) {
++	for _, item := range strings.Split(s, ",") {
++		if item = strings.TrimSpace(item); item != "" {
++			list = append(list, item)
++		}
++	}
++	return
++}
++
+ // CalculateFingerprint computes the SHA-256 fingerprint of the given DER-encoded certificate and returns it as a hex string.
+ func CalculateFingerprint(certDER []byte) string {
+ 	hash := sha256.Sum256(certDER)
+diff --git a/component/ca/list_test.go b/component/ca/list_test.go
+new file mode 100644
+index 00000000..3da87420
+--- /dev/null
++++ b/component/ca/list_test.go
+@@ -0,0 +1,86 @@
++package ca
++
++import (
++	"crypto/sha256"
++	"crypto/x509"
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestFingerprintVerifierList(t *testing.T) {
++	otherFingerprint := CalculateFingerprint(smimeRootCert.Raw)
++	leafFingerprint := CalculateFingerprint(leafCert.Raw)
++	intermediateFingerprint := CalculateFingerprint(intermediateCert.Raw)
++	chain := []*x509.Certificate{leafCert, intermediateCert, rootCert}
++
++	// any of the comma-separated pins matching is enough, like Xray's pinnedPeerCertSha256
++	verifier, err := NewFingerprintVerifier(otherFingerprint+", "+leafFingerprint+",", certTime)
++	require.NoError(t, err)
++	assert.NoError(t, verifier(chain, wrongLeafServerName))
++
++	verifier, err = NewFingerprintVerifier(otherFingerprint+","+intermediateFingerprint, certTime)
++	require.NoError(t, err)
++	assert.NoError(t, verifier(chain, leafServerName))
++	assert.Error(t, verifier(chain, wrongLeafServerName))
++
++	verifier, err = NewFingerprintVerifier(otherFingerprint, certTime)
++	require.NoError(t, err)
++	assert.ErrorIs(t, verifier(chain, leafServerName), errNotMatch)
++
++	// OpenSSL format with colons
++	hash := sha256.Sum256(leafCert.Raw)
++	var colons []string
++	for _, b := range hash {
++		colons = append(colons, hexByte(b))
++	}
++	verifier, err = NewFingerprintVerifier(otherFingerprint+","+strings.Join(colons, ":"), certTime)
++	require.NoError(t, err)
++	assert.NoError(t, verifier(chain, ""))
++
++	for _, fingerprint := range []string{"", ",", leafFingerprint + ",xyz", leafFingerprint + ",abcd", "chrome"} {
++		_, err = NewFingerprintVerifier(fingerprint, certTime)
++		assert.Error(t, err, fingerprint)
++	}
++}
++
++func hexByte(b byte) string {
++	const digits = "0123456789ABCDEF"
++	return string([]byte{digits[b>>4], digits[b&0xf]})
++}
++
++func TestFingerprintNameVerifier(t *testing.T) {
++	intermediateFingerprint := CalculateFingerprint(intermediateCert.Raw)
++	chain := []*x509.Certificate{leafCert, intermediateCert, rootCert}
++
++	verifier, err := NewFingerprintNameVerifier(intermediateFingerprint, wrongLeafServerName+","+leafServerName, certTime)
++	require.NoError(t, err)
++	assert.NoError(t, verifier(chain, wrongLeafServerName))
++
++	verifier, err = NewFingerprintNameVerifier(intermediateFingerprint, wrongLeafServerName, certTime)
++	require.NoError(t, err)
++	assert.Error(t, verifier(chain, leafServerName))
++
++	// no names: the server name is used
++	verifier, err = NewFingerprintNameVerifier(intermediateFingerprint, " ", certTime)
++	require.NoError(t, err)
++	assert.NoError(t, verifier(chain, leafServerName))
++	assert.Error(t, verifier(chain, wrongLeafServerName))
++
++	verifier, err = NewFingerprintNameVerifier(CalculateFingerprint(smimeRootCert.Raw), leafServerName, certTime)
++	require.NoError(t, err)
++	assert.ErrorIs(t, verifier(chain, leafServerName), errNotMatch)
++}
++
++func TestNameCertVerifierList(t *testing.T) {
++	roots := x509.NewCertPool()
++	roots.AddCert(rootCert)
++	chain := []*x509.Certificate{leafCert, intermediateCert}
++
++	// any of the comma-separated names matching is enough, like Xray's verifyPeerCertByName
++	assert.NoError(t, NewNameCertVerifier(wrongLeafServerName+", "+leafServerName, roots, certTime)(chain))
++	assert.NoError(t, NewNameCertVerifier(leafServerName+","+wrongLeafServerName, roots, certTime)(chain))
++	assert.Error(t, NewNameCertVerifier(wrongLeafServerName+",example.com", roots, certTime)(chain))
++}
+diff --git a/component/ca/name_cert_verify.go b/component/ca/name_cert_verify.go
+index 99a33225..27e63316 100644
+--- a/component/ca/name_cert_verify.go
++++ b/component/ca/name_cert_verify.go
+@@ -7,8 +7,14 @@ import (
+ )
+ 
+ // NewNameCertVerifier returns a verifier for a certificate chain and an explicit DNSName.
++// Like Xray's `verifyPeerCertByName`, dnsName can be a comma-separated list, any of them matching is enough
++// (ClashFest core patch 0008).
+ func NewNameCertVerifier(dnsName string, roots *x509.CertPool, now func() time.Time) func([]*x509.Certificate) error {
+-	return func(certificates []*x509.Certificate) error {
++	dnsNames := splitList(dnsName)
++	if len(dnsNames) == 0 {
++		dnsNames = []string{dnsName}
++	}
++	return func(certificates []*x509.Certificate) (err error) {
+ 		if len(certificates) == 0 {
+ 			return errors.New("tls: no peer certificates")
+ 		}
+@@ -20,12 +26,15 @@ func NewNameCertVerifier(dnsName string, roots *x509.CertPool, now func() time.T
+ 		verifyOptions := x509.VerifyOptions{
+ 			Roots:         roots,
+ 			Intermediates: intermediates,
+-			DNSName:       dnsName,
+ 		}
+ 		if now != nil {
+ 			verifyOptions.CurrentTime = now()
+ 		}
+-		_, err := certificates[0].Verify(verifyOptions)
++		for _, verifyOptions.DNSName = range dnsNames {
++			if _, err = certificates[0].Verify(verifyOptions); err == nil {
++				return nil
++			}
++		}
+ 		return err
+ 	}
+ }
+diff --git a/transport/restls/restls.go b/transport/restls/restls.go
+index d680dc7f..cf76c699 100644
+--- a/transport/restls/restls.go
++++ b/transport/restls/restls.go
+@@ -39,17 +39,13 @@ type ServerConfig = tls.RestlsServerConfig
+ var Server = tls.RestlsServer
+ 
+ func SetFingerprint(config *Config, fingerprint string, nameCertVerify string) (err error) {
+-	verifier, err := ca.NewFingerprintVerifier(fingerprint, ntp.Now)
++	verifier, err := ca.NewFingerprintNameVerifier(fingerprint, nameCertVerify, ntp.Now)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	config.InsecureSkipVerify = true
+ 	config.VerifyConnection = func(state tls.ConnectionState) error {
+-		serverName := state.ServerName
+-		if nameCertVerify != "" {
+-			serverName = nameCertVerify
+-		}
+-		return verifier(state.PeerCertificates, serverName)
++		return verifier(state.PeerCertificates, state.ServerName)
+ 	}
+ 	return nil
+ }

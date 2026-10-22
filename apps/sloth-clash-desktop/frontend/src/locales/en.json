@@ -205,7 +205,6 @@
       "power": "Power",
       "powerOn": "Turn on",
       "powerOff": "Turn off",
-      "powerToggle": "Toggle",
       "share": "Share subscription",
       "refresh": "Refresh",
       "renamePlaceholder": "New name",
@@ -213,7 +212,69 @@
       "unpair": "Unpair",
       "selectHint": "Select a paired device to control it.",
       "shared": "Subscription shared.",
-      "renamed": "Renamed."
+      "renamed": "Renamed.",
+      "remote": {
+        "stream": {
+          "connecting": "connecting…",
+          "open": "live",
+          "down": "reconnecting…",
+          "revoked": "access revoked"
+        },
+        "revoked": "This device no longer accepts this computer. Forget it and pair again.",
+        "tab": {
+          "proxies": "Nodes",
+          "mode": "Mode",
+          "profiles": "Profiles",
+          "providers": "Providers",
+          "connections": "Connections",
+          "traffic": "Traffic",
+          "logs": "Logs",
+          "settings": "Settings",
+          "actions": "Actions"
+        },
+        "err": {
+          "bad_request": "Rejected by the device",
+          "unauthorized": "Not authorized",
+          "forbidden": "Not allowed",
+          "not_found": "Not available on this device",
+          "version_unsupported": "Unsupported protocol version",
+          "core_unavailable": "The device could not do it",
+          "internal": "Device error"
+        },
+        "empty": "Nothing here.",
+        "fixed": "pinned: {{node}}",
+        "unfix": "Unpin",
+        "pingGroup": "Test all",
+        "expires": "expires {{date}}",
+        "updateAll": "Update all",
+        "use": "Use",
+        "active": "active",
+        "update": "Update",
+        "delete": "Delete",
+        "deleteConfirm": "Delete for good",
+        "healthcheck": "Health check",
+        "closeAll": "Close all",
+        "close": "Close",
+        "totals": "Total",
+        "setting": {
+          "tun": "TUN mode",
+          "system_proxy": "System proxy",
+          "allow_lan": "Allow LAN",
+          "ipv6": "IPv6",
+          "sniffing": "Sniffing",
+          "log_level": "Log level"
+        },
+        "action": {
+          "flush_dns": "Flush DNS cache",
+          "flush_fakeip": "Flush fake-IP cache",
+          "update_geo": "Update geo data",
+          "restart_core": "Restart core",
+          "healthcheck_all": "Test all nodes"
+        },
+        "actionDone": "Done: {{action}}",
+        "forgetConfirm": "Forget this device? It is asked to revoke this computer, and forgotten here even if it does not answer.",
+        "cancel": "Cancel"
+      }
     },
     "common": {
       "local": "Local",

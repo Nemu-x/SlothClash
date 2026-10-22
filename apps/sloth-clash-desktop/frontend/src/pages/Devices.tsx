@@ -6,16 +6,12 @@ import {
   CompanionListAgents,
   CompanionPairByPin,
   CompanionPairByString,
-  CompanionPower,
-  CompanionRename,
-  CompanionShareSubscription,
   CompanionStartDiscovery,
-  CompanionStatus,
   CompanionStopDiscovery,
-  CompanionUnpair,
 } from '../api/companion'
 import type { companion } from '../api/models'
 import { EventsOn } from '../api/runtime'
+import { DeviceRemote } from '../components/DeviceRemote'
 
 type Agent = companion.AgentInfo
 
@@ -28,11 +24,9 @@ export function DevicesPage() {
   const { t } = useTranslation()
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedId, setSelectedId] = useState('')
-  const [status, setStatus] = useState<companion.StatusView | null>(null)
   const [pasteStr, setPasteStr] = useState('')
   const [pinTarget, setPinTarget] = useState('')
   const [pin, setPin] = useState('')
-  const [renameVal, setRenameVal] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -62,24 +56,9 @@ export function DevicesPage() {
     [agents, selectedId],
   )
 
-  const refreshStatus = useCallback(async (id: string, paired: boolean) => {
-    if (!id || !paired) {
-      setStatus(null)
-      return
-    }
-    try {
-      setStatus(await CompanionStatus(id))
-    } catch (e) {
-      setStatus(null)
-      setError(errText(e))
-    }
+  const reloadAgents = useCallback(async () => {
+    setAgents((await CompanionListAgents()) ?? [])
   }, [])
-
-  // Only paired agents have a status endpoint; selecting a freshly discovered
-  // (unpaired) device must not fire a control call (it would error "not paired").
-  useEffect(() => {
-    void refreshStatus(selectedId, !!selected?.paired)
-  }, [selectedId, selected?.paired, refreshStatus])
 
   const run = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -116,34 +95,6 @@ export function DevicesPage() {
       setAgents((await CompanionListAgents()) ?? [])
       setSelectedId(info.deviceId)
       setNotice(t('ui.devices.paired'))
-    })
-
-  const onPower = (action: 'on' | 'off' | 'toggle') =>
-    run(async () => {
-      await CompanionPower(selectedId, action)
-      await refreshStatus(selectedId, true)
-    })
-
-  const onShare = () =>
-    run(async () => {
-      await CompanionShareSubscription(selectedId)
-      setNotice(t('ui.devices.shared'))
-    })
-
-  const onRename = () =>
-    run(async () => {
-      await CompanionRename(selectedId, renameVal)
-      setRenameVal('')
-      setAgents((await CompanionListAgents()) ?? [])
-      setNotice(t('ui.devices.renamed'))
-    })
-
-  const onUnpair = () =>
-    run(async () => {
-      await CompanionUnpair(selectedId)
-      setSelectedId('')
-      setStatus(null)
-      setAgents((await CompanionListAgents()) ?? [])
     })
 
   return (
@@ -256,91 +207,17 @@ export function DevicesPage() {
 
         {/* Control panel */}
         <section className="devicesControl">
+          {/* Only paired agents can be controlled; a discovered one is paired first. */}
           {selected && selected.paired ? (
-            <>
-              <h3>{selected.name || selected.deviceId}</h3>
-              <div className="devicesStatusRow">
-                <span className="muted">{t('ui.devices.power')}</span>
-                <strong>{status?.power ?? '—'}</strong>
-              </div>
-              {status?.capabilities?.length ? (
-                <div className="devicesCaps">
-                  {status.capabilities.map((c) => (
-                    <span key={c} className="pill">
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="devicesActions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => onPower('on')}
-                >
-                  {t('ui.devices.powerOn')}
-                </button>
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy}
-                  onClick={() => onPower('off')}
-                >
-                  {t('ui.devices.powerOff')}
-                </button>
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy}
-                  onClick={() => onPower('toggle')}
-                >
-                  {t('ui.devices.powerToggle')}
-                </button>
-              </div>
-              <div className="devicesActions">
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy}
-                  onClick={onShare}
-                >
-                  {t('ui.devices.share')}
-                </button>
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy}
-                  onClick={() => void refreshStatus(selectedId, true)}
-                >
-                  {t('ui.devices.refresh')}
-                </button>
-              </div>
-              <div className="devicesPairRow">
-                <input
-                  className="input"
-                  placeholder={t('ui.devices.renamePlaceholder')}
-                  value={renameVal}
-                  onChange={(e) => setRenameVal(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy || !renameVal.trim()}
-                  onClick={onRename}
-                >
-                  {t('ui.devices.rename')}
-                </button>
-              </div>
-              <button
-                type="button"
-                className="btn subtle devicesUnpair"
-                disabled={busy}
-                onClick={onUnpair}
-              >
-                {t('ui.devices.unpair')}
-              </button>
-            </>
+            <DeviceRemote
+              key={selected.deviceId}
+              agent={selected}
+              onAgentsChanged={() => void reloadAgents().catch(() => {})}
+              onForgotten={() => {
+                setSelectedId('')
+                void reloadAgents().catch(() => {})
+              }}
+            />
           ) : (
             <p className="muted small">{t('ui.devices.selectHint')}</p>
           )}

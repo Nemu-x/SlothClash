@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -122,7 +125,7 @@ func TestSlothRuntimeKeysAreOrderedNotExcluded(t *testing.T) {
 }
 
 // TestCanonicalKeyOrderCoversUpstreamMihomo fetches mihomo's RawConfig
-// source at the version we ship and asserts that every top-level yaml
+// source at the commit we ship (core/mihomo/manifest.json) and asserts that every top-level yaml
 // key it declares is covered by canonicalRuntimeKeyOrder (or explicitly
 // excluded above). Catches the class of "operator noticed a new mihomo
 // field landing below rules" bugs at build time instead of in user
@@ -139,11 +142,14 @@ func TestCanonicalKeyOrderCoversUpstreamMihomo(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	version, err := fetchLatestMihomoVersionForTest(ctx)
+	// The core we ship, not mihomo's latest release: a newer tag must not fail
+	// the suite before we bump to it, and the commit (not the tag) is fetched so
+	// a moved tag cannot change what we compare against.
+	version, commit, err := pinnedMihomoCoreForTest()
 	if err != nil {
-		t.Skipf("could not resolve latest mihomo version (network down or rate-limited): %v", err)
+		t.Fatalf("read the pinned core: %v", err)
 	}
-	src, err := fetchMihomoConfigSourceForTest(ctx, version)
+	src, err := fetchMihomoConfigSourceForTest(ctx, commit)
 	if err != nil {
 		t.Skipf("could not fetch mihomo %s config source: %v", version, err)
 	}
@@ -196,37 +202,28 @@ but not in our canonical order list. To fix:
 	}
 }
 
-func fetchLatestMihomoVersionForTest(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		"https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt",
-		nil,
-	)
+// pinnedMihomoCoreForTest returns the tag and commit of the core this build
+// ships, from core/mihomo/manifest.json.
+func pinnedMihomoCoreForTest() (tag, commit string, err error) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "core", "mihomo", "manifest.json"))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+	var m struct {
+		Tag    string `json:"tag"`
+		Commit string `json:"commit"`
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", &httpStatusErr{code: resp.StatusCode}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return "", "", err
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return "", err
+	if m.Tag == "" || len(m.Commit) != 40 {
+		return "", "", fmt.Errorf("manifest has no tag/commit: %q %q", m.Tag, m.Commit)
 	}
-	v := strings.TrimSpace(string(b))
-	if v == "" {
-		return "", &emptyBodyErr{}
-	}
-	return v, nil
+	return m.Tag, m.Commit, nil
 }
 
-func fetchMihomoConfigSourceForTest(ctx context.Context, version string) (string, error) {
-	url := "https://raw.githubusercontent.com/MetaCubeX/mihomo/" + version + "/config/config.go"
+func fetchMihomoConfigSourceForTest(ctx context.Context, ref string) (string, error) {
+	url := "https://raw.githubusercontent.com/MetaCubeX/mihomo/" + ref + "/config/config.go"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -300,7 +297,3 @@ func httpStatusCodeStr(code int) string {
 	}
 	return string(buf[i:])
 }
-
-type emptyBodyErr struct{}
-
-func (*emptyBodyErr) Error() string { return "upstream returned empty body" }

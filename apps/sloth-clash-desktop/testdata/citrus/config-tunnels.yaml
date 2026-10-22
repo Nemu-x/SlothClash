@@ -1,0 +1,18 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (tunnels 373-380)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - stub proxies `proxy` and `vpn` added, the targets of the tunnels
+
+proxies:
+  - {name: proxy, type: socks5, server: 127.0.0.1, port: 1080}
+  - {name: vpn, type: socks5, server: 127.0.0.1, port: 1081}
+
+tunnels: # one line config
+  - tcp/udp,127.0.0.1:6553,114.114.114.114:53,proxy
+  - tcp,127.0.0.1:6666,rds.mysql.com:3306,vpn
+  # full yaml config
+  - network: [tcp, udp]
+    address: 127.0.0.1:7777
+    target: target.com
+    proxy: proxy

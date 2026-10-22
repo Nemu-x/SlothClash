@@ -1311,6 +1311,26 @@
   border-color: var(--hairline);
 }
 
+/* type: chain — hops are numbered in dial order; the first hop that failed the
+   chain's health check is outlined. */
+.proxyChainHopNo {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.proxyNodeCard.proxyChainHopFailed,
+.proxyNodeCard.proxyChainHopFailed:hover {
+  opacity: 1;
+  border-color: var(--danger);
+}
+
 .proxyAutoGroupHint {
   grid-column: 1 / -1;
   margin: 0 0 4px 0;

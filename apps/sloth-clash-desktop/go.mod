@@ -6,7 +6,7 @@ toolchain go1.26.7
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/Nemu-x/clash-companion/go v0.0.0-20260621210130-a5fd5dd376dd
+	github.com/Nemu-x/clash-companion/go v0.0.0-20261021192046-10671001c6d3
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
 	github.com/metacubex/age v0.0.0-20260603010618-28d156b4ea78
 	github.com/wailsapp/wails/v2 v2.12.0

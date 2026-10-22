@@ -1,0 +1,238 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (proxy-groups 1722-1820, proxy-providers 1823-1950)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - stub proxies ss1, ss2 and vless1 added, the members the example groups name
+
+proxies:
+  - {name: ss1, type: ss, server: 192.0.2.1, port: 443, cipher: chacha20-ietf-poly1305, password: password}
+  - {name: ss2, type: ss, server: 192.0.2.2, port: 443, cipher: chacha20-ietf-poly1305, password: password}
+  - {name: vless1, type: vless, server: 192.0.2.3, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b}
+
+proxy-groups:
+  # url-test 将按照 url 测试结果使用延迟最低节点
+  - name: "auto"
+    type: url-test
+    proxies:
+      - ss1
+      - ss2
+      - vless1
+    # tolerance: 150
+    # lazy: true
+    # expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 300
+
+  # fallback 将按照 url 测试结果按照节点顺序选择
+  - name: "fallback-auto"
+    type: fallback
+    proxies:
+      - ss1
+      - ss2
+      - vless1
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 300
+
+  # load-balance 将按照算法随机选择节点
+  - name: "load-balance"
+    type: load-balance
+    proxies:
+      - ss1
+      - ss2
+      - vless1
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 300
+  # strategy: consistent-hashing # 可选 round-robin 和 sticky-sessions
+  # hash-key: in-user # 可选,仅 consistent-hashing 和 sticky-sessions 支持;
+  #                   # round-robin 不做哈希,配置它会报错而不是被忽略。
+  #                   # 只改变「拿什么值去哈希」,不改变策略拿到哈希值之后如何选节点;
+  #                   # 不填时行为与旧版完全一致。
+  #                   # in-user 用 inbound 的认证用户名作 key(与 IN-USER 规则读取的是
+  #                   # 同一个字段),它不随目标地址变化,因此一件跨多个域名的任务不会
+  #                   # 中途换节点、换出口 IP。未认证的请求回退到该策略原本的 key。
+  #                   # 两种策略给出的一致性时长不同(前者永久、后者 10 分钟),
+  #                   # 取舍见 PR #3133。
+
+  # chain: a cascade of hops (entry -> ... -> exit). Every hop after the first
+  # one is dialed through the hop before it: the config sets the dialer-proxy
+  # of the proxies that make the hop up (a proxy; the members of a group and
+  # the providers of its `use`; the first hop of a nested chain). Those proxies
+  # then always go through the previous hop, also when they are used on their
+  # own, so the health checks of an exit group go through the entry as well and
+  # a url-test/fallback as the last hop fails over across the exits.
+  # The first hop can be anything: a proxy, a group, DIRECT.
+  # Load errors: a hop not found, a hop listed twice, a loop (e.g. a group of
+  # the chain that contains the chain), a dialer-proxy already set to another
+  # proxy, a built-in or a group with include-all after the first hop.
+  # The health check tests the whole chain; when it fails, it tests the hops
+  # from the first one (hop k goes through hops 1..k-1) and reports the first
+  # hop that fails: /proxies/cascade (hops, chainAlive, failedHop,
+  # failedHopPosition, chainError), /metrics (citrus_chain_alive,
+  # citrus_chain_hop_alive) and the chain.health event of GET /events.
+  # - name: exits
+  #   type: url-test
+  #   proxies:
+  #     - vless-de
+  #     - vless-nl
+  #   url: "https://cp.cloudflare.com/generate_204"
+  # - name: cascade
+  #   type: chain
+  #   proxies:          # in order: the first hop, ..., the exit
+  #     - ss1           # entry
+  #     - exits         # exit: a group, failover across exits
+  #   url: "https://cp.cloudflare.com/generate_204"
+  #   interval: 300
+  #   # timeout: 5000
+  #   # lazy: true
+  #   # expected-status: 204
+  #   # disable-udp: true
+  #   # `use`, `include-all*` and `filter` are not supported on a chain
+
+  # select 用户自行选择节点
+  - name: Proxy
+    type: select
+    # disable-udp: true
+    proxies:
+      - ss1
+      - ss2
+      - vless1
+      - auto
+    # default-selected: ss1 # 默认选择的节点（该项为空或者设置的节点名不存在时，默认选择组中第一个节点）
+
+  - name: UseProvider
+    type: select
+    filter: "HK|TW" # 正则表达式，过滤 provider1 中节点名包含 HK 或 TW
+    use:
+      - provider1
+    proxies:
+      - Proxy
+      - DIRECT
+    # empty-fallback: COMPATIBLE # 设置当组为空时的回退proxy（这里不支持填写代理组，只支持填写proxy名称）
+proxy-providers:
+  provider1:
+    type: http # http 的 path 可空置，默认储存路径为 homedir 的 proxies 文件夹，文件名为 url 的 md5
+    url: "url"
+    interval: 3600
+    path: ./provider1.yaml # 默认只允许存储在 citrus 的 Home Dir，如果想存储到其他位置，请通过设置 SAFE_PATHS 环境变量指定额外的安全路径。该环境变量的语法同本操作系统的PATH环境变量解析规则（即Windows下以分号分割，其他系统下以冒号分割）
+    proxy: DIRECT
+    # size-limit: 10240 # 限制下载文件最大为10kb，超出则本次更新失败（不会截断）；默认为0即使用 64MiB 上限，-1 为不限制
+    # #
+    # # 如果设置会age-secret-key尝试通过此secret解密age armor格式加密的配置文件
+    # #
+    # # 注意：
+    # #   对于加密内容，目前仅支持 age-encryption.org/v1 的 official ASCII "armor" format
+    # #   对于key格式，目前仅支持 age-encryption.org/v1 的 x25519 recipient type 和 The mlkem768-x25519 hybrid post-quantum recipient type
+    # # 实用工具：
+    # #   您可以通过 "citrus age keygen" 生成符合要求的 x25519 key
+    # #   您可以通过 "citrus age keygen-pq" 生成符合要求的 mlkem768-x25519 key
+    # #   您可以通过 "citrus age convert <secret_key>" 从 age-secret-key 导出 age-public-key
+    # #   您可以通过 "citrus age decrypt <secret_key> <source_file> <target_file>" 将已加密文件解密，<source_file> 为 - 时会从标准输入读取，<target_file> 为 - 时会往标准输出写入
+    # #   <secret_key> may be @/path/to/key.txt (read from a file) and, for convert, - (stdin): a key on the
+    # #   command line is visible to other users of the host. The core takes -age-secret-key-file
+    # #   (CLASH_AGE_SECRET_KEY_FILE) besides -age-secret-key (CLASH_AGE_SECRET_KEY).
+    # #   您可以通过 "citrus age encrypt <public_key> <source_file> <target_file>" 将未加密文件加密，<source_file> 为 - 时会从标准输入读取，<target_file> 为 - 时会往标准输出写入
+    # # 参考实现：
+    # #   https://github.com/FiloSottile/awesome-age#implementations
+    # #
+    # age-secret-key: AGE-SECRET-KEY-1ZTQLLN0A4U3ZTT3DCZKYN0CGZEZQLWX2DFTXUWMT4ZHR0N2UG6LSW9NT0N
+    header:
+      User-Agent:
+      - "Clash/v1.18.0"
+      - "citrus/1.18.3"
+      # Accept:
+      # - 'application/vnd.github.v3.raw'
+      # Authorization:
+      # - 'token 1231231'
+      # X-Age-Public-Key:
+      # - 'age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma'
+    health-check:
+      enable: true
+      interval: 600
+      # lazy: true
+      url: https://cp.cloudflare.com/generate_204
+      # expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用
+    override: # 覆写节点加载时的一些配置项
+      skip-cert-verify: true
+      name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
+      udp: true
+      # down: "50 Mbps"
+      # up: "10 Mbps"
+      # dialer-proxy: proxy
+      # interface-name: tailscale0
+      # routing-mark: 233
+      # ip-version: ipv4-prefer
+      # additional-prefix: "[provider1]"
+      # additional-suffix: "test"
+      # # 名字替换，支持正则表达式
+      # proxy-name:
+      #   - pattern: "test"
+      #     target: "TEST"
+      #   - pattern: "IPLC-(.*?)倍"
+      #     target: "iplc x $1"
+      # # 这是 yq v4 风格的配置覆盖子集。数组项按顺序执行，且晚于上面的固定字段覆盖。
+      # # 路径：.、.name、."a.b"、.["a.b"]、.items[0]、.items[-1]。[] 可以遍历数组或 mapping。
+      # # 读取缺失路径或穿过标量时返回 null。赋值会创建缺失的 mapping 和非负数组索引，但不会穿过标量更新。
+      # # 赋值：=、|=、+=、-=、*=。删除：del(.field)、del(.a, .b)。
+      # # 值：null（或 ~）、布尔值、十进制/十六进制整数、浮点数、双引号字符串、数组及双引号键的 mapping。
+      # # 负号只用于十进制整数和浮点数。浮点数支持科学计数法。
+      # # 字符串按 yq 规则解码 \n、\"、\\；其他反斜杠序列保留原文。
+      # # 数组会收集每一项的全部结果。mapping 的 value 为零结果时省略 key，多结果时保留最后一个。
+      # # 运算：+、-、*、/、%、==、!=、<、<=、>、>=、and、or、//（默认值）。
+      # # + 可拼接字符串/数组或浅合并 mapping；* 可做数乘、字符串重复、数组替换或深合并 mapping；/ 可分割字符串。
+      # # 流：管道 |、逗号 union、select。使用 [...] 将零到多个结果收集为数组。
+      # # 字符串支持 "[\(.type)] \(.name)" 形式的插值。插值表达式有多个结果时使用第一个。
+      # # 字符串外的 # 会忽略该数组项中的后续表达式内容。
+      # # 查询函数：length、keys、has(key/index)、contains(value)、select(condition)。字符串 length 按 UTF-8 字节数计算。
+      # # 数组函数：reverse、sort、unique、flatten([depth])、any、all。
+      # # 转换函数：map、map_values、filter、to_entries、from_entries、with_entries、any_c、all_c。
+      # # map/filter/map_values 支持数组或 mapping。with_entries 只支持 mapping，any_c/all_c 只支持数组。
+      # # map/filter 返回数组，map_values 保持输入集合类型。to_entries(null) 不产生结果。
+      # # from_entries 只接受具有字符串 key 的 entries 数组。
+      # # 字符串函数：test(pattern[, "g"])、sub(pattern, replacement)、split(separator)、join(separator)、upcase、downcase、trim。
+      # # split(null) 不产生结果，join 只接受数组。
+      # # 类型函数：tostring、tonumber、type、not。tonumber 支持十进制、0x 十六进制、0o 八进制和浮点字符串。
+      # override-expr:
+      #   - '.name = "[provider1] " + .name'                   # 普通赋值
+      #   - '.plugin-opts.mode = "tls"'                        # 自动创建缺失的 mapping
+      #   - '.alpn[] |= upcase'                                # 更新数组中的每一项
+      #   - 'del(.skip-cert-verify)'                           # 删除字段
+      #   - '.name = (.name | trim | upcase)'                  # 赋值右侧的管道需加括号
+      #   - '.name = "[\(.type)] \(.name):\(.port)"'           # 字符串插值
+      #   - '(select(.port == 443) | .tls) = true'             # 条件不匹配时不修改
+      #   - '.tags |= (unique | sort)'                         # 去重后排序
+      #   - '.names = [.servers[] | select(.enabled) | .name]' # 收集多个结果
+      #   - '.servers |= map(select(.enabled))'                # 筛选数组
+      #   - '.options |= with_entries(.key |= upcase)'         # 转换 mapping
+      #   - '. | with_entries(.key |= upcase)'                 # 整体过滤结果仍须为 mapping
+      # # 每一项最终必须恰好产生一个 mapping。未收集的多结果及 del(.) 不受支持。
+      # # 赋值右侧使用管道或 and/or 时必须加括号。from_entries 只接受字符串 key。
+      # # sort 只支持标量数组。any/all 只支持无参数形式。
+      # # ==/!= 按 yq 的标量文本值比较，不对数组或 mapping 做结构化比较。
+      # # <、<=、>、>= 只支持数字、字符串和 null。只有 false 和 null 按假值处理。
+      # # 普通函数参数不得产生多个结果；map/filter 等接收表达式的函数允许参数产生结果流。
+      # # 函数参数可使用逗号或分号分隔。
+      # # 求值采用值语义。越界读取不会扩展源数组，右侧的 flatten/map_values 也不会隐式修改源路径。
+      # # 需要修改源路径时请使用 |=。右侧没有结果时保留目标原值，不会自动创建 null。
+      # # mapping 流、keys 和 entries 转换按 key 排序，因为 map[string]any 不保留 YAML key 顺序。
+      # # 不支持的语言功能：变量（as/$x）、reduce、动态路径（.[$key]）、递归下降（..）。
+      # # 不支持的外部功能：多文档、文件/环境访问、YAML tag/样式/注释处理、yq CLI 参数。
+      # # 未在上面列出的 yq 语法、运算符和函数也不受支持。条件分支可改用 select 后串联多个赋值。
+
+  provider2:
+    type: inline
+    dialer-proxy: proxy
+    payload:
+      - name: "ss1"
+        type: ss
+        server: server
+        port: 443
+        cipher: chacha20-ietf-poly1305
+        password: "password"
+
+  test:
+    type: file
+    path: /test.yaml
+    health-check:
+      enable: true
+      interval: 36000
+      url: https://cp.cloudflare.com/generate_204

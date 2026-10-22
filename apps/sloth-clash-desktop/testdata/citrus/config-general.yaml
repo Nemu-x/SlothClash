@@ -1,0 +1,31 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (mixed-port 3-3, find-process-mode 37-37, mode 39-39, geox-url 42-45, geo-auto-update 47-47, geo-update-interval 48-48, log-level 55-55, ipv6 62-62, experimental 204-211, hosts 214-214, profile 222-226)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - only the client-side top-level keys; allow-lan, authentication, lan-*, tls, external-*, secret and listeners are server/controller material and left out
+
+mixed-port: 10801 # HTTP(S) 和 SOCKS 代理混合端口
+find-process-mode: strict
+mode: rule
+geox-url:
+  geoip: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+  geosite: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+  mmdb: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
+geo-auto-update: false # 是否自动更新 geodata
+geo-update-interval: 24 # 更新间隔，单位：小时
+log-level: debug # 日志等级 silent/error/warning/info/debug
+ipv6: true # 开启 IPv6 总开关，关闭阻断所有 IPv6 链接和屏蔽 DNS 请求 AAAA 记录
+experimental:
+  # Disable quic-go GSO support. This may result in reduced performance on Linux.
+  # This is not recommended for most users.
+  # Only users encountering issues with quic-go's internal implementation should enable this,
+  # and they should disable it as soon as the issue is resolved.
+  # This field will be removed when quic-go fixes all their issues in GSO.
+  # This equivalent to the environment variable QUIC_GO_DISABLE_GSO=1.
+  #quic-go-disable-gso: true
+hosts:
+profile: # 存储 select 选择记录
+  store-selected: false
+
+  # 持久化 fake-ip
+  store-fake-ip: true

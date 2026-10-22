@@ -1,0 +1,26 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml lines 1040, 1046 (commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - the commented-out option uncommented and wrapped into a minimal profile
+#   - GET with packet-up and header placement, the combination the comment allows
+
+proxies:
+  - name: node
+    type: vless
+    server: server
+    port: 443
+    uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+    udp: true
+    tls: true
+    network: xhttp
+    alpn: [h2]
+    xhttp-opts:
+      path: /xh
+      mode: packet-up
+      uplink-http-method: GET
+      uplink-data-placement: header
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [node]}
+rules:
+  - MATCH,GLOBAL

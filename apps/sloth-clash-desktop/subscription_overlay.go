@@ -323,11 +323,13 @@ func applyCorpVpnSplitInvariant(m map[string]any, enableTun bool) {
 // these two helpers, so the scripted and un-scripted paths cannot drift apart.
 func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
+	applyXDriveHardening(m)
 	applyCorpVpnSplitInvariant(m, enableTun)
 }
 
 func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
+	applyXDriveHardening(m)
 
 	// LAN exposure is a user decision (default off = localhost only). When it
 	// is on, a loopback `bind-address` inherited from the profile would silently

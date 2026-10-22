@@ -399,7 +399,7 @@ func (a *App) collectTunDiagnostics() string {
 	// Recent core.log tail.
 	if activeID != "" {
 		if logPath, err := coreLogPathForProfile(activeID); err == nil {
-			tail := readFileTail(logPath, 8*1024)
+			tail := redactCredentialQuery(readFileTail(logPath, 8*1024))
 			if strings.TrimSpace(tail) != "" {
 				fmt.Fprintf(&b, "core.log (tail):\n%s\n", strings.TrimRight(tail, "\n"))
 			} else {

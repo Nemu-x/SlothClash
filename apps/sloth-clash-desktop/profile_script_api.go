@@ -235,5 +235,6 @@ func (a *App) generatePreviewConfig(liveDir string, profile Profile, script stri
 	if err != nil {
 		return "", res, err
 	}
-	return string(out), res, nil
+	// A preview is a read-only view: storage credentials stay out of it.
+	return redactXDriveCredentialsYAML(string(out)), res, nil
 }

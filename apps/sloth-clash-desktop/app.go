@@ -1711,7 +1711,7 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 		if rerr != nil {
 			return ServiceLogPeek{Path: p, LastError: rerr.Error()}
 		}
-		return ServiceLogPeek{Path: p, Text: string(b)}
+		return ServiceLogPeek{Path: p, Text: redactCredentialQuery(string(b))}
 	}
 
 	if _, err := f.Seek(-int64(maxBytes), io.SeekEnd); err != nil {
@@ -1721,7 +1721,7 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 	if err != nil {
 		return ServiceLogPeek{Path: p, LastError: err.Error()}
 	}
-	return ServiceLogPeek{Path: p, Text: string(b), Truncated: true}
+	return ServiceLogPeek{Path: p, Text: redactCredentialQuery(string(b)), Truncated: true}
 }
 
 func (a *App) SetProxyNode(groupName, proxyName string) (AppState, error) {

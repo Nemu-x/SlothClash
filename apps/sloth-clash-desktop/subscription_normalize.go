@@ -229,6 +229,10 @@ func normalizeProxyGroupRefs(m map[string]any) {
 		if !ok {
 			continue
 		}
+		// A chain's hops are never filtered: see neutralizeBrokenChainGroups.
+		if isChainGroup(gm) {
+			continue
+		}
 		hasValidProvider := false
 		useRaw, hasUse := gm["use"]
 		if !hasUse || useRaw == nil {

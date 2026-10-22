@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.32 + 3 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.33 + 3 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -54,7 +54,7 @@ The same as MetaCubeX release builds: `CGO_ENABLED=0`, `-tags with_gvisor`, `-tr
   itself needs Windows 10 / macOS 12 or later, so those builds buy nothing here.
 - **BuildTime:** the tag's commit time instead of the wall clock, so the build is reproducible.
 
-`constant.Version` stays the plain tag (`v1.19.32`). The core's `/version`, the User-Agent it
+`constant.Version` stays the plain tag (`v1.19.33`). The core's `/version`, the User-Agent it
 uses for providers and everything panels match on are identical to an unpatched core.
 
 ### Reproducing a release core

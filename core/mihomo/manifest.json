@@ -1,8 +1,8 @@
 {
   "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by scripts/core-build.mjs in every release run (desktop-artifacts.yml -> core-build.yml). See docs/core-patches.md. Bump: edit tag/commit (and patch hashes), open a PR; the Core build workflow must pass.",
   "upstream": "https://github.com/MetaCubeX/mihomo",
-  "tag": "v1.19.32",
-  "commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+  "tag": "v1.19.33",
+  "commit": "3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8",
   "patches": [
     {
       "file": "0001-reality-configurable-client-version.patch",

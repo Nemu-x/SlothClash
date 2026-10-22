@@ -81,6 +81,9 @@ type App struct {
 	companionMu          sync.Mutex
 	companionMgr         *companion.Manager
 	companionWatchCancel context.CancelFunc
+	// companionDeviceWatch cancels the event stream of each device page that is
+	// open (CompanionWatchDevice), keyed by deviceId.
+	companionDeviceWatch map[string]context.CancelFunc
 }
 
 // NewApp creates a new App application struct

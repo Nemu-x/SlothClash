@@ -41,12 +41,13 @@ type AgentInfo struct {
 // StatusView is the controller-facing view of an agent's status (JSON-friendly,
 // no external types leak into the Wails bindings).
 type StatusView struct {
-	DeviceID     string   `json:"deviceId"`
-	Name         string   `json:"name"`
-	App          string   `json:"app"`
-	Ver          int      `json:"ver"`
-	Power        string   `json:"power"`
-	Capabilities []string `json:"capabilities"`
+	DeviceID     string       `json:"deviceId"`
+	Name         string       `json:"name"`
+	App          string       `json:"app"`
+	Ver          int          `json:"ver"`
+	Power        string       `json:"power"`
+	Capabilities []string     `json:"capabilities"`
+	Summary      *SummaryView `json:"summary,omitempty"` // header line: mode, profile, node, versions
 }
 
 // PowerResult is the result of a power action.
@@ -55,6 +56,9 @@ type PowerResult struct {
 	Power string `json:"power"`
 }
 
+// ErrNotPaired is returned for a deviceId that is not (or no longer) paired.
+var ErrNotPaired = errors.New("not paired")
+
 // Manager owns discovery, pairing, the paired-agent store, and control. It is a
 // thin wrapper over clash-companion/go.
 type Manager struct {
@@ -62,6 +66,9 @@ type Manager struct {
 	store    *Store
 	tokens   TokenStore
 	lastSeen map[string]discovery.Entry // deviceId -> latest discovery entry
+	// findByID resolves a deviceId over mDNS; tests replace it so they never
+	// browse the real LAN.
+	findByID func(ctx context.Context, deviceID string) (discovery.Entry, bool, error)
 }
 
 // NewManager loads the agent store from stateDir and wires the token store.
@@ -73,7 +80,7 @@ func NewManager(stateDir string, tokens TokenStore) (*Manager, error) {
 	if tokens == nil {
 		tokens = NewKeyringTokenStore()
 	}
-	return &Manager{store: st, tokens: tokens, lastSeen: map[string]discovery.Entry{}}, nil
+	return &Manager{store: st, tokens: tokens, lastSeen: map[string]discovery.Entry{}, findByID: discovery.FindByDeviceID}, nil
 }
 
 // DeviceID is this controller's stable identifier.
@@ -198,19 +205,19 @@ func (m *Manager) Status(ctx context.Context, deviceID string) (*StatusView, err
 	}
 	st, err := c.Status(ctx)
 	if err != nil {
-		return nil, err
+		return nil, remoteErr(err)
 	}
-	return &StatusView{
-		DeviceID: st.ID, Name: st.Name, App: st.App, Ver: st.Ver,
-		Power: st.Power, Capabilities: st.Capabilities,
-	}, nil
+	return statusView(*st), nil
 }
 
+// Power turns the agent's tunnel on or off. Only the explicit actions are sent:
+// a toggle from a controller that shows a stale state would do the opposite of
+// what the user pressed.
 func (m *Manager) Power(ctx context.Context, deviceID, action string) (*PowerResult, error) {
 	switch action {
-	case protocol.PowerOn, protocol.PowerOff, "toggle":
+	case protocol.PowerOn, protocol.PowerOff:
 	default:
-		return nil, fmt.Errorf("invalid power action %q", action)
+		return nil, fmt.Errorf("invalid power action %q (want on or off)", action)
 	}
 	c, err := m.clientFor(ctx, deviceID)
 	if err != nil {
@@ -218,7 +225,7 @@ func (m *Manager) Power(ctx context.Context, deviceID, action string) (*PowerRes
 	}
 	pr, err := c.Power(ctx, action)
 	if err != nil {
-		return nil, err
+		return nil, remoteErr(err)
 	}
 	return &PowerResult{OK: pr.OK, Power: pr.Power}, nil
 }
@@ -232,7 +239,7 @@ func (m *Manager) ShareSubscription(ctx context.Context, deviceID, url, name str
 	if err != nil {
 		return err
 	}
-	return c.ImportSubscription(ctx, protocol.SubscriptionRequest{URL: url, Name: name})
+	return remoteErr(c.ImportSubscription(ctx, protocol.SubscriptionRequest{URL: url, Name: name}))
 }
 
 func (m *Manager) Rename(ctx context.Context, deviceID, name string) error {
@@ -245,7 +252,7 @@ func (m *Manager) Rename(ctx context.Context, deviceID, name string) error {
 		return err
 	}
 	if _, err := c.Rename(ctx, name); err != nil {
-		return err
+		return remoteErr(err)
 	}
 	if a, ok := m.store.Get(deviceID); ok {
 		a.Name = name
@@ -254,12 +261,20 @@ func (m *Manager) Rename(ctx context.Context, deviceID, name string) error {
 	return nil
 }
 
-// Unpair removes the agent and deletes its token from the keychain.
-func (m *Manager) Unpair(deviceID string) error {
-	if err := m.tokens.Delete(deviceID); err != nil {
-		return err
+// Unpair asks the agent to revoke this controller's token (PROTOCOL.md §7.4),
+// then forgets the agent locally either way: an unreachable or already-revoked
+// agent must not keep a device the user removed. The agent's answer is returned
+// as agentErr for information only; the local removal is what decides success.
+func (m *Manager) Unpair(ctx context.Context, deviceID string) (agentErr error, err error) {
+	if c, cerr := m.clientFor(ctx, deviceID); cerr == nil {
+		agentErr = remoteErr(c.Unpair(ctx))
+	} else {
+		agentErr = cerr
 	}
-	return m.store.Delete(deviceID)
+	if err := m.tokens.Delete(deviceID); err != nil && !errors.Is(err, ErrTokenNotFound) {
+		return agentErr, err
+	}
+	return agentErr, m.store.Delete(deviceID)
 }
 
 // clientFor builds a pinned-TLS client for a paired agent, re-resolving its
@@ -267,7 +282,7 @@ func (m *Manager) Unpair(deviceID string) error {
 func (m *Manager) clientFor(ctx context.Context, deviceID string) (*controller.Client, error) {
 	a, ok := m.store.Get(deviceID)
 	if !ok {
-		return nil, fmt.Errorf("agent %s is not paired", deviceID)
+		return nil, fmt.Errorf("agent %s: %w", deviceID, ErrNotPaired)
 	}
 	if e, ok := m.entryFor(ctx, deviceID); ok && e.Host != "" && e.Port != 0 &&
 		(e.Host != a.LastHost || e.Port != a.LastPort) {
@@ -295,7 +310,7 @@ func (m *Manager) entryFor(ctx context.Context, deviceID string) (discovery.Entr
 	}
 	rctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
-	e, found, err := discovery.FindByDeviceID(rctx, deviceID)
+	e, found, err := m.findByID(rctx, deviceID)
 	if err != nil || !found {
 		return discovery.Entry{}, false
 	}

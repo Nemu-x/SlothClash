@@ -44,6 +44,8 @@ func validateRulePoliciesExist(m map[string]any) error {
 			}
 		}
 	}
+	// SUB-RULE's target is a block of `sub-rules`, not a proxy or a group.
+	subRules, _ := m["sub-rules"].(map[string]any)
 	rules, ok := m["rules"].([]any)
 	if !ok {
 		return nil
@@ -55,6 +57,17 @@ func validateRulePoliciesExist(m map[string]any) error {
 		}
 		policy := extractRulePolicyToken(line)
 		if policy == "" {
+			continue
+		}
+		if parts := splitRuleCSV(line); strings.EqualFold(parts[0], "SUB-RULE") {
+			if _, ok := subRules[policy]; !ok {
+				return fmt.Errorf(
+					"rules[%d] references unknown sub-rule %q in rule %q",
+					idx,
+					policy,
+					strings.TrimSpace(line),
+				)
+			}
 			continue
 		}
 		if !known[policy] {
@@ -380,6 +393,20 @@ func pruneFallbackAutoManualIfCustom(m map[string]any) {
 	if !hasCustom {
 		return
 	}
+	// A subscription's own group that happens to be called Auto (url-test) or
+	// Manual (select) is not the synthetic fallback when something else uses
+	// it: another group lists it, or a rule other than the final MATCH targets
+	// it. Pruning it would leave those references dangling. The synthetic
+	// Manual lists Auto, so the other prune candidate does not count; Manual
+	// goes first because keeping it keeps what it lists.
+	candidates := map[int]bool{autoIdx: autoIdx >= 0, manualIdx: manualIdx >= 0}
+	if manualIdx >= 0 && groupReferencedOutsideMatch(m, rawGroups, manualIdx, candidates) {
+		candidates[manualIdx] = false
+		manualIdx = -1
+	}
+	if autoIdx >= 0 && groupReferencedOutsideMatch(m, rawGroups, autoIdx, candidates) {
+		autoIdx = -1
+	}
 	if autoIdx < 0 && manualIdx < 0 {
 		return
 	}
@@ -411,6 +438,43 @@ func pruneFallbackAutoManualIfCustom(m map[string]any) {
 		}
 	}
 	m["proxy-groups"] = filtered
+}
+
+// groupReferencedOutsideMatch reports whether the group at idx is a member of
+// another group (other than the ones in ignore) or the target of a rule other
+// than MATCH.
+func groupReferencedOutsideMatch(m map[string]any, groups []any, idx int, ignore map[int]bool) bool {
+	gm, _ := groups[idx].(map[string]any)
+	name, _ := gm["name"].(string)
+	if name == "" {
+		return false
+	}
+	for i, g := range groups {
+		other, ok := g.(map[string]any)
+		if !ok || i == idx || ignore[i] {
+			continue
+		}
+		if members, ok := other["proxies"].([]any); ok {
+			for _, p := range members {
+				if s, _ := p.(string); s == name {
+					return true
+				}
+			}
+		}
+	}
+	if rules, ok := m["rules"].([]any); ok {
+		for _, r := range rules {
+			line, _ := r.(string)
+			parts := splitRuleCSV(line)
+			if len(parts) == 0 || strings.EqualFold(parts[0], "MATCH") || strings.EqualFold(parts[0], "FINAL") {
+				continue
+			}
+			if extractRulePolicyToken(line) == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // tlsSNIProtocols are proxy types whose TLS server name is the `sni` field in

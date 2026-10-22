@@ -1,0 +1,284 @@
+diff --git a/adapter/outbound/ech.go b/adapter/outbound/ech.go
+index 151a8498..95958dbc 100644
+--- a/adapter/outbound/ech.go
++++ b/adapter/outbound/ech.go
+@@ -3,17 +3,29 @@ package outbound
+ import (
+ 	"context"
+ 	"encoding/base64"
++	"encoding/pem"
++	"errors"
+ 	"fmt"
++	"strings"
+ 
+ 	"github.com/metacubex/mihomo/component/ech"
+ 	"github.com/metacubex/mihomo/component/resolver"
++	"github.com/metacubex/mihomo/dns"
+ )
+ 
++// ClashFest core patch 0009: ech-opts in the forms Xray configs and share links
++// use (Citrus commit c6fabc31): `config` may be the ECH CONFIGS PEM of
++// `xray tls ech --pem` or a wrapped base64 list, and `query-server` names the
++// DNS server to fetch the HTTPS record from instead of the proxy-server resolver.
+ type ECHOptions struct {
+ 	Enable bool   `proxy:"enable,omitempty" obfs:"enable,omitempty"`
+ 	Config string `proxy:"config,omitempty" obfs:"config,omitempty"`
+ 
+ 	QueryServerName string `proxy:"query-server-name,omitempty" obfs:"query-server-name,omitempty"`
++	// QueryServer is a DNS server (nameserver syntax, e.g. https://1.1.1.1/dns-query
++	// or udp://8.8.8.8) to query the HTTPS record with the ECH config from,
++	// instead of the proxy-server-nameserver / default resolver.
++	QueryServer string `proxy:"query-server,omitempty" obfs:"query-server,omitempty"`
+ }
+ 
+ func (o ECHOptions) Parse() (*ech.Config, error) {
+@@ -22,20 +34,74 @@ func (o ECHOptions) Parse() (*ech.Config, error) {
+ 	}
+ 	echConfig := &ech.Config{}
+ 	if o.Config != "" {
+-		list, err := base64.StdEncoding.DecodeString(o.Config)
++		list, err := parseECHConfigList(o.Config)
+ 		if err != nil {
+-			return nil, fmt.Errorf("base64 decode ech config string failed: %v", err)
++			return nil, err
+ 		}
+ 		echConfig.GetEncryptedClientHelloConfigList = func(ctx context.Context, serverName string) ([]byte, error) {
+ 			return list, nil
+ 		}
+-	} else {
+-		echConfig.GetEncryptedClientHelloConfigList = func(ctx context.Context, serverName string) ([]byte, error) {
+-			if o.QueryServerName != "" { // overrides the domain name used for ECH HTTPS record queries
+-				serverName = o.QueryServerName
+-			}
+-			return resolver.ResolveECHWithResolver(ctx, serverName, resolver.ProxyServerHostResolver)
++		return echConfig, nil
++	}
++
++	var queryResolver resolver.Resolver // nil: the global proxy-server resolver
++	if o.QueryServer != "" {
++		var err error
++		if queryResolver, err = newECHQueryResolver(o.QueryServer); err != nil {
++			return nil, err
++		}
++	}
++	echConfig.GetEncryptedClientHelloConfigList = func(ctx context.Context, serverName string) ([]byte, error) {
++		if o.QueryServerName != "" { // overrides the domain name used for ECH HTTPS record queries
++			serverName = o.QueryServerName
++		}
++		if queryResolver != nil {
++			return queryResolver.ResolveECH(ctx, serverName)
+ 		}
++		return resolver.ResolveECHWithResolver(ctx, serverName, resolver.ProxyServerHostResolver)
+ 	}
+ 	return echConfig, nil
+ }
++
++// parseECHConfigList accepts a base64 ECHConfigList or a PEM "ECH CONFIGS" block
++// (as printed by xray tls ech --pem).
++func parseECHConfigList(config string) ([]byte, error) {
++	if strings.Contains(config, "-----BEGIN") {
++		rest := []byte(config)
++		for {
++			var block *pem.Block
++			block, rest = pem.Decode(rest)
++			if block == nil {
++				return nil, errors.New("no ECH CONFIGS block in the ech config pem")
++			}
++			if block.Type == "ECH CONFIGS" {
++				return block.Bytes, nil
++			}
++		}
++	}
++	list, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(config), ""))
++	if err != nil {
++		return nil, fmt.Errorf("base64 decode ech config string failed: %v", err)
++	}
++	return list, nil
++}
++
++// newECHQueryResolver builds a dedicated resolver for the ECH HTTPS record
++// queries of one proxy; it keeps its own cache, honoring the record TTL.
++func newECHQueryResolver(server string) (resolver.Resolver, error) {
++	// Xray's echConfigList "h2c://" DoH is "https://" with TLS added by the routing; we do TLS ourselves
++	if rest, ok := strings.CutPrefix(server, "h2c://"); ok {
++		server = "https://" + rest
++	}
++	if dns.ParseNameServer == nil {
++		return nil, errors.New("ech-opts query-server: nameserver parser unavailable")
++	}
++	nss, err := dns.ParseNameServer([]string{server})
++	if err != nil {
++		return nil, fmt.Errorf("ech-opts query-server: %w", err)
++	}
++	if len(nss) == 0 {
++		return nil, fmt.Errorf("ech-opts query-server: no nameserver in %q", server)
++	}
++	return dns.NewResolver(dns.Config{Main: nss, IPv6: true}).Resolver, nil
++}
+diff --git a/adapter/outbound/ech_test.go b/adapter/outbound/ech_test.go
+new file mode 100644
+index 00000000..07923358
+--- /dev/null
++++ b/adapter/outbound/ech_test.go
+@@ -0,0 +1,161 @@
++package outbound_test
++
++import (
++	"context"
++	"encoding/base64"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/adapter/outbound"
++	_ "github.com/metacubex/mihomo/config" // dns.ParseNameServer
++
++	"github.com/metacubex/tls"
++	D "github.com/miekg/dns"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// an ECHConfigList generated by xray tls ech --serverName example.com
++const testECHConfigList = "AF7+DQBaAAAgACA65DptL5QEMH3c0QQqVBp0rQ5vVr7KIgOP9k4iEldMOgAkAAEAAQABAAIAAQADAAIAAQACAAIAAgADAAMAAQADAAIAAwADAAtleGFtcGxlLmNvbQAA"
++
++// fakeECHAnswer answers HTTPS queries for echDomain with an ech SvcParam.
++func fakeECHAnswer(t *testing.T, echDomain string, queries *atomic.Int32, req *D.Msg) *D.Msg {
++	list, err := base64.StdEncoding.DecodeString(testECHConfigList)
++	require.NoError(t, err)
++	resp := new(D.Msg)
++	resp.SetReply(req)
++	if len(req.Question) == 1 && req.Question[0].Qtype == D.TypeHTTPS {
++		queries.Add(1)
++		if req.Question[0].Name == D.Fqdn(echDomain) {
++			rr := &D.HTTPS{SVCB: D.SVCB{
++				Hdr:      D.RR_Header{Name: D.Fqdn(echDomain), Rrtype: D.TypeHTTPS, Class: D.ClassINET, Ttl: 300},
++				Priority: 1,
++				Target:   ".",
++				Value:    []D.SVCBKeyValue{&D.SVCBECHConfig{ECH: list}},
++			}}
++			resp.Answer = append(resp.Answer, rr)
++		}
++	}
++	return resp
++}
++
++func newFakeDoH(t *testing.T, echDomain string, queries *atomic.Int32) *httptest.Server {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		var raw []byte
++		var err error
++		if r.Method == http.MethodGet {
++			raw, err = base64.RawURLEncoding.DecodeString(r.URL.Query().Get("dns"))
++		} else {
++			raw, err = io.ReadAll(r.Body)
++		}
++		if err != nil {
++			http.Error(w, err.Error(), http.StatusBadRequest)
++			return
++		}
++		req := new(D.Msg)
++		if err = req.Unpack(raw); err != nil {
++			http.Error(w, err.Error(), http.StatusBadRequest)
++			return
++		}
++		out, err := fakeECHAnswer(t, echDomain, queries, req).Pack()
++		if err != nil {
++			http.Error(w, err.Error(), http.StatusInternalServerError)
++			return
++		}
++		w.Header().Set("Content-Type", "application/dns-message")
++		_, _ = w.Write(out)
++	}))
++	t.Cleanup(srv.Close)
++	return srv
++}
++
++func newFakeUDPDNS(t *testing.T, echDomain string, queries *atomic.Int32) string {
++	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
++	require.NoError(t, err)
++	srv := &D.Server{PacketConn: pc, Handler: D.HandlerFunc(func(w D.ResponseWriter, req *D.Msg) {
++		_ = w.WriteMsg(fakeECHAnswer(t, echDomain, queries, req))
++	})}
++	go func() { _ = srv.ActivateAndServe() }()
++	t.Cleanup(func() { _ = srv.Shutdown() })
++	return pc.LocalAddr().String()
++}
++
++func TestECHOptionsQueryServer(t *testing.T) {
++	want, err := base64.StdEncoding.DecodeString(testECHConfigList)
++	require.NoError(t, err)
++
++	var dohQueries, udpQueries atomic.Int32
++	doh := newFakeDoH(t, "ech.example.com", &dohQueries)
++	udpAddr := newFakeUDPDNS(t, "ech.example.com", &udpQueries)
++
++	for _, tt := range []struct {
++		name    string
++		opts    outbound.ECHOptions
++		sni     string
++		queries *atomic.Int32
++	}{
++		{"doh server name", outbound.ECHOptions{Enable: true, QueryServer: doh.URL + "/dns-query"}, "ech.example.com", &dohQueries},
++		{"doh query-server-name", outbound.ECHOptions{Enable: true, QueryServer: doh.URL + "/dns-query", QueryServerName: "ech.example.com"}, "front.example.net", &dohQueries},
++		{"udp query-server-name", outbound.ECHOptions{Enable: true, QueryServer: "udp://" + udpAddr, QueryServerName: "ech.example.com"}, "front.example.net", &udpQueries},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			echConfig, err := tt.opts.Parse()
++			require.NoError(t, err)
++			require.NotNil(t, echConfig)
++			before := tt.queries.Load()
++			for i := 0; i < 2; i++ { // the second build is served from the per-proxy cache
++				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++				tlsConfig := &tls.Config{ServerName: tt.sni, MinVersion: tls.VersionTLS12}
++				require.NoError(t, echConfig.ClientHandle(ctx, tlsConfig))
++				cancel()
++				assert.Equal(t, want, tlsConfig.EncryptedClientHelloConfigList)
++				assert.Equal(t, uint16(tls.VersionTLS13), tlsConfig.MinVersion)
++			}
++			assert.Equal(t, int32(1), tt.queries.Load()-before)
++		})
++	}
++
++	t.Run("no record", func(t *testing.T) {
++		echConfig, err := outbound.ECHOptions{Enable: true, QueryServer: doh.URL + "/dns-query"}.Parse()
++		require.NoError(t, err)
++		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++		defer cancel()
++		assert.Error(t, echConfig.ClientHandle(ctx, &tls.Config{ServerName: "other.example.com"}))
++	})
++}
++
++func TestECHOptionsParse(t *testing.T) {
++	want, err := base64.StdEncoding.DecodeString(testECHConfigList)
++	require.NoError(t, err)
++	pemConfigs := "-----BEGIN ECH CONFIGS-----\n" + testECHConfigList + "\n-----END ECH CONFIGS-----\n"
++
++	for _, config := range []string{testECHConfigList, pemConfigs} {
++		echConfig, err := outbound.ECHOptions{Enable: true, Config: config}.Parse()
++		require.NoError(t, err)
++		list, err := echConfig.GetEncryptedClientHelloConfigList(context.Background(), "example.com")
++		require.NoError(t, err)
++		assert.Equal(t, want, list)
++	}
++
++	for _, opts := range []outbound.ECHOptions{
++		{Enable: true, Config: "not base64!"},
++		{Enable: true, Config: "-----BEGIN ECH KEYS-----\nAAAA\n-----END ECH KEYS-----\n"},
++		{Enable: true, QueryServer: "foo://1.1.1.1"},
++	} {
++		_, err := opts.Parse()
++		assert.Error(t, err, opts)
++	}
++
++	echConfig, err := outbound.ECHOptions{Enable: false, QueryServer: "foo://1.1.1.1"}.Parse()
++	assert.NoError(t, err)
++	assert.Nil(t, echConfig)
++
++	// h2c:// is taken as https://, as Xray's routing would add TLS to it
++	_, err = outbound.ECHOptions{Enable: true, QueryServer: "h2c://dns.google/dns-query"}.Parse()
++	assert.NoError(t, err)
++}

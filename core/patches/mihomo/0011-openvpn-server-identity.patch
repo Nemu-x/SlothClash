@@ -1,0 +1,451 @@
+diff --git a/adapter/outbound/openvpn.go b/adapter/outbound/openvpn.go
+index 3c7b1e63..34604ac2 100644
+--- a/adapter/outbound/openvpn.go
++++ b/adapter/outbound/openvpn.go
+@@ -63,6 +63,10 @@ type OpenVPNOption struct {
+ 	PingRestart        int               `proxy:"ping-restart,omitempty"`
+ 	TranWindow         *int              `proxy:"tran-window,omitempty"`
+ 	HandshakeTimeout   int               `proxy:"handshake-timeout,omitempty"`
++	TLSVersionMin      string            `proxy:"tls-version-min,omitempty"`
++	VerifyX509Name     string            `proxy:"verify-x509-name,omitempty"`
++	VerifyX509Type     string            `proxy:"verify-x509-type,omitempty"`
++	VerifyServerName   bool              `proxy:"verify-server-name,omitempty"`
+ 	MTU                int               `proxy:"mtu,omitempty"`
+ 	UDP                bool              `proxy:"udp,omitempty"`
+ 
+@@ -121,10 +125,17 @@ func NewOpenVPN(option OpenVPNOption) (*OpenVPN, error) {
+ 		PingRestart:         time.Duration(option.PingRestart) * time.Second,
+ 		TransitionWindow:    transitionWindow,
+ 		TransitionWindowSet: transitionWindowSet,
++		TLSVersionMin:       option.TLSVersionMin,
++		VerifyX509Name:      option.VerifyX509Name,
++		VerifyX509Type:      option.VerifyX509Type,
++		VerifyServerName:    option.VerifyServerName,
+ 	}
+ 	if err := cfg.Prepare(); err != nil {
+ 		return nil, err
+ 	}
++	if !cfg.ChecksServerIdentity() {
++		log.Warnln("[OpenVPN] %s: the server certificate is only checked against the CA, so any server certificate from that CA is accepted. Set verify-x509-name (as in the .ovpn file) or verify-server-name: true", option.Name)
++	}
+ 
+ 	outbound := &OpenVPN{
+ 		Base: NewBase(BaseOption{
+diff --git a/transport/openvpn/client.go b/transport/openvpn/client.go
+index 053b0bf9..76a70e7c 100644
+--- a/transport/openvpn/client.go
++++ b/transport/openvpn/client.go
+@@ -1759,7 +1759,10 @@ func (c *Client) tlsConfig() (*tls.Config, error) {
+ 			Intermediates: intermediates,
+ 			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+ 		})
+-		return err
++		if err != nil {
++			return err
++		}
++		return c.config.checkServerIdentity(cs.PeerCertificates[0])
+ 	}
+ 	cfg := &tls.Config{
+ 		InsecureSkipVerify: true,
+@@ -1767,6 +1770,7 @@ func (c *Client) tlsConfig() (*tls.Config, error) {
+ 		// Allow the server to initiate TLS renegotiation (rekey). OpenVPN
+ 		// servers rekey the control channel at regular intervals (default 1h).
+ 		Renegotiation: tls.RenegotiateFreelyAsClient,
++		MinVersion:    c.config.tlsMinVersion,
+ 	}
+ 	certPEM := bytes.TrimSpace(c.config.Cert)
+ 	keyPEM := bytes.TrimSpace(c.config.Key)
+diff --git a/transport/openvpn/config.go b/transport/openvpn/config.go
+index 51690c3d..0c304ee7 100644
+--- a/transport/openvpn/config.go
++++ b/transport/openvpn/config.go
+@@ -10,6 +10,8 @@ import (
+ 	"strconv"
+ 	"strings"
+ 	"time"
++
++	"github.com/metacubex/tls"
+ )
+ 
+ const (
+@@ -80,6 +82,21 @@ type ClientConfig struct {
+ 	// FallbackCipher is used when the server does not support cipher
+ 	// negotiation (OpenVPN --data-ciphers-fallback).
+ 	FallbackCipher string
++
++	// TLSVersionMin is the lowest TLS version of the control channel, "1.2"
++	// or "1.3" (OpenVPN --tls-version-min). Empty keeps the crypto/tls
++	// client default, which is TLS 1.2 as well.
++	TLSVersionMin string
++	tlsMinVersion uint16
++
++	// VerifyX509Name and VerifyX509Type check the server certificate's
++	// subject or common name, like OpenVPN --verify-x509-name. The type is
++	// "subject" (the default), "name" or "name-prefix".
++	VerifyX509Name string
++	VerifyX509Type string
++	// VerifyServerName requires the server certificate to be valid for
++	// RemoteHost, as an HTTPS client would.
++	VerifyServerName bool
+ }
+ 
+ // DataCipherKeyLength returns the key size for the negotiated data cipher.
+@@ -241,6 +258,14 @@ func (c *ClientConfig) Prepare() error {
+ 	if err := c.ValidateInstallScriptSubset(); err != nil {
+ 		return err
+ 	}
++	minVersion, err := parseTLSVersionMin(c.TLSVersionMin)
++	if err != nil {
++		return err
++	}
++	c.tlsMinVersion = minVersion
++	if err := c.prepareServerIdentity(); err != nil {
++		return err
++	}
+ 	if len(bytes.TrimSpace(c.TLSAuth)) > 0 {
+ 		key, err := DecodeStaticKey(c.TLSAuth)
+ 		if err != nil {
+@@ -332,6 +357,21 @@ func (c *ClientConfig) ValidateInstallScriptSubset() error {
+ 	return nil
+ }
+ 
++// parseTLSVersionMin maps tls-version-min to a crypto/tls version, 0 for the
++// default. Versions below 1.2 are refused rather than silently enabled.
++func parseTLSVersionMin(version string) (uint16, error) {
++	switch strings.TrimSpace(version) {
++	case "":
++		return 0, nil
++	case "1.2":
++		return tls.VersionTLS12, nil
++	case "1.3":
++		return tls.VersionTLS13, nil
++	default:
++		return 0, fmt.Errorf("unsupported openvpn tls-version-min %q: only 1.2 and 1.3 are supported", version)
++	}
++}
++
+ func DecodeStaticKey(block []byte) ([]byte, error) {
+ 	var hexLines []string
+ 	for _, raw := range strings.Split(string(block), "\n") {
+diff --git a/transport/openvpn/identity.go b/transport/openvpn/identity.go
+new file mode 100644
+index 00000000..9881a01b
+--- /dev/null
++++ b/transport/openvpn/identity.go
+@@ -0,0 +1,150 @@
++package openvpn
++
++// ClashFest core patch 0010: the server identity checks of OpenVPN
++// (--verify-x509-name, and verify-server-name like an HTTPS client) and
++// --tls-version-min, from Citrus commits dff9504c and 23772468. Without them
++// any server certificate signed by the profile's CA is accepted, so another
++// client of the same VPN can impersonate the server.
++
++import (
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/asn1"
++	"fmt"
++	"sort"
++	"strings"
++)
++
++// verify-x509-name types, as in OpenVPN.
++const (
++	X509NameSubject     = "subject"
++	X509NameName        = "name"
++	X509NamePrefix      = "name-prefix"
++	defaultX509NameType = X509NameSubject
++)
++
++// prepareServerIdentity validates VerifyX509Name/VerifyX509Type.
++func (c *ClientConfig) prepareServerIdentity() error {
++	c.VerifyX509Name = strings.TrimSpace(c.VerifyX509Name)
++	c.VerifyX509Type = strings.ToLower(strings.TrimSpace(c.VerifyX509Type))
++	if c.VerifyX509Name == "" {
++		if c.VerifyX509Type != "" {
++			return fmt.Errorf("openvpn verify-x509-type %q needs verify-x509-name", c.VerifyX509Type)
++		}
++		return nil
++	}
++	if c.VerifyX509Type == "" {
++		c.VerifyX509Type = defaultX509NameType
++	}
++	switch c.VerifyX509Type {
++	case X509NameName, X509NamePrefix:
++	case X509NameSubject:
++		if _, err := parseOpenVPNSubject(c.VerifyX509Name); err != nil {
++			return fmt.Errorf("openvpn verify-x509-name: %w (to match the common name only, set verify-x509-type: name)", err)
++		}
++	default:
++		return fmt.Errorf("unsupported openvpn verify-x509-type %q: only subject, name and name-prefix are supported", c.VerifyX509Type)
++	}
++	return nil
++}
++
++// checkServerIdentity checks the server leaf certificate (whose chain is
++// already verified against the CA) against verify-x509-name and, when
++// VerifyServerName is set, against the remote host name or address.
++func (c *ClientConfig) checkServerIdentity(leaf *x509.Certificate) error {
++	if c.VerifyX509Name != "" {
++		cn := leaf.Subject.CommonName
++		switch c.VerifyX509Type {
++		case X509NameName:
++			if cn != c.VerifyX509Name {
++				return fmt.Errorf("openvpn server certificate name %q does not match verify-x509-name %q", cn, c.VerifyX509Name)
++			}
++		case X509NamePrefix:
++			if !strings.HasPrefix(cn, c.VerifyX509Name) {
++				return fmt.Errorf("openvpn server certificate name %q does not start with verify-x509-name %q", cn, c.VerifyX509Name)
++			}
++		default:
++			want, _ := parseOpenVPNSubject(c.VerifyX509Name)
++			if got := subjectAttributes(leaf.Subject); !equalStrings(got, want) {
++				return fmt.Errorf("openvpn server certificate subject %q does not match verify-x509-name %q", strings.Join(got, ", "), c.VerifyX509Name)
++			}
++		}
++	}
++	if c.VerifyServerName {
++		if err := leaf.VerifyHostname(c.RemoteHost); err != nil {
++			return fmt.Errorf("openvpn server certificate is not valid for %s: %w", c.RemoteHost, err)
++		}
++	}
++	return nil
++}
++
++// ChecksServerIdentity reports whether anything beyond the CA chain and the
++// server EKU is checked.
++func (c *ClientConfig) ChecksServerIdentity() bool {
++	return c.VerifyX509Name != "" || c.VerifyServerName
++}
++
++var subjectShortNames = map[string]string{
++	"2.5.4.3":              "CN",
++	"2.5.4.6":              "C",
++	"2.5.4.7":              "L",
++	"2.5.4.8":              "ST",
++	"2.5.4.10":             "O",
++	"2.5.4.11":             "OU",
++	"2.5.4.5":              "serialNumber",
++	"2.5.4.9":              "street",
++	"2.5.4.17":             "postalCode",
++	"1.2.840.113549.1.9.1": "emailAddress",
++}
++
++func attributeName(oid asn1.ObjectIdentifier) string {
++	if name, ok := subjectShortNames[oid.String()]; ok {
++		return name
++	}
++	return oid.String()
++}
++
++// subjectAttributes returns the subject as sorted "TYPE=value" strings.
++func subjectAttributes(name pkix.Name) []string {
++	attrs := make([]string, 0, len(name.Names))
++	for _, atv := range name.Names {
++		attrs = append(attrs, attributeName(atv.Type)+"="+fmt.Sprint(atv.Value))
++	}
++	sort.Strings(attrs)
++	return attrs
++}
++
++// parseOpenVPNSubject parses an OpenVPN subject such as
++// "C=KG, ST=NA, L=Bishkek, CN=Server-1" into sorted "TYPE=value" strings.
++func parseOpenVPNSubject(subject string) ([]string, error) {
++	var attrs []string
++	for _, part := range strings.Split(subject, ",") {
++		part = strings.TrimSpace(part)
++		key, value, ok := strings.Cut(part, "=")
++		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
++		if !ok || key == "" {
++			return nil, fmt.Errorf("subject %q is not a list of TYPE=value", subject)
++		}
++		for oid, short := range subjectShortNames {
++			if strings.EqualFold(key, short) || key == oid {
++				key = short
++				break
++			}
++		}
++		attrs = append(attrs, key+"="+value)
++	}
++	sort.Strings(attrs)
++	return attrs, nil
++}
++
++func equalStrings(a, b []string) bool {
++	if len(a) != len(b) {
++		return false
++	}
++	for i := range a {
++		if a[i] != b[i] {
++			return false
++		}
++	}
++	return true
++}
+diff --git a/transport/openvpn/identity_test.go b/transport/openvpn/identity_test.go
+new file mode 100644
+index 00000000..be7a8528
+--- /dev/null
++++ b/transport/openvpn/identity_test.go
+@@ -0,0 +1,160 @@
++package openvpn
++
++import (
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/pem"
++	"math/big"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/metacubex/tls"
++)
++
++type testPKI struct {
++	caPEM []byte
++	ca    *x509.Certificate
++	caKey *ecdsa.PrivateKey
++}
++
++func newTestPKI(t *testing.T) *testPKI {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	tmpl := &x509.Certificate{
++		SerialNumber:          big.NewInt(1),
++		Subject:               pkix.Name{CommonName: "Easy-RSA CA"},
++		NotBefore:             time.Now().Add(-time.Hour),
++		NotAfter:              time.Now().Add(time.Hour),
++		IsCA:                  true,
++		BasicConstraintsValid: true,
++		KeyUsage:              x509.KeyUsageCertSign,
++	}
++	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	ca, _ := x509.ParseCertificate(der)
++	return &testPKI{caPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), ca: ca, caKey: key}
++}
++
++func (p *testPKI) issue(t *testing.T, subject pkix.Name, dns []string, ips []net.IP) *x509.Certificate {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	tmpl := &x509.Certificate{
++		SerialNumber: big.NewInt(time.Now().UnixNano()),
++		Subject:      subject,
++		NotBefore:    time.Now().Add(-time.Hour),
++		NotAfter:     time.Now().Add(time.Hour),
++		KeyUsage:     x509.KeyUsageDigitalSignature,
++		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
++		DNSNames:     dns,
++		IPAddresses:  ips,
++	}
++	der, err := x509.CreateCertificate(rand.Reader, tmpl, p.ca, &key.PublicKey, p.caKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cert, _ := x509.ParseCertificate(der)
++	return cert
++}
++
++func verifyWith(t *testing.T, cfg *ClientConfig, leaf *x509.Certificate) error {
++	t.Helper()
++	tlsCfg, err := (&Client{config: cfg}).tlsConfig()
++	if err != nil {
++		t.Fatal(err)
++	}
++	return tlsCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}})
++}
++
++func TestServerIdentity(t *testing.T) {
++	pki := newTestPKI(t)
++	server := pki.issue(t, pkix.Name{CommonName: "server_abc", Organization: []string{"VPN"}}, nil, nil)
++	other := pki.issue(t, pkix.Name{CommonName: "client1"}, nil, nil)
++	named := pki.issue(t, pkix.Name{CommonName: "vpn.example.com"}, []string{"vpn.example.com"}, []net.IP{net.ParseIP("192.0.2.1")})
++
++	base := ClientConfig{RemoteHost: "192.0.2.1", RemotePort: 1194, Proto: ProtoUDP, Username: "u", CA: pki.caPEM}
++	tests := []struct {
++		name     string
++		x509Name string
++		x509Type string
++		strict   bool
++		leaf     *x509.Certificate
++		ok       bool
++	}{
++		{"ca only accepts any server cert", "", "", false, other, true},
++		{"name matches", "server_abc", "name", false, server, true},
++		{"name mismatch", "server_abc", "name", false, other, false},
++		{"name-prefix matches", "server_", "name-prefix", false, server, true},
++		{"name-prefix mismatch", "server_", "name-prefix", false, other, false},
++		{"subject matches in any order", "CN=server_abc, O=VPN", "", false, server, true},
++		{"subject must be complete", "CN=server_abc", "subject", false, server, false},
++		{"server name by IP SAN", "", "", true, named, true},
++		{"server name mismatch", "", "", true, server, false},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			cfg := base
++			cfg.VerifyX509Name = tt.x509Name
++			cfg.VerifyX509Type = tt.x509Type
++			cfg.VerifyServerName = tt.strict
++			if err := cfg.Prepare(); err != nil {
++				t.Fatal(err)
++			}
++			if got := cfg.ChecksServerIdentity(); got != (tt.x509Name != "" || tt.strict) {
++				t.Fatalf("ChecksServerIdentity = %v", got)
++			}
++			err := verifyWith(t, &cfg, tt.leaf)
++			if (err == nil) != tt.ok {
++				t.Fatalf("ok=%v, err=%v", tt.ok, err)
++			}
++		})
++	}
++}
++
++func TestServerIdentityConfigErrors(t *testing.T) {
++	ca := newTestPKI(t).caPEM
++	for _, tt := range []struct{ name, typ string }{
++		{"server", ""},           // bare name with the default subject type
++		{"server", "commonname"}, // unknown type
++		{"", "name"},             // type without name
++	} {
++		cfg := ClientConfig{RemoteHost: "192.0.2.1", RemotePort: 1194, Proto: ProtoUDP, Username: "u", CA: ca, VerifyX509Name: tt.name, VerifyX509Type: tt.typ}
++		if err := cfg.Prepare(); err == nil {
++			t.Errorf("accepted verify-x509-name %q type %q", tt.name, tt.typ)
++		}
++	}
++}
++
++func TestTLSVersionMin(t *testing.T) {
++	ca := newTestPKI(t).caPEM
++	for version, want := range map[string]uint16{"": 0, "1.2": tls.VersionTLS12, " 1.3 ": tls.VersionTLS13} {
++		cfg := ClientConfig{RemoteHost: "192.0.2.1", RemotePort: 1194, Proto: ProtoUDP, Username: "u", CA: ca, TLSVersionMin: version}
++		if err := cfg.Prepare(); err != nil {
++			t.Fatalf("tls-version-min %q: %v", version, err)
++		}
++		tlsCfg, err := (&Client{config: &cfg}).tlsConfig()
++		if err != nil {
++			t.Fatal(err)
++		}
++		if tlsCfg.MinVersion != want {
++			t.Fatalf("tls-version-min %q: MinVersion = %x, want %x", version, tlsCfg.MinVersion, want)
++		}
++	}
++	for _, version := range []string{"1.0", "1.1", "tls1.3"} {
++		cfg := ClientConfig{RemoteHost: "192.0.2.1", RemotePort: 1194, Proto: ProtoUDP, Username: "u", CA: ca, TLSVersionMin: version}
++		if err := cfg.Prepare(); err == nil {
++			t.Errorf("accepted tls-version-min %q", version)
++		}
++	}
++}

@@ -1,0 +1,340 @@
+diff --git a/adapter/outbound/reality.go b/adapter/outbound/reality.go
+index f5b536aa..c68b046c 100644
+--- a/adapter/outbound/reality.go
++++ b/adapter/outbound/reality.go
+@@ -16,6 +16,8 @@ type RealityOptions struct {
+ 	// ClientVersion overrides the global REALITY client version for this proxy
+ 	// (ClashFest core patch 0004); empty keeps the global one.
+ 	ClientVersion string `proxy:"client-version,omitempty"`
++	// Mldsa65Verify is Xray's mldsa65Verify (share link `pqv`), ClashFest core patch 0006.
++	Mldsa65Verify string `proxy:"mldsa65-verify,omitempty"`
+ 
+ 	SupportX25519MLKEM768 bool `proxy:"support-x25519mlkem768,omitempty"`
+ }
+@@ -52,6 +54,13 @@ func (o RealityOptions) Parse() (*tlsC.RealityConfig, error) {
+ 			config.ClientVersion = &clientVersion
+ 		}
+ 
++		if o.Mldsa65Verify != "" {
++			config.Mldsa65Verify, err = tlsC.ParseRealityMldsa65Verify(o.Mldsa65Verify)
++			if err != nil {
++				return nil, err
++			}
++		}
++
+ 		return config, nil
+ 	}
+ 	return nil, nil
+diff --git a/component/tls/reality.go b/component/tls/reality.go
+index 46793a4f..e8f516f6 100644
+--- a/component/tls/reality.go
++++ b/component/tls/reality.go
+@@ -1,15 +1,11 @@
+ package tls
+ 
+ import (
+-	"bytes"
+ 	"context"
+ 	"crypto/aes"
+ 	"crypto/cipher"
+ 	"crypto/ecdh"
+-	"crypto/ed25519"
+-	"crypto/hmac"
+ 	"crypto/sha256"
+-	"crypto/sha512"
+ 	"crypto/x509"
+ 	"encoding/binary"
+ 	"errors"
+@@ -23,6 +19,7 @@ import (
+ 	"github.com/metacubex/mihomo/ntp"
+ 
+ 	"github.com/metacubex/http"
++	"github.com/metacubex/mldsa"
+ 	"github.com/metacubex/randv2"
+ 	utls "github.com/metacubex/utls"
+ 	"golang.org/x/crypto/hkdf"
+@@ -44,6 +41,10 @@ type RealityConfig struct {
+ 	// (reality-opts.client-version, ClashFest core patch 0004); nil = global.
+ 	ClientVersion *[3]byte
+ 
++	// Mldsa65Verify, when set, also requires the ML-DSA-65 signature of the
++	// REALITY certificate (reality-opts.mldsa65-verify, ClashFest core patch 0006).
++	Mldsa65Verify *mldsa.PublicKey
++
+ 	SupportX25519MLKEM768 bool
+ }
+ 
+@@ -172,7 +173,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 	}
+ 	for retry := 0; ; retry++ {
+ 		verifier := &realityVerifier{
+-			serverName: serverName,
++			serverName:    serverName,
++			mldsa65Verify: realityConfig.Mldsa65Verify,
+ 		}
+ 		uConfig := &utls.Config{
+ 			Time:                   ntp.Now,
+@@ -314,21 +316,18 @@ func realityClientFallback(uConn net.Conn, serverName string, fingerprint utls.C
+ 
+ type realityVerifier struct {
+ 	*utls.UConn
+-	serverName string
+-	authKey    []byte
+-	verified   bool
++	serverName    string
++	authKey       []byte
++	mldsa65Verify *mldsa.PublicKey
++	verified      bool
+ }
+ 
+ func (c *realityVerifier) VerifyConnection(state utls.ConnectionState) error {
+ 	log.Debugln("REALITY localAddr: %v is using X25519MLKEM768 for TLS' communication: %v", c.RemoteAddr(), c.HandshakeState.ServerHello.ServerShare.Group == utls.X25519MLKEM768)
+ 	certs := state.PeerCertificates
+-	if pub, ok := certs[0].PublicKey.(ed25519.PublicKey); ok {
+-		h := hmac.New(sha512.New, c.authKey)
+-		h.Write(pub)
+-		if bytes.Equal(h.Sum(nil), certs[0].Signature) {
+-			c.verified = true
+-			return nil
+-		}
++	if realityVerifyCertificate(certs[0], c.authKey, c.mldsa65Verify, c.HandshakeState.Hello.Raw, c.HandshakeState.ServerHello.Raw) {
++		c.verified = true
++		return nil
+ 	}
+ 	opts := x509.VerifyOptions{
+ 		DNSName:       c.serverName,
+diff --git a/component/tls/reality_mldsa65.go b/component/tls/reality_mldsa65.go
+new file mode 100644
+index 00000000..d77f993b
+--- /dev/null
++++ b/component/tls/reality_mldsa65.go
+@@ -0,0 +1,57 @@
++package tls
++
++// ClashFest core patch 0006: reality-opts.mldsa65-verify, the client side of
++// Xray's mldsa65Verify (share link `pqv`). Xray REALITY servers configured with
++// mldsa65Seed sign HMAC-SHA512(authKey, public key || ClientHello || ServerHello)
++// with ML-DSA-65 and put the signature in the first extension of their
++// temporary certificate; a client holding the public key can then tell the real
++// server from an active prober replaying its traffic. Ported from Citrus
++// commit 9c9b0856, without its X25519MLKEM768-by-default part.
++
++import (
++	"bytes"
++	"crypto/ed25519"
++	"crypto/hmac"
++	"crypto/sha512"
++	"crypto/x509"
++	"encoding/base64"
++	"errors"
++
++	"github.com/metacubex/mldsa"
++)
++
++// ParseRealityMldsa65Verify parses the base64url (unpadded) encoded ML-DSA-65
++// public key, the format of Xray's mldsa65Verify.
++func ParseRealityMldsa65Verify(publicKey string) (*mldsa.PublicKey, error) {
++	key, err := base64.RawURLEncoding.DecodeString(publicKey)
++	if err != nil || len(key) != mldsa.MLDSA65PublicKeySize {
++		return nil, errors.New("invalid REALITY ML-DSA-65 public key")
++	}
++	return mldsa.NewPublicKey(mldsa.MLDSA65(), key)
++}
++
++// realityVerifyCertificate reports whether cert is the temporary certificate of
++// the REALITY server holding authKey: its ed25519 "signature" is
++// HMAC-SHA512(authKey, public key). With mldsa65Verify the first extension must
++// also hold the ML-DSA-65 signature of
++// HMAC-SHA512(authKey, public key || client hello || server hello).
++func realityVerifyCertificate(cert *x509.Certificate, authKey []byte, mldsa65Verify *mldsa.PublicKey, clientHello, serverHello []byte) bool {
++	pub, ok := cert.PublicKey.(ed25519.PublicKey)
++	if !ok {
++		return false
++	}
++	h := hmac.New(sha512.New, authKey)
++	h.Write(pub)
++	if !bytes.Equal(h.Sum(nil), cert.Signature) {
++		return false
++	}
++	if mldsa65Verify == nil {
++		return true
++	}
++	if len(cert.Extensions) == 0 {
++		return false
++	}
++	h.Write(clientHello)
++	h.Write(serverHello)
++	return mldsa.Verify(mldsa65Verify, h.Sum(nil), cert.Extensions[0].Value, nil) == nil
++}
+diff --git a/component/tls/reality_mldsa65_test.go b/component/tls/reality_mldsa65_test.go
+new file mode 100644
+index 00000000..497c8db4
+--- /dev/null
++++ b/component/tls/reality_mldsa65_test.go
+@@ -0,0 +1,141 @@
++package tls
++
++import (
++	"bytes"
++	"crypto/ed25519"
++	"crypto/hmac"
++	"crypto/rand"
++	"crypto/sha256"
++	"crypto/sha512"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/base64"
++	"encoding/hex"
++	"math/big"
++	"testing"
++
++	"github.com/metacubex/mldsa"
++)
++
++// TestRealityMldsa65Interop checks that github.com/metacubex/mldsa derives the
++// same ML-DSA-65 key from a seed and makes the same deterministic signature as
++// github.com/cloudflare/circl, which Xray uses. The hashes come from circl
++// v1.6.5 (Citrus component/tls/reality_test.go).
++func TestRealityMldsa65Interop(t *testing.T) {
++	seed := make([]byte, 32)
++	for i := range seed {
++		seed[i] = byte(i)
++	}
++	key, err := mldsa.NewPrivateKey(mldsa.MLDSA65(), seed)
++	if err != nil {
++		t.Fatal(err)
++	}
++	publicKey := key.PublicKey().Bytes()
++	if hash := sha256.Sum256(publicKey); hex.EncodeToString(hash[:]) != "d666806e11cee19a7c989f7445f90dd419cf4d2d51db8c0fdb4c0f0a542238c9" {
++		t.Fatalf("public key differs from circl's: %x", hash)
++	}
++	signature, err := key.SignDeterministic([]byte("REALITY ML-DSA-65 interop vector"), &mldsa.Options{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if hash := sha256.Sum256(signature); hex.EncodeToString(hash[:]) != "7fe42e182bc582e0937d8a91773657bc1ca6b5342cb028c4e3cf461f42950599" {
++		t.Fatalf("signature differs from circl's: %x", hash)
++	}
++	verify, err := ParseRealityMldsa65Verify(base64.RawURLEncoding.EncodeToString(publicKey))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !verify.Equal(key.PublicKey()) {
++		t.Fatal("parsed public key differs")
++	}
++	if _, err = ParseRealityMldsa65Verify(base64.RawURLEncoding.EncodeToString(publicKey[1:])); err == nil {
++		t.Fatal("short public key accepted")
++	}
++	if _, err = ParseRealityMldsa65Verify(base64.StdEncoding.EncodeToString(publicKey)); err == nil {
++		t.Fatal("padded base64 accepted")
++	}
++}
++
++// realityTestCertificate makes the temporary certificate the way the Xray
++// REALITY server does: an ed25519 certificate whose signature is replaced with
++// HMAC-SHA512(authKey, public key) and, with a key, an extension at a fixed
++// location holding the ML-DSA-65 signature.
++func realityTestCertificate(t *testing.T, authKey []byte, mldsa65Key *mldsa.PrivateKey, clientHello, serverHello []byte) *x509.Certificate {
++	t.Helper()
++	template := x509.Certificate{SerialNumber: &big.Int{}}
++	if mldsa65Key != nil {
++		template.ExtraExtensions = []pkix.Extension{{Id: []int{0, 0}, Value: make([]byte, mldsa.MLDSA65SignatureSize)}}
++	}
++	_, ed25519Priv, err := ed25519.GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cert, err := x509.CreateCertificate(rand.Reader, &template, &template, ed25519Priv.Public(), ed25519Priv)
++	if err != nil {
++		t.Fatal(err)
++	}
++	h := hmac.New(sha512.New, authKey)
++	h.Write(ed25519Priv[32:])
++	h.Sum(cert[:len(cert)-64])
++	if mldsa65Key != nil {
++		h.Write(clientHello)
++		h.Write(serverHello)
++		signature, err := mldsa65Key.SignDeterministic(h.Sum(nil), &mldsa.Options{})
++		if err != nil {
++			t.Fatal(err)
++		}
++		copy(cert[126:], signature)
++	}
++	parsed, err := x509.ParseCertificate(cert)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return parsed
++}
++
++func TestRealityVerifyCertificate(t *testing.T) {
++	authKey := make([]byte, 32)
++	_, _ = rand.Read(authKey)
++	clientHello, serverHello := []byte("client hello"), []byte("server hello")
++	seed := make([]byte, 32)
++	_, _ = rand.Read(seed)
++	key, err := mldsa.NewPrivateKey(mldsa.MLDSA65(), seed)
++	if err != nil {
++		t.Fatal(err)
++	}
++	other, err := mldsa.GenerateKey(mldsa.MLDSA65())
++	if err != nil {
++		t.Fatal(err)
++	}
++
++	cert := realityTestCertificate(t, authKey, nil, nil, nil)
++	if !realityVerifyCertificate(cert, authKey, nil, clientHello, serverHello) {
++		t.Fatal("REALITY certificate is not verified")
++	}
++	if realityVerifyCertificate(cert, make([]byte, 32), nil, clientHello, serverHello) {
++		t.Fatal("verified with a wrong auth key")
++	}
++	if realityVerifyCertificate(cert, authKey, key.PublicKey(), clientHello, serverHello) {
++		t.Fatal("certificate without ML-DSA-65 signature verified with mldsa65-verify")
++	}
++
++	cert = realityTestCertificate(t, authKey, key, clientHello, serverHello)
++	if !bytes.Equal(cert.Extensions[0].Value[:16], cert.Raw[126:126+16]) {
++		t.Fatal("unexpected ML-DSA-65 signature location")
++	}
++	if !realityVerifyCertificate(cert, authKey, key.PublicKey(), clientHello, serverHello) {
++		t.Fatal("ML-DSA-65 signature not verified")
++	}
++	if !realityVerifyCertificate(cert, authKey, nil, clientHello, serverHello) {
++		t.Fatal("signed certificate not verified without mldsa65-verify")
++	}
++	if realityVerifyCertificate(cert, authKey, other.PublicKey(), clientHello, serverHello) {
++		t.Fatal("verified with a wrong public key")
++	}
++	if realityVerifyCertificate(cert, authKey, key.PublicKey(), []byte("other client hello"), serverHello) {
++		t.Fatal("verified for another client hello")
++	}
++	if realityVerifyCertificate(cert, authKey, key.PublicKey(), clientHello, []byte("other server hello")) {
++		t.Fatal("verified for another server hello")
++	}
++}
+diff --git a/go.mod b/go.mod
+index 661c0bdf..24c0c29d 100644
+--- a/go.mod
++++ b/go.mod
+@@ -29,6 +29,7 @@ require (
+ 	github.com/metacubex/kcp-go v0.0.0-20260105040817-550693377604
+ 	github.com/metacubex/mhurl v0.1.0
+ 	github.com/metacubex/mipstack v0.0.0-20261019124225-9a80a07eaeb9
++	github.com/metacubex/mldsa v0.1.1
+ 	github.com/metacubex/mlkem v0.1.0
+ 	github.com/metacubex/quic-go v0.61.1-0.20260727080200-2548683b76f4
+ 	github.com/metacubex/randv2 v0.2.0
+diff --git a/go.sum b/go.sum
+index e42e954f..22175a67 100644
+--- a/go.sum
++++ b/go.sum
+@@ -137,6 +137,8 @@ github.com/metacubex/mhurl v0.1.0 h1:ZdW4Zxe3j3uJ89gNytOazHu6kbHn5owutN/VfXOI8GE
+ github.com/metacubex/mhurl v0.1.0/go.mod h1:2qpQImCbXoUs6GwJrjuEXKelPyoimsIXr07eNKZdS00=
+ github.com/metacubex/mipstack v0.0.0-20261019124225-9a80a07eaeb9 h1:/uFijgwBH3L7m/Ztfd+XpQjMmYgN74FjNTxperKhtdQ=
+ github.com/metacubex/mipstack v0.0.0-20261019124225-9a80a07eaeb9/go.mod h1:+bbwALZI0pbi2auSG5A3ptdpV2DZ2eLObziXo+P7oj0=
++github.com/metacubex/mldsa v0.1.1 h1:Tl9+FeM+AUqL5lG3C8JuoxVGsIINuY0b7XsQgz8jwyU=
++github.com/metacubex/mldsa v0.1.1/go.mod h1:RY6NOdBYmQ17ZRAn5TgXtJCTmuaI3oYdU+XicSGO8Lg=
+ github.com/metacubex/mlkem v0.1.0 h1:wFClitonSFcmipzzQvax75beLQU+D7JuC+VK1RzSL8I=
+ github.com/metacubex/mlkem v0.1.0/go.mod h1:amhaXZVeYNShuy9BILcR7P0gbeo/QLZsnqCdL8U2PDQ=
+ github.com/metacubex/nftables v0.0.0-20260426003805-208c2c1ba2cb h1:wk6mHYPURSUvWcUv72gNP79oiylFsscBSDPJ6ieV6Iw=

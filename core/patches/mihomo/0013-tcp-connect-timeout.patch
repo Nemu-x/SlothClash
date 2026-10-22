@@ -1,0 +1,176 @@
+diff --git a/config/config.go b/config/config.go
+index 87954e92..0d75097b 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -60,6 +60,7 @@ type General struct {
+ 	GeodataLoader     string                  `json:"geodata-loader"`
+ 	GeositeMatcher    string                  `json:"geosite-matcher"`
+ 	TCPConcurrent     bool                    `json:"tcp-concurrent"`
++	TCPConnectTimeout int64                   `json:"tcp-connect-timeout"` // ClashFest core patch 0012
+ 	FindProcessMode   process.FindProcessMode `json:"find-process-mode"`
+ 	Sniffing          bool                    `json:"sniffing"`
+ 	GlobalUA          string                  `json:"global-ua"`
+@@ -440,6 +441,7 @@ type RawConfig struct {
+ 	GeodataLoader                 string                  `yaml:"geodata-loader" json:"geodata-loader"`
+ 	GeositeMatcher                string                  `yaml:"geosite-matcher" json:"geosite-matcher"`
+ 	TCPConcurrent                 bool                    `yaml:"tcp-concurrent" json:"tcp-concurrent"`
++	TCPConnectTimeout             int64                   `yaml:"tcp-connect-timeout" json:"tcp-connect-timeout"`
+ 	FindProcessMode               process.FindProcessMode `yaml:"find-process-mode" json:"find-process-mode"`
+ 	GlobalClientFingerprint       string                  `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`
+ 	GlobalUA                      string                  `yaml:"global-ua" json:"global-ua"`
+@@ -499,6 +501,7 @@ func DefaultRawConfig() *RawConfig {
+ 		Proxy:             []map[string]any{},
+ 		ProxyGroup:        []map[string]any{},
+ 		TCPConcurrent:     false,
++		TCPConnectTimeout: T.DefaultTCPConnectTimeout,
+ 		FindProcessMode:   process.FindProcessStrict,
+ 		GlobalUA:          "clash.meta/" + C.Version,
+ 		ETagSupport:       true,
+@@ -761,6 +764,9 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 	if cfg.GlobalClientFingerprint != "" {
+ 		log.Errorln("The `global-client-fingerprint` configuration is removed, please set `client-fingerprint` directly on the proxy instead")
+ 	}
++	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
++		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)
++	}
+ 	return &General{
+ 		Inbound: Inbound{
+ 			Port:              cfg.Port,
+@@ -796,6 +802,7 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 		GeodataLoader:     cfg.GeodataLoader,
+ 		GeositeMatcher:    cfg.GeositeMatcher,
+ 		TCPConcurrent:     cfg.TCPConcurrent,
++		TCPConnectTimeout: cfg.TCPConnectTimeout,
+ 		FindProcessMode:   cfg.FindProcessMode,
+ 		GlobalUA:          cfg.GlobalUA,
+ 		ETagSupport:       cfg.ETagSupport,
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index 796face2..c240de22 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -171,6 +171,7 @@ func GetGeneral() *config.General {
+ 		GeodataLoader:     geodata.LoaderName(),
+ 		GeositeMatcher:    geodata.SiteMatcherName(),
+ 		TCPConcurrent:     dialer.GetTcpConcurrent(),
++		TCPConnectTimeout: tunnel.TCPConnectTimeout().Milliseconds(),
+ 		FindProcessMode:   tunnel.FindProcessMode(),
+ 		Sniffing:          tunnel.IsSniffing(),
+ 		GlobalUA:          mihomoHttp.UA(),
+@@ -396,6 +397,7 @@ func updateGeneral(general *config.General, logging bool) {
+ 	resolver.DisableIPv6 = !general.IPv6
+ 
+ 	dialer.SetTcpConcurrent(general.TCPConcurrent)
++	_ = tunnel.SetTCPConnectTimeout(general.TCPConnectTimeout)
+ 	if logging && general.TCPConcurrent {
+ 		log.Infoln("Use tcp concurrent")
+ 	}
+diff --git a/tunnel/tcp_connect_timeout.go b/tunnel/tcp_connect_timeout.go
+new file mode 100644
+index 00000000..305c18ec
+--- /dev/null
++++ b/tunnel/tcp_connect_timeout.go
+@@ -0,0 +1,54 @@
++package tunnel
++
++// ClashFest core patch 0012: tcp-connect-timeout, the total budget in
++// milliseconds for a new tunnel TCP connection (proxy handshake and retries
++// included), instead of the constant 5 s of C.DefaultTCPTimeout. Slow chains
++// and lossy mobile links need more. From Citrus PR #29 (commits up to
++// 0906f57e); the controller PATCH of the same PR is left out.
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	"github.com/metacubex/mihomo/common/atomic"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++const (
++	// MinTCPConnectTimeout is the smallest accepted value in milliseconds. A lower
++	// one cannot fit a proxy handshake and most likely was written in seconds.
++	MinTCPConnectTimeout int64 = 100
++	// MaxTCPConnectTimeout is the largest accepted value (10 minutes).
++	MaxTCPConnectTimeout int64 = 10 * 60 * 1000
++	// DefaultTCPConnectTimeout keeps mihomo's behaviour.
++	DefaultTCPConnectTimeout = int64(C.DefaultTCPTimeout / time.Millisecond)
++)
++
++var tcpConnectTimeout = atomic.NewTypedValue(C.DefaultTCPTimeout)
++
++// ValidateTCPConnectTimeout validates a connection budget in milliseconds.
++func ValidateTCPConnectTimeout(milliseconds int64) error {
++	if milliseconds < MinTCPConnectTimeout || milliseconds > MaxTCPConnectTimeout {
++		return fmt.Errorf("tcp-connect-timeout must be between %d and %d milliseconds, got %d",
++			MinTCPConnectTimeout, MaxTCPConnectTimeout, milliseconds)
++	}
++	return nil
++}
++
++// SetTCPConnectTimeout changes the budget for new tunnel TCP connections.
++func SetTCPConnectTimeout(milliseconds int64) error {
++	if err := ValidateTCPConnectTimeout(milliseconds); err != nil {
++		return err
++	}
++	tcpConnectTimeout.Store(time.Duration(milliseconds) * time.Millisecond)
++	return nil
++}
++
++func TCPConnectTimeout() time.Duration {
++	return tcpConnectTimeout.Load()
++}
++
++func tcpConnectContext(parent context.Context) (context.Context, context.CancelFunc) {
++	return context.WithTimeout(parent, TCPConnectTimeout())
++}
+diff --git a/tunnel/tcp_connect_timeout_test.go b/tunnel/tcp_connect_timeout_test.go
+new file mode 100644
+index 00000000..b1142aa4
+--- /dev/null
++++ b/tunnel/tcp_connect_timeout_test.go
+@@ -0,0 +1,31 @@
++package tunnel
++
++import (
++	"context"
++	"testing"
++	"time"
++)
++
++func TestTCPConnectTimeout(t *testing.T) {
++	defer func() { _ = SetTCPConnectTimeout(DefaultTCPConnectTimeout) }()
++	if DefaultTCPConnectTimeout != 5000 {
++		t.Fatalf("default = %d ms, mihomo's is 5000", DefaultTCPConnectTimeout)
++	}
++	for _, bad := range []int64{0, 99, MaxTCPConnectTimeout + 1, -1} {
++		if err := SetTCPConnectTimeout(bad); err == nil {
++			t.Fatalf("accepted %d", bad)
++		}
++	}
++	if TCPConnectTimeout() != 5*time.Second {
++		t.Fatalf("a rejected value changed the timeout to %v", TCPConnectTimeout())
++	}
++	if err := SetTCPConnectTimeout(15000); err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := tcpConnectContext(context.Background())
++	defer cancel()
++	deadline, ok := ctx.Deadline()
++	if left := time.Until(deadline); !ok || left < 14*time.Second || left > 15*time.Second {
++		t.Fatalf("deadline in %v, want about 15s", left)
++	}
++}
+diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
+index 86dbc14a..be897aa2 100644
+--- a/tunnel/tunnel.go
++++ b/tunnel/tunnel.go
+@@ -571,7 +571,7 @@ func handleTCPConn(connCtx C.ConnContext) {
+ 	var peekBytes []byte
+ 	var peekLen int
+ 
+-	ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTCPTimeout)
++	ctx, cancel := tcpConnectContext(context.Background())
+ 	defer cancel()
+ 	remoteConn, err := retry(ctx, func(ctx context.Context) (remoteConn C.Conn, err error) {
+ 		remoteConn, err = proxy.DialContext(ctx, dialMetadata)

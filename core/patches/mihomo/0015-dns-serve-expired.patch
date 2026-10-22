@@ -1,0 +1,279 @@
+diff --git a/config/config.go b/config/config.go
+index 614c42b8..bc8753c6 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -174,6 +174,11 @@ type DNS struct {
+ 	ProxyServerPolicy     []dns.Policy
+ 	DirectNameServer      []dns.NameServer
+ 	DirectFollowPolicy    bool
++
++	// ClashFest core patch 0014 (Citrus PR #31)
++	ServeExpired              bool
++	ServeExpiredTTL           time.Duration
++	ServeExpiredClientTimeout time.Duration
+ }
+ 
+ // Profile config
+@@ -242,6 +247,9 @@ type RawDNS struct {
+ 	DefaultNameserver            []string                            `yaml:"default-nameserver" json:"default-nameserver"`
+ 	CacheAlgorithm               string                              `yaml:"cache-algorithm" json:"cache-algorithm"`
+ 	CacheMaxSize                 int                                 `yaml:"cache-max-size" json:"cache-max-size"`
++	ServeExpired                 bool                                `yaml:"serve-expired" json:"serve-expired"`
++	ServeExpiredTTL              uint                                `yaml:"serve-expired-ttl" json:"serve-expired-ttl"`
++	ServeExpiredClientTimeout    uint                                `yaml:"serve-expired-client-timeout" json:"serve-expired-client-timeout"`
+ 	NameServerPolicy             *orderedmap.OrderedMap[string, any] `yaml:"nameserver-policy" json:"nameserver-policy"`
+ 	ProxyServerNameserver        []string                            `yaml:"proxy-server-nameserver" json:"proxy-server-nameserver"`
+ 	ProxyServerNameserverPolicy  *orderedmap.OrderedMap[string, any] `yaml:"proxy-server-nameserver-policy" json:"proxy-server-nameserver-policy"`
+@@ -515,6 +523,7 @@ func DefaultRawConfig() *RawConfig {
+ 			EnhancedMode:   C.DNSMapping,
+ 			FakeIPRange:    "198.18.0.1/16",
+ 			FakeIPTTL:      1,
++			ServeExpired:   true, // mihomo's behaviour: answer an expired entry at once, refresh it in the background
+ 			FallbackFilter: RawFallbackFilter{
+ 				GeoIP:     true,
+ 				GeoIPCode: "CN",
+@@ -1448,6 +1457,17 @@ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS,
+ 		EnhancedMode:      cfg.EnhancedMode,
+ 		CacheAlgorithm:    cfg.CacheAlgorithm,
+ 		CacheMaxSize:      cfg.CacheMaxSize,
++
++		ServeExpired:              cfg.ServeExpired,
++		ServeExpiredTTL:           time.Duration(cfg.ServeExpiredTTL) * time.Second,
++		ServeExpiredClientTimeout: time.Duration(cfg.ServeExpiredClientTimeout) * time.Millisecond,
++	}
++	// serve-expired-ttl is capped at 30 days (0 = no limit), the client timeout at the DNS query timeout
++	if cfg.ServeExpiredTTL > 30*24*60*60 {
++		return nil, fmt.Errorf("dns.serve-expired-ttl must be at most %d seconds, got %d", 30*24*60*60, cfg.ServeExpiredTTL)
++	}
++	if maxTimeout := uint(resolver.DefaultDNSTimeout.Milliseconds()); cfg.ServeExpiredClientTimeout > maxTimeout {
++		return nil, fmt.Errorf("dns.serve-expired-client-timeout must be at most %d milliseconds (the DNS query timeout), got %d", maxTimeout, cfg.ServeExpiredClientTimeout)
+ 	}
+ 	var err error
+ 	if dnsCfg.NameServer, err = parseNameServer(cfg.NameServer, cfg.RespectRules, cfg.PreferH3); err != nil {
+diff --git a/dns/resolver.go b/dns/resolver.go
+index b8742f24..20848c62 100644
+--- a/dns/resolver.go
++++ b/dns/resolver.go
+@@ -48,6 +48,11 @@ type Resolver struct {
+ 	cache                 dnsCache
+ 	policy                []dnsPolicy
+ 	defaultResolver       *Resolver
++
++	// dns.serve-expired, ClashFest core patch 0014; the zero values are mihomo's behaviour
++	noServeExpired            bool
++	serveExpiredTTL           time.Duration
++	serveExpiredClientTimeout time.Duration
+ }
+ 
+ func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []netip.Addr, err error) {
+@@ -171,6 +176,12 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
+ 		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+ 		now := time.Now()
+ 		if expireTime.Before(now) {
++			if r.noServeExpired || (r.serveExpiredTTL > 0 && now.Sub(expireTime) > r.serveExpiredTTL) {
++				return r.exchangeWithoutCache(ctx, m)
++			}
++			if r.serveExpiredClientTimeout > 0 {
++				return r.exchangeWithExpired(ctx, m, msg)
++			}
+ 			setMsgTTL(msg, uint32(1)) // Continue fetch
+ 			continueFetch = true
+ 		} else {
+@@ -182,6 +193,32 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
+ 	return r.exchangeWithoutCache(ctx, m)
+ }
+ 
++// exchangeWithExpired waits up to serveExpiredClientTimeout for a fresh answer
++// and answers the expired entry (TTL 1) when none comes in time, like unbound's
++// serve-expired-client-timeout (RFC 8767). The refresh goes on in the background.
++func (r *Resolver) exchangeWithExpired(ctx context.Context, query, expired *D.Msg) (*D.Msg, error) {
++	refreshCh := make(chan result, 1)
++	go func() {
++		refreshCtx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
++		defer cancel()
++		msg, err := r.exchangeWithoutCache(refreshCtx, query)
++		refreshCh <- result{Msg: msg, Error: err}
++	}()
++
++	timer := time.NewTimer(r.serveExpiredClientTimeout)
++	defer timer.Stop()
++	select {
++	case refresh := <-refreshCh:
++		if refresh.Error == nil {
++			return refresh.Msg, nil
++		}
++	case <-timer.C:
++	case <-ctx.Done():
++	}
++	setMsgTTL(expired, uint32(1))
++	return expired, nil
++}
++
+ // ExchangeWithoutCache a batch of dns request, and it do NOT GET from cache
+ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.Msg, err error) {
+ 	q := m.Question[0]
+@@ -483,6 +520,11 @@ type Config struct {
+ 	ProxyServerPolicy    []Policy
+ 	CacheAlgorithm       string
+ 	CacheMaxSize         int
++
++	// dns.serve-expired, ClashFest core patch 0014; the zero values are mihomo's behaviour
++	DisableServeExpired       bool
++	ServeExpiredTTL           time.Duration
++	ServeExpiredClientTimeout time.Duration
+ }
+ 
+ func (config Config) newCache() dnsCache {
+@@ -633,6 +675,14 @@ func NewResolver(config Config) (rs Resolvers) {
+ 		r.fallbackLazyQuery = config.FallbackLazyQuery
+ 	}
+ 
++	for _, res := range []*Resolver{defaultResolver, r, rs.ProxyResolver, rs.DirectResolver} {
++		if res != nil {
++			res.noServeExpired = config.DisableServeExpired
++			res.serveExpiredTTL = config.ServeExpiredTTL
++			res.serveExpiredClientTimeout = config.ServeExpiredClientTimeout
++		}
++	}
++
+ 	return
+ }
+ 
+diff --git a/dns/serve_expired_test.go b/dns/serve_expired_test.go
+new file mode 100644
+index 00000000..783374b9
+--- /dev/null
++++ b/dns/serve_expired_test.go
+@@ -0,0 +1,117 @@
++package dns
++
++import (
++	"context"
++	"errors"
++	"net/netip"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	D "github.com/miekg/dns"
++)
++
++// ClashFest core patch 0014: dns.serve-expired.
++
++var (
++	staleIP = netip.MustParseAddr("192.0.2.1")
++	freshIP = netip.MustParseAddr("192.0.2.2")
++)
++
++type expiredUpstream struct {
++	delay time.Duration
++	fail  bool
++	calls atomic.Int32
++}
++
++func (f *expiredUpstream) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
++	f.calls.Add(1)
++	select {
++	case <-time.After(f.delay):
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	}
++	if f.fail {
++		return nil, errors.New("upstream down")
++	}
++	return expiredAnswer(m, freshIP), nil
++}
++
++func (f *expiredUpstream) Address() string  { return "fake" }
++func (f *expiredUpstream) ResetConnection() {}
++
++func expiredAnswer(query *D.Msg, ip netip.Addr) *D.Msg {
++	msg := new(D.Msg)
++	msg.SetReply(query)
++	msg.Answer = []D.RR{&D.A{
++		Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
++		A:   ip.AsSlice(),
++	}}
++	return msg
++}
++
++func TestServeExpired(t *testing.T) {
++	query := new(D.Msg)
++	query.SetQuestion("stale.example.", D.TypeA)
++
++	for _, tt := range []struct {
++		name          string
++		config        Config
++		delay         time.Duration // of the upstream answer
++		fail          bool          // the upstream fails
++		expiredFor    time.Duration
++		want          netip.Addr
++		wantUpstream  bool // queried before the answer
++		wantStaleTTL1 bool
++	}{
++		{name: "default answers stale at once", want: staleIP, wantStaleTTL1: true},
++		{name: "disabled resolves again", config: Config{DisableServeExpired: true}, want: freshIP, wantUpstream: true},
++		{name: "past serve-expired-ttl resolves again", config: Config{ServeExpiredTTL: time.Minute}, expiredFor: 2 * time.Minute, want: freshIP, wantUpstream: true},
++		{name: "within serve-expired-ttl answers stale", config: Config{ServeExpiredTTL: time.Hour}, expiredFor: 2 * time.Minute, want: staleIP, wantStaleTTL1: true},
++		{name: "client timeout gets the fresh answer", config: Config{ServeExpiredClientTimeout: time.Second}, want: freshIP, wantUpstream: true},
++		{name: "client timeout answers stale when upstream is slow", config: Config{ServeExpiredClientTimeout: 50 * time.Millisecond},
++			delay: time.Second, want: staleIP, wantStaleTTL1: true},
++		{name: "client timeout answers stale when upstream fails", config: Config{ServeExpiredClientTimeout: time.Second},
++			fail: true, want: staleIP, wantStaleTTL1: true},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			up := &expiredUpstream{delay: tt.delay, fail: tt.fail}
++			r := NewResolverFromClient(up)
++			r.cache = tt.config.newCache()
++			r.noServeExpired = tt.config.DisableServeExpired
++			r.serveExpiredTTL = tt.config.ServeExpiredTTL
++			r.serveExpiredClientTimeout = tt.config.ServeExpiredClientTimeout
++			expiredFor := tt.expiredFor
++			if expiredFor == 0 {
++				expiredFor = time.Second
++			}
++			r.cache.SetWithExpire(query.Question[0].String(), expiredAnswer(query, staleIP), time.Now().Add(-expiredFor))
++
++			msg, err := r.ExchangeContext(context.Background(), query)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if ips := msgToIP(msg); len(ips) != 1 || ips[0] != tt.want {
++				t.Fatalf("answer %v, want %s", ips, tt.want)
++			}
++			if tt.wantStaleTTL1 && msg.Answer[0].Header().Ttl != 1 {
++				t.Fatalf("stale answer with TTL %d, want 1", msg.Answer[0].Header().Ttl)
++			}
++			if tt.wantUpstream && up.calls.Load() == 0 {
++				t.Fatal("upstream was not queried before the answer")
++			}
++		})
++	}
++}
++
++func TestNewResolverServeExpired(t *testing.T) {
++	rs := NewResolver(Config{DisableServeExpired: true, ServeExpiredTTL: time.Minute, ServeExpiredClientTimeout: time.Second})
++	for _, r := range []*Resolver{rs.Resolver, rs.Resolver.defaultResolver} {
++		if !r.noServeExpired || r.serveExpiredTTL != time.Minute || r.serveExpiredClientTimeout != time.Second {
++			t.Fatalf("serve-expired settings not applied: %v %v %v", r.noServeExpired, r.serveExpiredTTL, r.serveExpiredClientTimeout)
++		}
++	}
++	if r := NewResolver(Config{}).Resolver; r.noServeExpired || r.serveExpiredTTL != 0 || r.serveExpiredClientTimeout != 0 {
++		t.Fatal("a zero Config must keep mihomo's serve-stale behaviour")
++	}
++}
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index c240de22..a3dbe3ca 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -264,6 +264,10 @@ func updateDNS(c *config.DNS, generalIPv6 bool) {
+ 		DirectFollowPolicy:   c.DirectFollowPolicy,
+ 		CacheAlgorithm:       c.CacheAlgorithm,
+ 		CacheMaxSize:         c.CacheMaxSize,
++
++		DisableServeExpired:       !c.ServeExpired,
++		ServeExpiredTTL:           c.ServeExpiredTTL,
++		ServeExpiredClientTimeout: c.ServeExpiredClientTimeout,
+ 	})
+ 	m := dns.NewEnhancer(dns.EnhancerConfig{
+ 		IPv6:          ipv6,

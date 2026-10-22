@@ -1,0 +1,82 @@
+diff --git a/adapter/outbound/hysteria2.go b/adapter/outbound/hysteria2.go
+index 4731611f..a574f52c 100644
+--- a/adapter/outbound/hysteria2.go
++++ b/adapter/outbound/hysteria2.go
+@@ -70,6 +70,7 @@ type Hysteria2Option struct {
+ 	MaxStreamReceiveWindow         uint64 `proxy:"max-stream-receive-window,omitempty"`
+ 	InitialConnectionReceiveWindow uint64 `proxy:"initial-connection-receive-window,omitempty"`
+ 	MaxConnectionReceiveWindow     uint64 `proxy:"max-connection-receive-window,omitempty"`
++	DisableMTUDiscovery            bool   `proxy:"disable-mtu-discovery,omitempty"`
+ }
+ 
+ type Hysteria2RealmOption struct {
+@@ -226,6 +227,12 @@ func NewHysteria2(option Hysteria2Option) (*Hysteria2, error) {
+ 			if err != nil {
+ 				return nil, nil, err
+ 			}
++			// disable-mtu-discovery (ClashFest core patch 0011, Citrus commit 993e6429): sing-quic
++			// picks DisablePathMTUDiscovery by OS and overwrites ours, so it is applied here
++			if option.DisableMTUDiscovery && !cfg.DisablePathMTUDiscovery {
++				cfg = cfg.Clone()
++				cfg.DisablePathMTUDiscovery = true
++			}
+ 			return common.DialQuic(ctx, addr, outbound.DialOptions(), dialer, tlsCfg, cfg, common.DialQuicOption{Early: early})
+ 		}),
+ 		SetBBRCongestion: func(quicConn *quic.Conn) {
+diff --git a/adapter/outbound/masque.go b/adapter/outbound/masque.go
+index 64b3a5ed..ca006098 100644
+--- a/adapter/outbound/masque.go
++++ b/adapter/outbound/masque.go
+@@ -71,6 +71,7 @@ type MasqueOption struct {
+ 	CongestionController string `proxy:"congestion-controller,omitempty"`
+ 	CWND                 int    `proxy:"cwnd,omitempty"`
+ 	BBRProfile           string `proxy:"bbr-profile,omitempty"`
++	DisableMTUDiscovery  bool   `proxy:"disable-mtu-discovery,omitempty"` // ClashFest core patch 0011
+ 
+ 	IPStack IPStackOption `proxy:"ip-stack,omitempty"`
+ 
+@@ -208,9 +209,10 @@ func NewMasque(option MasqueOption) (*Masque, error) {
+ 	}
+ 
+ 	outbound.quicConfig = &quic.Config{
+-		EnableDatagrams:   true,
+-		InitialPacketSize: 1242,
+-		KeepAlivePeriod:   30 * time.Second,
++		EnableDatagrams:         true,
++		InitialPacketSize:       1242,
++		KeepAlivePeriod:         30 * time.Second,
++		DisablePathMTUDiscovery: option.DisableMTUDiscovery,
+ 	}
+ 
+ 	outbound.option = option
+diff --git a/adapter/outbound/masque_mtu_test.go b/adapter/outbound/masque_mtu_test.go
+new file mode 100644
+index 00000000..cccc0b54
+--- /dev/null
++++ b/adapter/outbound/masque_mtu_test.go
+@@ -0,0 +1,25 @@
++package outbound
++
++import "testing"
++
++// ClashFest core patch 0011: masque disable-mtu-discovery reaches the QUIC config.
++func TestMasqueDisableMTUDiscovery(t *testing.T) {
++	for _, disable := range []bool{false, true} {
++		m, err := NewMasque(MasqueOption{
++			Name:                "masque",
++			Server:              "162.159.198.1",
++			Port:                443,
++			PrivateKey:          "MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==",
++			PublicKey:           "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==",
++			Ip:                  "172.16.0.2",
++			DisableMTUDiscovery: disable,
++		})
++		if err != nil {
++			t.Fatal(err)
++		}
++		if m.quicConfig.DisablePathMTUDiscovery != disable {
++			t.Fatalf("disable-mtu-discovery %v: quic DisablePathMTUDiscovery = %v", disable, m.quicConfig.DisablePathMTUDiscovery)
++		}
++		_ = m.Close()
++	}
++}

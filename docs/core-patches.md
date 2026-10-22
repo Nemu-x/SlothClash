@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.33 + 3 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.33 + 16 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -71,8 +71,8 @@ run, and the binary embedded in the app.
 
 - One concern per patch, numbered, with a comment in the code explaining why it exists.
 - Behaviour that users may need to change is read from the config, not baked in (see 0003).
-- Logic ships with a Go test inside the patch; the core build runs it on every PR that touches the
-  core and on every release.
+- Logic ships with a Go test inside the patch; the core build vets and tests every package the
+  series touches, on every PR that touches the core and on every release.
 - Record the related mihomo issue or PR below, and the condition under which the patch goes away.
 - Never edit a patch without updating its hash in the manifest; the build refuses the mismatch.
 
@@ -170,6 +170,107 @@ unknown top-level keys, so the same config still starts on a stock core.
 The app writes them from Settings → REALITY ("ML-KEM key share": Auto / Always / Never, "Client
 version": empty = the subscription's value if it sets one, else the core default). Saving reloads
 the running core's config.
+
+### 0004-0015 Citrus client compatibility
+
+[Citrus](https://github.com/getmikan/Citrus) is a mihomo fork some panels build configs for. These
+twelve patches make the client side of its config surface work on this core without a fork: they are
+the series [ClashFest](https://github.com/Nemu-x/ClashFest) ships as its 0003-0014, applied in the same
+order after our 0003 (so ClashFest's number is ours minus one). Ten files are byte-identical to
+ClashFest's, and their code comments keep ClashFest's numbering; syncing a later fix is a copy. The
+two that differ:
+
+- **0005** drops ClashFest's own `ParseRealityClientVersion` and uses the one from our 0003, which
+  also takes a leading `v` (both reject anything that is not `x.y.z` with parts 0..255).
+- **0007** adds `github.com/metacubex/mldsa v0.1.1` to mihomo's own `go.mod` / `go.sum`: the core is
+  built from mihomo's module here, while ClashFest pins the dependency in its outer module.
+
+| Patch | What a config gains | UA token |
+|---|---|---|
+| 0004 VLESS over XDrive | `network: xdrive` + `xdrive-opts` (Google Drive or a templated HTTP storage), client side only | `xdrive` |
+| 0005 REALITY per-proxy client version | `reality-opts.client-version` overrides the global one from 0001/0003 | |
+| 0006 chain groups | `type: chain`: hops in `proxies`, each dialed through the one before (`dialer-proxy` wiring at load), health check names the first broken hop | `chain` |
+| 0007 REALITY mldsa65-verify | `reality-opts.mldsa65-verify` (Xray `mldsa65Verify`, share link `pqv`); without the patch the key is ignored and the client only believes it pins the server | `mldsa65` |
+| 0008 Xray fingerprint names | `client-fingerprint: hellochrome_131`, `randomizednoalpn`, ... map to the nearest utls parrot instead of falling back to Go's own hello | |
+| 0009 pin and name lists | `fingerprint` and `name-cert-verify` take comma-separated lists | `pin-list` |
+| 0010 ECH Xray forms | `ech-opts.config` takes the `ECH CONFIGS` PEM; `ech-opts.query-server` | `ech-xray` |
+| 0011 OpenVPN server identity | `verify-x509-name` / `-type`, `verify-server-name`, `tls-version-min` are enforced (vanilla ignores them: any certificate of the CA is trusted) | |
+| 0012 QUIC disable-mtu-discovery | the option on hysteria2 and masque | |
+| 0013 tcp-connect-timeout | top-level `tcp-connect-timeout` (ms, 100..600000, default 5000) | |
+| 0014 sniffer.skip-threshold | failed sniffs before a destination is skipped (was the constant 5) | |
+| 0015 dns.serve-expired | `serve-expired`, `serve-expired-ttl`, `serve-expired-client-timeout` (RFC 8767) | |
+
+Every patch carries its tests; the core build runs them (it vets and tests every package a patch
+touches). Origin, design notes and the condition under which each patch goes away are in ClashFest's
+`docs/core-patches.md`, sections 0003-0014. Not taken, by decision: DNSCrypt `sdns://`, the `PROTOCOL`
+rule (it comes with a mihomo release), Citrus' XHTTP defaults, ML-KEM on by default, the protocols
+Citrus removed, library forks.
+
+### 0016 XDrive: local storage only in tests
+
+XDrive's `service: local` keeps the storage in a folder whose path comes from the config. ClashFest
+refuses it on Android only; here the core can run under the privileged helper service (SYSTEM on
+Windows, root on macOS and Linux), where a subscription-chosen folder would be a privileged file read
+and write. The patch turns `xdrive.AllowLocalService` into `testing.Testing()`: the series' own tests
+keep using local storage, a shipped binary never does. Such a node still loads, so one bad node does
+not fail a subscription, but it creates nothing and every dial through it fails with `xdrive service
+local (a folder on the device) is disabled in this build`. The gate sits in the core, so it also covers
+proxy-providers the core fetches itself. `xdrive_hardening_test.go` checks it on the built core: the
+folder of a local node must not exist after the config is loaded (a build with the gate open creates
+it).
+
+Delete together with 0004, or when XDrive drops local storage.
+
+## What the app does with the Citrus surface
+
+- **User-Agent.** A patch may declare a `feature` in the manifest. prebuild writes the tokens of the
+  series it actually built into `core-build.json`, and the subscription User-Agent appends them as a
+  comment: `clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain; mldsa65; pin-list; ech-xray)`. The
+  `clash.meta/` prefix and the version stay first, so panels keep selecting the format and the core
+  version as before. A stock core (`MIHOMO_CORE_VERSION`) or a `SLOTH_CORE_FILE` binary has no tokens
+  and no comment: a token is only ever sent for a patch that is in the binary.
+- **XDrive hardening.** The config pipeline drops `listeners` entries with `xdrive-config` (an XDrive
+  inbound polls cloud storage: a reverse tunnel into this machine that no bind address contains) and
+  turns `service: local` nodes, in `proxies` and inline provider payloads, into `type: reject` with the
+  same name. Keys are matched the way the core's decoder matches them (`Xdrive_Opts` counts). Both run
+  again after a profile's JavaScript override, so a script cannot bring them back.
+- **Credentials.** `xdrive-opts.secrets`, `template.auth` and credential-looking headers, query values
+  and bodies of template operations are shown as `[redacted]` in the script preview; credential query
+  values (`token`, `key`, `signature`, ...) are redacted in the log views and the TUN diagnostics. The
+  profile config editor keeps the real values, since saving it writes the file back.
+- **Chain groups** reach the core with exactly the hops the config lists: the generic group cleanup,
+  which drops unknown members and falls back to DIRECT, never touches them (a dropped hop would
+  silently shorten the chain). A chain the core would refuse (an unknown, repeated or self hop, fewer
+  than two hops, a built-in after the first hop, `use` / `include-all` / `filter`, or a later hop that is
+  itself such a chain) becomes `select [REJECT]` with the same name, so the rest of the subscription
+  loads and traffic for it fails closed. The Proxies screen shows a chain as hops in dial order, not
+  selectable, with the hop the last health check failed at.
+- **`tcp-connect-timeout`** has its place in the generated layout next to the other TCP keys.
+
+## Citrus compatibility suite
+
+`apps/sloth-clash-desktop/citrus_compat_test.go` runs Citrus' own client-side examples through the
+app's config pipeline and then the shipped core's preflight (`mihomo -t`), and reports per case
+whether the pipeline kept every Citrus-only key, whether the core accepts the config, and whether it
+silently ignores a key Citrus reads (the key is replaced by a mapping and then a sequence; a key the
+core decodes fails for one of them). Fixtures and `manifest.json` in `testdata/citrus/` are ClashFest's
+(its `docs/core-patches.md` describes them and how to refresh them from a newer Citrus commit). The
+test fails on an `accept` case that is rejected, loses a key in the pipeline or has an ignored key not
+listed as harmless, and on an `unsupported` / `deferred` case that no longer shows a gap. Fingerprint
+names are resolved by the core only when dialing, so they are not probed here; patch 0008 tests its
+whole table on every core build.
+
+```bash
+cd apps/sloth-clash-desktop
+SLOTH_MIHOMO_BIN=<patched core> go test -count=1 -run TestCitrusCompat -v .
+```
+
+Without a core that carries the series the test skips. Outcomes at Citrus `ecaa9466` (2026-10-23):
+145 cases, 140 accept, 4 unsupported (`PROTOCOL` rule, DNSCrypt, BitTorrent sniffer, server log
+format), 1 deferred (TrustTunnel timers); `skip-host-key-check` is ignored and harmless. Running it the
+first time found two app bugs, fixed with it: a subscription's own url-test group named `Auto` that
+another group uses was pruned as if it were the app's synthetic fallback group, and `SUB-RULE` targets
+were checked against proxies instead of `sub-rules`.
 
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 

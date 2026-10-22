@@ -445,6 +445,8 @@
       "showHiddenHint": "Reveal proxy groups the subscription marked as hidden.",
       "focusGroup": "Focus group (UI)",
       "autoGroupHint": "This is an auto group (url-test / fallback / load-balance). Mihomo picks the node itself — manual selection is disabled here. Open a select / Manual group to pick a specific node.",
+      "chainGroupHint": "This is a chain: traffic goes through these nodes in the order shown, each hop through the one before it. Nothing to pick here.",
+      "chainFailedHop": "Last health check failed at {{hop}}.",
       "noGroups": "No groups yet - wait for the subscription health check, then Refresh.",
       "connectFirst": "Connect on Home to start the embedded core.",
       "searchGroup": "Search groups...",

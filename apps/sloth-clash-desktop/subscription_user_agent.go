@@ -20,7 +20,12 @@ import "strings"
 // When the core version is unknown (build without core-version.txt) we send
 // `clash.meta/mihomo SlothClash/<app>` — still format-selecting, never a made-up
 // number. The app version is the real AppVersion, not a hard-coded "1.0".
-func subscriptionUserAgent(coreVersion, appVersion string) string {
+//
+// features are the capability tokens of the embedded core series (core-build.json,
+// e.g. xdrive, chain), sent as a trailing UA comment:
+// `clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain)`. Panels use it to serve
+// transports a stock mihomo rejects. No features, no comment.
+func subscriptionUserAgent(coreVersion, appVersion string, features ...string) string {
 	core := strings.TrimSpace(coreVersion)
 	if core != "" && !strings.HasPrefix(core, "v") {
 		core = "v" + core
@@ -32,13 +37,17 @@ func subscriptionUserAgent(coreVersion, appVersion string) string {
 	if app == "" {
 		app = "0.0.0"
 	}
-	return "clash.meta/" + core + " SlothClash/" + app
+	ua := "clash.meta/" + core + " SlothClash/" + app
+	if tokens := validCoreFeatures(features); len(tokens) > 0 {
+		ua += " (" + strings.Join(tokens, "; ") + ")"
+	}
+	return ua
 }
 
 // subscriptionUserAgentCurrent is the UA for this build: embedded core pin +
-// AppVersion. Single source for every subscription request path.
+// AppVersion + core features. Single source for every subscription request path.
 func subscriptionUserAgentCurrent() string {
-	return subscriptionUserAgent(embeddedCoreVersion(), AppVersion)
+	return subscriptionUserAgent(embeddedCoreVersion(), AppVersion, embeddedCoreFeatures()...)
 }
 
 // subscriptionProbeUserAgents is the ordered list the subscription peek tries

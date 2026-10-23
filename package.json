@@ -135,7 +135,7 @@
       "unrs-resolver"
     ],
     "overrides": {
-      "dompurify@<3.4.13": "^3.4.13",
+      "dompurify@<3.4.17": "^3.4.17",
       "js-cookie@<3.0.6": "^3.0.8"
     }
   }

@@ -38,8 +38,21 @@ const (
 )
 
 // Xray generations: before 2025 a hybrid ClientHello is dropped, from 26.9.8
-// a classic one is rejected, in between both are accepted.
-var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.9.9"}
+// a classic one is rejected, in between both are accepted. 26.7.11 and 26.7.28
+// also refuse clients below 26.3.27 when the server sets no minClientVer (the
+// default of XTLS/Xray-core af7eb680, commented out again in 47cfe999, the
+// 26.9.8 change that also requires the hybrid share). 26.9.30 and 26.10.21
+// track the current releases.
+var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21"}
+
+// defaultMinClientVer is the minClientVer an Xray server applies when its
+// config sets none: 26.3.27 from 26.7.11 until 26.9.8, none otherwise.
+func defaultMinClientVer(version string) string {
+	if cmpVersion(version, "26.7.11") >= 0 && cmpVersion(version, "26.9.8") < 0 {
+		return "26.3.27"
+	}
+	return ""
+}
 
 var variants = map[string]map[string]any{
 	"plain":  {},
@@ -79,11 +92,15 @@ func acceptsShare(version string, mlkem bool) bool {
 }
 
 func versionGate(r row, clientVersion string) bool {
-	switch r.srv.variant {
-	case "minver":
-		return cmpVersion(clientVersion, "25.1.1") >= 0
-	case "maxver":
-		return cmpVersion(clientVersion, "2.0.0") <= 0
+	minVer := defaultMinClientVer(r.srv.version)
+	if r.srv.variant == "minver" {
+		minVer = "25.1.1" // an explicit minClientVer replaces the default
+	}
+	if minVer != "" && cmpVersion(clientVersion, minVer) < 0 {
+		return false
+	}
+	if r.srv.variant == "maxver" && cmpVersion(clientVersion, "2.0.0") > 0 {
+		return false
 	}
 	return true
 }
@@ -130,7 +147,7 @@ func TestRealityMatrix(t *testing.T) {
 	var rows []row
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
-		if s.variant == "plain" && (s.version == "24.12.31" || s.version == "26.9.9") {
+		if s.variant == "plain" && (s.version == "24.12.31" || s.version == "26.9.9" || s.version == "26.10.21") {
 			rows = append(rows, row{srv: s, fingerprint: "firefox"}, row{srv: s, fingerprint: "safari"})
 		}
 	}

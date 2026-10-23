@@ -62,10 +62,14 @@ func embeddedCoreVersion() string {
 // build/sidecar/core-build.json next to the binary; Settings → Info shows it so
 // users can see the core is upstream + N patches and follow the link to them.
 type CoreBuildInfo struct {
-	Version    string   `json:"version"`
-	Source     string   `json:"source"` // patched | stock | local; "" = unknown build
-	Ref        string   `json:"ref,omitempty"` // commit the build came from; "" = local build
-	Patches    []string `json:"patches"`
+	Version string   `json:"version"`
+	Source  string   `json:"source"`        // patched | stock | local; "" = unknown build
+	Ref     string   `json:"ref,omitempty"` // commit the build came from; "" = local build
+	Patches []string `json:"patches"`
+	// Features are the capability tokens of the series this core was built
+	// from (core/mihomo/manifest.json), in User-Agent order; empty for a stock
+	// core or a SLOTH_CORE_FILE binary.
+	Features   []string `json:"features"`
 	PatchesURL string   `json:"patchesUrl"`
 	DocURL     string   `json:"docUrl"`
 }
@@ -76,7 +80,7 @@ const (
 )
 
 func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
-	info := CoreBuildInfo{Patches: []string{}}
+	info := CoreBuildInfo{Patches: []string{}, Features: []string{}}
 	if bundle != nil {
 		if b, err := fs.ReadFile(bundle, embeddedCoreBuildFile); err == nil {
 			var raw CoreBuildInfo
@@ -86,6 +90,7 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 				if raw.Patches != nil {
 					info.Patches = raw.Patches
 				}
+				info.Features = validCoreFeatures(raw.Features)
 			}
 		}
 		info.Version = coreVersionFromFS(bundle)
@@ -99,6 +104,40 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 	info.PatchesURL = slothRepoURL + "/tree/" + ref + "/core/patches/mihomo"
 	info.DocURL = slothRepoURL + "/blob/" + ref + "/docs/core-patches.md"
 	return info
+}
+
+// coreFeatureToken is the shape of a capability token: it ends up inside the
+// User-Agent comment, so nothing that could break out of it (`;`, `)`, spaces,
+// control characters) is ever accepted.
+var coreFeatureToken = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// validCoreFeatures keeps the well-formed, distinct tokens in their order.
+func validCoreFeatures(raw []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, f := range raw {
+		f = strings.TrimSpace(f)
+		if !coreFeatureToken.MatchString(f) || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+var (
+	embeddedCoreFeaturesOnce  sync.Once
+	embeddedCoreFeaturesValue []string
+)
+
+// embeddedCoreFeatures returns the capability tokens of the embedded core,
+// read once.
+func embeddedCoreFeatures() []string {
+	embeddedCoreFeaturesOnce.Do(func() {
+		embeddedCoreFeaturesValue = coreBuildInfoFromFS(bundledResources).Features
+	})
+	return embeddedCoreFeaturesValue
 }
 
 // GetCoreBuild is the Wails-exposed description of the embedded core.

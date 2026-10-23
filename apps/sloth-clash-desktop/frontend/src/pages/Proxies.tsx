@@ -410,6 +410,12 @@ function ProxyGroupsAccordion({
             .replace(/-/g, '')
           const isAuto =
             type === 'urltest' || type === 'fallback' || type === 'loadbalance'
+          // A chain dials its hops in order (core patch 0006): nothing to pick,
+          // and the order is the meaning, so it is never sorted or filtered.
+          const isChain = type === 'chain'
+          const isFixed = isAuto || isChain
+          const hops = (g.proxies ?? []) as string[]
+          const failedHop = isChain ? String(g.failedHop ?? '') : ''
           const allProxies = filterProxyNodesForDisplay(
             (g.proxies ?? []) as string[],
             showBuiltin,
@@ -429,8 +435,10 @@ function ProxyGroupsAccordion({
                   p.toLowerCase().includes(q),
               )
             }
-            if (hideDead) nodes = nodes.filter((p) => !proxyDelayErr[p])
-            nodes = sortNodes(nodes)
+            if (!isChain) {
+              if (hideDead) nodes = nodes.filter((p) => !proxyDelayErr[p])
+              nodes = sortNodes(nodes)
+            }
           }
 
           return (
@@ -468,7 +476,9 @@ function ProxyGroupsAccordion({
                 <span className="proxyAccCurrent">
                   <FlagMark iso2={selectedIso} width={12} height={9} />
                   <span className="proxyAccCurrentName">
-                    {nodeDisplayName(selected) || '—'}
+                    {isChain
+                      ? hops.map((h) => nodeDisplayName(h)).join(' → ')
+                      : nodeDisplayName(selected) || '—'}
                   </span>
                 </span>
                 <svg
@@ -502,7 +512,7 @@ function ProxyGroupsAccordion({
                       </span>
                       {t('ui.proxies.pingAllShort')}
                     </button>
-                    {!isAuto ? (
+                    {!isFixed ? (
                       <button
                         type="button"
                         className="btn ghost proxyAccAction proxyAccFastest"
@@ -576,12 +586,22 @@ function ProxyGroupsAccordion({
                       {t('ui.proxies.autoGroupHint')}
                     </p>
                   ) : null}
+                  {isChain ? (
+                    <p className="muted small proxyAutoGroupHint">
+                      {t('ui.proxies.chainGroupHint')}
+                      {failedHop
+                        ? ` ${t('ui.proxies.chainFailedHop', { hop: nodeDisplayName(failedHop) })}`
+                        : ''}
+                    </p>
+                  ) : null}
 
                   <div
                     className={`proxyNodesGrid${density === 'compact' ? ' compact' : ''}`}
                   >
                     {nodes.map((p: string) => {
-                      const active = selected === p
+                      const active = !isChain && selected === p
+                      const hopNo = isChain ? hops.indexOf(p) + 1 : 0
+                      const hopFailed = isChain && p === failedHop
                       const iso = extractNodeFlagIso(p)
                       const rawErr = proxyDelayErr[p]
                       const shortErr = shortProxyDelayError(rawErr)
@@ -589,6 +609,8 @@ function ProxyGroupsAccordion({
                       const band = delayBand(ms)
                       const titleParts: string[] = []
                       if (isAuto) titleParts.push(t('ui.proxies.autoGroupHint'))
+                      else if (isChain)
+                        titleParts.push(t('ui.proxies.chainGroupHint'))
                       else titleParts.push(p)
                       if (rawErr) titleParts.push(String(rawErr))
                       return (
@@ -596,15 +618,18 @@ function ProxyGroupsAccordion({
                           key={p}
                           type="button"
                           ref={active ? activeCardRef : undefined}
-                          className={`proxyNodeCard${active ? ' active' : ''}${isAuto ? ' proxyNodeDisabled' : ''}`}
+                          className={`proxyNodeCard${active ? ' active' : ''}${isFixed ? ' proxyNodeDisabled' : ''}${hopFailed ? ' proxyChainHopFailed' : ''}`}
                           title={titleParts.join(' — ')}
-                          disabled={isAuto}
+                          disabled={isFixed}
                           onClick={() => {
-                            if (!p || active || isAuto) return
+                            if (!p || active || isFixed) return
                             onSelectNode(name, p)
                           }}
                         >
                           <div className="proxyNodeTop">
+                            {hopNo > 0 ? (
+                              <span className="proxyChainHopNo">{hopNo}</span>
+                            ) : null}
                             <FlagMark iso2={iso} width={16} height={12} />
                             <span className="proxyNodeName">
                               {nodeDisplayName(p)}

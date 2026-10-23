@@ -54,6 +54,8 @@ var canonicalRuntimeKeyOrder = []string{
 	"disable-keep-alive",
 	"tcp-keep-alive",
 	"tcp-concurrent",
+	// SlothClash core key (core patch 0013) — see slothRuntimeKeys.
+	"tcp-connect-timeout",
 	"unified-delay",
 	"find-process-mode",
 	"global-client-fingerprint",
@@ -119,8 +121,9 @@ var canonicalRuntimeKeyOrder = []string{
 // the upstream-coverage guard skips them and separately fails if mihomo ever
 // declares a key of the same name (its semantics would then have to be checked).
 var slothRuntimeKeys = []string{
-	"reality-mlkem",
-	"reality-client-version",
+	"reality-mlkem",          // patch 0003
+	"reality-client-version", // patch 0003
+	"tcp-connect-timeout",    // patch 0013 (Citrus)
 }
 
 // reorderTopLevelMapping rewrites the top-level key sequence of a

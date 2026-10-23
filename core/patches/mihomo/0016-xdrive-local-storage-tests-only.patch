@@ -1,0 +1,48 @@
+diff --git a/transport/xdrive/config.go b/transport/xdrive/config.go
+index ba53fca2..a579704f 100644
+--- a/transport/xdrive/config.go
++++ b/transport/xdrive/config.go
+@@ -5,9 +5,9 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"net"
+-	"runtime"
+ 	"strconv"
+ 	"strings"
++	"testing"
+ )
+ 
+ type Config struct {
+@@ -32,7 +32,13 @@ type Config struct {
+ // storage that refuses every operation: it never touches the filesystem and
+ // every dial through it fails. This covers http and file proxy-providers too
+ // (the app's YAML hardening only sees config.yaml and inline payloads).
+-var AllowLocalService = runtime.GOOS != "android"
++//
++// SlothClash core patch 0016: off in every shipped binary, not only on
++// Android. The desktop core can run under the privileged helper service
++// (SYSTEM / root), where a folder named by a subscription would be a
++// privileged file read/write. Test binaries keep it on for the series' own
++// tests of the transport.
++var AllowLocalService = testing.Testing()
+ 
+ // ErrLocalServiceDisabled is returned by every operation of a `service: local`
+ // storage while AllowLocalService is off.
+diff --git a/transport/xdrive/local_gate_test.go b/transport/xdrive/local_gate_test.go
+new file mode 100644
+index 00000000..1d14ecb2
+--- /dev/null
++++ b/transport/xdrive/local_gate_test.go
+@@ -0,0 +1,12 @@
++package xdrive
++
++import "testing"
++
++// SlothClash core patch 0016: local storage is a test-only backend. A shipped
++// binary is not a test binary, so the gate is off there; the app checks that
++// on the built core (xdrive_hardening_test.go in SlothClash).
++func TestLocalServiceOnlyInTestBinaries(t *testing.T) {
++	if !testing.Testing() || !AllowLocalService {
++		t.Fatalf("AllowLocalService = %v in a test binary, want true", AllowLocalService)
++	}
++}

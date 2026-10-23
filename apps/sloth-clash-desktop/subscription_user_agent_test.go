@@ -30,6 +30,37 @@ func TestSubscriptionUserAgentShape(t *testing.T) {
 	}
 }
 
+func TestSubscriptionUserAgentFeatureComment(t *testing.T) {
+	all := []string{"xdrive", "chain", "mldsa65", "pin-list", "ech-xray"}
+	cases := []struct {
+		features []string
+		want     string
+	}{
+		{nil, "clash.meta/v1.19.33 SlothClash/0.9.5"},
+		{[]string{}, "clash.meta/v1.19.33 SlothClash/0.9.5"},
+		{all, "clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain; mldsa65; pin-list; ech-xray)"},
+		{[]string{"chain"}, "clash.meta/v1.19.33 SlothClash/0.9.5 (chain)"},
+		// Malformed or duplicated tokens never reach the header; an all-bad list
+		// leaves no empty comment behind.
+		{[]string{"xdrive", "xdrive", " chain ", "a;b", "x)y", "", "UPPER", "new\r\nline"}, "clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain)"},
+		{[]string{"a b", ";"}, "clash.meta/v1.19.33 SlothClash/0.9.5"},
+	}
+	for _, c := range cases {
+		if got := subscriptionUserAgent("v1.19.33", "0.9.5", c.features...); got != c.want {
+			t.Errorf("subscriptionUserAgent(features=%q) = %q, want %q", c.features, got, c.want)
+		}
+	}
+
+	// The comment never moves the format-selecting prefix or hides the version.
+	ua := subscriptionUserAgent("v1.19.33", "0.9.5", all...)
+	if !panelClashMetaRe.MatchString(ua) {
+		t.Fatalf("prefix regex must still match %q", ua)
+	}
+	if m := mikanCoreVersionRe.FindStringSubmatch(ua); m == nil || m[2] != "1.19.33" {
+		t.Fatalf("core version must still be extracted from %q, got %v", ua, m)
+	}
+}
+
 // The two regexes panels actually use. mikan: core version gate. Marzban /
 // Remnawave: format selection by UA prefix.
 var (

@@ -1485,14 +1485,17 @@ function App() {
     const groups = (state?.proxy?.groups ?? []) as any[]
     const activeGroup = String(state?.proxy?.activeGroup ?? '').trim()
     if (!activeGroup || groups.length === 0) return null
+    // A chain's hops are its definition, not a choice (core patch 0006).
+    const isChain = (x: any) => String(x?.type ?? '').toLowerCase() === 'chain'
     const g = groups.find((x) => String(x?.name ?? '') === activeGroup)
-    if (!g) return null
+    if (!g || isChain(g)) return null
     if (activeGroup === 'GLOBAL') {
       const subName = String(g?.selected ?? '').trim()
       if (!subName) return null
       const sub = groups.find((x) => String(x?.name ?? '') === subName)
       if (
         !sub ||
+        isChain(sub) ||
         !Array.isArray(sub.proxies) ||
         (sub.proxies as string[]).length === 0
       ) {

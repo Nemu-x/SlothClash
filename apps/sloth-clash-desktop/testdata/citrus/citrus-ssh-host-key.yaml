@@ -1,0 +1,18 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml lines 1609 (commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - the commented-out option uncommented and wrapped into a minimal profile
+
+proxies:
+  - name: node
+    type: ssh
+    server: 127.0.0.1
+    port: 22
+    username: root
+    password: password
+    skip-host-key-check: true
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [node]}
+rules:
+  - MATCH,GLOBAL

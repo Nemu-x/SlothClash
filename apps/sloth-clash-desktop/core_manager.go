@@ -1709,11 +1709,13 @@ func pullProxyGroupsFromCore(listen, secret string) ([]ProxyGroup, error) {
 		return nil, errors.New("unexpected /proxies shape")
 	}
 	var proxies map[string]struct {
-		Type   string   `json:"type"`
-		All    []string `json:"all"`
-		Now    string   `json:"now"`
-		Hidden bool     `json:"hidden"`
-		Icon   string   `json:"icon"`
+		Type       string   `json:"type"`
+		All        []string `json:"all"`
+		Now        string   `json:"now"`
+		Hidden     bool     `json:"hidden"`
+		Icon       string   `json:"icon"`
+		ChainAlive *bool    `json:"chainAlive"`
+		FailedHop  string   `json:"failedHop"`
 	}
 	if err := json.Unmarshal(proxiesNode, &proxies); err != nil {
 		return nil, err
@@ -1730,12 +1732,14 @@ func pullProxyGroupsFromCore(listen, secret string) ([]ProxyGroup, error) {
 			continue
 		}
 		groups = append(groups, ProxyGroup{
-			Name:     name,
-			Type:     p.Type,
-			Proxies:  append([]string(nil), p.All...),
-			Selected: p.Now,
-			Hidden:   p.Hidden,
-			Icon:     p.Icon,
+			Name:       name,
+			Type:       p.Type,
+			Proxies:    append([]string(nil), p.All...),
+			Selected:   p.Now,
+			Hidden:     p.Hidden,
+			Icon:       p.Icon,
+			ChainAlive: p.ChainAlive,
+			FailedHop:  p.FailedHop,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })

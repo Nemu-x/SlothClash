@@ -1,0 +1,164 @@
+diff --git a/adapter/outbound/reality.go b/adapter/outbound/reality.go
+index 70c7bc7a..f5b536aa 100644
+--- a/adapter/outbound/reality.go
++++ b/adapter/outbound/reality.go
+@@ -13,6 +13,9 @@ import (
+ type RealityOptions struct {
+ 	PublicKey string `proxy:"public-key"`
+ 	ShortID   string `proxy:"short-id,omitempty"`
++	// ClientVersion overrides the global REALITY client version for this proxy
++	// (ClashFest core patch 0004); empty keeps the global one.
++	ClientVersion string `proxy:"client-version,omitempty"`
+ 
+ 	SupportX25519MLKEM768 bool `proxy:"support-x25519mlkem768,omitempty"`
+ }
+@@ -41,6 +44,14 @@ func (o RealityOptions) Parse() (*tlsC.RealityConfig, error) {
+ 			return nil, errors.New("invalid REALITY short ID")
+ 		}
+ 
++		if o.ClientVersion != "" {
++			clientVersion, err := tlsC.ParseRealityClientVersion(o.ClientVersion)
++			if err != nil {
++				return nil, err
++			}
++			config.ClientVersion = &clientVersion
++		}
++
+ 		return config, nil
+ 	}
+ 	return nil, nil
+diff --git a/adapter/outbound/reality_client_version_test.go b/adapter/outbound/reality_client_version_test.go
+new file mode 100644
+index 00000000..891735b6
+--- /dev/null
++++ b/adapter/outbound/reality_client_version_test.go
+@@ -0,0 +1,34 @@
++package outbound
++
++import "testing"
++
++// ClashFest core patch 0004: reality-opts.client-version.
++func TestRealityOptionsClientVersion(t *testing.T) {
++	base := RealityOptions{PublicKey: "SuEmqx2lN3HPJCv0YBhmTc-B4MIlGiEfxv-gYTdkbAQ", ShortID: "a1"}
++
++	cfg, err := base.Parse()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if cfg.ClientVersion != nil {
++		t.Fatalf("empty client-version must keep the global version, got %v", *cfg.ClientVersion)
++	}
++
++	withVersion := base
++	withVersion.ClientVersion = "26.9.9"
++	cfg, err = withVersion.Parse()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if cfg.ClientVersion == nil || *cfg.ClientVersion != [3]byte{26, 9, 9} {
++		t.Fatalf("client-version not parsed: %v", cfg.ClientVersion)
++	}
++
++	for _, bad := range []string{"26.9", "26.9.x", "300.1.1", "26.9.9.9"} {
++		o := base
++		o.ClientVersion = bad
++		if _, err := o.Parse(); err == nil {
++			t.Errorf("client-version %q accepted", bad)
++		}
++	}
++}
+diff --git a/component/tls/reality.go b/component/tls/reality.go
+index 561fd76c..46793a4f 100644
+--- a/component/tls/reality.go
++++ b/component/tls/reality.go
+@@ -40,6 +40,10 @@ type RealityConfig struct {
+ 	PublicKey *ecdh.PublicKey
+ 	ShortID   [RealityMaxShortIDLen]byte
+ 
++	// ClientVersion overrides RealityClientVersion for this proxy only
++	// (reality-opts.client-version, ClashFest core patch 0004); nil = global.
++	ClientVersion *[3]byte
++
+ 	SupportX25519MLKEM768 bool
+ }
+ 
+@@ -211,9 +215,10 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 		binary.BigEndian.PutUint64(hello.SessionId, uint64(ntp.Now().Unix()))
+ 
+ 		copy(hello.SessionId[8:], realityConfig.ShortID[:])
+-		hello.SessionId[0] = RealityClientVersion[0]
+-		hello.SessionId[1] = RealityClientVersion[1]
+-		hello.SessionId[2] = RealityClientVersion[2]
++		clientVersion := realityConfig.EffectiveClientVersion()
++		hello.SessionId[0] = clientVersion[0]
++		hello.SessionId[1] = clientVersion[1]
++		hello.SessionId[2] = clientVersion[2]
+ 
+ 		//log.Debugln("REALITY hello.sessionId[:16]: %v", hello.SessionId[:16])
+ 
+diff --git a/component/tls/reality_client_version.go b/component/tls/reality_client_version.go
+new file mode 100644
+index 00000000..72c0f59b
+--- /dev/null
++++ b/component/tls/reality_client_version.go
+@@ -0,0 +1,22 @@
++package tls
++
++// ClashFest core patch 0004: per-proxy REALITY client version.
++//
++// Patch 0001 made the client version in the REALITY session id a process-wide
++// setting (RealityClientVersion, pushed from the app settings). A single
++// subscription can mix Xray servers with different minClientVer / maxClientVer
++// bounds, so reality-opts.client-version lets one proxy report its own
++// version. Empty keeps the global value, which is read at handshake time, so a
++// later SetRealityPolicy from the app still applies to every other proxy.
++//
++// SlothClash: the value is parsed by ParseRealityClientVersion from its patch
++// 0003 (reality_policy.go), which also takes a leading "v".
++
++// EffectiveClientVersion is the version this proxy reports: its own
++// client-version when set, otherwise the global RealityClientVersion.
++func (c *RealityConfig) EffectiveClientVersion() [3]byte {
++	if c != nil && c.ClientVersion != nil {
++		return *c.ClientVersion
++	}
++	return RealityClientVersion
++}
+diff --git a/component/tls/reality_client_version_test.go b/component/tls/reality_client_version_test.go
+new file mode 100644
+index 00000000..9f8aa6e6
+--- /dev/null
++++ b/component/tls/reality_client_version_test.go
+@@ -0,0 +1,32 @@
++package tls
++
++import "testing"
++
++func TestRealityEffectiveClientVersion(t *testing.T) {
++	saved := RealityClientVersion
++	t.Cleanup(func() { RealityClientVersion = saved })
++
++	RealityClientVersion = [3]byte{25, 1, 1}
++	global := &RealityConfig{}
++	override := &RealityConfig{ClientVersion: &[3]byte{26, 9, 9}}
++
++	if got := global.EffectiveClientVersion(); got != [3]byte{25, 1, 1} {
++		t.Fatalf("no override: got %v, want the global version", got)
++	}
++	if got := override.EffectiveClientVersion(); got != [3]byte{26, 9, 9} {
++		t.Fatalf("override: got %v, want 26.9.9", got)
++	}
++
++	// The global value is read at handshake time: a later policy push from the
++	// app reaches proxies without an override and leaves overrides alone.
++	RealityClientVersion = [3]byte{24, 12, 31}
++	if got := global.EffectiveClientVersion(); got != [3]byte{24, 12, 31} {
++		t.Fatalf("global change not seen: got %v", got)
++	}
++	if got := override.EffectiveClientVersion(); got != [3]byte{26, 9, 9} {
++		t.Fatalf("global change leaked into the override: got %v", got)
++	}
++	if got := (*RealityConfig)(nil).EffectiveClientVersion(); got != [3]byte{24, 12, 31} {
++		t.Fatalf("nil config: got %v", got)
++	}
++}

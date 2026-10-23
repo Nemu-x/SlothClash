@@ -142,6 +142,11 @@ type ProxyGroup struct {
 	// icon URL, passed through for future use / parity with dashboards.
 	Hidden bool   `json:"hidden,omitempty"`
 	Icon   string `json:"icon,omitempty"`
+	// ChainAlive / FailedHop come from a `type: chain` group (core patch 0006)
+	// after its health check: whether every hop answered, and the first hop
+	// that did not. Nil / empty before the first check and for other groups.
+	ChainAlive *bool  `json:"chainAlive,omitempty"`
+	FailedHop  string `json:"failedHop,omitempty"`
 }
 
 type ProxyState struct {

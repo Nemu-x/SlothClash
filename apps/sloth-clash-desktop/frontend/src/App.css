@@ -5517,6 +5517,11 @@
 .deviceGroupActions {
   margin-left: auto;
 }
+.deviceGroupHead .pill,
+.deviceItemActions .pill {
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+}
 .deviceNodes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

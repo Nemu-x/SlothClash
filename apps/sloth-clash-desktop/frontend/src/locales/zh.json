@@ -204,7 +204,6 @@
       "power": "电源",
       "powerOn": "开启",
       "powerOff": "关闭",
-      "powerToggle": "切换",
       "share": "分享订阅",
       "refresh": "刷新",
       "renamePlaceholder": "新名称",
@@ -212,7 +211,69 @@
       "unpair": "取消配对",
       "selectHint": "选择已配对的设备进行控制。",
       "shared": "订阅已分享。",
-      "renamed": "已重命名。"
+      "renamed": "已重命名。",
+      "remote": {
+        "stream": {
+          "connecting": "连接中…",
+          "open": "已连接",
+          "down": "重新连接中…",
+          "revoked": "访问已撤销"
+        },
+        "revoked": "该设备已不再接受此电脑。请移除后重新配对。",
+        "tab": {
+          "proxies": "节点",
+          "mode": "模式",
+          "profiles": "配置",
+          "providers": "提供者",
+          "connections": "连接",
+          "traffic": "流量",
+          "logs": "日志",
+          "settings": "设置",
+          "actions": "操作"
+        },
+        "err": {
+          "bad_request": "设备拒绝了请求",
+          "unauthorized": "未授权",
+          "forbidden": "不允许",
+          "not_found": "此设备不支持",
+          "version_unsupported": "不支持的协议版本",
+          "core_unavailable": "设备无法执行",
+          "internal": "设备错误"
+        },
+        "empty": "暂无内容。",
+        "fixed": "已固定：{{node}}",
+        "unfix": "取消固定",
+        "pingGroup": "全部测速",
+        "expires": "到期 {{date}}",
+        "updateAll": "全部更新",
+        "use": "使用",
+        "active": "当前",
+        "update": "更新",
+        "delete": "删除",
+        "deleteConfirm": "确认删除",
+        "healthcheck": "健康检查",
+        "closeAll": "全部关闭",
+        "close": "关闭",
+        "totals": "总计",
+        "setting": {
+          "tun": "TUN 模式",
+          "system_proxy": "系统代理",
+          "allow_lan": "允许局域网",
+          "ipv6": "IPv6",
+          "sniffing": "嗅探",
+          "log_level": "日志级别"
+        },
+        "action": {
+          "flush_dns": "清除 DNS 缓存",
+          "flush_fakeip": "清除 fake-IP 缓存",
+          "update_geo": "更新地理数据",
+          "restart_core": "重启内核",
+          "healthcheck_all": "测试全部节点"
+        },
+        "actionDone": "完成：{{action}}",
+        "forgetConfirm": "移除此设备？会请求它撤销此电脑的访问，即使没有响应也会在本机移除。",
+        "cancel": "取消"
+      }
     },
     "common": {
       "local": "本地",

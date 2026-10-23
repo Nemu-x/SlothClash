@@ -7,6 +7,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/Nemu-x/clash-companion/go v0.0.0-20260621210130-a5fd5dd376dd h1:ThQHU9vma4/VLiy7lOL9nfPPRLulvi3L4SRtabCc8i4=
 github.com/Nemu-x/clash-companion/go v0.0.0-20260621210130-a5fd5dd376dd/go.mod h1:UOoQE+l6lZweIA4qnikBn//cuBRgTt50+kPg2E9fhP4=
+github.com/Nemu-x/clash-companion/go v0.0.0-20261021192046-10671001c6d3 h1:qjebWFbUPtLx+CsYAxbwW93XrACkfATnRpqeCecc0jw=
+github.com/Nemu-x/clash-companion/go v0.0.0-20261021192046-10671001c6d3/go.mod h1:UOoQE+l6lZweIA4qnikBn//cuBRgTt50+kPg2E9fhP4=
 github.com/bep/debounce v1.2.1 h1:v67fRdBA9UQu2NhLFXrSg0Brw7CexQekrBwDMM8bzeY=
 github.com/bep/debounce v1.2.1/go.mod h1:H8yggRPQKLUhUoqrJC1bO2xNya7vanpDl7xR3ISbCJ0=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=

@@ -99,7 +99,8 @@ previous tag until the patch is redone.
 ## Verifying behaviour
 
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
-26.4.13, 26.9.9, each plain, with `minClientVer: 25.1.1` and with `maxClientVer: 2.0.0`) and
+26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, each plain, with `minClientVer: 25.1.1`
+and with `maxClientVer: 2.0.0`) and
 probes every combination of key share, fingerprint, policy and client version through the core
 under test. The expected result of each cell comes from a model of the server generations, so a
 regression in either direction fails the test. "Core build" runs it against the freshly built
@@ -120,7 +121,14 @@ hand the connection to the cover site: the client sees a timeout. The patch turn
 into `tlsC.RealityClientVersion`, default `26.9.9` (the Xray release the core was validated
 against). Only `minClientVer` / `maxClientVer` depend on this value.
 
-Lab: servers with `minClientVer: 25.1.1` fail on the stock core and pass with the patch. A
+Xray 26.7.11 and 26.7.28 apply `minClientVer: 26.3.27` when the server config sets none
+(XTLS/Xray-core af7eb680; commented out again in 47cfe999, the 26.9.8 change that also requires
+the hybrid key share). A stock mihomo cannot reach a default-configured server of those two
+releases at all; the patched core can, as long as the configured client version stays at
+26.3.27 or above. `0.0.0` or any lower value is harmless elsewhere but fails exactly there.
+
+Lab: servers with `minClientVer: 25.1.1`, and 26.7.11 / 26.7.28 servers without one, fail on the
+stock core and pass with the patch (2026-10-23). A
 server with `maxClientVer: 2.0.0` now rejects the default; 0003 lets a user who meets one set an
 older version.
 

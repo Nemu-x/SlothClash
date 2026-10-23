@@ -63,6 +63,7 @@ var variants = map[string]map[string]any{
 type server struct {
 	version, variant string
 	port             int
+	container        string
 }
 
 type row struct {
@@ -176,7 +177,7 @@ func TestRealityMatrix(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			ports := startCore(t, sc.bin, sc.keys, rows)
+			ports, coreLog := startCore(t, sc.bin, sc.keys, rows)
 			got := make([]bool, len(rows))
 			detail := make([]string, len(rows))
 			// Bounded parallelism: every probe is a fresh REALITY handshake plus
@@ -210,6 +211,14 @@ func TestRealityMatrix(t *testing.T) {
 					} else {
 						mark = "!!"
 						t.Errorf("%s: got ok=%v, want ok=%v; round 1 [%s], round 2 [%s]", r.name(), got[i], want, detail[i], againDetail)
+						// Evidence for the failing cell: what the core logged
+						// for its proxy and what the server logged.
+						if b, err := os.ReadFile(coreLog); err == nil {
+							t.Logf("core log for p%d:\n%s", i, grepLines(string(b), fmt.Sprintf(" p%d ", i)))
+						}
+						if out, err := exec.Command("docker", "logs", "--tail", "60", r.srv.container).CombinedOutput(); err == nil {
+							t.Logf("server log %s:\n%s", r.srv.container, out)
+						}
 					}
 				}
 				if got[i] {
@@ -237,7 +246,7 @@ func startServers(t *testing.T) []*server {
 				reality[k] = v
 			}
 			cfg := map[string]any{
-				"log": map[string]any{"loglevel": "warning"},
+				"log": map[string]any{"loglevel": "info"},
 				// DoH by IP: a host-side Clash may answer plain DNS from containers with fake-ip.
 				"dns": map[string]any{"servers": []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}, "queryStrategy": "UseIPv4"},
 				"inbounds": []any{map[string]any{
@@ -266,7 +275,7 @@ func startServers(t *testing.T) []*server {
 				t.Fatalf("docker port %s: %q", name, out)
 			}
 			port, _ := strconv.Atoi(portStr)
-			servers = append(servers, &server{version: version, variant: variant, port: port})
+			servers = append(servers, &server{version: version, variant: variant, port: port, container: name})
 		}
 	}
 	for _, s := range servers {
@@ -276,7 +285,7 @@ func startServers(t *testing.T) []*server {
 }
 
 // startCore runs the core with one mixed listener per row and returns the ports.
-func startCore(t *testing.T, bin string, keys map[string]any, rows []row) []int {
+func startCore(t *testing.T, bin string, keys map[string]any, rows []row) ([]int, string) {
 	t.Helper()
 	home := t.TempDir()
 	var proxies, listeners []any
@@ -327,7 +336,7 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row) []int 
 		}
 	})
 	waitTCP(t, ports[len(ports)-1], 20*time.Second)
-	return ports
+	return ports, logf.Name()
 }
 
 // probeParallel bounds how many cells are probed at once.

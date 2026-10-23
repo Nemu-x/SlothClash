@@ -1,0 +1,86 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (sniffer 290-371)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+
+sniffer:
+  enable: false
+  ## 对 redir-host 类型识别的流量进行强制嗅探
+  ## 如：Tun、Redir 和 TProxy 并 DNS 为 redir-host 皆属于
+  # force-dns-mapping: false
+  ## 对所有未获取到域名的流量进行强制嗅探
+  # parse-pure-ip: false
+  # 是否使用嗅探结果作为实际访问，默认 true
+  # 全局配置，优先级低于 sniffer.sniff 实际配置
+  override-destination: false
+  # TCP destinations (ip:port) whose domain sniffing failed more than this many times are not sniffed
+  # for 10 minutes; 0-254, -1 never skips, default 5. force-domain connections are always sniffed.
+  # skip-threshold: 5
+  sniff: # TLS 和 QUIC 默认如果不配置 ports 默认嗅探 443
+    QUIC:
+    #  ports: [ 443 ]
+    TLS:
+    #  ports: [443, 8443]
+
+    # 识别 BitTorrent 流量，供 PROTOCOL,bittorrent 规则匹配
+    # Detects BitTorrent traffic for the PROTOCOL,bittorrent rule
+    #   TCP: 对等端握手 (BEP 3) / the peer handshake
+    #   UDP: uTP 建连 ST_SYN (BEP 29)、DHT 消息 (BEP 5)、UDP Tracker connect (BEP 15)
+    #        uTP ST_SYN, DHT (KRPC) messages, the UDP tracker connect request
+    # 不产生域名，从不修改目标地址，只把连接标记为 bittorrent；
+    # 不受 parse-pure-ip / force-domain 等条件限制，仅遵循 skip-src-address / skip-dst-address
+    # Reports no domain and never overrides the destination. Runs on every
+    # connection not exempted by skip-src-address / skip-dst-address,
+    # regardless of parse-pure-ip, force-dns-mapping or force-domain.
+    #
+    # UDP: 同一 NAT 会话（同一源地址）中每个新目标的前 8 个包都会被检测；一旦识别，
+    # 整个会话（以及之后 5 分钟内来自同一源端口的新会话）都标记为 bittorrent，
+    # 每个目标按规则重新匹配，结果为 REJECT / REJECT-DROP 的包被丢弃。
+    # 会话的出站在第一个包时已确定，其他目标（如 DIRECT 或代理）无法中途切换。
+    # UDP: the first 8 packets to every new destination of a NAT session are
+    # inspected. Once recognised, the whole session (and new sessions from the
+    # same source port for 5 minutes) is tagged, each destination is matched
+    # again, and packets whose rule resolves to REJECT / REJECT-DROP are
+    # dropped. The outbound of a session is fixed by its first packet, so a
+    # target other than REJECT cannot be applied midway.
+    #
+    # TCP: 最多等待客户端数据 300ms，超时则不标记直接放行；默认端口为 1-65535，
+    # 但排除服务器先发言的常用端口 21,22,23,25,110,119,143,587,3306,5900
+    # TCP: waits at most 300 ms for client data, then lets the connection
+    # through untagged. Default ports: 1-65535 minus the well-known
+    # server-first ports 21,22,23,25,110,119,143,587,3306,5900.
+    #
+    # 注意：启用 MSE/PE 协议加密的 BitTorrent TCP 连接无法识别（握手已被加密），
+    # 若需完整拦截请同时拦截 UDP（DHT/uTP/Tracker）。
+    # Caveat: BitTorrent over TCP with MSE/PE (protocol encryption) is not
+    # detectable, the handshake itself is encrypted. Blocking the UDP side
+    # (DHT, uTP, trackers) is what cuts most clients off.
+    # BitTorrent:
+    #  ports: [1-20, 24, 26-109, 111-118, 120-142, 144-586, 588-3305, 3307-5899, 5901-65535]
+
+    # 默认嗅探 80
+    HTTP: # 需要嗅探的端口
+      ports: [80, 8080-8880]
+      # 可覆盖 sniffer.override-destination
+      override-destination: true
+  force-domain:
+    - +.v2ex.com
+  # skip-src-address: # 对于来源ip跳过嗅探
+  #   - 192.168.0.3/32
+  # skip-dst-address: # 对于目标ip跳过嗅探
+  #   - 192.168.0.3/32
+  ## 对嗅探结果进行跳过
+  # skip-domain:
+  #   - Mijia Cloud
+  # 需要嗅探协议
+  # 已废弃，若 sniffer.sniff 配置则此项无效
+  sniffing:
+    - tls
+    - http
+  # 强制对此域名进行嗅探
+
+  # 仅对白名单中的端口进行嗅探，默认为 443，80
+  # 已废弃，若 sniffer.sniff 配置则此项无效
+  port-whitelist:
+    - "80"
+    - "443"
+    # - 8000-9999

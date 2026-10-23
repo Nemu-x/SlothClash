@@ -1,0 +1,5326 @@
+diff --git a/adapter/outbound/vless.go b/adapter/outbound/vless.go
+index 1e5b168f..3753bb2b 100644
+--- a/adapter/outbound/vless.go
++++ b/adapter/outbound/vless.go
+@@ -24,7 +24,9 @@ import (
+ 	"github.com/metacubex/mihomo/transport/tuic/common"
+ 	"github.com/metacubex/mihomo/transport/vless"
+ 	"github.com/metacubex/mihomo/transport/vless/encryption"
++	"github.com/metacubex/mihomo/transport/vless/muxcool"
+ 	"github.com/metacubex/mihomo/transport/vmess"
++	"github.com/metacubex/mihomo/transport/xdrive"
+ 	"github.com/metacubex/mihomo/transport/xhttp"
+ 
+ 	"github.com/metacubex/http"
+@@ -47,6 +49,9 @@ type Vless struct {
+ 	gunClient *gun.Client
+ 	// for xhttp
+ 	xhttpClient *xhttp.Client
++	// for xdrive (ClashFest core patch 0003: client side of Citrus' XDrive transport)
++	xdriveClient *xdrive.Client
++	xdriveMux    *muxcool.Client
+ 
+ 	echConfig       *ech.Config
+ 	shadowTLSConfig *shadowtls.Config
+@@ -56,6 +61,7 @@ type Vless struct {
+ }
+ 
+ type VlessOption struct {
++	XDriveOpts *xdrive.Config `proxy:"xdrive-opts,omitempty"`
+ 	BasicOption
+ 	Name              string            `proxy:"name"`
+ 	Server            string            `proxy:"server"`
+@@ -253,7 +259,7 @@ func (v *Vless) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.M
+ 		c, err = vmess.StreamH2Conn(ctx, c, h2Opts)
+ 	case "grpc":
+ 		break // already handle in dialContext
+-	case "xhttp":
++	case "xhttp", "xdrive":
+ 		break // already handle in dialContext
+ 	default:
+ 		// default tcp network
+@@ -343,6 +349,8 @@ func (v *Vless) dialContext(ctx context.Context) (c net.Conn, err error) {
+ 		return v.gunClient.Dial()
+ 	case "xhttp":
+ 		return v.xhttpClient.Dial(ctx)
++	case "xdrive":
++		return v.xdriveClient.Dial(ctx)
+ 	default:
+ 	}
+ 	return v.dialer.DialContext(ctx, "tcp", v.addr)
+@@ -350,6 +358,13 @@ func (v *Vless) dialContext(ctx context.Context) (c net.Conn, err error) {
+ 
+ // DialContext implements C.ProxyAdapter
+ func (v *Vless) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
++	if v.xdriveMux != nil {
++		conn, err := v.xdriveMux.DialContext(ctx, net.JoinHostPort(metadata.String(), strconv.Itoa(int(metadata.DstPort))))
++		if err != nil {
++			return nil, fmt.Errorf("xdrive connect error: %w", err)
++		}
++		return NewConn(conn, v), nil
++	}
+ 	c, err := v.dialContext(ctx)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("%s connect error: %s", v.addr, err.Error())
+@@ -418,6 +433,12 @@ func (v *Vless) ProxyInfo() C.ProxyInfo {
+ // Close implements C.ProxyAdapter
+ func (v *Vless) Close() error {
+ 	var errs []error
++	if v.xdriveMux != nil {
++		errs = append(errs, v.xdriveMux.Close())
++	}
++	if v.xdriveClient != nil {
++		errs = append(errs, v.xdriveClient.Close())
++	}
+ 	if v.gunClient != nil {
+ 		if err := v.gunClient.Close(); err != nil {
+ 			errs = append(errs, err)
+@@ -460,6 +481,23 @@ func parseVlessAddr(metadata *C.Metadata, xudp bool) *vless.DstAddr {
+ }
+ 
+ func NewVless(option VlessOption) (*Vless, error) {
++	if option.Network == "xdrive" {
++		if option.XDriveOpts == nil {
++			return nil, errors.New("xdrive requires xdrive-opts")
++		}
++		if err := option.XDriveOpts.Validate(); err != nil {
++			return nil, err
++		}
++		if option.Flow != "" {
++			return nil, errors.New("xdrive does not support VLESS flow")
++		}
++		if option.Encryption == "" || option.Encryption == "none" {
++			return nil, errors.New("xdrive requires VLESS encryption")
++		}
++		if option.PacketAddr || (option.PacketEncoding != "" && option.PacketEncoding != "xudp") {
++			return nil, errors.New("xdrive UDP requires xudp packet encoding")
++		}
++	}
+ 	var addons *vless.Addons
+ 	if len(option.Flow) >= 16 {
+ 		option.Flow = option.Flow[:16]
+@@ -558,6 +596,15 @@ func NewVless(option VlessOption) (*Vless, error) {
+ 	}
+ 
+ 	switch option.Network {
++	case "xdrive":
++		if securityMode != "" {
++			return nil, errors.New("xdrive does not support outer TLS security modes")
++		}
++		v.xdriveClient, err = xdrive.NewClient(*option.XDriveOpts, v.newXDriveHTTPClient())
++		if err != nil {
++			return nil, err
++		}
++		v.xdriveMux = muxcool.NewClient(v.newXDriveMuxConn)
+ 	case "h2":
+ 		if len(option.HTTP2Opts.Host) == 0 {
+ 			option.HTTP2Opts.Host = append(option.HTTP2Opts.Host, "www.example.com")
+diff --git a/adapter/outbound/vless_xdrive.go b/adapter/outbound/vless_xdrive.go
+new file mode 100644
+index 00000000..44e3a9f3
+--- /dev/null
++++ b/adapter/outbound/vless_xdrive.go
+@@ -0,0 +1,104 @@
++package outbound
++
++import (
++	"context"
++	"net"
++	"time"
++
++	N "github.com/metacubex/mihomo/common/net"
++	tlsC "github.com/metacubex/mihomo/component/tls"
++	"github.com/metacubex/mihomo/transport/vless"
++	"github.com/metacubex/mihomo/transport/vmess"
++	"github.com/metacubex/mihomo/transport/xdrive"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/tls"
++)
++
++func (v *Vless) newXDriveHTTPClient() *http.Client {
++	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
++		// Fronting overrides the connection address, while HTTP Host and TLS
++		// SNI continue to follow the storage operation URL.
++		if fronting := v.option.XDriveOpts.Fronting; fronting != "" {
++			addr = fronting
++		}
++		return v.dialer.DialContext(ctx, network, addr)
++	}
++	dialTLS := func(ctx context.Context, network, addr string) (net.Conn, error) {
++		raw, err := dial(ctx, network, addr)
++		if err != nil {
++			return nil, err
++		}
++		host, _, err := net.SplitHostPort(addr)
++		if err != nil {
++			raw.Close()
++			return nil, err
++		}
++		if v.option.ServerName != "" {
++			host = v.option.ServerName
++		}
++		alpn := v.option.ALPN
++		if len(alpn) == 0 {
++			alpn = []string{"h2", "http/1.1"}
++		}
++		fp := v.option.ClientFingerprint
++		if fp == "" {
++			fp = "chrome"
++		}
++		handshakeCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
++		defer cancel()
++		conn, err := vmess.StreamTLSConn(handshakeCtx, raw, &vmess.TLSConfig{
++			Host: host, NextProtos: alpn, SkipCertVerify: v.option.SkipCertVerify, NameCertVerify: v.option.NameCertVerify,
++			FingerPrint: v.option.Fingerprint, Certificate: v.option.Certificate, PrivateKey: v.option.PrivateKey,
++			ClientFingerprint: fp, ECH: v.echConfig,
++		})
++		if err != nil {
++			raw.Close()
++			return nil, err
++		}
++		return &xdriveTLSConn{Conn: conn}, nil
++	}
++	return xdrive.NewHTTPClient(dial, dialTLS)
++}
++
++// uTLS and the HTTP stack use different ConnectionState types. Expose the
++// negotiated state in the HTTP stack's type so ALPN selects HTTP/2 correctly.
++type xdriveTLSConn struct{ net.Conn }
++
++func (c *xdriveTLSConn) ConnectionState() tls.ConnectionState {
++	return tlsC.GetTLSConnectionState(c.Conn)
++}
++func (c *xdriveTLSConn) HandshakeContext(ctx context.Context) error { return ctx.Err() }
++func (c *xdriveTLSConn) NetConn() net.Conn {
++	if conn, ok := c.Conn.(interface{ NetConn() net.Conn }); ok {
++		return conn.NetConn()
++	}
++	return c.Conn
++}
++
++var _ http.TLSConn = (*xdriveTLSConn)(nil)
++
++func (v *Vless) newXDriveMuxConn(ctx context.Context) (conn net.Conn, err error) {
++	raw, err := v.xdriveClient.Dial(ctx)
++	if err != nil {
++		return nil, err
++	}
++	defer func() {
++		if err != nil {
++			_ = raw.Close()
++		}
++	}()
++	done := N.SetupContextForConn(ctx, raw)
++	defer done(&err)
++	_ = raw.SetDeadline(time.Now().Add(30 * time.Second))
++	conn, err = v.encryption.Handshake(raw)
++	if err != nil {
++		return nil, err
++	}
++	conn, err = v.client.StreamConn(conn, &vless.DstAddr{Mux: true})
++	if err != nil {
++		return nil, err
++	}
++	_ = raw.SetDeadline(time.Time{})
++	return conn, nil
++}
+diff --git a/adapter/outbound/vless_xdrive_http_test.go b/adapter/outbound/vless_xdrive_http_test.go
+new file mode 100644
+index 00000000..0c1b44ec
+--- /dev/null
++++ b/adapter/outbound/vless_xdrive_http_test.go
+@@ -0,0 +1,48 @@
++package outbound
++
++import (
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/metacubex/mihomo/transport/xdrive"
++)
++
++func TestXDriveHTTPSClient(t *testing.T) {
++	for _, fronting := range []bool{false, true} {
++		t.Run(fmt.Sprint(fronting), func(t *testing.T) {
++			seen := make(chan *http.Request, 1)
++			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen <- r; _, _ = io.WriteString(w, "ok") }))
++			server.EnableHTTP2 = true
++			server.StartTLS()
++			defer server.Close()
++			cfg := &xdrive.Config{Service: "local", RemoteFolder: t.TempDir()}
++			target := server.URL
++			if fronting {
++				cfg.Fronting = server.Listener.Addr().String()
++				target = "https://storage.test/"
++			}
++			v, err := NewVless(VlessOption{Name: "x", Server: "unused.invalid", Port: 443, UUID: "27848739-7e62-4138-9fd3-098a63964b6b", Network: "xdrive", Encryption: "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I", XDriveOpts: cfg, SkipCertVerify: true})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer v.Close()
++			client := v.newXDriveHTTPClient()
++			defer client.CloseIdleConnections()
++			resp, err := client.Get(target)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer resp.Body.Close()
++			if resp.ProtoMajor != 2 {
++				t.Fatalf("expected HTTP/2, got %s", resp.Proto)
++			}
++			request := <-seen
++			if fronting && (request.Host != "storage.test" || request.TLS.ServerName != "storage.test") {
++				t.Fatalf("fronting changed Host or SNI: %s / %s", request.Host, request.TLS.ServerName)
++			}
++		})
++	}
++}
+diff --git a/adapter/outbound/vless_xdrive_test.go b/adapter/outbound/vless_xdrive_test.go
+new file mode 100644
+index 00000000..e80dd4df
+--- /dev/null
++++ b/adapter/outbound/vless_xdrive_test.go
+@@ -0,0 +1,34 @@
++package outbound
++
++import (
++	"github.com/metacubex/mihomo/transport/xdrive"
++	"testing"
++)
++
++func TestVlessXDriveValidation(t *testing.T) {
++	valid := VlessOption{Name: "x", UUID: "27848739-7e62-4138-9fd3-098a63964b6b", Network: "xdrive", Encryption: "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I", XDriveOpts: &xdrive.Config{Service: "local", RemoteFolder: t.TempDir()}}
++	v, err := NewVless(valid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if v.xdriveClient == nil || v.xdriveMux == nil {
++		t.Fatal("XDRIVE was not initialized")
++	}
++	v.Close()
++	for name, change := range map[string]func(*VlessOption){
++		"missing-options":  func(o *VlessOption) { o.XDriveOpts = nil },
++		"no-encryption":    func(o *VlessOption) { o.Encryption = "none" },
++		"empty-encryption": func(o *VlessOption) { o.Encryption = "" },
++		"flow":             func(o *VlessOption) { o.Flow = "xtls-rprx-vision" },
++		"packetaddr":       func(o *VlessOption) { o.PacketEncoding = "packetaddr" },
++	} {
++		t.Run(name, func(t *testing.T) {
++			o := valid
++			change(&o)
++			if v, err := NewVless(o); err == nil {
++				v.Close()
++				t.Fatal("invalid XDRIVE configuration accepted")
++			}
++		})
++	}
++}
+diff --git a/adapter/parser.go b/adapter/parser.go
+index 68bccdbf..f7476cdc 100644
+--- a/adapter/parser.go
++++ b/adapter/parser.go
+@@ -238,6 +238,10 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 			return nil, err
+ 		}
+ 		if muxOption.Enabled {
++			if mapping["type"] == "vless" && mapping["network"] == "xdrive" {
++				_ = proxy.Close()
++				return nil, fmt.Errorf("xdrive uses Mux.Cool internally and cannot be wrapped in smux")
++			}
+ 			proxy, err = outbound.NewSingMux(*muxOption, proxy)
+ 			if err != nil {
+ 				return nil, err
+diff --git a/adapter/xdrive_test.go b/adapter/xdrive_test.go
+new file mode 100644
+index 00000000..b13c5def
+--- /dev/null
++++ b/adapter/xdrive_test.go
+@@ -0,0 +1,17 @@
++package adapter
++
++import "testing"
++
++func TestParseXDriveDefaults(t *testing.T) {
++	mapping := map[string]any{"name": "xdrive", "type": "vless", "server": "127.0.0.1", "port": 443, "uuid": "27848739-7e62-4138-9fd3-098a63964b6b", "network": "xdrive", "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I", "xdrive-opts": map[string]any{"service": "local", "remote-folder": t.TempDir()}}
++	p, err := ParseProxy(mapping)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p.Close()
++	mapping["smux"] = map[string]any{"enabled": true}
++	if p, err := ParseProxy(mapping); err == nil {
++		p.Close()
++		t.Fatal("accepted incompatible smux wrapper")
++	}
++}
+diff --git a/transport/vless/muxcool/client.go b/transport/vless/muxcool/client.go
+new file mode 100644
+index 00000000..84a7be19
+--- /dev/null
++++ b/transport/vless/muxcool/client.go
+@@ -0,0 +1,416 @@
++// Package muxcool implements the TCP client side of the Mux.Cool wire format.
++// UDP uses the existing XUDP implementation in the VLESS adapter.
++package muxcool
++
++import (
++	"context"
++	"encoding/binary"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"strconv"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/common/net/deadline"
++)
++
++const (
++	maxStreams  = 8
++	maxSessions = 4
++	chunkSize   = 8 * 1024
++)
++
++type Client struct {
++	dial     func(context.Context) (net.Conn, error)
++	mu       sync.Mutex
++	sessions []*session
++	dialing  int
++	closed   bool
++	notify   chan struct{}
++}
++
++func NewClient(dial func(context.Context) (net.Conn, error)) *Client {
++	return &Client{dial: dial, notify: make(chan struct{})}
++}
++func (c *Client) wakeLocked() { close(c.notify); c.notify = make(chan struct{}) }
++func (c *Client) DialContext(ctx context.Context, addr string) (net.Conn, error) {
++	target, err := encodeTarget(addr)
++	if err != nil {
++		return nil, err
++	}
++	for {
++		if err := ctx.Err(); err != nil {
++			return nil, err
++		}
++		c.mu.Lock()
++		if c.closed {
++			c.mu.Unlock()
++			return nil, net.ErrClosed
++		}
++		live := c.sessions[:0]
++		for _, s := range c.sessions {
++			select {
++			case <-s.done:
++			default:
++				live = append(live, s)
++			}
++		}
++		c.sessions = live
++		for _, s := range c.sessions {
++			if len(s.streams) >= maxStreams || s.nextID == 65535 {
++				continue
++			}
++			s.nextID++
++			st := &stream{session: s, id: s.nextID, data: make(chan []byte, 16), done: make(chan struct{}), readDeadline: deadline.MakePipeDeadline(), writeDeadline: deadline.MakePipeDeadline()}
++			s.streams[st.id] = st
++			c.mu.Unlock()
++			if err := s.send(ctx, frame(st.id, 1, 0, target, nil), &st.writeDeadline); err != nil {
++				st.finish(err)
++				return nil, err
++			}
++			return st, nil
++		}
++		if len(c.sessions)+c.dialing < maxSessions {
++			c.dialing++
++			c.mu.Unlock()
++			conn, err := c.dial(ctx)
++			c.mu.Lock()
++			c.dialing--
++			closed := c.closed
++			if err == nil && !closed {
++				s := &session{client: c, conn: conn, streams: make(map[uint16]*stream), done: make(chan struct{}), writes: make(chan writeRequest, 16)}
++				c.sessions = append(c.sessions, s)
++				go s.readLoop()
++				go s.writeLoop()
++			}
++			c.wakeLocked()
++			c.mu.Unlock()
++			if closed {
++				if conn != nil {
++					_ = conn.Close()
++				}
++				return nil, net.ErrClosed
++			}
++			if err != nil {
++				return nil, err
++			}
++			continue
++		}
++		notify := c.notify
++		c.mu.Unlock()
++		select {
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		case <-notify:
++		}
++	}
++}
++func (c *Client) Close() error {
++	c.mu.Lock()
++	if c.closed {
++		c.mu.Unlock()
++		return nil
++	}
++	c.closed = true
++	sessions := append([]*session(nil), c.sessions...)
++	c.wakeLocked()
++	c.mu.Unlock()
++	for _, s := range sessions {
++		s.fail(net.ErrClosed)
++	}
++	return nil
++}
++
++type writeRequest struct {
++	data []byte
++	done chan error
++}
++type session struct {
++	client  *Client
++	conn    net.Conn
++	streams map[uint16]*stream // guarded by client.mu
++	nextID  uint16
++	writes  chan writeRequest
++	done    chan struct{}
++	once    sync.Once
++}
++
++func (s *session) send(ctx context.Context, data []byte, d *deadline.PipeDeadline) error {
++	req := writeRequest{data: data, done: make(chan error, 1)}
++	select {
++	case s.writes <- req:
++	case <-ctx.Done():
++		return ctx.Err()
++	case <-s.done:
++		return net.ErrClosed
++	case <-d.Wait():
++		return os.ErrDeadlineExceeded
++	}
++	select {
++	case err := <-req.done:
++		return err
++	case <-ctx.Done():
++		s.fail(ctx.Err())
++		return ctx.Err()
++	case <-s.done:
++		return net.ErrClosed
++	case <-d.Wait():
++		s.fail(os.ErrDeadlineExceeded)
++		return os.ErrDeadlineExceeded
++	}
++}
++func (s *session) writeLoop() {
++	for {
++		select {
++		case <-s.done:
++			return
++		case req := <-s.writes:
++			p := req.data
++			var err error
++			for len(p) > 0 {
++				var n int
++				n, err = s.conn.Write(p)
++				if n > 0 {
++					p = p[n:]
++				}
++				if err != nil {
++					break
++				}
++				if n == 0 {
++					err = io.ErrShortWrite
++					break
++				}
++			}
++			req.done <- err
++			if err != nil {
++				s.fail(err)
++				return
++			}
++		}
++	}
++}
++func (s *session) readLoop() {
++	for {
++		var length [2]byte
++		if _, err := io.ReadFull(s.conn, length[:]); err != nil {
++			s.fail(err)
++			return
++		}
++		n := int(binary.BigEndian.Uint16(length[:]))
++		if n < 4 || n > 512 {
++			s.fail(errors.New("invalid Mux.Cool metadata length"))
++			return
++		}
++		meta := make([]byte, n)
++		if _, err := io.ReadFull(s.conn, meta); err != nil {
++			s.fail(err)
++			return
++		}
++		id, status, options := binary.BigEndian.Uint16(meta), meta[2], meta[3]
++		var data []byte
++		if options&1 != 0 {
++			if _, err := io.ReadFull(s.conn, length[:]); err != nil {
++				s.fail(err)
++				return
++			}
++			data = make([]byte, int(binary.BigEndian.Uint16(length[:])))
++			if _, err := io.ReadFull(s.conn, data); err != nil {
++				s.fail(err)
++				return
++			}
++		}
++		if status == 4 {
++			continue
++		}
++		if status != 2 && status != 3 {
++			s.fail(fmt.Errorf("unexpected Mux.Cool status %d", status))
++			return
++		}
++		s.client.mu.Lock()
++		st := s.streams[id]
++		s.client.mu.Unlock()
++		if st == nil {
++			continue
++		}
++		if len(data) > 0 {
++			select {
++			case st.data <- data:
++			case <-st.done:
++			case <-s.done:
++				return
++			}
++		}
++		if status == 3 {
++			if options&2 != 0 {
++				st.finish(errors.New("Mux.Cool peer rejected stream"))
++			} else {
++				st.finish(io.EOF)
++			}
++		}
++	}
++}
++func (s *session) fail(err error) {
++	s.once.Do(func() {
++		close(s.done)
++		s.client.mu.Lock()
++		streams := make([]*stream, 0, len(s.streams))
++		for _, st := range s.streams {
++			streams = append(streams, st)
++		}
++		s.client.wakeLocked()
++		s.client.mu.Unlock()
++		for _, st := range streams {
++			st.finish(err)
++		}
++		go func() { _ = s.conn.Close() }()
++	})
++}
++
++type stream struct {
++	session                     *session
++	id                          uint16
++	data                        chan []byte
++	done                        chan struct{}
++	readBuf                     []byte
++	readMu                      sync.Mutex
++	readDeadline, writeDeadline deadline.PipeDeadline
++	writeMu                     sync.Mutex
++	err                         error // set before done is closed
++	once, closeOnce             sync.Once
++}
++
++func (s *stream) finish(err error) {
++	s.once.Do(func() {
++		s.err = err
++		close(s.done)
++		s.session.client.mu.Lock()
++		delete(s.session.streams, s.id)
++		s.session.client.wakeLocked()
++		exhausted := s.session.nextID == 65535 && len(s.session.streams) == 0
++		s.session.client.mu.Unlock()
++		if exhausted {
++			go s.session.fail(io.EOF)
++		}
++	})
++}
++func (s *stream) Read(p []byte) (int, error) {
++	s.readMu.Lock()
++	defer s.readMu.Unlock()
++	if len(p) == 0 {
++		return 0, nil
++	}
++	if len(s.readBuf) == 0 {
++		// Deliver queued payload before reporting the peer's End frame.
++		select {
++		case s.readBuf = <-s.data:
++		default:
++		}
++		if len(s.readBuf) == 0 {
++			select {
++			case s.readBuf = <-s.data:
++			case <-s.readDeadline.Wait():
++				return 0, os.ErrDeadlineExceeded
++			case <-s.done:
++				select {
++				case s.readBuf = <-s.data:
++				default:
++					return 0, s.err
++				}
++			}
++		}
++	}
++	n := copy(p, s.readBuf)
++	s.readBuf = s.readBuf[n:]
++	return n, nil
++}
++func (s *stream) Write(p []byte) (int, error) {
++	s.writeMu.Lock()
++	defer s.writeMu.Unlock()
++	total := 0
++	for len(p) > 0 {
++		select {
++		case <-s.done:
++			return total, net.ErrClosed
++		default:
++		}
++		n := len(p)
++		if n > chunkSize {
++			n = chunkSize
++		}
++		if err := s.session.send(context.Background(), frame(s.id, 2, 1, nil, p[:n]), &s.writeDeadline); err != nil {
++			return total, err
++		}
++		total += n
++		p = p[n:]
++	}
++	return total, nil
++}
++func (s *stream) Close() error {
++	s.closeOnce.Do(func() {
++		select {
++		case <-s.done:
++			return
++		default:
++		}
++		s.finish(net.ErrClosed)
++		d := deadline.MakePipeDeadline()
++		d.Set(time.Now().Add(time.Second))
++		defer d.Set(time.Time{})
++		_ = s.session.send(context.Background(), frame(s.id, 3, 0, nil, nil), &d)
++		s.readDeadline.Set(time.Time{})
++		s.writeDeadline.Set(time.Time{})
++	})
++	return nil
++}
++func (s *stream) LocalAddr() net.Addr  { return s.session.conn.LocalAddr() }
++func (s *stream) RemoteAddr() net.Addr { return s.session.conn.RemoteAddr() }
++func (s *stream) SetDeadline(t time.Time) error {
++	s.readDeadline.Set(t)
++	s.writeDeadline.Set(t)
++	return nil
++}
++func (s *stream) SetReadDeadline(t time.Time) error  { s.readDeadline.Set(t); return nil }
++func (s *stream) SetWriteDeadline(t time.Time) error { s.writeDeadline.Set(t); return nil }
++
++func frame(id uint16, status, options byte, target, payload []byte) []byte {
++	n := 4 + len(target)
++	size := 2 + n
++	if options&1 != 0 {
++		size += 2 + len(payload)
++	}
++	b := make([]byte, size)
++	binary.BigEndian.PutUint16(b, uint16(n))
++	binary.BigEndian.PutUint16(b[2:], id)
++	b[4] = status
++	b[5] = options
++	copy(b[6:], target)
++	if options&1 != 0 {
++		binary.BigEndian.PutUint16(b[2+n:], uint16(len(payload)))
++		copy(b[4+n:], payload)
++	}
++	return b
++}
++func encodeTarget(addr string) ([]byte, error) {
++	host, port, err := net.SplitHostPort(addr)
++	if err != nil {
++		return nil, err
++	}
++	p, err := strconv.ParseUint(port, 10, 16)
++	if err != nil || p == 0 {
++		return nil, fmt.Errorf("invalid Mux.Cool destination port")
++	}
++	b := []byte{1, byte(p >> 8), byte(p)}
++	if ip := net.ParseIP(host); ip != nil {
++		if v4 := ip.To4(); v4 != nil {
++			return append(append(b, 1), v4...), nil
++		}
++		return append(append(b, 3), ip.To16()...), nil
++	}
++	if len(host) == 0 || len(host) > 255 {
++		return nil, errors.New("invalid Mux.Cool destination host")
++	}
++	return append(append(b, 2, byte(len(host))), []byte(host)...), nil
++}
+diff --git a/transport/vless/muxcool/client_test.go b/transport/vless/muxcool/client_test.go
+new file mode 100644
+index 00000000..8f384fb8
+--- /dev/null
++++ b/transport/vless/muxcool/client_test.go
+@@ -0,0 +1,109 @@
++package muxcool
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	vmess "github.com/metacubex/sing-vmess"
++	M "github.com/metacubex/sing/common/metadata"
++	N "github.com/metacubex/sing/common/network"
++)
++
++type echoHandler struct{}
++
++func (echoHandler) NewConnection(_ context.Context, c net.Conn, _ M.Metadata) error {
++	defer c.Close()
++	_, err := io.Copy(c, c)
++	return err
++}
++func (echoHandler) NewPacketConnection(context.Context, N.PacketConn, M.Metadata) error {
++	return errors.New("UDP not used")
++}
++func (echoHandler) NewError(context.Context, error) {}
++
++func TestConcurrentStreamsAgainstSingMuxServer(t *testing.T) {
++	var dials atomic.Int32
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	c := NewClient(func(context.Context) (net.Conn, error) {
++		a, b := net.Pipe()
++		dials.Add(1)
++		go func() { defer b.Close(); _ = vmess.HandleMuxConnection(ctx, b, M.Metadata{}, echoHandler{}) }()
++		return a, nil
++	})
++	defer c.Close()
++	var wg sync.WaitGroup
++	for i := 0; i < 24; i++ {
++		wg.Add(1)
++		go func(i int) {
++			defer wg.Done()
++			conn, err := c.DialContext(ctx, "echo.test:443")
++			if err != nil {
++				t.Error(err)
++				return
++			}
++			defer conn.Close()
++			conn.SetDeadline(time.Now().Add(5 * time.Second))
++			want := bytes.Repeat([]byte{byte(i)}, 96*1024)
++			written := make(chan error, 1)
++			go func() { _, err := conn.Write(want); written <- err }()
++			got := make([]byte, len(want))
++			if _, err := io.ReadFull(conn, got); err != nil {
++				t.Error(err)
++				return
++			}
++			if err := <-written; err != nil {
++				t.Error(err)
++			}
++			if !bytes.Equal(got, want) {
++				t.Error("corrupted stream")
++			}
++		}(i)
++	}
++	wg.Wait()
++	if n := dials.Load(); n > maxSessions {
++		t.Fatalf("opened %d sessions", n)
++	}
++}
++func TestPendingReadDeadlineAndClose(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	c := NewClient(func(context.Context) (net.Conn, error) {
++		a, b := net.Pipe()
++		go func() { defer b.Close(); _ = vmess.HandleMuxConnection(ctx, b, M.Metadata{}, echoHandler{}) }()
++		return a, nil
++	})
++	defer c.Close()
++	conn, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	done := make(chan error, 1)
++	go func() { _, err := conn.Read(make([]byte, 1)); done <- err }()
++	conn.SetReadDeadline(time.Now().Add(25 * time.Millisecond))
++	select {
++	case err := <-done:
++		if !errors.Is(err, os.ErrDeadlineExceeded) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("read stuck")
++	}
++	conn.SetReadDeadline(time.Time{})
++	go func() { _, err := conn.Read(make([]byte, 1)); done <- err }()
++	c.Close()
++	select {
++	case <-done:
++	case <-time.After(time.Second):
++		t.Fatal("close did not unblock read")
++	}
++}
+diff --git a/transport/xdrive/LICENSE b/transport/xdrive/LICENSE
+new file mode 100644
+index 00000000..a612ad98
+--- /dev/null
++++ b/transport/xdrive/LICENSE
+@@ -0,0 +1,373 @@
++Mozilla Public License Version 2.0
++==================================
++
++1. Definitions
++--------------
++
++1.1. "Contributor"
++    means each individual or legal entity that creates, contributes to
++    the creation of, or owns Covered Software.
++
++1.2. "Contributor Version"
++    means the combination of the Contributions of others (if any) used
++    by a Contributor and that particular Contributor's Contribution.
++
++1.3. "Contribution"
++    means Covered Software of a particular Contributor.
++
++1.4. "Covered Software"
++    means Source Code Form to which the initial Contributor has attached
++    the notice in Exhibit A, the Executable Form of such Source Code
++    Form, and Modifications of such Source Code Form, in each case
++    including portions thereof.
++
++1.5. "Incompatible With Secondary Licenses"
++    means
++
++    (a) that the initial Contributor has attached the notice described
++        in Exhibit B to the Covered Software; or
++
++    (b) that the Covered Software was made available under the terms of
++        version 1.1 or earlier of the License, but not also under the
++        terms of a Secondary License.
++
++1.6. "Executable Form"
++    means any form of the work other than Source Code Form.
++
++1.7. "Larger Work"
++    means a work that combines Covered Software with other material, in
++    a separate file or files, that is not Covered Software.
++
++1.8. "License"
++    means this document.
++
++1.9. "Licensable"
++    means having the right to grant, to the maximum extent possible,
++    whether at the time of the initial grant or subsequently, any and
++    all of the rights conveyed by this License.
++
++1.10. "Modifications"
++    means any of the following:
++
++    (a) any file in Source Code Form that results from an addition to,
++        deletion from, or modification of the contents of Covered
++        Software; or
++
++    (b) any new file in Source Code Form that contains any Covered
++        Software.
++
++1.11. "Patent Claims" of a Contributor
++    means any patent claim(s), including without limitation, method,
++    process, and apparatus claims, in any patent Licensable by such
++    Contributor that would be infringed, but for the grant of the
++    License, by the making, using, selling, offering for sale, having
++    made, import, or transfer of either its Contributions or its
++    Contributor Version.
++
++1.12. "Secondary License"
++    means either the GNU General Public License, Version 2.0, the GNU
++    Lesser General Public License, Version 2.1, the GNU Affero General
++    Public License, Version 3.0, or any later versions of those
++    licenses.
++
++1.13. "Source Code Form"
++    means the form of the work preferred for making modifications.
++
++1.14. "You" (or "Your")
++    means an individual or a legal entity exercising rights under this
++    License. For legal entities, "You" includes any entity that
++    controls, is controlled by, or is under common control with You. For
++    purposes of this definition, "control" means (a) the power, direct
++    or indirect, to cause the direction or management of such entity,
++    whether by contract or otherwise, or (b) ownership of more than
++    fifty percent (50%) of the outstanding shares or beneficial
++    ownership of such entity.
++
++2. License Grants and Conditions
++--------------------------------
++
++2.1. Grants
++
++Each Contributor hereby grants You a world-wide, royalty-free,
++non-exclusive license:
++
++(a) under intellectual property rights (other than patent or trademark)
++    Licensable by such Contributor to use, reproduce, make available,
++    modify, display, perform, distribute, and otherwise exploit its
++    Contributions, either on an unmodified basis, with Modifications, or
++    as part of a Larger Work; and
++
++(b) under Patent Claims of such Contributor to make, use, sell, offer
++    for sale, have made, import, and otherwise transfer either its
++    Contributions or its Contributor Version.
++
++2.2. Effective Date
++
++The licenses granted in Section 2.1 with respect to any Contribution
++become effective for each Contribution on the date the Contributor first
++distributes such Contribution.
++
++2.3. Limitations on Grant Scope
++
++The licenses granted in this Section 2 are the only rights granted under
++this License. No additional rights or licenses will be implied from the
++distribution or licensing of Covered Software under this License.
++Notwithstanding Section 2.1(b) above, no patent license is granted by a
++Contributor:
++
++(a) for any code that a Contributor has removed from Covered Software;
++    or
++
++(b) for infringements caused by: (i) Your and any other third party's
++    modifications of Covered Software, or (ii) the combination of its
++    Contributions with other software (except as part of its Contributor
++    Version); or
++
++(c) under Patent Claims infringed by Covered Software in the absence of
++    its Contributions.
++
++This License does not grant any rights in the trademarks, service marks,
++or logos of any Contributor (except as may be necessary to comply with
++the notice requirements in Section 3.4).
++
++2.4. Subsequent Licenses
++
++No Contributor makes additional grants as a result of Your choice to
++distribute the Covered Software under a subsequent version of this
++License (see Section 10.2) or under the terms of a Secondary License (if
++permitted under the terms of Section 3.3).
++
++2.5. Representation
++
++Each Contributor represents that the Contributor believes its
++Contributions are its original creation(s) or it has sufficient rights
++to grant the rights to its Contributions conveyed by this License.
++
++2.6. Fair Use
++
++This License is not intended to limit any rights You have under
++applicable copyright doctrines of fair use, fair dealing, or other
++equivalents.
++
++2.7. Conditions
++
++Sections 3.1, 3.2, 3.3, and 3.4 are conditions of the licenses granted
++in Section 2.1.
++
++3. Responsibilities
++-------------------
++
++3.1. Distribution of Source Form
++
++All distribution of Covered Software in Source Code Form, including any
++Modifications that You create or to which You contribute, must be under
++the terms of this License. You must inform recipients that the Source
++Code Form of the Covered Software is governed by the terms of this
++License, and how they can obtain a copy of this License. You may not
++attempt to alter or restrict the recipients' rights in the Source Code
++Form.
++
++3.2. Distribution of Executable Form
++
++If You distribute Covered Software in Executable Form then:
++
++(a) such Covered Software must also be made available in Source Code
++    Form, as described in Section 3.1, and You must inform recipients of
++    the Executable Form how they can obtain a copy of such Source Code
++    Form by reasonable means in a timely manner, at a charge no more
++    than the cost of distribution to the recipient; and
++
++(b) You may distribute such Executable Form under the terms of this
++    License, or sublicense it under different terms, provided that the
++    license for the Executable Form does not attempt to limit or alter
++    the recipients' rights in the Source Code Form under this License.
++
++3.3. Distribution of a Larger Work
++
++You may create and distribute a Larger Work under terms of Your choice,
++provided that You also comply with the requirements of this License for
++the Covered Software. If the Larger Work is a combination of Covered
++Software with a work governed by one or more Secondary Licenses, and the
++Covered Software is not Incompatible With Secondary Licenses, this
++License permits You to additionally distribute such Covered Software
++under the terms of such Secondary License(s), so that the recipient of
++the Larger Work may, at their option, further distribute the Covered
++Software under the terms of either this License or such Secondary
++License(s).
++
++3.4. Notices
++
++You may not remove or alter the substance of any license notices
++(including copyright notices, patent notices, disclaimers of warranty,
++or limitations of liability) contained within the Source Code Form of
++the Covered Software, except that You may alter any license notices to
++the extent required to remedy known factual inaccuracies.
++
++3.5. Application of Additional Terms
++
++You may choose to offer, and to charge a fee for, warranty, support,
++indemnity or liability obligations to one or more recipients of Covered
++Software. However, You may do so only on Your own behalf, and not on
++behalf of any Contributor. You must make it absolutely clear that any
++such warranty, support, indemnity, or liability obligation is offered by
++You alone, and You hereby agree to indemnify every Contributor for any
++liability incurred by such Contributor as a result of warranty, support,
++indemnity or liability terms You offer. You may include additional
++disclaimers of warranty and limitations of liability specific to any
++jurisdiction.
++
++4. Inability to Comply Due to Statute or Regulation
++---------------------------------------------------
++
++If it is impossible for You to comply with any of the terms of this
++License with respect to some or all of the Covered Software due to
++statute, judicial order, or regulation then You must: (a) comply with
++the terms of this License to the maximum extent possible; and (b)
++describe the limitations and the code they affect. Such description must
++be placed in a text file included with all distributions of the Covered
++Software under this License. Except to the extent prohibited by statute
++or regulation, such description must be sufficiently detailed for a
++recipient of ordinary skill to be able to understand it.
++
++5. Termination
++--------------
++
++5.1. The rights granted under this License will terminate automatically
++if You fail to comply with any of its terms. However, if You become
++compliant, then the rights granted under this License from a particular
++Contributor are reinstated (a) provisionally, unless and until such
++Contributor explicitly and finally terminates Your grants, and (b) on an
++ongoing basis, if such Contributor fails to notify You of the
++non-compliance by some reasonable means prior to 60 days after You have
++come back into compliance. Moreover, Your grants from a particular
++Contributor are reinstated on an ongoing basis if such Contributor
++notifies You of the non-compliance by some reasonable means, this is the
++first time You have received notice of non-compliance with this License
++from such Contributor, and You become compliant prior to 30 days after
++Your receipt of the notice.
++
++5.2. If You initiate litigation against any entity by asserting a patent
++infringement claim (excluding declaratory judgment actions,
++counter-claims, and cross-claims) alleging that a Contributor Version
++directly or indirectly infringes any patent, then the rights granted to
++You by any and all Contributors for the Covered Software under Section
++2.1 of this License shall terminate.
++
++5.3. In the event of termination under Sections 5.1 or 5.2 above, all
++end user license agreements (excluding distributors and resellers) which
++have been validly granted by You or Your distributors under this License
++prior to termination shall survive termination.
++
++************************************************************************
++*                                                                      *
++*  6. Disclaimer of Warranty                                           *
++*  -------------------------                                           *
++*                                                                      *
++*  Covered Software is provided under this License on an "as is"       *
++*  basis, without warranty of any kind, either expressed, implied, or  *
++*  statutory, including, without limitation, warranties that the       *
++*  Covered Software is free of defects, merchantable, fit for a        *
++*  particular purpose or non-infringing. The entire risk as to the     *
++*  quality and performance of the Covered Software is with You.        *
++*  Should any Covered Software prove defective in any respect, You     *
++*  (not any Contributor) assume the cost of any necessary servicing,   *
++*  repair, or correction. This disclaimer of warranty constitutes an   *
++*  essential part of this License. No use of any Covered Software is   *
++*  authorized under this License except under this disclaimer.         *
++*                                                                      *
++************************************************************************
++
++************************************************************************
++*                                                                      *
++*  7. Limitation of Liability                                          *
++*  --------------------------                                          *
++*                                                                      *
++*  Under no circumstances and under no legal theory, whether tort      *
++*  (including negligence), contract, or otherwise, shall any           *
++*  Contributor, or anyone who distributes Covered Software as          *
++*  permitted above, be liable to You for any direct, indirect,         *
++*  special, incidental, or consequential damages of any character      *
++*  including, without limitation, damages for lost profits, loss of    *
++*  goodwill, work stoppage, computer failure or malfunction, or any    *
++*  and all other commercial damages or losses, even if such party      *
++*  shall have been informed of the possibility of such damages. This   *
++*  limitation of liability shall not apply to liability for death or   *
++*  personal injury resulting from such party's negligence to the       *
++*  extent applicable law prohibits such limitation. Some               *
++*  jurisdictions do not allow the exclusion or limitation of           *
++*  incidental or consequential damages, so this exclusion and          *
++*  limitation may not apply to You.                                    *
++*                                                                      *
++************************************************************************
++
++8. Litigation
++-------------
++
++Any litigation relating to this License may be brought only in the
++courts of a jurisdiction where the defendant maintains its principal
++place of business and such litigation shall be governed by laws of that
++jurisdiction, without reference to its conflict-of-law provisions.
++Nothing in this Section shall prevent a party's ability to bring
++cross-claims or counter-claims.
++
++9. Miscellaneous
++----------------
++
++This License represents the complete agreement concerning the subject
++matter hereof. If any provision of this License is held to be
++unenforceable, such provision shall be reformed only to the extent
++necessary to make it enforceable. Any law or regulation which provides
++that the language of a contract shall be construed against the drafter
++shall not be used to construe this License against a Contributor.
++
++10. Versions of the License
++---------------------------
++
++10.1. New Versions
++
++Mozilla Foundation is the license steward. Except as provided in Section
++10.3, no one other than the license steward has the right to modify or
++publish new versions of this License. Each version will be given a
++distinguishing version number.
++
++10.2. Effect of New Versions
++
++You may distribute the Covered Software under the terms of the version
++of the License under which You originally received the Covered Software,
++or under the terms of any subsequent version published by the license
++steward.
++
++10.3. Modified Versions
++
++If you create software not governed by this License, and you want to
++create a new license for such software, you may create and use a
++modified version of this License if you rename the license and remove
++any references to the name of the license steward (except to note that
++such modified license differs from this License).
++
++10.4. Distributing Source Code Form that is Incompatible With Secondary
++Licenses
++
++If You choose to distribute Source Code Form that is Incompatible With
++Secondary Licenses under the terms of this version of the License, the
++notice described in Exhibit B of this License must be attached.
++
++Exhibit A - Source Code Form License Notice
++-------------------------------------------
++
++  This Source Code Form is subject to the terms of the Mozilla Public
++  License, v. 2.0. If a copy of the MPL was not distributed with this
++  file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++If it is not possible or desirable to put the notice in a particular
++file, then You may include the notice in a location (such as a LICENSE
++file in a relevant directory) where a recipient would be likely to look
++for such a notice.
++
++You may add additional accurate notices of copyright ownership.
++
++Exhibit B - "Incompatible With Secondary Licenses" Notice
++---------------------------------------------------------
++
++  This Source Code Form is "Incompatible With Secondary Licenses", as
++  defined by the Mozilla Public License, v. 2.0.
+diff --git a/transport/xdrive/client.go b/transport/xdrive/client.go
+new file mode 100644
+index 00000000..efa892e5
+--- /dev/null
++++ b/transport/xdrive/client.go
+@@ -0,0 +1,187 @@
++// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"context"
++	"github.com/metacubex/http"
++	"io"
++	"sync"
++	"time"
++
++	"github.com/metacubex/tls"
++	"net"
++)
++
++var errStalled = newError("the request made no progress")
++
++type serviceTransport struct {
++	plain  http.RoundTripper
++	secure http.RoundTripper
++	stall  time.Duration
++}
++
++// RoundTrip ends a request that stands still for t.stall, with no answer that
++// long after its body went out or no byte of either body, but not one that just
++// runs long: a large object on a slow link takes minutes and is fine as long as
++// its bytes move
++func (t *serviceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
++	next := t.plain
++	if r.URL.Scheme == "https" {
++		next = t.secure
++	}
++
++	ctx, cancel := context.WithCancelCause(r.Context())
++	timer := time.AfterFunc(t.stall, func() { cancel(errStalled) })
++	alive := func() { timer.Reset(t.stall) }
++	end := func() {
++		timer.Stop()
++		cancel(nil)
++	}
++	r = r.WithContext(ctx)
++	if r.Body != nil && r.Body != http.NoBody {
++		r.Body = &progressBody{ReadCloser: r.Body, alive: alive}
++	}
++	// a body sent again by the transport itself, after a GOAWAY or on a reused
++	// connection that failed, moves just the same
++	if getBody := r.GetBody; getBody != nil {
++		r.GetBody = func() (io.ReadCloser, error) {
++			body, err := getBody()
++			if err != nil || body == http.NoBody {
++				return body, err
++			}
++			return &progressBody{ReadCloser: body, alive: alive}, nil
++		}
++	}
++
++	resp, err := next.RoundTrip(r)
++	if err != nil {
++		err = stalled(ctx, err)
++		end()
++		return nil, err
++	}
++	alive()
++	resp.Body = &progressBody{ReadCloser: resp.Body, alive: alive, end: end, ctx: ctx}
++	return resp, nil
++}
++
++// stalled returns errStalled for an error that the stall gave, which http2 reports
++// as a plain cancel
++func stalled(ctx context.Context, err error) error {
++	if context.Cause(ctx) == errStalled {
++		return errStalled
++	}
++	return err
++}
++
++type progressBody struct {
++	io.ReadCloser
++	alive func()
++	end   func()
++	// ctx is that of the request, for the body of its response
++	ctx context.Context
++}
++
++func (b *progressBody) Read(p []byte) (int, error) {
++	// http2 reads a request body up to 512 KiB at a time and sends it all before
++	// the next read, which on a slow link could look like no progress
++	n, err := b.ReadCloser.Read(p[:minInt(len(p), 16<<10)])
++	if n > 0 {
++		b.alive()
++	}
++	if err != nil && err != io.EOF && b.ctx != nil {
++		err = stalled(b.ctx, err)
++	}
++	return n, err
++}
++
++func (b *progressBody) Close() error {
++	err := b.ReadCloser.Close()
++	if b.end != nil {
++		b.end()
++	}
++	return err
++}
++
++// NewHTTPClient uses the caller's dialer for storage HTTP requests. HTTPS is
++// negotiated per API URL; TLS belongs to these requests, not the storage stream.
++func NewHTTPClient(dial, dialTLS func(context.Context, string, string) (net.Conn, error)) *http.Client {
++	if dial == nil {
++		dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
++	}
++	if dialTLS == nil {
++		dialTLS = func(ctx context.Context, network, addr string) (net.Conn, error) {
++			raw, err := dial(ctx, network, addr)
++			if err != nil {
++				return nil, err
++			}
++			host, _, err := net.SplitHostPort(addr)
++			if err != nil {
++				raw.Close()
++				return nil, err
++			}
++			conn := tls.Client(raw, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}})
++			handshakeCtx, cancel := context.WithTimeout(ctx, driveTimeout)
++			defer cancel()
++			if err := conn.HandshakeContext(handshakeCtx); err != nil {
++				raw.Close()
++				return nil, err
++			}
++			return conn, nil
++		}
++	}
++	secure := func(maxConns int) *http.Transport {
++		return &http.Transport{
++			DialTLSContext: dialTLS, ForceAttemptHTTP2: true, IdleConnTimeout: 90 * time.Second,
++			MaxIdleConns: 32, MaxIdleConnsPerHost: 32, MaxConnsPerHost: maxConns,
++		}
++	}
++	return &http.Client{Transport: &serviceTransport{
++		plain:  &http.Transport{DialContext: dial, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 32, MaxIdleConnsPerHost: 32, MaxConnsPerHost: 32},
++		secure: &secureTransport{h2: secure(1), h1: secure(32)}, stall: driveTimeout,
++	}}
++}
++
++func defaultHTTPClient(c Config) *http.Client {
++	if c.Fronting == "" {
++		return NewHTTPClient(nil, nil)
++	}
++	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
++		return (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, network, c.Fronting)
++	}
++	return NewHTTPClient(dial, nil)
++}
++
++func (t *serviceTransport) CloseIdleConnections() {
++	for _, next := range []http.RoundTripper{t.plain, t.secure} {
++		if closer, ok := next.(interface{ CloseIdleConnections() }); ok {
++			closer.CloseIdleConnections()
++		}
++	}
++}
++func (t *secureTransport) CloseIdleConnections() {
++	for _, next := range []http.RoundTripper{t.h2, t.h1} {
++		if closer, ok := next.(interface{ CloseIdleConnections() }); ok {
++			closer.CloseIdleConnections()
++		}
++	}
++}
++
++// secureTransport keeps a host to one connection, all that h2 needs, as without
++// a limit parallel requests would each dial their own. A host that answers over
++// h1 moves to a transport with more, since h1 carries one request at a time
++type secureTransport struct {
++	h2, h1  http.RoundTripper
++	h1Hosts sync.Map
++}
++
++func (t *secureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
++	if _, ok := t.h1Hosts.Load(r.URL.Host); ok {
++		return t.h1.RoundTrip(r)
++	}
++	resp, err := t.h2.RoundTrip(r)
++	if err == nil && resp.ProtoMajor == 1 {
++		t.h1Hosts.Store(r.URL.Host, true)
++	}
++	return resp, err
++}
+diff --git a/transport/xdrive/config.go b/transport/xdrive/config.go
+new file mode 100644
+index 00000000..ba53fca2
+--- /dev/null
++++ b/transport/xdrive/config.go
+@@ -0,0 +1,87 @@
++// Package xdrive implements Xray-compatible remote-storage stream transport.
++package xdrive
++
++import (
++	"errors"
++	"fmt"
++	"net"
++	"runtime"
++	"strconv"
++	"strings"
++)
++
++type Config struct {
++	Fronting          string         `proxy:"fronting,omitempty" inbound:"fronting,omitempty" yaml:"fronting,omitempty" json:"fronting,omitempty"`
++	RemoteFolder      string         `proxy:"remote-folder" inbound:"remote-folder" yaml:"remote-folder" json:"remote-folder"`
++	Service           string         `proxy:"service" inbound:"service" yaml:"service" json:"service"`
++	Secrets           []string       `proxy:"secrets,omitempty" inbound:"secrets,omitempty" yaml:"secrets,omitempty" json:"secrets,omitempty"`
++	SegmentBytes      uint32         `proxy:"segment-bytes,omitempty" inbound:"segment-bytes,omitempty" yaml:"segment-bytes,omitempty" json:"segment-bytes,omitempty"`
++	FlushIntervalMs   uint32         `proxy:"flush-interval-ms,omitempty" inbound:"flush-interval-ms,omitempty" yaml:"flush-interval-ms,omitempty" json:"flush-interval-ms,omitempty"`
++	PollIntervalMs    uint32         `proxy:"poll-interval-ms,omitempty" inbound:"poll-interval-ms,omitempty" yaml:"poll-interval-ms,omitempty" json:"poll-interval-ms,omitempty"`
++	MaxPollIntervalMs uint32         `proxy:"max-poll-interval-ms,omitempty" inbound:"max-poll-interval-ms,omitempty" yaml:"max-poll-interval-ms,omitempty" json:"max-poll-interval-ms,omitempty"`
++	SessionTtlSeconds uint32         `proxy:"session-ttl-seconds,omitempty" inbound:"session-ttl-seconds,omitempty" yaml:"session-ttl-seconds,omitempty" json:"session-ttl-seconds,omitempty"`
++	Concurrency       uint32         `proxy:"concurrency,omitempty" inbound:"concurrency,omitempty" yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
++	EagerWindowMs     uint32         `proxy:"eager-window-ms,omitempty" inbound:"eager-window-ms,omitempty" yaml:"eager-window-ms,omitempty" json:"eager-window-ms,omitempty"`
++	HoleTimeoutMs     uint32         `proxy:"hole-timeout-ms,omitempty" inbound:"hole-timeout-ms,omitempty" yaml:"hole-timeout-ms,omitempty" json:"hole-timeout-ms,omitempty"`
++	Template          map[string]any `proxy:"template,omitempty" inbound:"template,omitempty" yaml:"template,omitempty" json:"template,omitempty"`
++}
++
++// AllowLocalService gates `service: local`, a folder on the device meant for
++// tests. ClashFest core patch 0003: Android builds accept such a node in a
++// config, so one bad node does not fail a whole subscription, but give it a
++// storage that refuses every operation: it never touches the filesystem and
++// every dial through it fails. This covers http and file proxy-providers too
++// (the app's YAML hardening only sees config.yaml and inline payloads).
++var AllowLocalService = runtime.GOOS != "android"
++
++// ErrLocalServiceDisabled is returned by every operation of a `service: local`
++// storage while AllowLocalService is off.
++var ErrLocalServiceDisabled = errors.New("xdrive service local (a folder on the device) is disabled in this build")
++
++func (c Config) Validate() error {
++	if c.Fronting != "" {
++		host, port, err := net.SplitHostPort(c.Fronting)
++		p, portErr := strconv.ParseUint(port, 10, 16)
++		if err != nil || host == "" || portErr != nil || p == 0 {
++			return fmt.Errorf("xdrive fronting must be a host:port address")
++		}
++	}
++	if c.RemoteFolder == "" {
++		return fmt.Errorf("xdrive requires remote-folder")
++	}
++	switch c.Service {
++	case "local":
++	case "google-drive", "Google Drive":
++		if len(c.Secrets) != 3 {
++			return fmt.Errorf("xdrive google-drive needs client ID, client secret and refresh token")
++		}
++		for _, secret := range c.Secrets {
++			if strings.TrimSpace(secret) == "" {
++				return fmt.Errorf("xdrive google-drive secrets must not be empty")
++			}
++		}
++	case "template":
++		if len(c.Template) == 0 {
++			return fmt.Errorf("xdrive template service requires a template object")
++		}
++	default:
++		return fmt.Errorf("unsupported xdrive service %q", c.Service)
++	}
++	return nil
++}
++
++// Preserve upstream error wrapping without importing Xray's transport framework.
++type storageError struct {
++	message string
++	cause   error
++}
++
++func newError(args ...any) *storageError             { return &storageError{message: fmt.Sprint(args...)} }
++func (e *storageError) Base(err error) *storageError { e.cause = err; return e }
++func (e *storageError) Error() string {
++	if e.cause != nil {
++		return e.message + ": " + e.cause.Error()
++	}
++	return e.message
++}
++func (e *storageError) Unwrap() error { return e.cause }
+diff --git a/transport/xdrive/config_local_test.go b/transport/xdrive/config_local_test.go
+new file mode 100644
+index 00000000..287375f1
+--- /dev/null
++++ b/transport/xdrive/config_local_test.go
+@@ -0,0 +1,54 @@
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestLocalServiceGate(t *testing.T) {
++	saved := AllowLocalService
++	t.Cleanup(func() { AllowLocalService = saved })
++
++	AllowLocalService = true
++	allowed := Config{Service: "local", RemoteFolder: filepath.Join(t.TempDir(), "allowed")}
++	if err := allowed.Validate(); err != nil {
++		t.Fatalf("local allowed: %v", err)
++	}
++	if _, err := newStorage(allowed, nil); err != nil {
++		t.Fatalf("local storage allowed: %v", err)
++	}
++	if _, err := os.Stat(allowed.RemoteFolder); err != nil {
++		t.Fatalf("allowed local storage must create its folder: %v", err)
++	}
++
++	AllowLocalService = false
++	folder := filepath.Join(t.TempDir(), "refused")
++	cfg := Config{Service: "local", RemoteFolder: folder}
++	if err := cfg.Validate(); err != nil {
++		t.Fatalf("a refused local node must still validate: %v", err)
++	}
++	client, err := NewClient(cfg, nil)
++	if err != nil {
++		t.Fatalf("client for a refused local node: %v", err)
++	}
++	if _, err := client.Dial(context.Background()); !errors.Is(err, ErrLocalServiceDisabled) {
++		t.Fatalf("dial through a refused local node: got %v", err)
++	}
++	if err := client.Close(); err != nil {
++		t.Fatalf("close: %v", err)
++	}
++	if _, err := Listen(cfg, nil); !errors.Is(err, ErrLocalServiceDisabled) {
++		t.Fatalf("listen on a refused local node: got %v", err)
++	}
++	if _, err := os.Stat(folder); !os.IsNotExist(err) {
++		t.Fatalf("a refused local node touched the filesystem: %v", err)
++	}
++
++	cloud := Config{Service: "google-drive", RemoteFolder: "id", Secrets: []string{"a", "b", "c"}}
++	if err := cloud.Validate(); err != nil {
++		t.Fatalf("google-drive must not be affected: %v", err)
++	}
++}
+diff --git a/transport/xdrive/conn.go b/transport/xdrive/conn.go
+new file mode 100644
+index 00000000..6755d321
+--- /dev/null
++++ b/transport/xdrive/conn.go
+@@ -0,0 +1,99 @@
++package xdrive
++
++import (
++	"context"
++	"net"
++	"os"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/common/net/deadline"
++)
++
++var placeholderAddr = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
++
++type Conn struct {
++	cancel                      context.CancelFunc
++	writer                      *walWriter
++	reader                      *walReader
++	onClose                     func()
++	readBuf                     []byte
++	readMu                      sync.Mutex
++	readDeadline, writeDeadline deadline.PipeDeadline
++	done                        chan struct{}
++	closeOnce                   sync.Once
++	closeErr                    error
++}
++
++func newConn(ctx context.Context, storage Storage, writePrefix, readPrefix string, p params, onClose func()) *Conn {
++	ctx, cancel := context.WithCancel(ctx)
++	c := &Conn{cancel: cancel, onClose: onClose, readDeadline: deadline.MakePipeDeadline(), writeDeadline: deadline.MakePipeDeadline(), done: make(chan struct{})}
++	c.writer = newWALWriter(ctx, storage, writePrefix, p, &c.writeDeadline)
++	c.reader = newWALReader(ctx, storage, readPrefix, p)
++	return c
++}
++func (c *Conn) Read(b []byte) (int, error) {
++	c.readMu.Lock()
++	defer c.readMu.Unlock()
++	if len(b) == 0 {
++		return 0, nil
++	}
++	if len(c.readBuf) == 0 {
++		select {
++		case <-c.done:
++			return 0, net.ErrClosed
++		case <-c.readDeadline.Wait():
++			return 0, os.ErrDeadlineExceeded
++		case data, ok := <-c.reader.ch:
++			if !ok {
++				return 0, c.reader.Err()
++			}
++			c.readBuf = data
++		}
++	}
++	n := copy(b, c.readBuf)
++	c.readBuf = c.readBuf[n:]
++	return n, nil
++}
++func (c *Conn) Write(b []byte) (int, error) {
++	select {
++	case <-c.done:
++		return 0, net.ErrClosed
++	default:
++	}
++	n, err := c.writer.Write(b)
++	if n > 0 {
++		c.reader.Wake()
++	}
++	return n, err
++}
++func (c *Conn) Close() error {
++	c.closeOnce.Do(func() {
++		close(c.done)
++		finished := make(chan error, 1)
++		go func() { finished <- c.writer.Close() }()
++		timer := time.NewTimer(5 * time.Second)
++		defer timer.Stop()
++		select {
++		case c.closeErr = <-finished:
++		case <-timer.C:
++			c.closeErr = os.ErrDeadlineExceeded
++		}
++		c.cancel()
++		c.readDeadline.Set(time.Time{})
++		c.writeDeadline.Set(time.Time{})
++		if c.onClose != nil {
++			c.onClose()
++		}
++	})
++	return c.closeErr
++}
++func (c *Conn) LocalAddr() net.Addr  { return placeholderAddr }
++func (c *Conn) RemoteAddr() net.Addr { return placeholderAddr }
++func (c *Conn) SetDeadline(t time.Time) error {
++	c.readDeadline.Set(t)
++	c.writeDeadline.Set(t)
++	return nil
++}
++func (c *Conn) SetReadDeadline(t time.Time) error  { c.readDeadline.Set(t); return nil }
++func (c *Conn) SetWriteDeadline(t time.Time) error { c.writeDeadline.Set(t); return nil }
+diff --git a/transport/xdrive/drive.go b/transport/xdrive/drive.go
+new file mode 100644
+index 00000000..800fa9d7
+--- /dev/null
++++ b/transport/xdrive/drive.go
+@@ -0,0 +1,573 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"encoding/json"
++	"fmt"
++	"github.com/metacubex/http"
++	"io"
++	"math/rand/v2"
++	"net/url"
++	"strings"
++	"sync"
++	"time"
++)
++
++const (
++	flatSeparator = "~"
++
++	driveBoundary    = "xdrive-boundary"
++	drivePageSize    = 1000
++	driveMaxAttempts = 8
++	driveMaxInflight = 32
++	driveInlineLimit = 12000
++	// driveTimeout ends a request that makes no progress for that long
++	driveTimeout = 60 * time.Second
++)
++
++var (
++	driveMaxBackoff     = 8 * time.Second
++	driveTokenURL       = "https://oauth2.googleapis.com/token"
++	driveFilesURL       = "https://www.googleapis.com/drive/v3/files"
++	driveUploadURL      = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name"
++	driveInitialBackoff = 200 * time.Millisecond
++)
++
++type driveStorage struct {
++	folder       string
++	clientID     string
++	clientSecret string
++	refreshToken string
++	client       *http.Client
++	tokenURL     string
++	filesURL     string
++	uploadURL    string
++	backoff      time.Duration
++
++	tokenMu     sync.Mutex
++	token       string
++	tokenExpiry time.Time
++
++	inflight chan struct{}
++
++	idMu sync.Mutex
++	ids  map[string]string
++}
++
++func newDriveStorage(client *http.Client, config *Config) (*driveStorage, error) {
++	if config.RemoteFolder == "" {
++		return nil, newError(`empty "remoteFolder", it must be a Google Drive folder id`)
++	}
++	if len(config.Secrets) != 3 {
++		return nil, newError("Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken")
++	}
++	for i, secret := range config.Secrets {
++		if secret == "" {
++			return nil, newError("Google Drive secret ", i, " is empty")
++		}
++	}
++
++	return &driveStorage{
++		folder:       config.RemoteFolder,
++		clientID:     config.Secrets[0],
++		clientSecret: config.Secrets[1],
++		refreshToken: config.Secrets[2],
++		client:       client,
++		tokenURL:     driveTokenURL,
++		filesURL:     driveFilesURL,
++		uploadURL:    driveUploadURL,
++		backoff:      driveInitialBackoff,
++		inflight:     make(chan struct{}, driveMaxInflight),
++		ids:          make(map[string]string),
++	}, nil
++}
++
++func flatten(name string) string {
++	return strings.ReplaceAll(name, "/", flatSeparator)
++}
++
++func quoteDriveValue(value string) string {
++	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value)
++}
++
++func (s *driveStorage) accessToken(ctx context.Context) (string, error) {
++	s.tokenMu.Lock()
++	defer s.tokenMu.Unlock()
++
++	if s.token != "" && time.Now().Before(s.tokenExpiry) {
++		return s.token, nil
++	}
++
++	form := url.Values{
++		"client_id":     {s.clientID},
++		"client_secret": {s.clientSecret},
++		"refresh_token": {s.refreshToken},
++		"grant_type":    {"refresh_token"},
++	}
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.tokenURL, strings.NewReader(form.Encode()))
++	if err != nil {
++		return "", newError("failed to build the token request").Base(err)
++	}
++	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++
++	resp, err := s.client.Do(req)
++	if err != nil {
++		return "", newError("failed to refresh the access token").Base(err)
++	}
++	defer resp.Body.Close()
++
++	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
++	if err != nil {
++		return "", newError("failed to read the token response").Base(err)
++	}
++	if resp.StatusCode != http.StatusOK {
++		return "", newError("the token endpoint answered ", resp.StatusCode, ": ", string(body))
++	}
++
++	var parsed struct {
++		AccessToken string `json:"access_token"`
++		ExpiresIn   int64  `json:"expires_in"`
++	}
++	if err := json.Unmarshal(body, &parsed); err != nil {
++		return "", newError("failed to parse the token response").Base(err)
++	}
++	if parsed.AccessToken == "" {
++		return "", newError("the token endpoint returned no access token")
++	}
++
++	lifetime := parsed.ExpiresIn
++	if lifetime > 60 {
++		lifetime -= 60
++	}
++	s.token = parsed.AccessToken
++	s.tokenExpiry = time.Now().Add(time.Duration(lifetime) * time.Second)
++	return s.token, nil
++}
++
++func jitter(backoff time.Duration) time.Duration {
++	half := backoff / 2
++	if half <= 0 {
++		return backoff
++	}
++	return half + time.Duration(rand.Int64N(int64(half)))
++}
++
++func rateLimited(payload []byte) bool {
++	var parsed struct {
++		Error struct {
++			Status string `json:"status"`
++			Errors []struct {
++				Reason string `json:"reason"`
++			} `json:"errors"`
++		} `json:"error"`
++	}
++	if json.Unmarshal(payload, &parsed) != nil {
++		return false
++	}
++	for _, item := range parsed.Error.Errors {
++		switch item.Reason {
++		case "rateLimitExceeded", "userRateLimitExceeded", "sharingRateLimitExceeded":
++			return true
++		}
++	}
++	return parsed.Error.Status == "RESOURCE_EXHAUSTED"
++}
++
++func retryableStatus(status int) bool {
++	switch status {
++	case http.StatusTooManyRequests, http.StatusInternalServerError,
++		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
++		return true
++	}
++	return false
++}
++
++func (s *driveStorage) do(ctx context.Context, method, target, contentType string, body []byte) (int, []byte, error) {
++	backoff := s.backoff
++	var lastErr error
++
++	for attempt := 0; attempt < driveMaxAttempts; attempt++ {
++		if attempt > 0 {
++			select {
++			case <-ctx.Done():
++				return 0, nil, ctx.Err()
++			case <-time.After(jitter(backoff)):
++			}
++			backoff *= 2
++			if backoff > driveMaxBackoff {
++				backoff = driveMaxBackoff
++			}
++		}
++
++		token, err := s.accessToken(ctx)
++		if err != nil {
++			lastErr = err
++			continue
++		}
++
++		select {
++		case s.inflight <- struct{}{}:
++		case <-ctx.Done():
++			return 0, nil, ctx.Err()
++		}
++
++		var reader io.Reader
++		if body != nil {
++			reader = bytes.NewReader(body)
++		}
++		req, err := http.NewRequestWithContext(ctx, method, target, reader)
++		if err != nil {
++			<-s.inflight
++			return 0, nil, newError("failed to build a Drive request").Base(err)
++		}
++		req.Header.Set("Authorization", "Bearer "+token)
++		if contentType != "" {
++			req.Header.Set("Content-Type", contentType)
++		}
++
++		resp, err := s.client.Do(req)
++		if err != nil {
++			<-s.inflight
++			if ctx.Err() != nil {
++				return 0, nil, ctx.Err()
++			}
++			lastErr = newError("Drive request failed").Base(err)
++			continue
++		}
++		payload, err := readResponse(resp.Body)
++		resp.Body.Close()
++		<-s.inflight
++		if err != nil {
++			if ctx.Err() != nil {
++				return 0, nil, ctx.Err()
++			}
++			lastErr = newError("failed to read the Drive response").Base(err)
++			continue
++		}
++
++		if resp.StatusCode == http.StatusUnauthorized {
++			s.invalidateToken()
++			lastErr = newError("Drive rejected the access token")
++			continue
++		}
++		if resp.StatusCode == http.StatusForbidden && rateLimited(payload) {
++			lastErr = newError("Drive is rate limiting: ", string(payload))
++			continue
++		}
++		if retryableStatus(resp.StatusCode) {
++			lastErr = newError("Drive answered ", resp.StatusCode, ": ", string(payload))
++			continue
++		}
++		return resp.StatusCode, payload, nil
++	}
++
++	return 0, nil, lastErr
++}
++
++func (s *driveStorage) invalidateToken() {
++	s.tokenMu.Lock()
++	s.token = ""
++	s.tokenMu.Unlock()
++}
++
++func (s *driveStorage) rememberID(name, id string) {
++	s.idMu.Lock()
++	s.ids[name] = id
++	s.idMu.Unlock()
++}
++
++func (s *driveStorage) forgetID(name string) {
++	s.idMu.Lock()
++	delete(s.ids, name)
++	s.idMu.Unlock()
++}
++
++func (s *driveStorage) cachedID(name string) (string, bool) {
++	s.idMu.Lock()
++	defer s.idMu.Unlock()
++	id, ok := s.ids[name]
++	return id, ok
++}
++
++type driveFile struct {
++	id          string
++	description string
++}
++
++func (s *driveStorage) query(ctx context.Context, condition string) (map[string]driveFile, error) {
++	found := make(map[string]driveFile)
++	pageToken := ""
++
++	for {
++		params := url.Values{
++			"q":                         {"'" + quoteDriveValue(s.folder) + "' in parents and trashed = false and " + condition},
++			"fields":                    {"nextPageToken,files(id,name,description)"},
++			"pageSize":                  {fmt.Sprint(drivePageSize)},
++			"supportsAllDrives":         {"true"},
++			"includeItemsFromAllDrives": {"true"},
++		}
++		if pageToken != "" {
++			params.Set("pageToken", pageToken)
++		}
++
++		status, payload, err := s.do(ctx, http.MethodGet, s.filesURL+"?"+params.Encode(), "", nil)
++		if err != nil {
++			return nil, err
++		}
++		if status != http.StatusOK {
++			return nil, newError("Drive listing answered ", status, ": ", string(payload))
++		}
++
++		var parsed struct {
++			NextPageToken string `json:"nextPageToken"`
++			Files         []struct {
++				ID          string `json:"id"`
++				Name        string `json:"name"`
++				Description string `json:"description"`
++			} `json:"files"`
++		}
++		if err := json.Unmarshal(payload, &parsed); err != nil {
++			return nil, newError("failed to parse the Drive listing").Base(err)
++		}
++
++		for _, file := range parsed.Files {
++			found[file.Name] = driveFile{id: file.ID, description: file.Description}
++			s.rememberID(file.Name, file.ID)
++		}
++
++		pageToken = parsed.NextPageToken
++		if pageToken == "" {
++			return found, nil
++		}
++	}
++}
++
++func (s *driveStorage) resolveID(ctx context.Context, flat string) (string, error) {
++	if id, ok := s.cachedID(flat); ok {
++		return id, nil
++	}
++	found, err := s.query(ctx, "name = '"+quoteDriveValue(flat)+"'")
++	if err != nil {
++		return "", err
++	}
++	if file, ok := found[flat]; ok {
++		return file.id, nil
++	}
++	return "", errNotFound
++}
++
++func (s *driveStorage) Put(ctx context.Context, name string, data []byte) error {
++	if len(data) <= driveInlineLimit {
++		return s.putInline(ctx, name, data)
++	}
++	return s.putMedia(ctx, name, data)
++}
++
++func (s *driveStorage) putInline(ctx context.Context, name string, data []byte) error {
++	flat := flatten(name)
++
++	body, err := json.Marshal(map[string]interface{}{
++		"name":        flat,
++		"parents":     []string{s.folder},
++		"description": base64.StdEncoding.EncodeToString(data),
++	})
++	if err != nil {
++		return newError("failed to build the inline metadata").Base(err)
++	}
++
++	status, payload, err := s.do(ctx, http.MethodPost, s.filesURL+"?fields=id",
++		"application/json; charset=UTF-8", body)
++	if err != nil {
++		return err
++	}
++	if status != http.StatusOK {
++		return newError("Drive rejected the inline upload of ", name,
++			" with ", status, ": ", string(payload))
++	}
++
++	var parsed struct {
++		ID string `json:"id"`
++	}
++	if err := json.Unmarshal(payload, &parsed); err != nil {
++		return newError("failed to parse the Drive upload response").Base(err)
++	}
++	if parsed.ID != "" {
++		s.rememberID(flat, parsed.ID)
++	}
++	return nil
++}
++
++func (s *driveStorage) putMedia(ctx context.Context, name string, data []byte) error {
++	flat := flatten(name)
++
++	metadata, err := json.Marshal(map[string]interface{}{
++		"name":    flat,
++		"parents": []string{s.folder},
++	})
++	if err != nil {
++		return newError("failed to build the upload metadata").Base(err)
++	}
++
++	var body bytes.Buffer
++	fmt.Fprintf(&body, "--%s\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n", driveBoundary)
++	body.Write(metadata)
++	fmt.Fprintf(&body, "\r\n--%s\r\nContent-Type: application/octet-stream\r\n\r\n", driveBoundary)
++	body.Write(data)
++	fmt.Fprintf(&body, "\r\n--%s--\r\n", driveBoundary)
++
++	status, payload, err := s.do(ctx, http.MethodPost, s.uploadURL,
++		"multipart/related; boundary="+driveBoundary, body.Bytes())
++	if err != nil {
++		return err
++	}
++	if status != http.StatusOK {
++		return newError("Drive upload of ", name, " answered ", status, ": ", string(payload))
++	}
++
++	var parsed struct {
++		ID string `json:"id"`
++	}
++	if err := json.Unmarshal(payload, &parsed); err != nil {
++		return newError("failed to parse the Drive upload response").Base(err)
++	}
++	if parsed.ID != "" {
++		s.rememberID(flat, parsed.ID)
++	}
++	return nil
++}
++
++func (s *driveStorage) Get(ctx context.Context, name string) ([]byte, error) {
++	flat := flatten(name)
++	id, err := s.resolveID(ctx, flat)
++	if err != nil {
++		return nil, err
++	}
++
++	status, payload, err := s.do(ctx, http.MethodGet,
++		s.filesURL+"/"+url.PathEscape(id)+"?alt=media&supportsAllDrives=true", "", nil)
++	if err != nil {
++		return nil, err
++	}
++	switch status {
++	case http.StatusOK:
++		if len(payload) > 0 {
++			return payload, nil
++		}
++		return s.getInline(ctx, id)
++	case http.StatusNotFound:
++		s.forgetID(flat)
++		return nil, errNotFound
++	default:
++		return nil, newError("Drive download of ", name, " answered ", status, ": ", string(payload))
++	}
++}
++
++func (s *driveStorage) getInline(ctx context.Context, id string) ([]byte, error) {
++	status, payload, err := s.do(ctx, http.MethodGet,
++		s.filesURL+"/"+url.PathEscape(id)+"?fields=description&supportsAllDrives=true", "", nil)
++	if err != nil {
++		return nil, err
++	}
++	if status != http.StatusOK {
++		return nil, newError("Drive answered ", status, " for inline data: ", string(payload))
++	}
++
++	var parsed struct {
++		Description string `json:"description"`
++	}
++	if err := json.Unmarshal(payload, &parsed); err != nil {
++		return nil, newError("failed to parse the inline data").Base(err)
++	}
++	if parsed.Description == "" {
++		return nil, nil
++	}
++	data, err := base64.StdEncoding.DecodeString(parsed.Description)
++	if err != nil {
++		return nil, newError("the inline data is not valid base64").Base(err)
++	}
++	return data, nil
++}
++
++func (s *driveStorage) deleteID(ctx context.Context, flat, id string) error {
++	status, payload, err := s.do(ctx, http.MethodDelete,
++		s.filesURL+"/"+url.PathEscape(id)+"?supportsAllDrives=true", "", nil)
++	if err != nil {
++		return err
++	}
++	s.forgetID(flat)
++	switch status {
++	case http.StatusOK, http.StatusNoContent, http.StatusNotFound:
++		return nil
++	default:
++		return newError("Drive deletion of ", flat, " answered ", status, ": ", string(payload))
++	}
++}
++
++func (s *driveStorage) Delete(ctx context.Context, name string) error {
++	flat := flatten(name)
++
++	if id, err := s.resolveID(ctx, flat); err == nil {
++		if err := s.deleteID(ctx, flat, id); err != nil {
++			return err
++		}
++	} else if err != errNotFound {
++		return err
++	}
++
++	children, err := s.query(ctx, "name contains '"+quoteDriveValue(flat+flatSeparator)+"'")
++	if err != nil {
++		return err
++	}
++	for childName, file := range children {
++		if err := s.deleteID(ctx, childName, file.id); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++func (s *driveStorage) List(ctx context.Context, prefix string) ([]Entry, error) {
++	flat := flatten(prefix) + flatSeparator
++
++	found, err := s.query(ctx, "name contains '"+quoteDriveValue(flat)+"'")
++	if err != nil {
++		return nil, err
++	}
++
++	seen := make(map[string]bool, len(found))
++	entries := make([]Entry, 0, len(found))
++	for name, file := range found {
++		rest := strings.TrimPrefix(name, flat)
++		if rest == "" {
++			continue
++		}
++		direct := true
++		if cut := strings.Index(rest, flatSeparator); cut >= 0 {
++			rest = rest[:cut]
++			direct = false
++		}
++		if seen[rest] {
++			continue
++		}
++		seen[rest] = true
++
++		entry := Entry{Name: rest}
++		if direct && file.description != "" {
++			if data, err := base64.StdEncoding.DecodeString(file.description); err == nil {
++				entry.Inline = data
++			}
++		}
++		entries = append(entries, entry)
++	}
++	return entries, nil
++}
++
++func (s *driveStorage) Close() error {
++	return nil
++}
+diff --git a/transport/xdrive/drive_test.go b/transport/xdrive/drive_test.go
+new file mode 100644
+index 00000000..677b941d
+--- /dev/null
++++ b/transport/xdrive/drive_test.go
+@@ -0,0 +1,627 @@
++// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"mime"
++	"mime/multipart"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++type fakeFile struct {
++	id          string
++	name        string
++	data        []byte
++	description string
++}
++
++type fakeDrive struct {
++	server *httptest.Server
++
++	mu         sync.Mutex
++	files      map[string]*fakeFile
++	nextID     int
++	failOnce   map[string]bool
++	failStatus map[string]int
++	failBody   map[string]string
++	tokens     int
++	hosts      map[string]bool
++}
++
++func newFakeDrive(t *testing.T) *fakeDrive {
++	t.Helper()
++
++	drive := &fakeDrive{
++		files:      make(map[string]*fakeFile),
++		failOnce:   make(map[string]bool),
++		failStatus: make(map[string]int),
++		failBody:   make(map[string]string),
++		hosts:      make(map[string]bool),
++	}
++	mux := http.NewServeMux()
++	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		http.NotFound(w, r)
++	}))
++	record := func(next http.HandlerFunc) http.HandlerFunc {
++		return func(w http.ResponseWriter, r *http.Request) {
++			drive.mu.Lock()
++			drive.hosts[r.Host] = true
++			drive.mu.Unlock()
++			next(w, r)
++		}
++	}
++	mux.HandleFunc("/token", record(drive.handleToken))
++	mux.HandleFunc("/upload", record(drive.handleUpload))
++	mux.HandleFunc("/files", record(drive.handleFiles))
++	mux.HandleFunc("/files/", record(drive.handleFile))
++	drive.server = httptest.NewServer(mux)
++
++	previous := []string{driveTokenURL, driveFilesURL, driveUploadURL}
++	previousBackoff := driveInitialBackoff
++	driveTokenURL = drive.server.URL + "/token"
++	driveFilesURL = drive.server.URL + "/files"
++	driveUploadURL = drive.server.URL + "/upload"
++	driveInitialBackoff = 5 * time.Millisecond
++
++	t.Cleanup(func() {
++		driveTokenURL, driveFilesURL, driveUploadURL = previous[0], previous[1], previous[2]
++		driveInitialBackoff = previousBackoff
++		drive.server.Close()
++
++	})
++	return drive
++}
++
++func (d *fakeDrive) handleToken(w http.ResponseWriter, r *http.Request) {
++	d.mu.Lock()
++	d.tokens++
++	d.mu.Unlock()
++	json.NewEncoder(w).Encode(map[string]interface{}{
++		"access_token": "fake-token",
++		"expires_in":   3600,
++	})
++}
++
++func (d *fakeDrive) handleUpload(w http.ResponseWriter, r *http.Request) {
++	if d.shouldFail("upload") {
++		if status, body := d.failure("upload"); status != 0 {
++			w.WriteHeader(status)
++			w.Write([]byte(body))
++			return
++		}
++		w.WriteHeader(http.StatusTooManyRequests)
++		return
++	}
++
++	_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
++	if err != nil {
++		w.WriteHeader(http.StatusBadRequest)
++		return
++	}
++	reader := multipart.NewReader(r.Body, params["boundary"])
++
++	metaPart, err := reader.NextPart()
++	if err != nil {
++		w.WriteHeader(http.StatusBadRequest)
++		return
++	}
++	var metadata struct {
++		Name string `json:"name"`
++	}
++	if err := json.NewDecoder(metaPart).Decode(&metadata); err != nil {
++		w.WriteHeader(http.StatusBadRequest)
++		return
++	}
++
++	var data []byte
++	if dataPart, err := reader.NextPart(); err == nil {
++		data, _ = io.ReadAll(dataPart)
++	}
++
++	d.mu.Lock()
++	d.nextID++
++	id := fmt.Sprintf("id-%d", d.nextID)
++	d.files[id] = &fakeFile{id: id, name: metadata.Name, data: data}
++	d.mu.Unlock()
++
++	json.NewEncoder(w).Encode(map[string]string{"id": id, "name": metadata.Name})
++}
++
++func (d *fakeDrive) handleFiles(w http.ResponseWriter, r *http.Request) {
++	if r.Method == http.MethodPost {
++		d.handleCreate(w, r)
++		return
++	}
++	d.handleList(w, r)
++}
++
++func (d *fakeDrive) handleCreate(w http.ResponseWriter, r *http.Request) {
++	if d.shouldFail("upload") {
++		if status, body := d.failure("upload"); status != 0 {
++			w.WriteHeader(status)
++			w.Write([]byte(body))
++			return
++		}
++		w.WriteHeader(http.StatusTooManyRequests)
++		return
++	}
++
++	var meta struct {
++		Name        string `json:"name"`
++		Description string `json:"description"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&meta); err != nil {
++		w.WriteHeader(http.StatusBadRequest)
++		return
++	}
++
++	d.mu.Lock()
++	d.nextID++
++	id := fmt.Sprintf("id-%d", d.nextID)
++	d.files[id] = &fakeFile{id: id, name: meta.Name, description: meta.Description}
++	d.mu.Unlock()
++
++	json.NewEncoder(w).Encode(map[string]string{"id": id, "name": meta.Name})
++}
++
++func (d *fakeDrive) handleList(w http.ResponseWriter, r *http.Request) {
++	if d.shouldFail("list") {
++		w.WriteHeader(http.StatusServiceUnavailable)
++		return
++	}
++
++	query := r.URL.Query().Get("q")
++	exact, prefix := parseFakeQuery(query)
++
++	type entry struct {
++		ID          string `json:"id"`
++		Name        string `json:"name"`
++		Description string `json:"description,omitempty"`
++	}
++	result := struct {
++		Files []entry `json:"files"`
++	}{}
++
++	d.mu.Lock()
++	for _, file := range d.files {
++		match := false
++		switch {
++		case exact != "":
++			match = file.name == exact
++		case prefix != "":
++			match = strings.HasPrefix(file.name, prefix)
++		}
++		if match {
++			result.Files = append(result.Files, entry{
++				ID: file.id, Name: file.name, Description: file.description,
++			})
++		}
++	}
++	d.mu.Unlock()
++
++	json.NewEncoder(w).Encode(result)
++}
++
++func (d *fakeDrive) handleFile(w http.ResponseWriter, r *http.Request) {
++	id := strings.TrimPrefix(r.URL.Path, "/files/")
++
++	d.mu.Lock()
++	file, ok := d.files[id]
++	if ok && r.Method == http.MethodDelete {
++		delete(d.files, id)
++	}
++	d.mu.Unlock()
++
++	if !ok {
++		w.WriteHeader(http.StatusNotFound)
++		return
++	}
++	if r.Method == http.MethodDelete {
++		w.WriteHeader(http.StatusNoContent)
++		return
++	}
++	if strings.Contains(r.URL.RawQuery, "fields=description") {
++		json.NewEncoder(w).Encode(map[string]string{"description": file.description})
++		return
++	}
++	w.Write(file.data)
++}
++
++func (d *fakeDrive) shouldFail(kind string) bool {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if d.failOnce[kind] {
++		d.failOnce[kind] = false
++		return true
++	}
++	return false
++}
++
++func (d *fakeDrive) failOnceWith(kind string, status int, body string) {
++	d.mu.Lock()
++	d.failOnce[kind] = true
++	d.failStatus[kind] = status
++	d.failBody[kind] = body
++	d.mu.Unlock()
++}
++
++func (d *fakeDrive) failure(kind string) (int, string) {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if status, ok := d.failStatus[kind]; ok {
++		return status, d.failBody[kind]
++	}
++	return 0, ""
++}
++
++func (d *fakeDrive) failNext(kind string) {
++	d.mu.Lock()
++	d.failOnce[kind] = true
++	d.mu.Unlock()
++}
++
++func (d *fakeDrive) seenHosts() []string {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	out := make([]string, 0, len(d.hosts))
++	for h := range d.hosts {
++		out = append(out, h)
++	}
++	return out
++}
++
++func (d *fakeDrive) count() int {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	return len(d.files)
++}
++
++func parseFakeQuery(query string) (exact, prefix string) {
++	if value, ok := cutQuoted(query, "name = '"); ok {
++		return value, ""
++	}
++	if value, ok := cutQuoted(query, "name contains '"); ok {
++		return "", value
++	}
++	return "", ""
++}
++
++func cutQuoted(query, marker string) (string, bool) {
++	start := strings.Index(query, marker)
++	if start < 0 {
++		return "", false
++	}
++	rest := query[start+len(marker):]
++	end := strings.Index(rest, "'")
++	if end < 0 {
++		return "", false
++	}
++	return rest[:end], true
++}
++
++func driveSettings() *Config {
++	return &Config{RemoteFolder: "folder-id", Service: "google-drive", Secrets: []string{"client", "secret", "refresh"}, FlushIntervalMs: 5, PollIntervalMs: 5, MaxPollIntervalMs: 20, SessionTtlSeconds: 1}
++}
++
++func newDriveBackend(t *testing.T) *driveStorage {
++	t.Helper()
++
++	storage, err := newDriveStorage(NewHTTPClient(nil, nil), driveSettings())
++	if err != nil {
++		t.Fatalf("newDriveStorage: %v", err)
++	}
++	return storage
++}
++
++func TestDriveSecrets(t *testing.T) {
++	if _, err := newDriveStorage(nil, &Config{RemoteFolder: "f", Secrets: []string{"a", "b"}}); err == nil {
++		t.Fatal("accepted two secrets")
++	}
++	if _, err := newDriveStorage(nil, &Config{Secrets: []string{"a", "b", "c"}}); err == nil {
++		t.Fatal("accepted an empty remoteFolder")
++	}
++	if _, err := newDriveStorage(nil, &Config{RemoteFolder: "f", Secrets: []string{"a", "", "c"}}); err == nil {
++		t.Fatal("accepted an empty secret")
++	}
++}
++
++func TestDriveRoundTrip(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	if err := storage.Put(ctx, "streams/abc/c2s/000000000.seg", []byte("hello")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	data, err := storage.Get(ctx, "streams/abc/c2s/000000000.seg")
++	if err != nil {
++		t.Fatalf("Get: %v", err)
++	}
++	if string(data) != "hello" {
++		t.Fatalf("Get returned %q, want %q", data, "hello")
++	}
++
++	names, err := storage.List(ctx, "streams/abc/c2s")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(names) != 1 || names[0].Name != "000000000.seg" {
++		t.Fatalf("List returned %v, want 1 segment", names)
++	}
++
++	if _, err := storage.Get(ctx, "streams/abc/c2s/000000009.seg"); err != errNotFound {
++		t.Fatalf("Get returned %v, want errNotFound", err)
++	}
++
++	if err := storage.Delete(ctx, "streams/abc/c2s/000000000.seg"); err != nil {
++		t.Fatalf("Delete: %v", err)
++	}
++	if drive.count() != 0 {
++		t.Fatalf("fake drive still holds %d files", drive.count())
++	}
++}
++
++func TestDriveListChildren(t *testing.T) {
++	newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	for _, name := range []string{
++		"streams/one/c2s/000000000.seg",
++		"streams/one/s2c/000000000.seg",
++		"streams/two/c2s/000000000.seg",
++	} {
++		if err := storage.Put(ctx, name, []byte("x")); err != nil {
++			t.Fatalf("Put %s: %v", name, err)
++		}
++	}
++
++	names, err := storage.List(ctx, "streams")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(names) != 2 {
++		t.Fatalf("List returned %v, want 2 sessions", names)
++	}
++}
++
++func TestDriveDeleteSession(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	for _, name := range []string{
++		"streams/one/c2s/000000000.seg",
++		"streams/one/c2s/000000001.end",
++		"streams/one/s2c/000000000.seg",
++		"streams/two/c2s/000000000.seg",
++	} {
++		if err := storage.Put(ctx, name, []byte("x")); err != nil {
++			t.Fatalf("Put %s: %v", name, err)
++		}
++	}
++
++	if err := storage.Delete(ctx, "streams/one"); err != nil {
++		t.Fatalf("Delete: %v", err)
++	}
++	if drive.count() != 1 {
++		t.Fatalf("fake drive holds %d files, want 1", drive.count())
++	}
++}
++
++func TestDriveRetry(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	drive.failNext("upload")
++	if err := storage.Put(ctx, "sessions/abc", nil); err != nil {
++		t.Fatalf("Put did not survive a 429: %v", err)
++	}
++
++	drive.failNext("list")
++	if _, err := storage.List(ctx, "sessions"); err != nil {
++		t.Fatalf("List did not survive a 503: %v", err)
++	}
++}
++
++func TestDriveTokenCache(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	for i := 0; i < 5; i++ {
++		if err := storage.Put(ctx, fmt.Sprintf("sessions/s%d", i), nil); err != nil {
++			t.Fatalf("Put: %v", err)
++		}
++	}
++	if drive.tokens != 1 {
++		t.Fatalf("token endpoint hit %d times, want 1", drive.tokens)
++	}
++}
++
++func TestDriveTransport(t *testing.T) {
++	newFakeDrive(t)
++
++	client, server, cleanup := pairWith(t, driveSettings())
++	defer cleanup()
++
++	if _, err := client.Write([]byte("ping")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	expectRead(t, server, "ping")
++
++	if _, err := server.Write([]byte("pong")); err != nil {
++		t.Fatalf("server write: %v", err)
++	}
++	expectRead(t, client, "pong")
++}
++
++func TestDriveLargeTransfer(t *testing.T) {
++	newFakeDrive(t)
++
++	client, server, cleanup := pairWith(t, driveSettings())
++	defer cleanup()
++
++	payload := make([]byte, 300000)
++	for i := range payload {
++		payload[i] = byte(i % 251)
++	}
++
++	go func() {
++		client.Write(payload)
++	}()
++
++	if err := server.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
++		t.Fatalf("SetReadDeadline: %v", err)
++	}
++	got := make([]byte, len(payload))
++	if _, err := io.ReadFull(server, got); err != nil {
++		t.Fatalf("ReadFull: %v", err)
++	}
++	for i := range got {
++		if got[i] != payload[i] {
++			t.Fatalf("payload mismatch at byte %d", i)
++		}
++	}
++}
++
++func TestRateLimited(t *testing.T) {
++	limited := []string{
++		`{"error":{"code":403,"errors":[{"reason":"userRateLimitExceeded"}]}}`,
++		`{"error":{"code":403,"errors":[{"reason":"rateLimitExceeded"}]}}`,
++		`{"error":{"code":403,"errors":[{"reason":"sharingRateLimitExceeded"}]}}`,
++		`{"error":{"status":"RESOURCE_EXHAUSTED"}}`,
++	}
++	for _, payload := range limited {
++		if !rateLimited([]byte(payload)) {
++			t.Fatalf("rateLimited missed %s", payload)
++		}
++	}
++
++	permanent := []string{
++		`{"error":{"code":403,"errors":[{"reason":"insufficientFilePermissions"}]}}`,
++		`{"error":{"code":403,"errors":[{"reason":"storageQuotaExceeded"}]}}`,
++		`not json at all`,
++	}
++	for _, payload := range permanent {
++		if rateLimited([]byte(payload)) {
++			t.Fatalf("rateLimited treated %s as temporary", payload)
++		}
++	}
++}
++
++func TestDriveRetryRateLimit(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++
++	drive.failOnceWith("upload", http.StatusForbidden,
++		`{"error":{"code":403,"errors":[{"reason":"userRateLimitExceeded"}]}}`)
++
++	if err := storage.Put(context.Background(), "sessions/abc", nil); err != nil {
++		t.Fatalf("Put did not survive a 403: %v", err)
++	}
++}
++
++func TestDriveOldServiceName(t *testing.T) {
++	newFakeDrive(t)
++
++	settings := driveSettings()
++	settings.Service = "Google Drive"
++	if _, err := newStorage(*settings, nil); err != nil {
++		t.Fatalf("newStorage: %v", err)
++	}
++}
++
++func TestDriveInlineListing(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	payload := []byte("small enough to ride along with the listing")
++	if err := storage.Put(ctx, "streams/abc/c2s/000000000.seg", payload); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	entries, err := storage.List(ctx, "streams/abc/c2s")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(entries) != 1 {
++		t.Fatalf("List returned %v, want 1 entry", entries)
++	}
++	if string(entries[0].Inline) != string(payload) {
++		t.Fatalf("listing carried %q, want %q", entries[0].Inline, payload)
++	}
++
++	d := drive
++	d.mu.Lock()
++	var stored *fakeFile
++	for _, f := range d.files {
++		stored = f
++	}
++	d.mu.Unlock()
++	if len(stored.data) != 0 {
++		t.Fatal("small payload was uploaded as content")
++	}
++}
++
++func TestDriveLargeContent(t *testing.T) {
++	drive := newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	payload := make([]byte, driveInlineLimit+1)
++	for i := range payload {
++		payload[i] = byte(i)
++	}
++	if err := storage.Put(ctx, "streams/abc/c2s/000000000.seg", payload); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	entries, err := storage.List(ctx, "streams/abc/c2s")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(entries) != 1 || entries[0].Inline != nil {
++		t.Fatalf("large payload was inlined, got %v", entries)
++	}
++
++	got, err := storage.Get(ctx, "streams/abc/c2s/000000000.seg")
++	if err != nil {
++		t.Fatalf("Get: %v", err)
++	}
++	if len(got) != len(payload) {
++		t.Fatalf("Get returned %d bytes, want %d", len(got), len(payload))
++	}
++	_ = drive
++}
++
++func TestDriveInlineGet(t *testing.T) {
++	newFakeDrive(t)
++	storage := newDriveBackend(t)
++	ctx := context.Background()
++
++	payload := []byte("only in the description")
++	if err := storage.Put(ctx, "sessions/abc", payload); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	got, err := storage.Get(ctx, "sessions/abc")
++	if err != nil {
++		t.Fatalf("Get: %v", err)
++	}
++	if string(got) != string(payload) {
++		t.Fatalf("Get returned %q, want %q", got, payload)
++	}
++}
+diff --git a/transport/xdrive/jsonpath.go b/transport/xdrive/jsonpath.go
+new file mode 100644
+index 00000000..4206ed88
+--- /dev/null
++++ b/transport/xdrive/jsonpath.go
+@@ -0,0 +1,43 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"encoding/json"
++	"strings"
++)
++
++func jsonWalk(payload []byte, path string) interface{} {
++	var root interface{}
++	if json.Unmarshal(payload, &root) != nil {
++		return nil
++	}
++	node := root
++	for _, key := range strings.Split(path, ".") {
++		obj, ok := node.(map[string]interface{})
++		if !ok {
++			return nil
++		}
++		node, ok = obj[key]
++		if !ok {
++			return nil
++		}
++	}
++	return node
++}
++
++func jsonString(payload []byte, path string) string {
++	if s, ok := jsonWalk(payload, path).(string); ok {
++		return s
++	}
++	return ""
++}
++
++func jsonNumber(payload []byte, path string) int64 {
++	if f, ok := jsonWalk(payload, path).(float64); ok {
++		return int64(f)
++	}
++	return 0
++}
+diff --git a/transport/xdrive/lifecycle_test.go b/transport/xdrive/lifecycle_test.go
+new file mode 100644
+index 00000000..08cc11b2
+--- /dev/null
++++ b/transport/xdrive/lifecycle_test.go
+@@ -0,0 +1,117 @@
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"net"
++	"os"
++	"testing"
++	"time"
++)
++
++func TestDeadlineInterruptsPendingRead(t *testing.T) {
++	c, s, cleanup := pair(t)
++	defer cleanup()
++	result := make(chan error, 1)
++	go func() { _, err := c.Read(make([]byte, 1)); result <- err }()
++	time.Sleep(20 * time.Millisecond)
++	c.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
++	select {
++	case err := <-result:
++		if !errors.Is(err, os.ErrDeadlineExceeded) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("deadline did not interrupt pending Read")
++	}
++	c.SetReadDeadline(time.Time{})
++	if _, err := s.Write([]byte("x")); err != nil {
++		t.Fatal(err)
++	}
++	expectRead(t, c, "x")
++}
++
++type stalledStorage struct {
++	Storage
++	started chan struct{}
++}
++
++func (s *stalledStorage) Put(ctx context.Context, name string, b []byte) error {
++	select {
++	case s.started <- struct{}{}:
++	default:
++	}
++	<-ctx.Done()
++	return ctx.Err()
++}
++func TestWriteBackpressureAndCancellation(t *testing.T) {
++	base, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	store := &stalledStorage{Storage: base, started: make(chan struct{}, 1)}
++	p := paramsFromConfig(&Config{SegmentBytes: 8, Concurrency: 1})
++	c := newConn(ctx, store, "up", "down", p, nil)
++	defer c.Close()
++	result := make(chan error, 1)
++	go func() { _, err := c.Write(make([]byte, 1024)); result <- err }()
++	<-store.started
++	c.SetWriteDeadline(time.Now().Add(30 * time.Millisecond))
++	select {
++	case err := <-result:
++		if !errors.Is(err, os.ErrDeadlineExceeded) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("Write ignored backpressure deadline")
++	}
++	cancel()
++}
++func TestCloseListenerAndClient(t *testing.T) {
++	cfg := *settings(t.TempDir())
++	l, err := Listen(cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	result := make(chan error, 1)
++	go func() { _, err := l.Accept(); result <- err }()
++	l.Close()
++	if err := <-result; !errors.Is(err, net.ErrClosed) {
++		t.Fatal(err)
++	}
++	c, err := NewClient(cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	c.Close()
++	if _, err := c.Dial(context.Background()); !errors.Is(err, net.ErrClosed) {
++		t.Fatal(err)
++	}
++}
++func TestLocalWindowsTraversalRejected(t *testing.T) {
++	s, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, name := range []string{`..\escape`, `folder\..\..\escape`, `a:stream`} {
++		if err := s.Put(context.Background(), name, nil); err == nil {
++			t.Fatalf("accepted %q", name)
++		}
++	}
++}
++func TestRejectInvalidSessionAnnouncements(t *testing.T) {
++	for _, name := range []string{"123-../escape", "123-not-a-session", "123-0000000000000000000000000000000z"} {
++		if _, _, ok := parseAnnounce(name); ok {
++			t.Fatalf("accepted %q", name)
++		}
++	}
++}
++
++func TestParameterCapsDoNotOverflow32Bit(t *testing.T) {
++	p := paramsFromConfig(&Config{SegmentBytes: ^uint32(0), Concurrency: ^uint32(0)})
++	if p.segmentBytes != maxSegmentBytes || p.concurrency != maxConcurrency {
++		t.Fatalf("invalid parameter caps: %+v", p)
++	}
++}
+diff --git a/transport/xdrive/local.go b/transport/xdrive/local.go
+new file mode 100644
+index 00000000..39dce2f1
+--- /dev/null
++++ b/transport/xdrive/local.go
+@@ -0,0 +1,146 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"os"
++	"path"
++	"path/filepath"
++	"runtime"
++	"strings"
++	"syscall"
++	"time"
++)
++
++const tempPrefix = ".xdrive-tmp-"
++
++type localStorage struct {
++	root string
++}
++
++func newLocalStorage(root string) (*localStorage, error) {
++	if root == "" {
++		return nil, newError(`empty "remoteFolder"`)
++	}
++	if err := os.MkdirAll(root, 0o700); err != nil {
++		return nil, newError("failed to create remote folder").Base(err)
++	}
++	return &localStorage{root: root}, nil
++}
++
++func (s *localStorage) resolve(name string) (string, error) {
++	if strings.ContainsAny(name, "\\:") {
++		return "", newError("invalid object name")
++	}
++	clean := path.Clean("/" + name)
++	if clean == "/" {
++		return "", newError("invalid object name: ", name)
++	}
++	if strings.HasPrefix(path.Base(clean), tempPrefix) {
++		return "", newError("reserved object name: ", name)
++	}
++	return filepath.Join(s.root, filepath.FromSlash(clean[1:])), nil
++}
++
++func (s *localStorage) Put(ctx context.Context, name string, data []byte) error {
++	full, err := s.resolve(name)
++	if err != nil {
++		return err
++	}
++	dir := filepath.Dir(full)
++	if err := os.MkdirAll(dir, 0o700); err != nil {
++		return newError("failed to create folder ", dir).Base(err)
++	}
++
++	tmp, err := os.CreateTemp(dir, tempPrefix+"*")
++	if err != nil {
++		return newError("failed to create temp file in ", dir).Base(err)
++	}
++	tmpName := tmp.Name()
++	defer os.Remove(tmpName)
++
++	if _, err := tmp.Write(data); err != nil {
++		tmp.Close()
++		return newError("failed to write ", name).Base(err)
++	}
++	if err := tmp.Close(); err != nil {
++		return newError("failed to close ", name).Base(err)
++	}
++	// Publishing an immutable segment as a hard link avoids opening the final
++	// name for rename on Windows while the other process tries to read it.
++	// Filesystems without hard links retain the atomic-rename fallback.
++	if err := os.Link(tmpName, full); err != nil {
++		if err := os.Rename(tmpName, full); err != nil {
++			return newError("failed to commit ", name).Base(err)
++		}
++	}
++	return nil
++}
++
++func (s *localStorage) Get(ctx context.Context, name string) ([]byte, error) {
++	full, err := s.resolve(name)
++	if err != nil {
++		return nil, err
++	}
++	var data []byte
++	for attempt := 0; ; attempt++ {
++		data, err = os.ReadFile(full)
++		sharing := runtime.GOOS == "windows" && (errors.Is(err, syscall.Errno(32)) || errors.Is(err, syscall.Errno(33)))
++		if !sharing || attempt >= 10 {
++			break
++		}
++		select {
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		case <-time.After(10 * time.Millisecond):
++		}
++	}
++	if err != nil {
++		if os.IsNotExist(err) {
++			return nil, errNotFound
++		}
++		return nil, newError("failed to read ", name).Base(err)
++	}
++	return data, nil
++}
++
++func (s *localStorage) Delete(ctx context.Context, name string) error {
++	full, err := s.resolve(name)
++	if err != nil {
++		return err
++	}
++	if err := os.RemoveAll(full); err != nil {
++		return newError("failed to delete ", name).Base(err)
++	}
++	return nil
++}
++
++func (s *localStorage) List(ctx context.Context, prefix string) ([]Entry, error) {
++	full, err := s.resolve(prefix)
++	if err != nil {
++		return nil, err
++	}
++	entries, err := os.ReadDir(full)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return nil, nil
++		}
++		return nil, newError("failed to list ", prefix).Base(err)
++	}
++	found := make([]Entry, 0, len(entries))
++	for _, entry := range entries {
++		if strings.HasPrefix(entry.Name(), tempPrefix) {
++			continue
++		}
++		found = append(found, Entry{Name: entry.Name()})
++	}
++	return found, nil
++}
++
++func (s *localStorage) Close() error {
++	return nil
++}
+diff --git a/transport/xdrive/params.go b/transport/xdrive/params.go
+new file mode 100644
+index 00000000..d0caf19a
+--- /dev/null
++++ b/transport/xdrive/params.go
+@@ -0,0 +1,73 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import "time"
++
++const (
++	defaultSegmentBytes    = 512 * 1024
++	defaultFlushInterval   = 20 * time.Millisecond
++	defaultMinPollInterval = 50 * time.Millisecond
++	defaultMaxPollInterval = 500 * time.Millisecond
++	defaultEagerWindow     = 2 * time.Second
++	defaultHoleTimeout     = 30 * time.Second
++	defaultSessionTTL      = 5 * time.Minute
++	defaultConcurrency     = 8
++
++	maxSegmentBytes = 16 * 1024 * 1024
++	maxConcurrency  = 64
++)
++
++type params struct {
++	segmentBytes    int
++	flushInterval   time.Duration
++	minPollInterval time.Duration
++	maxPollInterval time.Duration
++	eagerWindow     time.Duration
++	holeTimeout     time.Duration
++	sessionTTL      time.Duration
++	concurrency     int
++}
++
++func millis(value uint32, fallback time.Duration) time.Duration {
++	if value == 0 {
++		return fallback
++	}
++	return time.Duration(value) * time.Millisecond
++}
++
++func seconds(value uint32, fallback time.Duration) time.Duration {
++	if value == 0 {
++		return fallback
++	}
++	return time.Duration(value) * time.Second
++}
++
++func capped(value uint32, fallback, limit int) int {
++	if value == 0 {
++		return fallback
++	}
++	if value > uint32(limit) {
++		return limit
++	}
++	return int(value)
++}
++
++func paramsFromConfig(c *Config) params {
++	p := params{
++		segmentBytes:    capped(c.SegmentBytes, defaultSegmentBytes, maxSegmentBytes),
++		flushInterval:   millis(c.FlushIntervalMs, defaultFlushInterval),
++		minPollInterval: millis(c.PollIntervalMs, defaultMinPollInterval),
++		maxPollInterval: millis(c.MaxPollIntervalMs, defaultMaxPollInterval),
++		eagerWindow:     millis(c.EagerWindowMs, defaultEagerWindow),
++		holeTimeout:     millis(c.HoleTimeoutMs, defaultHoleTimeout),
++		sessionTTL:      seconds(c.SessionTtlSeconds, defaultSessionTTL),
++		concurrency:     capped(c.Concurrency, defaultConcurrency, maxConcurrency),
++	}
++	if p.maxPollInterval < p.minPollInterval {
++		p.maxPollInterval = p.minPollInterval
++	}
++	return p
++}
+diff --git a/transport/xdrive/session.go b/transport/xdrive/session.go
+new file mode 100644
+index 00000000..51c592dc
+--- /dev/null
++++ b/transport/xdrive/session.go
+@@ -0,0 +1,284 @@
++// XDRIVE object names and session discovery follow XTLS/Xray-core at
++// 92ccc939aaf4. SPDX-License-Identifier: MPL-2.0
++package xdrive
++
++import (
++	"context"
++	"crypto/rand"
++	"encoding/hex"
++	"fmt"
++	"net"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/mihomo/log"
++)
++
++const (
++	sessionsDir = "sessions"
++	streamsDir  = "streams"
++	maxSessions = 256
++)
++
++func sessionPrefix(id string) string  { return streamsDir + "/" + id }
++func uplinkPrefix(id string) string   { return sessionPrefix(id) + "/c2s" }
++func downlinkPrefix(id string) string { return sessionPrefix(id) + "/s2c" }
++func announceName(id string, t time.Time) string {
++	return fmt.Sprintf("%s/%d-%s", sessionsDir, t.UnixNano(), id)
++}
++func parseAnnounce(name string) (string, time.Time, bool) {
++	stamp, id, ok := strings.Cut(name, "-")
++	if !ok || len(id) != 32 {
++		return "", time.Time{}, false
++	}
++	if _, err := hex.DecodeString(id); err != nil {
++		return "", time.Time{}, false
++	}
++	n, err := strconv.ParseInt(stamp, 10, 64)
++	return id, time.Unix(0, n), err == nil
++}
++
++type Client struct {
++	ctx     context.Context
++	cancel  context.CancelFunc
++	storage Storage
++	http    *http.Client
++	params
++	mu     sync.Mutex
++	conns  map[*Conn]bool
++	closed bool
++}
++
++func NewClient(c Config, h *http.Client) (*Client, error) {
++	if h == nil {
++		h = defaultHTTPClient(c)
++	}
++	storage, err := newStorage(c, h)
++	if err != nil {
++		return nil, err
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	return &Client{ctx: ctx, cancel: cancel, storage: storage, http: h, params: paramsFromConfig(&c), conns: make(map[*Conn]bool)}, nil
++}
++func (c *Client) Dial(ctx context.Context) (net.Conn, error) {
++	c.mu.Lock()
++	closed := c.closed
++	c.mu.Unlock()
++	if closed {
++		return nil, net.ErrClosed
++	}
++	var random [16]byte
++	if _, err := rand.Read(random[:]); err != nil {
++		return nil, err
++	}
++	id := hex.EncodeToString(random[:])
++	announceCtx, cancel := context.WithCancel(ctx)
++	stop := context.AfterFunc(c.ctx, cancel)
++	defer func() { stop(); cancel() }()
++	if err := c.storage.Put(announceCtx, announceName(id, time.Now()), nil); err != nil {
++		return nil, err
++	}
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	if c.closed {
++		return nil, net.ErrClosed
++	}
++	var conn *Conn
++	conn = newConn(c.ctx, c.storage, uplinkPrefix(id), downlinkPrefix(id), c.params, func() { c.mu.Lock(); delete(c.conns, conn); c.mu.Unlock() })
++	c.conns[conn] = true
++	return conn, nil
++}
++func (c *Client) Close() error {
++	c.mu.Lock()
++	if c.closed {
++		c.mu.Unlock()
++		return nil
++	}
++	c.closed = true
++	c.cancel()
++	conns := make([]*Conn, 0, len(c.conns))
++	for conn := range c.conns {
++		conns = append(conns, conn)
++	}
++	c.mu.Unlock()
++	for _, conn := range conns {
++		_ = conn.Close()
++	}
++	c.http.CloseIdleConnections()
++	return c.storage.Close()
++}
++
++type Listener struct {
++	ctx     context.Context
++	cancel  context.CancelFunc
++	storage Storage
++	http    *http.Client
++	params
++	accepted           chan net.Conn
++	mu                 sync.Mutex
++	active             map[string]*Conn
++	handled, idleSince map[string]time.Time
++	closeOnce          sync.Once
++	closeErr           error
++}
++
++func Listen(c Config, h *http.Client) (*Listener, error) {
++	if h == nil {
++		h = defaultHTTPClient(c)
++	}
++	storage, err := newStorage(c, h)
++	if err != nil {
++		return nil, err
++	}
++	if _, disabled := storage.(disabledLocalStorage); disabled {
++		return nil, ErrLocalServiceDisabled
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	l := &Listener{ctx: ctx, cancel: cancel, storage: storage, http: h, params: paramsFromConfig(&c), accepted: make(chan net.Conn, 32), active: make(map[string]*Conn), handled: make(map[string]time.Time), idleSince: make(map[string]time.Time)}
++	go l.run()
++	return l, nil
++}
++func (l *Listener) Accept() (net.Conn, error) {
++	select {
++	case <-l.ctx.Done():
++		return nil, net.ErrClosed
++	case conn := <-l.accepted:
++		return conn, nil
++	}
++}
++func (l *Listener) Addr() net.Addr { return placeholderAddr }
++func (l *Listener) Close() error {
++	l.closeOnce.Do(func() {
++		l.cancel()
++		l.mu.Lock()
++		conns := make([]*Conn, 0, len(l.active))
++		for _, conn := range l.active {
++			conns = append(conns, conn)
++		}
++		l.mu.Unlock()
++		for _, conn := range conns {
++			_ = conn.Close()
++		}
++		l.http.CloseIdleConnections()
++		l.closeErr = l.storage.Close()
++	})
++	return l.closeErr
++}
++func (l *Listener) run() {
++	delay := l.minPollInterval
++	active := time.Now()
++	collected := time.Now()
++	for {
++		accepted, err := l.acceptPending()
++		if err != nil && l.ctx.Err() == nil {
++			log.Warnln("[XDRIVE] session discovery: %v", err)
++		}
++		if accepted {
++			active = time.Now()
++		}
++		if time.Since(active) < l.eagerWindow {
++			delay = l.minPollInterval
++		} else {
++			delay *= 2
++			if delay > l.maxPollInterval {
++				delay = l.maxPollInterval
++			}
++		}
++		if time.Since(collected) >= l.sessionTTL/2 {
++			_ = l.collect()
++			collected = time.Now()
++		}
++		timer := time.NewTimer(delay)
++		select {
++		case <-l.ctx.Done():
++			timer.Stop()
++			return
++		case <-timer.C:
++		}
++	}
++}
++func (l *Listener) acceptPending() (bool, error) {
++	entries, err := l.storage.List(l.ctx, sessionsDir)
++	if err != nil {
++		return false, err
++	}
++	accepted := false
++	for _, entry := range entries {
++		id, at, ok := parseAnnounce(entry.Name)
++		if !ok {
++			continue
++		}
++		if time.Since(at) > l.sessionTTL {
++			_ = l.storage.Delete(l.ctx, sessionsDir+"/"+entry.Name)
++			continue
++		}
++		l.mu.Lock()
++		if l.active[id] != nil || !l.handled[id].IsZero() || len(l.active) >= maxSessions {
++			l.mu.Unlock()
++			continue
++		}
++		conn := newConn(l.ctx, l.storage, downlinkPrefix(id), uplinkPrefix(id), l.params, func() { l.mu.Lock(); delete(l.active, id); l.mu.Unlock() })
++		l.active[id] = conn
++		l.handled[id] = time.Now()
++		l.mu.Unlock()
++		select {
++		case l.accepted <- conn:
++			accepted = true
++			_ = l.storage.Delete(l.ctx, sessionsDir+"/"+entry.Name)
++		case <-l.ctx.Done():
++			_ = conn.Close()
++			return accepted, l.ctx.Err()
++		}
++	}
++	return accepted, nil
++}
++func (l *Listener) collect() error {
++	entries, err := l.storage.List(l.ctx, streamsDir)
++	if err != nil {
++		return err
++	}
++	now := time.Now()
++	var expired []string
++	l.mu.Lock()
++	present := make(map[string]bool, len(entries))
++	for _, entry := range entries {
++		id := entry.Name
++		if len(id) != 32 {
++			continue
++		}
++		if _, err := hex.DecodeString(id); err != nil {
++			continue
++		}
++		present[id] = true
++		if l.active[id] != nil {
++			delete(l.idleSince, id)
++			continue
++		}
++		if since, ok := l.idleSince[id]; !ok {
++			l.idleSince[id] = now
++		} else if now.Sub(since) >= l.sessionTTL {
++			expired = append(expired, id)
++			delete(l.idleSince, id)
++		}
++	}
++	for id := range l.idleSince {
++		if !present[id] {
++			delete(l.idleSince, id)
++		}
++	}
++	for id, at := range l.handled {
++		if l.active[id] == nil && now.Sub(at) >= l.sessionTTL {
++			delete(l.handled, id)
++		}
++	}
++	l.mu.Unlock()
++	for _, id := range expired {
++		if err := l.storage.Delete(l.ctx, sessionPrefix(id)); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/transport/xdrive/storage.go b/transport/xdrive/storage.go
+new file mode 100644
+index 00000000..c08e2c96
+--- /dev/null
++++ b/transport/xdrive/storage.go
+@@ -0,0 +1,73 @@
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"io"
++
++	"github.com/metacubex/http"
++)
++
++var errNotFound = errors.New("object not found")
++
++// A listing can contain many inline objects. Bound the whole response as well
++// as individual segments, including responses from a misconfigured template.
++func readResponse(r io.Reader) ([]byte, error) {
++	const maxResponseBytes = 32 << 20
++	b, err := io.ReadAll(io.LimitReader(r, maxResponseBytes+1))
++	if err == nil && len(b) > maxResponseBytes {
++		return nil, newError("storage response too large")
++	}
++	return b, err
++}
++
++type Entry struct {
++	Name   string
++	Inline []byte
++}
++type Storage interface {
++	Put(context.Context, string, []byte) error
++	Get(context.Context, string) ([]byte, error)
++	Delete(context.Context, string) error
++	List(context.Context, string) ([]Entry, error)
++	Close() error
++}
++
++func newStorage(c Config, client *http.Client) (Storage, error) {
++	if err := c.Validate(); err != nil {
++		return nil, err
++	}
++	if client == nil {
++		client = defaultHTTPClient(c)
++	}
++	switch c.Service {
++	case "local":
++		if !AllowLocalService {
++			return disabledLocalStorage{}, nil
++		}
++		return newLocalStorage(c.RemoteFolder)
++	case "google-drive", "Google Drive":
++		return newDriveStorage(client, &c)
++	default:
++		return newTemplateStorage(client, &c)
++	}
++}
++
++// disabledLocalStorage stands in for `service: local` while AllowLocalService
++// is off (ClashFest core patch 0003). It creates nothing and refuses every
++// operation, so the proxy loads but cannot be used.
++type disabledLocalStorage struct{}
++
++func (disabledLocalStorage) Put(context.Context, string, []byte) error {
++	return ErrLocalServiceDisabled
++}
++func (disabledLocalStorage) Get(context.Context, string) ([]byte, error) {
++	return nil, ErrLocalServiceDisabled
++}
++func (disabledLocalStorage) Delete(context.Context, string) error {
++	return ErrLocalServiceDisabled
++}
++func (disabledLocalStorage) List(context.Context, string) ([]Entry, error) {
++	return nil, ErrLocalServiceDisabled
++}
++func (disabledLocalStorage) Close() error { return nil }
+diff --git a/transport/xdrive/template.go b/transport/xdrive/template.go
+new file mode 100644
+index 00000000..eb26239e
+--- /dev/null
++++ b/transport/xdrive/template.go
+@@ -0,0 +1,452 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"encoding/json"
++	"github.com/metacubex/http"
++	"io"
++	"net/url"
++	"regexp"
++	"strings"
++	"sync"
++	"time"
++)
++
++type authTemplate struct {
++	Type       string            `json:"type"`
++	Header     map[string]string `json:"header"`
++	Username   string            `json:"username"`
++	Password   string            `json:"password"`
++	TokenURL   string            `json:"tokenUrl"`
++	Form       map[string]string `json:"form"`
++	TokenPath  string            `json:"tokenPath"`
++	ExpiryPath string            `json:"expiryPath"`
++}
++
++type opTemplate struct {
++	Method     string            `json:"method"`
++	URL        string            `json:"url"`
++	Headers    map[string]string `json:"headers"`
++	Body       string            `json:"body"`
++	NamesRegex string            `json:"namesRegex"`
++}
++
++type retryTemplate struct {
++	Status     []int  `json:"status"`
++	RateReason string `json:"rateReason"`
++}
++
++type storageTemplate struct {
++	Flatten     bool          `json:"flatten"`
++	Concurrency int           `json:"concurrency"`
++	Auth        authTemplate  `json:"auth"`
++	Put         opTemplate    `json:"put"`
++	Get         opTemplate    `json:"get"`
++	Delete      opTemplate    `json:"delete"`
++	List        opTemplate    `json:"list"`
++	Retry       retryTemplate `json:"retry"`
++
++	names *regexp.Regexp
++}
++
++type templateStorage struct {
++	tmpl    *storageTemplate
++	client  *http.Client
++	folder  string
++	secrets []string
++
++	inflight chan struct{}
++
++	tokenMu     sync.Mutex
++	token       string
++	tokenExpiry time.Time
++}
++
++func newTemplateStorage(client *http.Client, config *Config) (*templateStorage, error) {
++	tmpl := &storageTemplate{}
++	payload, err := json.Marshal(config.Template)
++	if err != nil {
++		return nil, err
++	}
++	if err := json.Unmarshal(payload, tmpl); err != nil {
++		return nil, newError("invalid template").Base(err)
++	}
++	if tmpl.Put.URL == "" || tmpl.Get.URL == "" || tmpl.List.URL == "" || tmpl.Delete.URL == "" {
++		return nil, newError("template needs put, get, list and delete operations")
++	}
++	if tmpl.List.NamesRegex == "" {
++		return nil, newError("template list needs a namesRegex")
++	}
++	re, err := regexp.Compile(tmpl.List.NamesRegex)
++	if err != nil {
++		return nil, newError("bad namesRegex").Base(err)
++	}
++	if re.NumSubexp() < 1 {
++		return nil, newError("namesRegex needs one capture group")
++	}
++	tmpl.names = re
++
++	conc := tmpl.Concurrency
++	if conc <= 0 {
++		conc = driveMaxInflight
++	}
++	if conc > maxTemplateConcurrency {
++		conc = maxTemplateConcurrency
++	}
++
++	return &templateStorage{
++		tmpl:     tmpl,
++		client:   client,
++		folder:   config.RemoteFolder,
++		secrets:  config.Secrets,
++		inflight: make(chan struct{}, conc),
++	}, nil
++}
++
++const maxTemplateConcurrency = 256
++
++func (s *templateStorage) baseVars() map[string]string {
++	vars := map[string]string{"folder": s.folder}
++	for i, secret := range s.secrets {
++		vars["secret"+itoa(i)] = secret
++	}
++	return vars
++}
++
++func subst(tmpl string, vars map[string]string) string {
++	if tmpl == "" || !strings.ContainsRune(tmpl, '{') {
++		return tmpl
++	}
++	out := tmpl
++	for k, v := range vars {
++		out = strings.ReplaceAll(out, "{"+k+"}", v)
++	}
++	return out
++}
++
++func itoa(i int) string {
++	if i == 0 {
++		return "0"
++	}
++	var b [20]byte
++	pos := len(b)
++	for i > 0 {
++		pos--
++		b[pos] = byte('0' + i%10)
++		i /= 10
++	}
++	return string(b[pos:])
++}
++
++func (s *templateStorage) storedName(name string) string {
++	if s.tmpl.Flatten {
++		return flatten(name)
++	}
++	return name
++}
++
++func (s *templateStorage) retryable(status int, payload []byte) bool {
++	for _, code := range s.tmpl.Retry.Status {
++		if status == code {
++			return true
++		}
++	}
++	if status == http.StatusForbidden && s.tmpl.Retry.RateReason != "" {
++		if reason := jsonString(payload, s.tmpl.Retry.RateReason); reason != "" {
++			return true
++		}
++	}
++	return false
++}
++
++func (s *templateStorage) authHeaders(ctx context.Context, vars map[string]string) (map[string]string, error) {
++	switch s.tmpl.Auth.Type {
++	case "", "none":
++		return nil, nil
++	case "static", "oauth2":
++		if s.tmpl.Auth.Type == "oauth2" {
++			token, err := s.accessToken(ctx)
++			if err != nil {
++				return nil, err
++			}
++			vars["token"] = token
++		}
++		headers := make(map[string]string, len(s.tmpl.Auth.Header))
++		for k, v := range s.tmpl.Auth.Header {
++			headers[k] = subst(v, vars)
++		}
++		return headers, nil
++	case "basic":
++		user := subst(s.tmpl.Auth.Username, vars)
++		pass := subst(s.tmpl.Auth.Password, vars)
++		enc := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
++		return map[string]string{"Authorization": "Basic " + enc}, nil
++	default:
++		return nil, newError("unsupported auth type: ", s.tmpl.Auth.Type)
++	}
++}
++
++func (s *templateStorage) accessToken(ctx context.Context) (string, error) {
++	s.tokenMu.Lock()
++	defer s.tokenMu.Unlock()
++
++	if s.token != "" && time.Now().Before(s.tokenExpiry) {
++		return s.token, nil
++	}
++
++	form := make(map[string]string, len(s.tmpl.Auth.Form))
++	vars := s.baseVars()
++	values := strings.Builder{}
++	first := true
++	for k, v := range s.tmpl.Auth.Form {
++		form[k] = subst(v, vars)
++		if !first {
++			values.WriteByte('&')
++		}
++		first = false
++		values.WriteString(url.QueryEscape(k))
++		values.WriteByte('=')
++		values.WriteString(url.QueryEscape(form[k]))
++	}
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.tmpl.Auth.TokenURL,
++		strings.NewReader(values.String()))
++	if err != nil {
++		return "", newError("failed to build the token request").Base(err)
++	}
++	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++
++	resp, err := s.client.Do(req)
++	if err != nil {
++		return "", newError("failed to fetch the token").Base(err)
++	}
++	defer resp.Body.Close()
++	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
++	if err != nil {
++		return "", newError("failed to read the token response").Base(err)
++	}
++	if resp.StatusCode != http.StatusOK {
++		return "", newError("the token endpoint answered ", resp.StatusCode, ": ", string(payload))
++	}
++
++	path := s.tmpl.Auth.TokenPath
++	if path == "" {
++		path = "access_token"
++	}
++	token := jsonString(payload, path)
++	if token == "" {
++		return "", newError("the token response has no token at ", path)
++	}
++
++	lifetime := int64(3600)
++	if s.tmpl.Auth.ExpiryPath != "" {
++		if n := jsonNumber(payload, s.tmpl.Auth.ExpiryPath); n > 0 {
++			lifetime = n
++		}
++	}
++	if lifetime > 60 {
++		lifetime -= 60
++	}
++	s.token = token
++	s.tokenExpiry = time.Now().Add(time.Duration(lifetime) * time.Second)
++	return s.token, nil
++}
++
++func (s *templateStorage) invalidateToken() {
++	s.tokenMu.Lock()
++	s.token = ""
++	s.tokenMu.Unlock()
++}
++
++func (s *templateStorage) do(ctx context.Context, op *opTemplate, vars map[string]string, body []byte) (int, []byte, error) {
++	backoff := driveInitialBackoff
++	var lastErr error
++
++	for attempt := 0; attempt < driveMaxAttempts; attempt++ {
++		if attempt > 0 {
++			select {
++			case <-ctx.Done():
++				return 0, nil, ctx.Err()
++			case <-time.After(jitter(backoff)):
++			}
++			backoff *= 2
++			if backoff > driveMaxBackoff {
++				backoff = driveMaxBackoff
++			}
++		}
++
++		authHeaders, err := s.authHeaders(ctx, vars)
++		if err != nil {
++			lastErr = err
++			continue
++		}
++
++		method := op.Method
++		if method == "" {
++			method = http.MethodGet
++		}
++
++		var reader io.Reader
++		if body != nil {
++			reader = bytes.NewReader(body)
++		}
++		req, err := http.NewRequestWithContext(ctx, method, subst(op.URL, vars), reader)
++		if err != nil {
++			return 0, nil, newError("failed to build request").Base(err)
++		}
++		for k, v := range authHeaders {
++			req.Header.Set(k, v)
++		}
++		for k, v := range op.Headers {
++			req.Header.Set(k, subst(v, vars))
++		}
++
++		select {
++		case s.inflight <- struct{}{}:
++		case <-ctx.Done():
++			return 0, nil, ctx.Err()
++		}
++		resp, err := s.client.Do(req)
++		if err != nil {
++			<-s.inflight
++			if ctx.Err() != nil {
++				return 0, nil, ctx.Err()
++			}
++			lastErr = newError("request failed").Base(err)
++			continue
++		}
++		payload, err := readResponse(resp.Body)
++		resp.Body.Close()
++		<-s.inflight
++		if err != nil {
++			if ctx.Err() != nil {
++				return 0, nil, ctx.Err()
++			}
++			lastErr = newError("failed to read response").Base(err)
++			continue
++		}
++
++		if resp.StatusCode == http.StatusUnauthorized && s.tmpl.Auth.Type == "oauth2" {
++			s.invalidateToken()
++			lastErr = newError("the service rejected the token")
++			continue
++		}
++		if s.retryable(resp.StatusCode, payload) {
++			lastErr = newError("the service answered ", resp.StatusCode)
++			continue
++		}
++		return resp.StatusCode, payload, nil
++	}
++	return 0, nil, lastErr
++}
++
++func (s *templateStorage) Put(ctx context.Context, name string, data []byte) error {
++	vars := s.baseVars()
++	vars["name"] = s.storedName(name)
++
++	body := data
++	if s.tmpl.Put.Body != "" {
++		vars["data"] = base64.StdEncoding.EncodeToString(data)
++		body = []byte(subst(s.tmpl.Put.Body, vars))
++	}
++
++	status, payload, err := s.do(ctx, &s.tmpl.Put, vars, body)
++	if err != nil {
++		return err
++	}
++	if status < 200 || status >= 300 {
++		return newError("put of ", name, " answered ", status, ": ", string(payload))
++	}
++	return nil
++}
++
++func (s *templateStorage) Get(ctx context.Context, name string) ([]byte, error) {
++	vars := s.baseVars()
++	vars["name"] = s.storedName(name)
++
++	status, payload, err := s.do(ctx, &s.tmpl.Get, vars, nil)
++	if err != nil {
++		return nil, err
++	}
++	switch {
++	case status >= 200 && status < 300:
++		return payload, nil
++	case status == http.StatusNotFound:
++		return nil, errNotFound
++	default:
++		return nil, newError("get of ", name, " answered ", status, ": ", string(payload))
++	}
++}
++
++func (s *templateStorage) Delete(ctx context.Context, name string) error {
++	vars := s.baseVars()
++	vars["name"] = s.storedName(name)
++
++	status, payload, err := s.do(ctx, &s.tmpl.Delete, vars, nil)
++	if err != nil {
++		return err
++	}
++	if status == http.StatusNotFound || (status >= 200 && status < 300) {
++		return nil
++	}
++	return newError("delete of ", name, " answered ", status, ": ", string(payload))
++}
++
++func (s *templateStorage) List(ctx context.Context, prefix string) ([]Entry, error) {
++	vars := s.baseVars()
++	flat := s.storedName(prefix)
++	vars["prefix"] = flat
++
++	status, payload, err := s.do(ctx, &s.tmpl.List, vars, nil)
++	if err != nil {
++		return nil, err
++	}
++	if status == http.StatusNotFound {
++		return nil, nil
++	}
++	if status < 200 || status >= 300 {
++		return nil, newError("list of ", prefix, " answered ", status, ": ", string(payload))
++	}
++
++	matches := s.tmpl.names.FindAllStringSubmatch(string(payload), -1)
++	if !s.tmpl.Flatten {
++		entries := make([]Entry, 0, len(matches))
++		for _, m := range matches {
++			entries = append(entries, Entry{Name: m[1]})
++		}
++		return entries, nil
++	}
++
++	want := flat + flatSeparator
++	seen := make(map[string]bool, len(matches))
++	entries := make([]Entry, 0, len(matches))
++	for _, m := range matches {
++		name := m[1]
++		if !strings.HasPrefix(name, want) {
++			continue
++		}
++		rest := strings.TrimPrefix(name, want)
++		if rest == "" {
++			continue
++		}
++		if cut := strings.Index(rest, flatSeparator); cut >= 0 {
++			rest = rest[:cut]
++		}
++		if seen[rest] {
++			continue
++		}
++		seen[rest] = true
++		entries = append(entries, Entry{Name: rest})
++	}
++	return entries, nil
++}
++
++func (s *templateStorage) Close() error {
++	return nil
++}
+diff --git a/transport/xdrive/template_test.go b/transport/xdrive/template_test.go
+new file mode 100644
+index 00000000..753657a8
+--- /dev/null
++++ b/transport/xdrive/template_test.go
+@@ -0,0 +1,273 @@
++// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++type fakeStore struct {
++	server *httptest.Server
++
++	mu       sync.Mutex
++	objects  map[string][]byte
++	needAuth string
++	sawAuth  string
++	tokens   int
++}
++
++func newFakeStore(t *testing.T) *fakeStore {
++	t.Helper()
++
++	store := &fakeStore{objects: make(map[string][]byte)}
++	store.server = httptest.NewServer(http.HandlerFunc(store.handle))
++	t.Cleanup(store.server.Close)
++	return store
++}
++
++func (s *fakeStore) handle(w http.ResponseWriter, r *http.Request) {
++	if r.URL.Path == "/token" {
++		s.mu.Lock()
++		s.tokens++
++		s.mu.Unlock()
++		json.NewEncoder(w).Encode(map[string]interface{}{
++			"access_token": "tok-fake", "expires_in": 3600,
++		})
++		return
++	}
++
++	if auth := r.Header.Get("Authorization"); auth != "" {
++		s.mu.Lock()
++		s.sawAuth = auth
++		s.mu.Unlock()
++	}
++	if s.needAuth != "" && r.Header.Get("Authorization") != s.needAuth {
++		w.WriteHeader(http.StatusUnauthorized)
++		return
++	}
++
++	key := strings.TrimPrefix(r.URL.Path, "/folder/")
++
++	switch r.Method {
++	case "PROPFIND":
++		s.mu.Lock()
++		var b strings.Builder
++		for name := range s.objects {
++			fmt.Fprintf(&b, "<d:href>/folder/%s</d:href>\n", name)
++		}
++		s.mu.Unlock()
++		w.Write([]byte(b.String()))
++	case http.MethodPut:
++		body, _ := io.ReadAll(r.Body)
++		s.mu.Lock()
++		s.objects[key] = body
++		s.mu.Unlock()
++		w.WriteHeader(http.StatusCreated)
++	case http.MethodGet:
++		s.mu.Lock()
++		data, ok := s.objects[key]
++		s.mu.Unlock()
++		if !ok {
++			w.WriteHeader(http.StatusNotFound)
++			return
++		}
++		w.Write(data)
++	case http.MethodDelete:
++		s.mu.Lock()
++		delete(s.objects, key)
++		s.mu.Unlock()
++		w.WriteHeader(http.StatusNoContent)
++	default:
++		w.WriteHeader(http.StatusMethodNotAllowed)
++	}
++}
++
++func (s *fakeStore) count() int {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	return len(s.objects)
++}
++
++func (s *fakeStore) seenAuth() string {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	return s.sawAuth
++}
++
++func templateSettings(store *fakeStore, auth map[string]interface{}, secrets []string) *Config {
++	base := store.server.URL
++	tmpl := map[string]interface{}{
++		"flatten": true,
++		"auth":    auth,
++		"put":     map[string]interface{}{"method": "PUT", "url": base + "/folder/{name}"},
++		"get":     map[string]interface{}{"method": "GET", "url": base + "/folder/{name}"},
++		"delete":  map[string]interface{}{"method": "DELETE", "url": base + "/folder/{name}"},
++		"list": map[string]interface{}{
++			"method":     "PROPFIND",
++			"url":        base + "/folder/",
++			"namesRegex": `<d:href>/folder/([^<]+)</d:href>`,
++		},
++		"retry": map[string]interface{}{"status": []int{429, 500, 502, 503}},
++	}
++	return &Config{RemoteFolder: "folder", Service: "template", Secrets: secrets, Template: tmpl, FlushIntervalMs: 5, PollIntervalMs: 5, MaxPollIntervalMs: 20, SessionTtlSeconds: 5}
++}
++
++func newTemplateBackend(t *testing.T, store *fakeStore, auth map[string]interface{}, secrets []string) *templateStorage {
++	t.Helper()
++	settings := templateSettings(store, auth, secrets)
++	storage, err := newTemplateStorage(NewHTTPClient(nil, nil), settings)
++	if err != nil {
++		t.Fatalf("newTemplateStorage: %v", err)
++	}
++	return storage
++}
++
++func TestTemplateRoundTrip(t *testing.T) {
++	store := newFakeStore(t)
++	storage := newTemplateBackend(t, store, map[string]interface{}{"type": "none"}, nil)
++	ctx := context.Background()
++
++	if err := storage.Put(ctx, "streams/abc/c2s/000000000.seg", []byte("hello")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++	data, err := storage.Get(ctx, "streams/abc/c2s/000000000.seg")
++	if err != nil {
++		t.Fatalf("Get: %v", err)
++	}
++	if string(data) != "hello" {
++		t.Fatalf("Get returned %q, want hello", data)
++	}
++
++	entries, err := storage.List(ctx, "streams/abc/c2s")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(entries) != 1 || entries[0].Name != "000000000.seg" {
++		t.Fatalf("List returned %v, want one segment", entries)
++	}
++
++	if _, err := storage.Get(ctx, "streams/abc/c2s/000000009.seg"); err != errNotFound {
++		t.Fatalf("Get of a missing object returned %v, want errNotFound", err)
++	}
++
++	if err := storage.Delete(ctx, "streams/abc/c2s/000000000.seg"); err != nil {
++		t.Fatalf("Delete: %v", err)
++	}
++	if store.count() != 0 {
++		t.Fatalf("store still holds %d objects", store.count())
++	}
++}
++
++func TestTemplateListReturnsDirectChildren(t *testing.T) {
++	store := newFakeStore(t)
++	storage := newTemplateBackend(t, store, map[string]interface{}{"type": "none"}, nil)
++	ctx := context.Background()
++
++	for _, name := range []string{
++		"streams/one/c2s/000000000.seg",
++		"streams/one/s2c/000000000.seg",
++		"streams/two/c2s/000000000.seg",
++	} {
++		if err := storage.Put(ctx, name, []byte("x")); err != nil {
++			t.Fatalf("Put %s: %v", name, err)
++		}
++	}
++
++	entries, err := storage.List(ctx, "streams")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(entries) != 2 {
++		t.Fatalf("List returned %v, want the two session ids", entries)
++	}
++}
++
++func TestTemplateBasicAuth(t *testing.T) {
++	store := newFakeStore(t)
++	store.needAuth = "Basic dXNlcjpwYXNz"
++	auth := map[string]interface{}{"type": "basic", "username": "{secret0}", "password": "{secret1}"}
++	storage := newTemplateBackend(t, store, auth, []string{"user", "pass"})
++
++	if err := storage.Put(context.Background(), "sessions/a", []byte("x")); err != nil {
++		t.Fatalf("Put with basic auth: %v", err)
++	}
++	if store.seenAuth() != "Basic dXNlcjpwYXNz" {
++		t.Fatalf("server saw auth %q", store.seenAuth())
++	}
++}
++
++func TestTemplateOAuth(t *testing.T) {
++	store := newFakeStore(t)
++	store.needAuth = "Bearer tok-fake"
++	auth := map[string]interface{}{
++		"type":     "oauth2",
++		"tokenUrl": store.server.URL + "/token",
++		"form":     map[string]interface{}{"grant_type": "refresh_token", "refresh_token": "{secret0}"},
++		"header":   map[string]interface{}{"Authorization": "Bearer {token}"},
++	}
++	storage := newTemplateBackend(t, store, auth, []string{"refresh"})
++	ctx := context.Background()
++
++	for i := 0; i < 4; i++ {
++		if err := storage.Put(ctx, fmt.Sprintf("sessions/s%d", i), nil); err != nil {
++			t.Fatalf("Put: %v", err)
++		}
++	}
++	if store.tokens != 1 {
++		t.Fatalf("token endpoint was hit %d times, want 1", store.tokens)
++	}
++}
++
++func TestTemplateTransport(t *testing.T) {
++	store := newFakeStore(t)
++	settings := templateSettings(store, map[string]interface{}{"type": "none"}, nil)
++
++	client, server, cleanup := pairWith(t, settings)
++	defer cleanup()
++
++	if _, err := client.Write([]byte("ping")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	expectRead(t, server, "ping")
++
++	if _, err := server.Write([]byte("pong")); err != nil {
++		t.Fatalf("server write: %v", err)
++	}
++	expectRead(t, client, "pong")
++
++	payload := make([]byte, 300000)
++	for i := range payload {
++		payload[i] = byte(i % 251)
++	}
++	go func() { client.Write(payload) }()
++
++	if err := server.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
++		t.Fatalf("SetReadDeadline: %v", err)
++	}
++	got := make([]byte, len(payload))
++	if _, err := io.ReadFull(server, got); err != nil {
++		t.Fatalf("ReadFull: %v", err)
++	}
++	for i := range got {
++		if got[i] != payload[i] {
++			t.Fatalf("payload mismatch at byte %d", i)
++		}
++	}
++}
++
++func TestTemplateConcurrencyDefault(t *testing.T) {
++	store := newFakeStore(t)
++	storage := newTemplateBackend(t, store, map[string]interface{}{"type": "none"}, nil)
++	if cap(storage.inflight) != driveMaxInflight {
++		t.Fatalf("default inflight cap is %d, want %d", cap(storage.inflight), driveMaxInflight)
++	}
++}
+diff --git a/transport/xdrive/wal.go b/transport/xdrive/wal.go
+new file mode 100644
+index 00000000..07e42604
+--- /dev/null
++++ b/transport/xdrive/wal.go
+@@ -0,0 +1,297 @@
++// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
++// Copyright Xray-core contributors. Licensed under MPL-2.0.
++// SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"context"
++	"fmt"
++	"io"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++)
++
++const (
++	segSuffix = ".seg"
++	endSuffix = ".end"
++	errSuffix = ".err"
++)
++
++func objectName(prefix string, seq int64, suffix string) string {
++	return fmt.Sprintf("%s/%09d%s", prefix, seq, suffix)
++}
++
++func parseEntry(name string) (int64, bool) {
++	dot := strings.LastIndexByte(name, '.')
++	if dot < 0 {
++		return 0, false
++	}
++	switch name[dot:] {
++	case segSuffix, endSuffix, errSuffix:
++	default:
++		return 0, false
++	}
++	seq, err := strconv.ParseInt(name[:dot], 10, 64)
++	if err != nil || seq < 0 {
++		return 0, false
++	}
++	return seq, true
++}
++
++type walReader struct {
++	ctx     context.Context
++	storage Storage
++	prefix  string
++	params
++	seq int64
++
++	ch        chan []byte
++	discards  chan string
++	wake      chan struct{}
++	holeSince time.Time
++
++	errMu sync.Mutex
++	err   error
++}
++
++func newWALReader(ctx context.Context, storage Storage, prefix string, p params) *walReader {
++	r := &walReader{
++		ctx:      ctx,
++		storage:  storage,
++		prefix:   prefix,
++		params:   p,
++		ch:       make(chan []byte, p.concurrency),
++		discards: make(chan string, 4*p.concurrency),
++		wake:     make(chan struct{}, 1),
++	}
++	go r.run()
++	go r.discardLoop()
++	return r
++}
++
++func (r *walReader) Wake() {
++	select {
++	case r.wake <- struct{}{}:
++	default:
++	}
++}
++
++func (r *walReader) run() {
++	defer close(r.ch)
++
++	delay := r.minPollInterval
++	active := time.Now()
++	for {
++		polled := time.Now()
++		advanced, eof, err := r.poll()
++		if err != nil {
++			r.setErr(err)
++			return
++		}
++		if eof {
++			return
++		}
++
++		switch {
++		case advanced:
++			active = time.Now()
++			delay = r.minPollInterval
++		case time.Since(active) < r.eagerWindow:
++			delay = r.minPollInterval
++		default:
++			delay *= 2
++			if delay > r.maxPollInterval {
++				delay = r.maxPollInterval
++			}
++		}
++
++		timer := time.NewTimer(delay)
++		select {
++		case <-r.ctx.Done():
++			timer.Stop()
++			return
++		case <-timer.C:
++		case <-r.wake:
++			timer.Stop()
++			active = time.Now()
++			delay = r.minPollInterval
++			if rest := r.minPollInterval - time.Since(polled); rest > 0 {
++				select {
++				case <-r.ctx.Done():
++					return
++				case <-time.After(rest):
++				}
++			}
++		}
++	}
++}
++
++func (r *walReader) poll() (advanced, eof bool, err error) {
++	listed, err := r.storage.List(r.ctx, r.prefix)
++	if err != nil {
++		return false, false, err
++	}
++	if len(listed) == 0 {
++		return false, false, nil
++	}
++
++	pending := make(map[int64]Entry, len(listed))
++	ahead := false
++	for _, entry := range listed {
++		seq, ok := parseEntry(entry.Name)
++		if !ok {
++			continue
++		}
++		pending[seq] = entry
++		if seq > r.seq {
++			ahead = true
++		}
++	}
++
++	if _, ok := pending[r.seq]; !ok && ahead {
++		if r.holeSince.IsZero() {
++			r.holeSince = time.Now()
++		} else if time.Since(r.holeSince) >= r.holeTimeout {
++			return false, false, newError("segment ", r.seq,
++				" never arrived while later ones did, the peer lost it")
++		}
++	} else {
++		r.holeSince = time.Time{}
++	}
++
++	for {
++		if entry, ok := pending[r.seq]; ok && strings.HasSuffix(entry.Name, errSuffix) {
++			r.discard(r.prefix + "/" + entry.Name)
++			return advanced, false, newError("the peer could not store segment ", r.seq)
++		}
++
++		batch, done := r.nextBatch(pending)
++		if done {
++			return advanced, true, nil
++		}
++		if len(batch) == 0 {
++			return advanced, false, nil
++		}
++
++		chunks, err := r.fetch(batch)
++		if err != nil {
++			if err == errNotFound {
++				return advanced, false, nil
++			}
++			return advanced, false, err
++		}
++
++		for i, chunk := range chunks {
++			select {
++			case r.ch <- chunk:
++			case <-r.ctx.Done():
++				return advanced, true, nil
++			}
++			r.seq++
++			advanced = true
++			r.discard(r.prefix + "/" + batch[i].Name)
++		}
++	}
++}
++
++func (r *walReader) nextBatch(pending map[int64]Entry) (batch []Entry, done bool) {
++	for i := 0; i < r.concurrency; i++ {
++		entry, ok := pending[r.seq+int64(i)]
++		if !ok {
++			break
++		}
++		if !strings.HasSuffix(entry.Name, segSuffix) {
++			if i == 0 && strings.HasSuffix(entry.Name, endSuffix) {
++				r.discard(r.prefix + "/" + entry.Name)
++				return nil, true
++			}
++			break
++		}
++		batch = append(batch, entry)
++	}
++	return batch, false
++}
++
++func (r *walReader) fetch(batch []Entry) ([][]byte, error) {
++	chunks := make([][]byte, len(batch))
++	failures := make([]error, len(batch))
++
++	var wg sync.WaitGroup
++	for i, entry := range batch {
++		if entry.Inline != nil {
++			if len(entry.Inline) > maxSegmentBytes {
++				return nil, newError("segment too large")
++			}
++			chunks[i] = entry.Inline
++			continue
++		}
++		wg.Add(1)
++		go func(i int, name string) {
++			defer wg.Done()
++			chunks[i], failures[i] = r.storage.Get(r.ctx, r.prefix+"/"+name)
++			if len(chunks[i]) > maxSegmentBytes {
++				failures[i] = newError("segment too large")
++			}
++		}(i, entry.Name)
++	}
++	wg.Wait()
++
++	for i := range batch {
++		if failures[i] != nil {
++			return nil, failures[i]
++		}
++	}
++	return chunks, nil
++}
++
++func (r *walReader) discard(name string) {
++	select {
++	case r.discards <- name:
++	default:
++	}
++}
++
++func (r *walReader) discardLoop() {
++	var wg sync.WaitGroup
++	defer wg.Wait()
++
++	sem := make(chan struct{}, r.concurrency)
++	for {
++		select {
++		case <-r.ctx.Done():
++			return
++		case name := <-r.discards:
++			select {
++			case sem <- struct{}{}:
++			case <-r.ctx.Done():
++				return
++			}
++			wg.Add(1)
++			go func(name string) {
++				defer wg.Done()
++				defer func() { <-sem }()
++				r.storage.Delete(r.ctx, name)
++			}(name)
++		}
++	}
++}
++
++func (r *walReader) setErr(err error) {
++	r.errMu.Lock()
++	defer r.errMu.Unlock()
++	if r.err == nil {
++		r.err = err
++	}
++}
++
++func (r *walReader) Err() error {
++	r.errMu.Lock()
++	defer r.errMu.Unlock()
++	if r.err != nil {
++		return r.err
++	}
++	return io.EOF
++}
+diff --git a/transport/xdrive/writer.go b/transport/xdrive/writer.go
+new file mode 100644
+index 00000000..b565253c
+--- /dev/null
++++ b/transport/xdrive/writer.go
+@@ -0,0 +1,171 @@
++package xdrive
++
++import (
++	"context"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/common/net/deadline"
++)
++
++type segment struct {
++	seq  int64
++	data []byte
++}
++
++// A fixed number of workers and a bounded queue apply backpressure before
++// allocating another segment, rather than spawning a goroutine per Write.
++type walWriter struct {
++	ctx     context.Context
++	storage Storage
++	prefix  string
++	params
++	deadline *deadline.PipeDeadline
++	mu       sync.Mutex
++	buf      []byte
++	seq      int64
++	closed   bool
++	queue    chan segment
++	stop     chan struct{}
++	failed   chan struct{}
++	workers  sync.WaitGroup
++	errMu    sync.Mutex
++	err      error
++}
++
++func newWALWriter(ctx context.Context, storage Storage, prefix string, p params, d *deadline.PipeDeadline) *walWriter {
++	w := &walWriter{ctx: ctx, storage: storage, prefix: prefix, params: p, deadline: d, queue: make(chan segment, p.concurrency), stop: make(chan struct{}), failed: make(chan struct{})}
++	for i := 0; i < p.concurrency; i++ {
++		w.workers.Add(1)
++		go w.uploadLoop()
++	}
++	go w.flushLoop()
++	return w
++}
++func (w *walWriter) Err() error { w.errMu.Lock(); defer w.errMu.Unlock(); return w.err }
++func (w *walWriter) fail(err error) {
++	w.errMu.Lock()
++	defer w.errMu.Unlock()
++	if w.err == nil {
++		w.err = err
++		close(w.failed)
++	}
++}
++func (w *walWriter) Write(p []byte) (int, error) {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	if w.closed {
++		return 0, net.ErrClosed
++	}
++	total := 0
++	for len(p) > 0 {
++		if err := w.Err(); err != nil {
++			return total, err
++		}
++		select {
++		case <-w.ctx.Done():
++			return total, net.ErrClosed
++		case <-w.deadline.Wait():
++			return total, os.ErrDeadlineExceeded
++		default:
++		}
++		n := minInt(len(p), w.segmentBytes-len(w.buf))
++		w.buf = append(w.buf, p[:n]...)
++		p = p[n:]
++		total += n
++		if len(w.buf) == w.segmentBytes {
++			if err := w.flushLocked(); err != nil {
++				return total, err
++			}
++		}
++	}
++	return total, nil
++}
++func (w *walWriter) flushLocked() error {
++	if len(w.buf) == 0 {
++		return nil
++	}
++	select {
++	case w.queue <- segment{seq: w.seq, data: w.buf}:
++		w.seq++
++		w.buf = nil
++		return nil
++	case <-w.ctx.Done():
++		return net.ErrClosed
++	case <-w.failed:
++		return w.Err()
++	case <-w.deadline.Wait():
++		return os.ErrDeadlineExceeded
++	}
++}
++func (w *walWriter) flushLoop() {
++	ticker := time.NewTicker(w.flushInterval)
++	defer ticker.Stop()
++	for {
++		select {
++		case <-w.ctx.Done():
++			return
++		case <-w.stop:
++			return
++		case <-ticker.C:
++			w.mu.Lock()
++			if !w.closed {
++				_ = w.flushLocked()
++			}
++			w.mu.Unlock()
++		}
++	}
++}
++func (w *walWriter) uploadLoop() {
++	defer w.workers.Done()
++	for {
++		select {
++		case <-w.ctx.Done():
++			return
++		case item, ok := <-w.queue:
++			if !ok {
++				return
++			}
++			if err := w.storage.Put(w.ctx, objectName(w.prefix, item.seq, segSuffix), item.data); err != nil {
++				w.fail(newError("failed to store segment").Base(err))
++				_ = w.storage.Put(w.ctx, objectName(w.prefix, item.seq, errSuffix), nil)
++				return
++			}
++		}
++	}
++}
++func (w *walWriter) Close() error {
++	w.mu.Lock()
++	if w.closed {
++		w.mu.Unlock()
++		return nil
++	}
++	w.closed = true
++	close(w.stop)
++	err := w.flushLocked()
++	close(w.queue)
++	seq := w.seq
++	w.mu.Unlock()
++	w.workers.Wait()
++	if err != nil {
++		return err
++	}
++	if err = w.Err(); err != nil {
++		return err
++	}
++	if w.ctx.Err() != nil {
++		return io.ErrClosedPipe
++	}
++	return w.storage.Put(w.ctx, objectName(w.prefix, seq, endSuffix), nil)
++}
++
++// minInt replaces the go1.21 built-in min: vanilla mihomo is still go 1.20 (ClashFest patch 0003).
++func minInt(a, b int) int {
++	if a < b {
++		return a
++	}
++	return b
++}
+diff --git a/transport/xdrive/xdrive_test.go b/transport/xdrive/xdrive_test.go
+new file mode 100644
+index 00000000..15de067e
+--- /dev/null
++++ b/transport/xdrive/xdrive_test.go
+@@ -0,0 +1,393 @@
++// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
++
++package xdrive
++
++import (
++	"bytes"
++	"context"
++	"crypto/rand"
++	"io"
++	"net"
++	"os"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++const testPatience = 30 * time.Second
++
++func settings(folder string) *Config {
++	return &Config{RemoteFolder: folder, Service: "local", FlushIntervalMs: 5, PollIntervalMs: 5, MaxPollIntervalMs: 20, SessionTtlSeconds: 5}
++}
++func pair(t *testing.T) (net.Conn, net.Conn, func()) {
++	t.Helper()
++	return pairWith(t, settings(t.TempDir()))
++}
++func pairWith(t *testing.T, cfg *Config) (net.Conn, net.Conn, func()) {
++	t.Helper()
++	l, err := Listen(*cfg, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	c, err := NewClient(*cfg, nil)
++	if err != nil {
++		l.Close()
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), testPatience)
++	defer cancel()
++	client, err := c.Dial(ctx)
++	if err != nil {
++		c.Close()
++		l.Close()
++		t.Fatal(err)
++	}
++	accepted := make(chan net.Conn, 1)
++	go func() { server, _ := l.Accept(); accepted <- server }()
++	select {
++	case server := <-accepted:
++		return client, server, func() { client.Close(); server.Close(); c.Close(); l.Close() }
++	case <-ctx.Done():
++		c.Close()
++		l.Close()
++		t.Fatal(ctx.Err())
++		return nil, nil, nil
++	}
++}
++func expectRead(t *testing.T, c net.Conn, want string) {
++	t.Helper()
++	c.SetReadDeadline(time.Now().Add(testPatience))
++	b := make([]byte, len(want))
++	if _, err := io.ReadFull(c, b); err != nil {
++		t.Fatal(err)
++	}
++	if string(b) != want {
++		t.Fatalf("got %q want %q", b, want)
++	}
++}
++func TestRoundTrip(t *testing.T) {
++	client, server, cleanup := pair(t)
++	defer cleanup()
++
++	if _, err := client.Write([]byte("ping")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	expectRead(t, server, "ping")
++
++	if _, err := server.Write([]byte("pong")); err != nil {
++		t.Fatalf("server write: %v", err)
++	}
++	expectRead(t, client, "pong")
++}
++
++func TestInterleaved(t *testing.T) {
++	client, server, cleanup := pair(t)
++	defer cleanup()
++
++	for i := 0; i < 20; i++ {
++		if _, err := client.Write([]byte("up")); err != nil {
++			t.Fatalf("client write %d: %v", i, err)
++		}
++		expectRead(t, server, "up")
++
++		if _, err := server.Write([]byte("down")); err != nil {
++			t.Fatalf("server write %d: %v", i, err)
++		}
++		expectRead(t, client, "down")
++	}
++}
++
++func TestMultiSegmentTransfer(t *testing.T) {
++	client, server, cleanup := pair(t)
++	defer cleanup()
++
++	payload := make([]byte, 3*defaultSegmentBytes+1234)
++	if _, err := rand.Read(payload); err != nil {
++		t.Fatalf("rand: %v", err)
++	}
++
++	go func() {
++		client.Write(payload)
++	}()
++
++	if err := server.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
++		t.Fatalf("SetReadDeadline: %v", err)
++	}
++	got := make([]byte, len(payload))
++	if _, err := io.ReadFull(server, got); err != nil {
++		t.Fatalf("ReadFull: %v", err)
++	}
++	if !bytes.Equal(got, payload) {
++		t.Fatal("payload mismatch")
++	}
++}
++
++func TestCloseEOF(t *testing.T) {
++	client, server, cleanup := pair(t)
++	defer cleanup()
++
++	if _, err := client.Write([]byte("bye")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	if err := client.Close(); err != nil {
++		t.Fatalf("client close: %v", err)
++	}
++
++	if err := server.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
++		t.Fatalf("SetReadDeadline: %v", err)
++	}
++	got, err := io.ReadAll(server)
++	if err != nil {
++		t.Fatalf("ReadAll: %v", err)
++	}
++	if string(got) != "bye" {
++		t.Fatalf("read %q, want %q", got, "bye")
++	}
++}
++
++func TestReadDeadline(t *testing.T) {
++	client, _, cleanup := pair(t)
++	defer cleanup()
++
++	if err := client.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
++		t.Fatalf("SetReadDeadline: %v", err)
++	}
++	buf := make([]byte, 4)
++	if _, err := client.Read(buf); !os.IsTimeout(err) {
++		t.Fatalf("Read returned %v, want a timeout", err)
++	}
++}
++
++func TestLocalNameEscape(t *testing.T) {
++	root := t.TempDir()
++	storage, err := newLocalStorage(root)
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++
++	if err := storage.Put(context.Background(), "../escaped", []byte("x")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++	if _, err := os.Stat(root + "/escaped"); err != nil {
++		t.Fatalf("name was not clamped inside the root: %v", err)
++	}
++}
++
++func TestLocalMissingObject(t *testing.T) {
++	storage, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++
++	if _, err := storage.Get(context.Background(), "nothing/here"); err != errNotFound {
++		t.Fatalf("Get returned %v, want errNotFound", err)
++	}
++	names, err := storage.List(context.Background(), "nothing")
++	if err != nil {
++		t.Fatalf("List: %v", err)
++	}
++	if len(names) != 0 {
++		t.Fatalf("List returned %v, want none", names)
++	}
++}
++
++func TestResumeAfterIdle(t *testing.T) {
++	client, server, cleanup := pair(t)
++	defer cleanup()
++
++	if _, err := client.Write([]byte("first")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	expectRead(t, server, "first")
++
++	time.Sleep(200 * time.Millisecond)
++
++	if _, err := client.Write([]byte("second")); err != nil {
++		t.Fatalf("client write: %v", err)
++	}
++	expectRead(t, server, "second")
++}
++
++func TestParseEntry(t *testing.T) {
++	cases := []struct {
++		name string
++		seq  int64
++		ok   bool
++	}{
++		{"000000000.seg", 0, true},
++		{"000000042.seg", 42, true},
++		{"000000007.end", 7, true},
++		{"000000001.tmp", 0, false},
++		{"notanumber.seg", 0, false},
++		{"000000001", 0, false},
++	}
++	for _, c := range cases {
++		seq, ok := parseEntry(c.name)
++		if ok != c.ok || (ok && seq != c.seq) {
++			t.Fatalf("parseEntry(%q) = %d, %v; want %d, %v", c.name, seq, ok, c.seq, c.ok)
++		}
++	}
++}
++
++func TestParamDefaults(t *testing.T) {
++	p := paramsFromConfig(&Config{})
++	if p.segmentBytes != defaultSegmentBytes || p.flushInterval != defaultFlushInterval {
++		t.Fatalf("defaults not applied: %+v", p)
++	}
++
++	p = paramsFromConfig(&Config{SegmentBytes: 1 << 30, PollIntervalMs: 400, MaxPollIntervalMs: 100})
++	if p.segmentBytes != maxSegmentBytes {
++		t.Fatalf("segmentBytes is %d, want %d", p.segmentBytes, maxSegmentBytes)
++	}
++	if p.maxPollInterval < p.minPollInterval {
++		t.Fatalf("maxPollInterval %v below minPollInterval %v", p.maxPollInterval, p.minPollInterval)
++	}
++}
++
++func TestMissingSegment(t *testing.T) {
++	storage, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++
++	p := paramsFromConfig(&Config{PollIntervalMs: 5, MaxPollIntervalMs: 20, HoleTimeoutMs: 200})
++	if err := storage.Put(ctx, objectName("hole", 1, segSuffix), []byte("second")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	reader := newWALReader(ctx, storage, "hole", p)
++	select {
++	case _, ok := <-reader.ch:
++		if ok {
++			t.Fatal("delivered data past a missing segment")
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("reader did not give up on a missing segment")
++	}
++
++	err = reader.Err()
++	if err == nil || err == io.EOF {
++		t.Fatalf("Err returned %v, want a failure", err)
++	}
++}
++
++func TestIdleStreamWaits(t *testing.T) {
++	storage, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++
++	p := paramsFromConfig(&Config{PollIntervalMs: 5, MaxPollIntervalMs: 20, HoleTimeoutMs: 100})
++	reader := newWALReader(ctx, storage, "idle", p)
++
++	time.Sleep(400 * time.Millisecond)
++	if err := storage.Put(ctx, objectName("idle", 0, segSuffix), []byte("late")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	select {
++	case data, ok := <-reader.ch:
++		if !ok {
++			t.Fatalf("the reader gave up on an idle stream: %v", reader.Err())
++		}
++		if string(data) != "late" {
++			t.Fatalf("read %q, want %q", data, "late")
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("reader missed a late segment")
++	}
++}
++
++func TestFailureMarker(t *testing.T) {
++	storage, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++
++	p := paramsFromConfig(&Config{PollIntervalMs: 5, MaxPollIntervalMs: 20})
++	if err := storage.Put(ctx, objectName("broken", 0, segSuffix), []byte("first")); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++	if err := storage.Put(ctx, objectName("broken", 1, errSuffix), nil); err != nil {
++		t.Fatalf("Put: %v", err)
++	}
++
++	reader := newWALReader(ctx, storage, "broken", p)
++
++	select {
++	case data, ok := <-reader.ch:
++		if !ok || string(data) != "first" {
++			t.Fatalf("want the segment before the marker, got %q %v", data, ok)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("reader did not deliver the first segment")
++	}
++
++	select {
++	case _, ok := <-reader.ch:
++		if ok {
++			t.Fatal("delivered data past the failure marker")
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("reader did not stop on the failure marker")
++	}
++
++	if err := reader.Err(); err == nil || err == io.EOF {
++		t.Fatalf("Err returned %v, want a failure", err)
++	}
++}
++
++type inlineOnlyStorage struct {
++	Storage
++	gets int64
++}
++
++func (s *inlineOnlyStorage) List(ctx context.Context, prefix string) ([]Entry, error) {
++	return []Entry{{Name: "000000000" + segSuffix, Inline: []byte("carried by the listing")}}, nil
++}
++
++func (s *inlineOnlyStorage) Get(ctx context.Context, name string) ([]byte, error) {
++	atomic.AddInt64(&s.gets, 1)
++	return nil, errNotFound
++}
++
++func (s *inlineOnlyStorage) Delete(ctx context.Context, name string) error {
++	return nil
++}
++
++func TestInlinePayload(t *testing.T) {
++	base, err := newLocalStorage(t.TempDir())
++	if err != nil {
++		t.Fatalf("newLocalStorage: %v", err)
++	}
++	storage := &inlineOnlyStorage{Storage: base}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++
++	reader := newWALReader(ctx, storage, "inline", paramsFromConfig(&Config{PollIntervalMs: 5}))
++	select {
++	case data, ok := <-reader.ch:
++		if !ok {
++			t.Fatalf("reader stopped: %v", reader.Err())
++		}
++		if string(data) != "carried by the listing" {
++			t.Fatalf("read %q, want the inline payload", data)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("reader did not deliver the inline payload")
++	}
++
++	if got := atomic.LoadInt64(&storage.gets); got != 0 {
++		t.Fatalf("called Get %d times for an inline payload", got)
++	}
++}

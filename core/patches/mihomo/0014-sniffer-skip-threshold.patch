@@ -1,0 +1,194 @@
+diff --git a/component/sniffer/dispatcher.go b/component/sniffer/dispatcher.go
+index 3f5180ea..73926ec9 100644
+--- a/component/sniffer/dispatcher.go
++++ b/component/sniffer/dispatcher.go
+@@ -3,6 +3,8 @@ package sniffer
+ import (
+ 	"bufio"
+ 	"errors"
++	"fmt"
++	"math"
+ 	"net/netip"
+ 	"time"
+ 
+@@ -36,6 +38,9 @@ type Dispatcher struct {
+ 	skipList        *lru.LruCache[netip.AddrPort, uint8]
+ 	forceDnsMapping bool
+ 	parsePureIp     bool
++	// skipThreshold is how many failed sniffs a destination may collect in
++	// skipList before it is no longer sniffed, negative = never skip
++	skipThreshold int
+ }
+ 
+ // configuredSniffer keeps protocol-specific behavior and policy together so
+@@ -137,11 +142,9 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool
+ 		forceSniffer := sd.forceSniff(metadata)
+ 
+ 		dst := metadata.AddrPort()
+-		if !forceSniffer {
+-			if count, ok := sd.skipList.Get(dst); ok && count > 5 {
+-				log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
+-				return false
+-			}
++		if !forceSniffer && sd.skipFailed(dst) {
++			log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
++			return false
+ 		}
+ 
+ 		host, config, err := sd.sniffDomain(conn, metadata)
+@@ -298,16 +301,39 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
+ 	return "", SnifferConfig{}, ErrorSniffFailed
+ }
+ 
++// skipFailed reports whether sniffing dst failed more than skipThreshold times
++func (sd *Dispatcher) skipFailed(dst netip.AddrPort) bool {
++	if sd.skipThreshold < 0 {
++		return false
++	}
++	count, ok := sd.skipList.Get(dst)
++	return ok && int(count) > sd.skipThreshold
++}
++
+ func (sd *Dispatcher) cacheSniffFailed(metadata *C.Metadata) {
++	if sd.skipThreshold < 0 {
++		return
++	}
+ 	dst := metadata.AddrPort()
+ 	sd.skipList.Compute(dst, func(oldValue uint8, loaded bool) (newValue uint8, delete bool) {
+-		if oldValue <= 5 {
++		// one past the threshold is enough to skip, and keeps the counter in uint8
++		if int(oldValue) <= sd.skipThreshold {
+ 			oldValue++
+ 		}
+ 		return oldValue, false
+ 	})
+ }
+ 
++// sniffer.skip-threshold, ClashFest core patch 0013 (Citrus commit 9710dee3):
++// the number of failed sniffs after which a destination is not sniffed for
++// 10 minutes was the constant 5.
++const (
++	// DefaultSkipThreshold is the skip-threshold used when none is configured
++	DefaultSkipThreshold = 5
++	// MaxSkipThreshold is the largest skip-threshold the uint8 failure counter can hold
++	MaxSkipThreshold = math.MaxUint8 - 1
++)
++
+ type Config struct {
+ 	Enable          bool
+ 	Sniffers        map[sniffer.Type]SnifferConfig
+@@ -317,9 +343,21 @@ type Config struct {
+ 	SkipDomain      []C.DomainMatcher
+ 	ForceDnsMapping bool
+ 	ParsePureIp     bool
++	// SkipThreshold: a destination stops being sniffed for a while once more
++	// than this many sniffs to it failed. nil = DefaultSkipThreshold,
++	// negative = never skip.
++	SkipThreshold *int
+ }
+ 
+ func NewDispatcher(snifferConfig *Config) (*Dispatcher, error) {
++	skipThreshold := DefaultSkipThreshold
++	if snifferConfig.SkipThreshold != nil {
++		skipThreshold = *snifferConfig.SkipThreshold
++	}
++	if skipThreshold > MaxSkipThreshold {
++		return &Dispatcher{enable: false}, fmt.Errorf("skip-threshold %d is above %d", skipThreshold, MaxSkipThreshold)
++	}
++
+ 	dispatcher := Dispatcher{
+ 		enable:          snifferConfig.Enable,
+ 		forceDomain:     snifferConfig.ForceDomain,
+@@ -329,6 +367,7 @@ func NewDispatcher(snifferConfig *Config) (*Dispatcher, error) {
+ 		skipList:        lru.New(lru.WithSize[netip.AddrPort, uint8](128), lru.WithAge[netip.AddrPort, uint8](600)),
+ 		forceDnsMapping: snifferConfig.ForceDnsMapping,
+ 		parsePureIp:     snifferConfig.ParsePureIp,
++		skipThreshold:   skipThreshold,
+ 		sniffers:        make([]configuredSniffer, 0, len(snifferConfig.Sniffers)),
+ 	}
+ 
+diff --git a/component/sniffer/skip_threshold_test.go b/component/sniffer/skip_threshold_test.go
+new file mode 100644
+index 00000000..18f0adf8
+--- /dev/null
++++ b/component/sniffer/skip_threshold_test.go
+@@ -0,0 +1,56 @@
++package sniffer
++
++import (
++	"net/netip"
++	"testing"
++
++	C "github.com/metacubex/mihomo/constant"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestDispatcherSkipThreshold(t *testing.T) {
++	metadata := &C.Metadata{
++		NetWork: C.TCP,
++		DstIP:   netip.MustParseAddr("192.0.2.1"),
++		DstPort: 443,
++	}
++	dst := metadata.AddrPort()
++	intPtr := func(v int) *int { return &v }
++
++	// failures it takes before dst is skipped, 0 = never
++	for _, tt := range []struct {
++		name      string
++		threshold *int
++		skipAfter int
++	}{
++		{name: "default", threshold: nil, skipAfter: 6},
++		{name: "zero skips after the first failure", threshold: intPtr(0), skipAfter: 1},
++		{name: "above the old uint8 cap", threshold: intPtr(200), skipAfter: 201},
++		{name: "largest", threshold: intPtr(MaxSkipThreshold), skipAfter: MaxSkipThreshold + 1},
++		{name: "never", threshold: intPtr(-1), skipAfter: 0},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			sd, err := NewDispatcher(&Config{Enable: true, SkipThreshold: tt.threshold})
++			require.NoError(t, err)
++
++			rounds := tt.skipAfter
++			if rounds == 0 {
++				rounds = 300
++			}
++			for i := 1; i <= rounds+10; i++ {
++				sd.cacheSniffFailed(metadata)
++				want := tt.skipAfter != 0 && i >= tt.skipAfter
++				require.Equal(t, want, sd.skipFailed(dst), "after %d failures", i)
++			}
++			if tt.skipAfter == 0 {
++				_, cached := sd.skipList.Get(dst)
++				assert.False(t, cached, "failures are not even counted")
++			}
++		})
++	}
++
++	_, err := NewDispatcher(&Config{SkipThreshold: intPtr(MaxSkipThreshold + 1)})
++	assert.Error(t, err)
++}
+diff --git a/config/config.go b/config/config.go
+index 0d75097b..614c42b8 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -383,6 +383,7 @@ type RawSniffer struct {
+ 	Ports           []string `yaml:"port-whitelist" json:"port-whitelist"`
+ 	ForceDnsMapping bool     `yaml:"force-dns-mapping" json:"force-dns-mapping"`
+ 	ParsePureIp     bool     `yaml:"parse-pure-ip" json:"parse-pure-ip"`
++	SkipThreshold   *int     `yaml:"skip-threshold" json:"skip-threshold"`
+ 
+ 	Sniff map[string]RawSniffingConfig `yaml:"sniff" json:"sniff"`
+ }
+@@ -1788,6 +1789,10 @@ func parseSniffer(snifferRaw RawSniffer, ruleProviders map[string]P.RuleProvider
+ 		Enable:          snifferRaw.Enable,
+ 		ForceDnsMapping: snifferRaw.ForceDnsMapping,
+ 		ParsePureIp:     snifferRaw.ParsePureIp,
++		SkipThreshold:   snifferRaw.SkipThreshold,
++	}
++	if t := snifferRaw.SkipThreshold; t != nil && (*t < -1 || *t > sniffer.MaxSkipThreshold) {
++		return nil, fmt.Errorf("sniffer.skip-threshold must be -1 (never skip) or 0-%d, got %d", sniffer.MaxSkipThreshold, *t)
+ 	}
+ 	loadSniffer := make(map[snifferTypes.Type]sniffer.SnifferConfig)
+ 

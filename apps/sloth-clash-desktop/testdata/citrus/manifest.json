@@ -1,0 +1,692 @@
+{
+  "citrus": "ecaa9466",
+  "fixtures": [
+    {
+      "file": "config-general.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-tun.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-sniffer.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-tunnels.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-dns.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "dns.serve-expired",
+            "dns.serve-expired-ttl",
+            "dns.serve-expired-client-timeout"
+          ]
+        }
+      }
+    },
+    {
+      "file": "config-groups.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-proxies.yaml",
+      "split": "proxies",
+      "cases": {
+        "socks": {
+          "outcome": "accept"
+        },
+        "http": {
+          "outcome": "accept"
+        },
+        "snell": {
+          "outcome": "accept"
+        },
+        "snell-shadow-tls": {
+          "outcome": "accept"
+        },
+        "snell-restls": {
+          "outcome": "accept"
+        },
+        "snell-jls": {
+          "outcome": "accept"
+        },
+        "ss1": {
+          "outcome": "accept"
+        },
+        "ss2": {
+          "outcome": "accept"
+        },
+        "ss4-shadow-tls": {
+          "outcome": "accept"
+        },
+        "ss5": {
+          "outcome": "accept"
+        },
+        "ss-jls": {
+          "outcome": "accept"
+        },
+        "gost-relay-hop": {
+          "outcome": "accept"
+        },
+        "ss6-gost-relay": {
+          "outcome": "accept"
+        },
+        "ss-restls-tls13": {
+          "outcome": "accept"
+        },
+        "ss-restls-tls12": {
+          "outcome": "accept"
+        },
+        "ss-kcptun": {
+          "outcome": "accept"
+        },
+        "vless-tcp": {
+          "outcome": "accept"
+        },
+        "vless-vision": {
+          "outcome": "accept"
+        },
+        "vless-encryption": {
+          "outcome": "accept"
+        },
+        "vless-reality-vision": {
+          "outcome": "accept"
+        },
+        "vless-reality-grpc": {
+          "outcome": "accept"
+        },
+        "vless-ws": {
+          "outcome": "accept"
+        },
+        "vless-h2": {
+          "outcome": "accept"
+        },
+        "vless-http": {
+          "outcome": "accept"
+        },
+        "vless-xhttp": {
+          "outcome": "accept"
+        },
+        "trojan": {
+          "outcome": "accept"
+        },
+        "trojan-grpc": {
+          "outcome": "accept"
+        },
+        "trojan-ws": {
+          "outcome": "accept"
+        },
+        "trojan-xtls": {
+          "outcome": "accept"
+        },
+        "hysteria2": {
+          "outcome": "accept"
+        },
+        "wg": {
+          "outcome": "accept"
+        },
+        "tailscale": {
+          "outcome": "accept"
+        },
+        "zerotier": {
+          "outcome": "accept"
+        },
+        "easytier": {
+          "outcome": "accept"
+        },
+        "openvpn": {
+          "outcome": "accept"
+        },
+        "masque": {
+          "outcome": "accept"
+        },
+        "masque-h3-l4proxy": {
+          "outcome": "accept"
+        },
+        "masque-h2": {
+          "outcome": "accept"
+        },
+        "tuic": {
+          "outcome": "accept"
+        },
+        "shadowquic": {
+          "outcome": "accept"
+        },
+        "ssh-out": {
+          "outcome": "accept"
+        },
+        "mieru": {
+          "outcome": "accept"
+        },
+        "sudoku": {
+          "outcome": "accept"
+        },
+        "anytls": {
+          "outcome": "accept"
+        },
+        "trusttunnel": {
+          "outcome": "accept"
+        },
+        "dns-out": {
+          "outcome": "accept"
+        },
+        "rematch": {
+          "outcome": "accept"
+        },
+        "en1-direct": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "config-rules.yaml",
+      "split": "rules",
+      "cases": {
+        "RULE-SET,rule1,REJECT": {
+          "outcome": "accept"
+        },
+        "DOMAIN-REGEX,^abc,DIRECT": {
+          "outcome": "accept"
+        },
+        "DOMAIN-SUFFIX,baidu.com,DIRECT": {
+          "outcome": "accept"
+        },
+        "DOMAIN-KEYWORD,google,ss1": {
+          "outcome": "accept"
+        },
+        "DOMAIN-WILDCARD,test.*.citrus.com,ss1": {
+          "outcome": "accept"
+        },
+        "IP-CIDR,1.1.1.1/32,ss1": {
+          "outcome": "accept"
+        },
+        "IP-CIDR6,2409::/64,DIRECT": {
+          "outcome": "accept"
+        },
+        "SUB-RULE,(OR,((NETWORK,TCP),(NETWORK,UDP))),sub-rule-name1": {
+          "outcome": "accept"
+        },
+        "SUB-RULE,(AND,((NETWORK,UDP))),sub-rule-name2": {
+          "outcome": "accept"
+        },
+        "PROTOCOL,bittorrent,REJECT": {
+          "outcome": "unsupported:PROTOCOL rule, comes with a mihomo release (owner)"
+        }
+      }
+    },
+    {
+      "file": "site-chains.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "site-getting-started.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "citrus-dns-serve-expired.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "dns.serve-expired",
+            "dns.serve-expired-ttl",
+            "dns.serve-expired-client-timeout"
+          ],
+          "note": "core patch 0014"
+        }
+      }
+    },
+    {
+      "file": "citrus-tcp-connect-timeout.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": ["tcp-connect-timeout"],
+          "note": "core patch 0012"
+        }
+      }
+    },
+    {
+      "file": "citrus-sniffer-skip-threshold.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": ["sniffer.skip-threshold"],
+          "note": "core patch 0013"
+        }
+      }
+    },
+    {
+      "file": "citrus-reality-mldsa65-verify.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": ["proxies[0].reality-opts.mldsa65-verify"],
+          "note": "core patch 0006"
+        }
+      }
+    },
+    {
+      "file": "citrus-tls-pin-lists.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].fingerprint",
+            "proxies[0].name-cert-verify"
+          ],
+          "note": "core patch 0008"
+        }
+      }
+    },
+    {
+      "file": "citrus-openvpn-identity.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].tls-version-min",
+            "proxies[0].verify-x509-name",
+            "proxies[0].verify-x509-type",
+            "proxies[0].verify-server-name"
+          ],
+          "note": "core patch 0010"
+        }
+      }
+    },
+    {
+      "file": "citrus-quic-disable-mtu-discovery.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].disable-mtu-discovery",
+            "proxies[1].disable-mtu-discovery"
+          ],
+          "note": "core patch 0011"
+        }
+      }
+    },
+    {
+      "file": "citrus-ws-early-data.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].ws-opts.max-early-data",
+            "proxies[0].ws-opts.early-data-header-name"
+          ],
+          "note": "vanilla reads both"
+        }
+      }
+    },
+    {
+      "file": "citrus-xhttp-uplink-get.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].xhttp-opts.uplink-http-method",
+            "proxies[0].xhttp-opts.uplink-data-placement"
+          ],
+          "note": "vanilla reads both; whether a Citrus server answers GET is a runtime question"
+        }
+      }
+    },
+    {
+      "file": "citrus-ssh-host-key.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": ["proxies[0].skip-host-key-check"],
+          "harmless": ["proxies[0].skip-host-key-check"],
+          "note": "vanilla never checks the host key without host-key and does not warn, so the opt-out changes nothing"
+        }
+      }
+    },
+    {
+      "file": "citrus-trusttunnel-timers.yaml",
+      "cases": {
+        "": {
+          "outcome": "deferred:needs the Citrus trusttunnel client rework (64970360, eb219944): ~110 changed lines in transport/trusttunnel, which has drifted ~3000 lines from vanilla; only tunes HTTP/2 ping and handshake timers",
+          "citrus-only": [
+            "proxies[0].ping-interval",
+            "proxies[0].ping-timeout",
+            "proxies[0].handshake-timeout"
+          ]
+        }
+      }
+    },
+    {
+      "file": "citrus-dns-sdns.yaml",
+      "cases": {
+        "": {
+          "outcome": "unsupported:DNSCrypt sdns:// stamps, not wanted (owner)"
+        }
+      }
+    },
+    {
+      "file": "citrus-sniffer-bittorrent.yaml",
+      "cases": {
+        "": {
+          "outcome": "unsupported:the BitTorrent sniffer only feeds the PROTOCOL rule, which comes with a mihomo release (owner)"
+        }
+      }
+    },
+    {
+      "file": "citrus-log-format.yaml",
+      "cases": {
+        "": {
+          "outcome": "unsupported:server-only: stdout log format of headless deployments; ClashFest logs go through the bridge",
+          "citrus-only": ["log-format", "log-timestamp-format"]
+        }
+      }
+    },
+    {
+      "file": "citrus-ech-xray.yaml",
+      "split": "proxies",
+      "cases": {
+        "ech-config-pem": {
+          "outcome": "accept",
+          "note": "core patch 0009"
+        },
+        "ech-query-server": {
+          "outcome": "accept",
+          "citrus-only": ["ech-opts.query-server"],
+          "note": "core patch 0009"
+        }
+      }
+    },
+    {
+      "file": "citrus-xray-fingerprints.yaml",
+      "split": "proxies",
+      "cases": {
+        "randomizedalpn": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "randomizednoalpn": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_120": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_148": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_120": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_131": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_133": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloios_13": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloios_14": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloedge_106": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellosafari_26_3": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hello360_11_0": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloqq_11_1": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellorandomized": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellorandomizedalpn": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellorandomizednoalpn": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_55": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_56": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_63": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_65": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_99": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_102": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellofirefox_105": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_58": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_62": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_70": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_72": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_83": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_87": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_96": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_100": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_102": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_106_shuffle": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloios_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloios_11_1": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloios_12_1": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloandroid_11_okhttp": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloedge_85": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloedge_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellosafari_16_0": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellosafari_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hello360_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hello360_7_5": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "helloqq_auto": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_100_psk": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_112_psk_shuf": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_114_padding_psk_shuf": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_115_pq": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_115_pq_psk": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        },
+        "hellochrome_120_pq": {
+          "outcome": "accept",
+          "note": "core patch 0007"
+        }
+      }
+    },
+    {
+      "file": "interop-citrus-clients.yaml",
+      "split": "proxies",
+      "cases": {
+        "reality-vision-mldsa-chrome": {
+          "outcome": "accept",
+          "citrus-only": ["reality-opts.mldsa65-verify"]
+        },
+        "reality-vision-mldsa-firefox": {
+          "outcome": "accept",
+          "citrus-only": ["reality-opts.mldsa65-verify"]
+        },
+        "reality-vision-mldsa-safari": {
+          "outcome": "accept",
+          "citrus-only": ["reality-opts.mldsa65-verify"]
+        },
+        "reality-vision-mldsa-ios": {
+          "outcome": "accept",
+          "citrus-only": ["reality-opts.mldsa65-verify"]
+        },
+        "xhttp-reality-packet-up": {
+          "outcome": "accept"
+        },
+        "xhttp-reality-stream-one": {
+          "outcome": "accept"
+        },
+        "xhttp-reality-stream-up": {
+          "outcome": "accept"
+        },
+        "xhttp-reality-packet-up-path-query": {
+          "outcome": "accept"
+        },
+        "xhttp-reality-packet-up-no-padding": {
+          "outcome": "accept"
+        },
+        "vless-tls-ech": {
+          "outcome": "accept"
+        },
+        "grpc-reality": {
+          "outcome": "accept"
+        }
+      }
+    }
+  ]
+}

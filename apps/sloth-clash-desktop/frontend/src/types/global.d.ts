@@ -334,7 +334,7 @@ interface ISeqProfileConfig {
 
 interface IProxyGroupConfig {
   name: string
-  type: 'select' | 'url-test' | 'fallback' | 'load-balance' | 'relay'
+  type: 'select' | 'url-test' | 'fallback' | 'load-balance' | 'relay' | 'chain'
   proxies?: string[]
   use?: string[]
   url?: string

@@ -1,5 +1,5 @@
 {
-  "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by scripts/core-build.mjs in every release run (desktop-artifacts.yml -> core-build.yml). See docs/core-patches.md. Bump: edit tag/commit (and patch hashes), open a PR; the Core build workflow must pass.",
+  "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by scripts/core-build.mjs in every release run (desktop-artifacts.yml -> core-build.yml). See docs/core-patches.md. Bump: edit tag/commit (and patch hashes), open a PR; the Core build workflow must pass. A patch's optional feature is the token the subscription User-Agent advertises while that patch is in the built series (scripts/core-build.mjs FEATURE_ORDER).",
   "upstream": "https://github.com/MetaCubeX/mihomo",
   "tag": "v1.19.33",
   "commit": "3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8",
@@ -15,6 +15,63 @@
     {
       "file": "0003-reality-config-keys.patch",
       "sha256": "8524faf333caa15214b4b87ba3a7a8ca0d039defd54a26b8148260a57a6f1b07"
+    },
+    {
+      "file": "0004-vless-xdrive.patch",
+      "sha256": "4386d11148751e831e2f07117ff3d382d7ac7fac5d81b4a56d8af67750f06de5",
+      "feature": "xdrive"
+    },
+    {
+      "file": "0005-reality-per-proxy-client-version.patch",
+      "sha256": "258121045238866b6c6b1506f0d59f6e582646d573b00526bc4780cc2aea848a"
+    },
+    {
+      "file": "0006-chain-group.patch",
+      "sha256": "71eac30b441cb1643c643d505c627f8282720d43f16cc48b6d1dee9de584ac62",
+      "feature": "chain"
+    },
+    {
+      "file": "0007-reality-mldsa65-verify.patch",
+      "sha256": "30e4f0be8a366e5bcedb652a07645b665c4f74b6d90ea8be69e4ade4abf92e00",
+      "feature": "mldsa65"
+    },
+    {
+      "file": "0008-tls-xray-fingerprint-names.patch",
+      "sha256": "276942d8827c8e3cc6aecbd3f5eef5a71c61389c4f5277271ba56ed1eb27d51f"
+    },
+    {
+      "file": "0009-tls-pin-and-name-lists.patch",
+      "sha256": "aa8c83553e188eeb08b3a28c396ed5b93ad2aaad5228cc68d53aa49404c326f1",
+      "feature": "pin-list"
+    },
+    {
+      "file": "0010-ech-xray-forms.patch",
+      "sha256": "b65af5ea7c463898bb41eb015551bc46331e5f3c66f164484aae77a08e24955d",
+      "feature": "ech-xray"
+    },
+    {
+      "file": "0011-openvpn-server-identity.patch",
+      "sha256": "094333187beb7ca84cdd9611510a6d25ce5a4a6c16c970ba75e8a6b65602ef7a"
+    },
+    {
+      "file": "0012-quic-disable-mtu-discovery.patch",
+      "sha256": "267175895935e586a00e92b709e09d7d43821445ba890ac2c54124302ba66b04"
+    },
+    {
+      "file": "0013-tcp-connect-timeout.patch",
+      "sha256": "c70d5a6a83892347837317f18cee501cecd1d1d76cba0fd8bb45114655d02795"
+    },
+    {
+      "file": "0014-sniffer-skip-threshold.patch",
+      "sha256": "739dd496c8463c2088a83003a824babf3104767380a8b4fe883a41724f3b6e3b"
+    },
+    {
+      "file": "0015-dns-serve-expired.patch",
+      "sha256": "4122639557882fea67efd205e9a19f3bb551a15649224921577730c4a360dbf8"
+    },
+    {
+      "file": "0016-xdrive-local-storage-tests-only.patch",
+      "sha256": "8195081fc5218d7a60c98083b4a891753e002842c2d510b785dbbc3567404565"
     }
   ],
   "assets": {

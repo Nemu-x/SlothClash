@@ -1,0 +1,36 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml lines 1409-1478 (the openvpn proxy) and 1463-1468 (identity keys, commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - comments of the proxy dropped, the four identity keys uncommented, wrapped into a minimal profile
+#   - CA and credentials as in config-proxies.yaml (throwaway CA, auth-user-pass)
+
+proxies:
+  - name: "openvpn"
+    type: openvpn
+    server: vpn.example.com
+    port: 1194
+    proto: udp # udp/tcp，默认 udp
+    ca: |
+      -----BEGIN CERTIFICATE-----
+      MIIBljCCAT2gAwIBAgIUfYpCJ2palKDa1WjUXjEUIdP3mXcwCgYIKoZIzj0EAwIw
+      IDEeMBwGA1UEAwwVY2l0cnVzLWNvbXBhdCB0ZXN0IENBMCAXDTI2MTAyMDIxMTA1
+      NVoYDzIxMjYwOTI2MjExMDU1WjAgMR4wHAYDVQQDDBVjaXRydXMtY29tcGF0IHRl
+      c3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASTmwMocy3+Ym20lmwQvkNS
+      fBO7gXOzgCO7GI97UqaK85wrRcR/7XnHteVi4/7wSx+eQYH8u24GO50Ejj+PA4Co
+      o1MwUTAdBgNVHQ4EFgQUMZi5pUNR2qPydO9G170nYwBmaMswHwYDVR0jBBgwFoAU
+      MZi5pUNR2qPydO9G170nYwBmaMswDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQD
+      AgNHADBEAiBRIxYOknnKO7E6vu5Qx74r5mQC8qNKeKP6e/IbfvBO2QIgEwVS0XY9
+      d2FxsHBEuqbMNm/pMccJAGcwDhsikHBPfyg=
+      -----END CERTIFICATE-----
+    username: "user"
+    password: "pass"
+    udp: true
+    tls-version-min: "1.3"
+    verify-x509-name: server_abc123
+    verify-x509-type: name
+    verify-server-name: true
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: ["openvpn"]}
+rules:
+  - MATCH,GLOBAL

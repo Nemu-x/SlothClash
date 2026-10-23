@@ -91,6 +91,55 @@ export function verifyPatchSeries(m = readManifest()) {
 }
 
 /**
+ * Capability tokens a patch can declare with `"feature"` in the manifest, in
+ * the order the subscription User-Agent lists them. They tell panels which
+ * transports this core accepts beyond a stock mihomo, so only the tokens of
+ * the series actually built are ever reported (prebuild -> core-build.json).
+ */
+export const FEATURE_ORDER = [
+  'xdrive',
+  'chain',
+  'mldsa65',
+  'pin-list',
+  'ech-xray',
+]
+
+/** The feature tokens of the manifest's series, in FEATURE_ORDER. */
+export function coreFeatures(m = readManifest()) {
+  const seen = new Set()
+  for (const p of m.patches) {
+    if (p.feature === undefined) continue
+    if (!FEATURE_ORDER.includes(p.feature)) {
+      throw new Error(
+        `patch ${p.file}: unknown feature ${JSON.stringify(p.feature)} (known: ${FEATURE_ORDER.join(', ')})`,
+      )
+    }
+    if (seen.has(p.feature)) {
+      throw new Error(`feature ${p.feature} is declared by more than one patch`)
+    }
+    seen.add(p.feature)
+  }
+  return FEATURE_ORDER.filter((f) => seen.has(f))
+}
+
+/**
+ * The Go packages the series touches, as `./dir/` paths: every directory of a
+ * .go file a patch adds or changes. These are vetted and tested on every core
+ * build, so a patch's own tests run without a hand-kept package list.
+ */
+export function patchedGoPackages(patches) {
+  const dirs = new Set()
+  for (const p of patches) {
+    const text = fs.readFileSync(path.join(PATCH_DIR, p), 'utf8')
+    for (const line of text.split(/\r?\n/)) {
+      const mm = line.match(/^\+\+\+ b\/(.+\.go)$/)
+      if (mm) dirs.add(path.posix.dirname(mm[1]))
+    }
+  }
+  return [...dirs].sort().map((d) => (d === '.' ? './' : `./${d}/`))
+}
+
+/**
  * The Go release every core is built with, from core/mihomo/.tool-versions
  * (also read by setup-go in CI and bumped by Renovate). Forced through
  * GOTOOLCHAIN, so a local build fetches that exact toolchain when the installed
@@ -254,15 +303,10 @@ export function buildCore({
     log(`==> ${goVer}`)
 
     if (!skipTests) {
-      log('==> go vet + tests of the patched packages')
-      run('go', ['vet', './component/tls/', './config/', './hub/executor/'], {
-        cwd: src,
-        env,
-      })
-      run('go', ['test', '-count=1', './component/tls/', './config/'], {
-        cwd: src,
-        env,
-      })
+      const pkgs = patchedGoPackages(patches)
+      log(`==> go vet + tests of the patched packages: ${pkgs.join(' ')}`)
+      run('go', ['vet', ...pkgs], { cwd: src, env })
+      run('go', ['test', '-count=1', ...pkgs], { cwd: src, env })
     }
     if (!out) return { goVersion: goVer }
 

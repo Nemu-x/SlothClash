@@ -1,0 +1,14 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml lines 58, 60 (commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - the commented-out option uncommented and wrapped into a minimal profile
+
+log-format: json
+log-timestamp-format: "2006-01-02T15:04:05.000000000Z07:00"
+proxies:
+  - {name: node, type: ss, server: 192.0.2.1, port: 443, cipher: chacha20-ietf-poly1305, password: password}
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [node]}
+rules:
+  - MATCH,GLOBAL

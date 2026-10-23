@@ -1,0 +1,22 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@ecaa9466 docs/config.yaml lines 1704, 1705, 1706 (commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - the commented-out option uncommented and wrapped into a minimal profile
+#   - handshake-timeout set to 10 (0 is the default and cannot tell a read key from an ignored one)
+
+proxies:
+  - name: node
+    type: trusttunnel
+    server: 1.2.3.4
+    port: 443
+    username: username
+    password: password
+    udp: true
+    ping-interval: 15
+    ping-timeout: 15
+    handshake-timeout: 10
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [node]}
+rules:
+  - MATCH,GLOBAL

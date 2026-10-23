@@ -200,6 +200,7 @@ func finalizeRuntimeConfigPipelineWithScript(
 		}
 	}
 	normalizeRulesMatchLast(m)
+	neutralizeBrokenChainGroups(m)
 	normalizeProxyGroupRefs(m)
 	normalizeProxySNI(m)
 	pruneFallbackAutoManualIfCustom(m)

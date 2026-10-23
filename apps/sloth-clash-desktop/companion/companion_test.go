@@ -102,8 +102,18 @@ func TestPairByStringValidThenUnpair(t *testing.T) {
 		t.Fatal("agent should be in the store")
 	}
 
-	if err := m.Unpair(info.DeviceID); err != nil {
+	// The agent is unreachable (a closed loopback port): the unpair call fails,
+	// and the agent is forgotten locally anyway.
+	m.findByID = noMDNS
+	a, _ := m.store.Get(info.DeviceID)
+	a.LastHost, a.LastPort = "127.0.0.1", closedPort(t)
+	_ = m.store.Upsert(a)
+	agentErr, err := m.Unpair(t.Context(), info.DeviceID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if agentErr == nil {
+		t.Fatal("expected the unreachable agent to be reported")
 	}
 	if toks.has(info.DeviceID) {
 		t.Fatal("token should be deleted after unpair")

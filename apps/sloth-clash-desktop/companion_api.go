@@ -123,11 +123,22 @@ func (a *App) CompanionRename(deviceID, name string) error {
 
 // CompanionUnpair removes a paired agent and deletes its token.
 func (a *App) CompanionUnpair(deviceID string) error {
+	a.CompanionUnwatchDevice(deviceID)
 	m, err := a.companionManager()
 	if err != nil {
 		return err
 	}
-	return m.Unpair(deviceID)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	// The agent is asked to revoke our token first; the local removal happens
+	// even when it is unreachable (forgetting cannot be blocked by the other side).
+	agentErr, err := m.Unpair(ctx, deviceID)
+	if agentErr != nil {
+		debugLog("companion", "CMP-UNPAIR", "companion_api.go:CompanionUnpair",
+			"agent did not confirm the unpair; forgot it locally anyway",
+			map[string]any{"error": agentErr.Error()})
+	}
+	return err
 }
 
 // activeSubscription returns the active profile's subscription URL + name.

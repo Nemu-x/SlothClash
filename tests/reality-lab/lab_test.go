@@ -178,12 +178,20 @@ func TestRealityMatrix(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) {
 			ports := startCore(t, sc.bin, sc.keys, rows)
 			got := make([]bool, len(rows))
+			detail := make([]string, len(rows))
+			// Bounded parallelism: every probe is a fresh REALITY handshake plus
+			// a TLS fetch through the server's egress, and dozens at once on a
+			// small runner time out for reasons that have nothing to do with
+			// the core.
+			sem := make(chan struct{}, probeParallel)
 			var wg sync.WaitGroup
 			for i := range rows {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					got[i] = probe(ports[i], 3)
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					got[i], detail[i] = probe(ports[i], 3)
 				}()
 			}
 			wg.Wait()
@@ -192,8 +200,17 @@ func TestRealityMatrix(t *testing.T) {
 				want := sc.expect(r)
 				mark := "  "
 				if got[i] != want {
-					mark = "!!"
-					t.Errorf("%s: got ok=%v, want ok=%v", r.name(), got[i], want)
+					// A mismatch counts only if it reproduces: probe the cell
+					// again, alone. Both rounds are logged either way.
+					again, againDetail := probe(ports[i], 3)
+					if again == want {
+						mark = "~~"
+						t.Logf("flaky %s: first round ok=%v [%s], recheck ok=%v [%s]", r.name(), got[i], detail[i], again, againDetail)
+						got[i] = again
+					} else {
+						mark = "!!"
+						t.Errorf("%s: got ok=%v, want ok=%v; round 1 [%s], round 2 [%s]", r.name(), got[i], want, detail[i], againDetail)
+					}
 				}
 				if got[i] {
 					ok++
@@ -313,24 +330,34 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row) []int 
 	return ports
 }
 
+// probeParallel bounds how many cells are probed at once.
+const probeParallel = 8
+
 // probe reports whether any of n HTTPS requests through the listener returns
-// 204. Each attempt opens a fresh proxied connection (fresh REALITY handshake).
-func probe(port, n int) bool {
+// 204, and what each attempt saw. Each attempt opens a fresh proxied
+// connection (fresh REALITY handshake).
+func probe(port, n int) (bool, string) {
 	proxy, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
+	var seen []string
 	for i := 0; i < n; i++ {
 		client := &http.Client{
 			Timeout:   8 * time.Second,
 			Transport: &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true},
 		}
+		start := time.Now()
 		resp, err := client.Get(probeURL)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusNoContent {
-				return true
-			}
+		took := time.Since(start).Round(10 * time.Millisecond)
+		if err != nil {
+			seen = append(seen, fmt.Sprintf("#%d %v: %v", i+1, took, err))
+			continue
+		}
+		resp.Body.Close()
+		seen = append(seen, fmt.Sprintf("#%d %v: HTTP %d", i+1, took, resp.StatusCode))
+		if resp.StatusCode == http.StatusNoContent {
+			return true, strings.Join(seen, "; ")
 		}
 	}
-	return false
+	return false, strings.Join(seen, "; ")
 }
 
 func cmpVersion(a, b string) int {

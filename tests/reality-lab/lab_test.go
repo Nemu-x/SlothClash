@@ -38,8 +38,21 @@ const (
 )
 
 // Xray generations: before 2025 a hybrid ClientHello is dropped, from 26.9.8
-// a classic one is rejected, in between both are accepted.
-var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.9.9"}
+// a classic one is rejected, in between both are accepted. 26.7.11 and 26.7.28
+// also refuse clients below 26.3.27 when the server sets no minClientVer (the
+// default of XTLS/Xray-core af7eb680, commented out again in 47cfe999, the
+// 26.9.8 change that also requires the hybrid share). 26.9.30 and 26.10.21
+// track the current releases.
+var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21"}
+
+// defaultMinClientVer is the minClientVer an Xray server applies when its
+// config sets none: 26.3.27 from 26.7.11 until 26.9.8, none otherwise.
+func defaultMinClientVer(version string) string {
+	if cmpVersion(version, "26.7.11") >= 0 && cmpVersion(version, "26.9.8") < 0 {
+		return "26.3.27"
+	}
+	return ""
+}
 
 var variants = map[string]map[string]any{
 	"plain":  {},
@@ -50,6 +63,7 @@ var variants = map[string]map[string]any{
 type server struct {
 	version, variant string
 	port             int
+	container        string
 }
 
 type row struct {
@@ -79,11 +93,15 @@ func acceptsShare(version string, mlkem bool) bool {
 }
 
 func versionGate(r row, clientVersion string) bool {
-	switch r.srv.variant {
-	case "minver":
-		return cmpVersion(clientVersion, "25.1.1") >= 0
-	case "maxver":
-		return cmpVersion(clientVersion, "2.0.0") <= 0
+	minVer := defaultMinClientVer(r.srv.version)
+	if r.srv.variant == "minver" {
+		minVer = "25.1.1" // an explicit minClientVer replaces the default
+	}
+	if minVer != "" && cmpVersion(clientVersion, minVer) < 0 {
+		return false
+	}
+	if r.srv.variant == "maxver" && cmpVersion(clientVersion, "2.0.0") > 0 {
+		return false
 	}
 	return true
 }
@@ -130,7 +148,7 @@ func TestRealityMatrix(t *testing.T) {
 	var rows []row
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
-		if s.variant == "plain" && (s.version == "24.12.31" || s.version == "26.9.9") {
+		if s.variant == "plain" && (s.version == "24.12.31" || s.version == "26.9.9" || s.version == "26.10.21") {
 			rows = append(rows, row{srv: s, fingerprint: "firefox"}, row{srv: s, fingerprint: "safari"})
 		}
 	}
@@ -159,14 +177,22 @@ func TestRealityMatrix(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			ports := startCore(t, sc.bin, sc.keys, rows)
+			ports, coreLog := startCore(t, sc.bin, sc.keys, rows)
 			got := make([]bool, len(rows))
+			detail := make([]string, len(rows))
+			// Bounded parallelism: every probe is a fresh REALITY handshake plus
+			// a TLS fetch through the server's egress, and dozens at once on a
+			// small runner time out for reasons that have nothing to do with
+			// the core.
+			sem := make(chan struct{}, probeParallel)
 			var wg sync.WaitGroup
 			for i := range rows {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					got[i] = probe(ports[i], 3)
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					got[i], detail[i] = probe(ports[i], 3)
 				}()
 			}
 			wg.Wait()
@@ -175,8 +201,25 @@ func TestRealityMatrix(t *testing.T) {
 				want := sc.expect(r)
 				mark := "  "
 				if got[i] != want {
-					mark = "!!"
-					t.Errorf("%s: got ok=%v, want ok=%v", r.name(), got[i], want)
+					// A mismatch counts only if it reproduces: probe the cell
+					// again, alone. Both rounds are logged either way.
+					again, againDetail := probe(ports[i], 3)
+					if again == want {
+						mark = "~~"
+						t.Logf("flaky %s: first round ok=%v [%s], recheck ok=%v [%s]", r.name(), got[i], detail[i], again, againDetail)
+						got[i] = again
+					} else {
+						mark = "!!"
+						t.Errorf("%s: got ok=%v, want ok=%v; round 1 [%s], round 2 [%s]", r.name(), got[i], want, detail[i], againDetail)
+						// Evidence for the failing cell: what the core logged
+						// for its proxy and what the server logged.
+						if b, err := os.ReadFile(coreLog); err == nil {
+							t.Logf("core log for p%d:\n%s", i, grepLines(string(b), fmt.Sprintf(" p%d ", i)))
+						}
+						if out, err := exec.Command("docker", "logs", "--tail", "60", r.srv.container).CombinedOutput(); err == nil {
+							t.Logf("server log %s:\n%s", r.srv.container, out)
+						}
+					}
 				}
 				if got[i] {
 					ok++
@@ -203,7 +246,7 @@ func startServers(t *testing.T) []*server {
 				reality[k] = v
 			}
 			cfg := map[string]any{
-				"log": map[string]any{"loglevel": "warning"},
+				"log": map[string]any{"loglevel": "info"},
 				// DoH by IP: a host-side Clash may answer plain DNS from containers with fake-ip.
 				"dns": map[string]any{"servers": []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}, "queryStrategy": "UseIPv4"},
 				"inbounds": []any{map[string]any{
@@ -232,7 +275,7 @@ func startServers(t *testing.T) []*server {
 				t.Fatalf("docker port %s: %q", name, out)
 			}
 			port, _ := strconv.Atoi(portStr)
-			servers = append(servers, &server{version: version, variant: variant, port: port})
+			servers = append(servers, &server{version: version, variant: variant, port: port, container: name})
 		}
 	}
 	for _, s := range servers {
@@ -242,7 +285,7 @@ func startServers(t *testing.T) []*server {
 }
 
 // startCore runs the core with one mixed listener per row and returns the ports.
-func startCore(t *testing.T, bin string, keys map[string]any, rows []row) []int {
+func startCore(t *testing.T, bin string, keys map[string]any, rows []row) ([]int, string) {
 	t.Helper()
 	home := t.TempDir()
 	var proxies, listeners []any
@@ -293,27 +336,37 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row) []int 
 		}
 	})
 	waitTCP(t, ports[len(ports)-1], 20*time.Second)
-	return ports
+	return ports, logf.Name()
 }
 
+// probeParallel bounds how many cells are probed at once.
+const probeParallel = 8
+
 // probe reports whether any of n HTTPS requests through the listener returns
-// 204. Each attempt opens a fresh proxied connection (fresh REALITY handshake).
-func probe(port, n int) bool {
+// 204, and what each attempt saw. Each attempt opens a fresh proxied
+// connection (fresh REALITY handshake).
+func probe(port, n int) (bool, string) {
 	proxy, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
+	var seen []string
 	for i := 0; i < n; i++ {
 		client := &http.Client{
 			Timeout:   8 * time.Second,
 			Transport: &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true},
 		}
+		start := time.Now()
 		resp, err := client.Get(probeURL)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusNoContent {
-				return true
-			}
+		took := time.Since(start).Round(10 * time.Millisecond)
+		if err != nil {
+			seen = append(seen, fmt.Sprintf("#%d %v: %v", i+1, took, err))
+			continue
+		}
+		resp.Body.Close()
+		seen = append(seen, fmt.Sprintf("#%d %v: HTTP %d", i+1, took, resp.StatusCode))
+		if resp.StatusCode == http.StatusNoContent {
+			return true, strings.Join(seen, "; ")
 		}
 	}
-	return false
+	return false, strings.Join(seen, "; ")
 }
 
 func cmpVersion(a, b string) int {

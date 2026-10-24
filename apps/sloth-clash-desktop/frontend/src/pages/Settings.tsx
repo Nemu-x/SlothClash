@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
+import { DesyncSettingsCard } from '../components/DesyncSettingsCard'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
 import { useCoreBuild } from '../hooks/queries/useCoreBuild'
@@ -659,6 +660,10 @@ export function SettingsPage({
           </div>
 
           <RealityCard prefs={realityPrefs} onCommit={onSetReality} />
+          <DesyncSettingsCard
+            connected={state?.connection?.status === 'connected'}
+            mode={String(state?.mode?.current ?? '')}
+          />
 
           <div className="homeCard settingsCardCompact">
             <h3 className="homeCardTitle">

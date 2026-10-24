@@ -724,5 +724,23 @@
     "warning": "A website can open this kind of link. Never add a subscription you did not request.",
     "confirm": "Add subscription",
     "adding": "Adding…"
+  },
+  "desync": {
+    "title": "DPI bypass",
+    "description": "Connect selected services directly with desync. Other traffic follows your subscription rules.",
+    "enabled": "Enable DPI bypass",
+    "unsupportedCore": "This build does not include a compatible core.",
+    "windowsOnly": "The Discord method currently requires Windows.",
+    "advanced": "Advanced",
+    "ttl": "Discord TTL",
+    "ttlInvalid": "TTL must be an integer from 1 to 255.",
+    "ruleMode": "Select Rule mode to apply service routes.",
+    "reconnect": "Changes apply to new connections. Restart the browser or Discord after changing the strategy.",
+    "test": "Test selected services",
+    "testing": "Testing…",
+    "disable": "Disable bypass",
+    "testScope": "HTTPS checks use the named core routes below. Confirm video playback, Discord messages and voice in the applications. Selected UDP/443 is blocked for TCP fallback; voice bypass is not implemented.",
+    "failed": "Failed",
+    "loading": "Loading settings…"
   }
 }

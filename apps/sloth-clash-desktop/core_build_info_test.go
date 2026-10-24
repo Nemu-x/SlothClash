@@ -80,6 +80,7 @@ func TestManifestFeatureTokens(t *testing.T) {
 		"mldsa65":  "0007-reality-mldsa65-verify.patch",
 		"pin-list": "0009-tls-pin-and-name-lists.patch",
 		"ech-xray": "0010-ech-xray-forms.patch",
+		"desync":   "0017-direct-desync.patch",
 	}
 	for f, file := range want {
 		if byFeature[f] != file {

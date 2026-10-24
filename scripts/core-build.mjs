@@ -102,6 +102,7 @@ export const FEATURE_ORDER = [
   'mldsa65',
   'pin-list',
   'ech-xray',
+  'desync',
 ]
 
 /** The feature tokens of the manifest's series, in FEATURE_ORDER. */
@@ -307,6 +308,14 @@ export function buildCore({
       log(`==> go vet + tests of the patched packages: ${pkgs.join(' ')}`)
       run('go', ['vet', ...pkgs], { cwd: src, env })
       run('go', ['test', '-count=1', ...pkgs], { cwd: src, env })
+      if (process.platform === 'win32' && coreFeatures(m).includes('desync')) {
+        log('==> native Windows desync library tests')
+        run(
+          'go',
+          ['test', '-count=1', '-timeout=2m', 'github.com/Nemu-x/desync/...'],
+          { cwd: src, env },
+        )
+      }
     }
     if (!out) return { goVersion: goVer }
 

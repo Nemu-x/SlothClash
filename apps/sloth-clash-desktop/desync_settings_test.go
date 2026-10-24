@@ -150,3 +150,21 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDesyncDiagnosticPreservesCoreFailure(t *testing.T) {
+	for _, body := range []string{
+		`{"message":"TLS handshake failed: context deadline exceeded"}`,
+		`TLS handshake failed: context deadline exceeded`,
+		`{"message":"TLS handshake failed: https://example.test/?token=private-test-token"}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(body))
+		}))
+		_, err := probeDesyncOutbound(context.Background(), strings.TrimPrefix(server.URL, "http://"), "", desyncYouTubeRoute, "https://www.youtube.com/generate_204")
+		server.Close()
+		if err == nil || !strings.Contains(err.Error(), "HTTP 503: TLS handshake failed") || strings.Contains(err.Error(), "private-test-token") {
+			t.Fatalf("lost failure detail or exposed a credential: %v", err)
+		}
+	}
+}

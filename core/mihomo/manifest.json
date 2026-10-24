@@ -77,6 +77,10 @@
       "file": "0017-direct-desync.patch",
       "sha256": "9fbabbc0d3f507abb1373ad643aa667b0db6324e12eb1eabc357a0d69096a296",
       "feature": "desync"
+    },
+    {
+      "file": "0018-probe-error-details.patch",
+      "sha256": "255570165ee305f14edca69ea9b889710e3b3f62e88ab45796faec3c6eb2abf2"
     }
   ],
   "assets": {

@@ -286,6 +286,10 @@ first time found two app bugs, fixed with it: a subscription's own url-test grou
 another group uses was pruned as if it were the app's synthetic fallback group, and `SUB-RULE` targets
 were checked against proxies instead of `sub-rules`.
 
+## Controller diagnostics
+
+Patch `0018-probe-error-details.patch` preserves URL-test error messages in controller responses and writes failed manual delay tests to the core warning log with the outbound name. It covers dial/TLS failures, timeouts, zero-delay failures and successful responses with deterministic HTTP-handler tests. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
+
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 
 Stock v1.19.32 against the patched core, `chrome` fingerprint; "forced" = per-proxy

@@ -551,6 +551,7 @@
       "match": "Match",
       "policy": "Policy",
       "noParsed": "Connect on Home first, then press Refresh to load rules.",
+      "empty": "The core returned no rules. Refresh to check again.",
       "toggleCol": "On",
       "toggleEnable": "Enable this rule",
       "toggleDisable": "Disable this rule",
@@ -726,9 +727,9 @@
     "adding": "Adding…"
   },
   "desync": {
-    "title": "DPI bypass",
-    "description": "Connect selected services directly with desync. Other traffic follows your subscription rules.",
-    "enabled": "Enable DPI bypass",
+    "title": "Desync",
+    "description": "Connect selected services directly with fixed desync presets. Automatic strategy selection is not available yet. Other traffic follows your subscription rules.",
+    "enabled": "Enable Desync",
     "unsupportedCore": "This build does not include a compatible core.",
     "windowsOnly": "The Discord method currently requires Windows.",
     "advanced": "Advanced",
@@ -738,7 +739,7 @@
     "reconnect": "Changes apply to new connections. Restart the browser or Discord after changing the strategy.",
     "test": "Test selected services",
     "testing": "Testing…",
-    "disable": "Disable bypass",
+    "disable": "Disable Desync",
     "testScope": "HTTPS checks use the named core routes below. Confirm video playback, Discord messages and voice in the applications. Selected UDP/443 is blocked for TCP fallback; voice bypass is not implemented.",
     "failed": "Failed",
     "loading": "Loading settings…"

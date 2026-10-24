@@ -1934,13 +1934,17 @@ func (a *App) rulesOverviewFetch(listen, secret string) RulesOverview {
 			return nil, 0, err
 		}
 		defer resp.Body.Close()
-		b, rerr := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			b, rerr := readRulesOverviewJSON(resp.Body)
+			return b, resp.StatusCode, rerr
+		}
+		b, rerr := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return b, resp.StatusCode, rerr
 	}
 
 	b, code, err := do("/rules")
 	if err != nil {
-		out.LastError = err.Error()
+		out.LastError = "GET /rules: " + err.Error()
 		return out
 	}
 	if code < 200 || code >= 300 {
@@ -1948,12 +1952,17 @@ func (a *App) rulesOverviewFetch(listen, secret string) RulesOverview {
 		return out
 	}
 	out.Reachable = true
-	out.RulesBody = truncateString(string(b), 14000)
+	out.RulesBody = string(b)
 
 	b2, code2, err2 := do("/providers/rules")
-	if err2 != nil || code2 < 200 || code2 >= 300 {
+	if err2 != nil {
+		out.LastError = "GET /providers/rules: " + err2.Error()
 		return out
 	}
-	out.RuleProvidersBody = truncateString(string(b2), 10000)
+	if code2 < 200 || code2 >= 300 {
+		out.LastError = fmt.Sprintf("GET /providers/rules: HTTP %d", code2)
+		return out
+	}
+	out.RuleProvidersBody = string(b2)
 	return out
 }

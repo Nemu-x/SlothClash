@@ -66,9 +66,9 @@ type App struct {
 	// waits on it so it never races a half-started boot core or the boot's own
 	// late config sync — the source of the "green but not actually connected on
 	// first launch, reconnect fixes it" bug. nil until startup wires it.
-	bootDone    chan struct{}
-	closeToTray bool
-	quitRequested       bool
+	bootDone      chan struct{}
+	closeToTray   bool
+	quitRequested bool
 
 	emitStateMu           sync.Mutex
 	emitStateTimer        *time.Timer
@@ -1855,13 +1855,13 @@ func (a *App) FetchRulesOverview() RulesOverview {
 			out.LastError = "GET /rules: HTTP " + strconv.Itoa(resp.StatusCode) + " " + strings.TrimSpace(string(b))
 			return
 		}
-		body, rerr := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		body, rerr := readRulesOverviewJSON(resp.Body)
 		if rerr != nil {
 			out.LastError = "GET /rules: " + rerr.Error()
 			return
 		}
 		out.Reachable = true
-		out.RulesBody = truncateString(string(body), 14000)
+		out.RulesBody = string(body)
 	}()
 
 	if out.LastError != "" {
@@ -1877,17 +1877,20 @@ func (a *App) FetchRulesOverview() RulesOverview {
 	}
 	resp2, err := client.Do(req2)
 	if err != nil {
+		out.LastError = "GET /providers/rules: " + err.Error()
 		return out
 	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+		out.LastError = "GET /providers/rules: HTTP " + strconv.Itoa(resp2.StatusCode)
 		return out
 	}
-	body2, err := io.ReadAll(io.LimitReader(resp2.Body, 256*1024))
+	body2, err := readRulesOverviewJSON(resp2.Body)
 	if err != nil {
+		out.LastError = "GET /providers/rules: " + err.Error()
 		return out
 	}
-	out.RuleProvidersBody = truncateString(string(body2), 10000)
+	out.RuleProvidersBody = string(body2)
 	return out
 }
 

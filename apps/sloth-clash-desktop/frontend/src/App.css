@@ -6079,6 +6079,14 @@
   gap: 12px;
   margin-top: 10px;
 }
+.desyncUDPStatus {
+  border-left: 2px solid var(--border-strong);
+  margin: 12px 0;
+  padding-left: 12px;
+}
+.desyncUDPStatus p {
+  margin: 6px 0;
+}
 .desyncTTLRow input {
   width: 84px;
 }

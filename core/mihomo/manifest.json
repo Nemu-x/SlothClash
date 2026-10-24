@@ -81,6 +81,11 @@
     {
       "file": "0018-probe-error-details.patch",
       "sha256": "255570165ee305f14edca69ea9b889710e3b3f62e88ab45796faec3c6eb2abf2"
+    },
+    {
+      "file": "0019-desync-dns-udp.patch",
+      "sha256": "a9e506dca79a7f575174346145441f04da8780ad3d4592c9eb5c42e68b31c48f",
+      "feature": "desync-udp"
     }
   ],
   "assets": {

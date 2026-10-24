@@ -663,6 +663,7 @@ export function SettingsPage({
           <DesyncSettingsCard
             connected={state?.connection?.status === 'connected'}
             mode={String(state?.mode?.current ?? '')}
+            traffic={String(state?.traffic ?? '')}
           />
 
           <div className="homeCard settingsCardCompact">

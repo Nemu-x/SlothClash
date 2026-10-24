@@ -136,7 +136,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 		t.Skip("set SLOTH_MIHOMO_BIN for patched-core preflight")
 	}
 	doc := map[string]any{"mode": "rule", "rules": []any{"MATCH,DIRECT"}, "proxies": []any{}}
-	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4}
+	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDP: runtime.GOOS == "windows", DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
 	applyDesyncOverlay(doc, settings)
 	data, err := yaml.Marshal(doc)
 	if err != nil {
@@ -148,6 +148,64 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 	}
 	if err := runConfigPreflight(bin, dir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
+	doc := map[string]any{"rules": []any{"PROCESS-NAME,Discord.exe,subscription-node", "MATCH,subscription-node"}, "proxies": []any{map[string]any{"name": "subscription-node", "type": "direct"}}}
+	s := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4, DiscordUDP: true, DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
+	applyDesyncOverlay(doc, s)
+	if doc["rules"].([]any)[0] != desyncDiscordUDPRules()[0] {
+		t.Fatal("Discord UDP did not override only the intended desktop rule")
+	}
+	proxies := doc["proxies"].([]any)
+	if len(proxies) != 4 {
+		t.Fatal("missing independent UDP outbound")
+	}
+	udp := proxies[3].(map[string]any)
+	if udp["name"] != desyncDiscordUDPRoute || udp["desync"].(map[string]any)["udp"].(map[string]any)["packets"] != 3 {
+		t.Fatalf("wrong UDP preset: %v", udp)
+	}
+	youtube := proxies[1].(map[string]any)["desync"].(map[string]any)
+	if youtube["tlsrec"] != "3+s" || youtube["dns-fallback"] != true {
+		t.Fatal("proven YouTube method changed or DNS fallback missing")
+	}
+	s.DiscordUDP = false
+	applyDesyncOverlay(doc, s)
+	if len(doc["proxies"].([]any)) != 3 {
+		t.Fatal("UDP disable removed or retained the wrong outbounds")
+	}
+	for _, rule := range doc["rules"].([]any) {
+		if strings.Contains(rule.(string), desyncDiscordUDPRoute) {
+			t.Fatal("UDP route survived disable")
+		}
+	}
+	if last := doc["rules"].([]any); last[len(last)-1] != "MATCH,subscription-node" {
+		t.Fatal("subscription fallback changed")
+	}
+}
+
+func TestDesyncUDPMigrationAndValidation(t *testing.T) {
+	prefsMu.Lock()
+	previous := prefsCurrent
+	prefsCurrent.Desync = DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
+	prefsMu.Unlock()
+	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
+	migrated := currentDesyncSettings()
+	if migrated.DiscordUDP || migrated.DiscordUDPTTL != 4 || migrated.DiscordUDPRepeats != 6 {
+		t.Fatalf("migration enabled untested UDP or lost defaults: %+v", migrated)
+	}
+	for _, s := range []DesyncSettings{{Enabled: true, DiscordUDP: true, DiscordUDPTTL: 256}, {Enabled: true, DiscordUDP: true, DiscordUDPRepeats: 17}} {
+		if _, err := validateDesyncSettings(s, "windows", true); err == nil {
+			t.Fatal("invalid UDP options accepted")
+		}
+		s.Enabled = false
+		if got, err := validateDesyncSettings(s, "windows", false); err != nil || got.Enabled {
+			t.Fatalf("UDP settings prevented disable: %+v %v", got, err)
+		}
+	}
+	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true, DiscordUDP: true}, "linux", true); err == nil {
+		t.Fatal("UDP fake accepted on an unsupported platform")
 	}
 }
 

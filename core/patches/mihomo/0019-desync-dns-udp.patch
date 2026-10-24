@@ -1,0 +1,392 @@
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index 9f9face..41103f3 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -2,7 +2,9 @@ package outbound
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"fmt"
++	"sync/atomic"
+ 
+ 	"github.com/Nemu-x/desync"
+ 
+@@ -10,12 +12,16 @@ import (
+ 	"github.com/metacubex/mihomo/component/loopback"
+ 	"github.com/metacubex/mihomo/component/resolver"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
+ )
+ 
+ type Direct struct {
+ 	*Base
+-	loopBack *loopback.Detector
+-	desync   *desync.Options
++	loopBack           *loopback.Detector
++	desync             *desync.Options
++	desyncUDP          *desync.UDPOptions
++	desyncDNSFallback  bool
++	desyncDNSFallbacks atomic.Uint64
+ }
+ 
+ type DirectOption struct {
+@@ -32,6 +38,16 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
+ 	opts := d.DialOptions()
+ 	opts = append(opts, dialer.WithResolver(resolver.DirectHostResolver))
+ 	c, err := dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
++	if d.shouldFallbackDesyncDNS(ctx, err) {
++		directErr := err
++		opts = append(d.DialOptions(), dialer.WithResolver(resolver.DefaultResolver))
++		c, err = dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
++		if err != nil {
++			return nil, fmt.Errorf("desync profile DNS fallback failed (direct DNS: %v): %w", directErr, err)
++		}
++		d.desyncDNSFallbacks.Add(1)
++		log.Infoln("[desync DNS] %s resolved %s through profile DNS after empty direct DNS", d.Name(), metadata.Host)
++	}
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -55,12 +71,27 @@ func (d *Direct) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	if d.desyncUDP != nil {
++		wrapped, wrapErr := desync.WrapPacketConn(pc, *d.desyncUDP)
++		if wrapErr != nil {
++			_ = pc.Close()
++			return nil, wrapErr
++		}
++		pc = &directDesyncPacketConn{PacketConn: wrapped}
++	}
+ 	return d.loopBack.NewPacketConn(NewPacketConn(pc, d)), nil
+ }
+ 
+ func (d *Direct) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
+ 	if (!metadata.Resolved() || resolver.DirectHostResolver != resolver.DefaultResolver) && metadata.Host != "" {
+ 		ip, err := resolveIPWithResolver(ctx, metadata.Host, d.prefer, resolver.DirectHostResolver)
++		if d.shouldFallbackDesyncDNS(ctx, err) {
++			ip, err = resolveIPWithResolver(ctx, metadata.Host, d.prefer, resolver.DefaultResolver)
++			if err == nil {
++				d.desyncDNSFallbacks.Add(1)
++				log.Infoln("[desync DNS] %s resolved %s through profile DNS after empty direct DNS", d.Name(), metadata.Host)
++			}
++		}
+ 		if err != nil {
+ 			return fmt.Errorf("can't resolve ip: %w", err)
+ 		}
+@@ -69,6 +100,10 @@ func (d *Direct) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
+ 	return nil
+ }
+ 
++func (d *Direct) shouldFallbackDesyncDNS(ctx context.Context, err error) bool {
++	return d.desyncDNSFallback && ctx.Err() == nil && resolver.DefaultResolver != nil && resolver.DefaultResolver != resolver.DirectHostResolver && (errors.Is(err, resolver.ErrIPNotFound) || errors.Is(err, dialer.ErrorNoIpAddress))
++}
++
+ func (d *Direct) IsL3Protocol(metadata *C.Metadata) bool {
+ 	return true // tell DNSDialer don't send domain to DialContext, avoid lookback to DefaultResolver
+ }
+diff --git a/adapter/outbound/direct_desync.go b/adapter/outbound/direct_desync.go
+index bc4da56..c73f1f7 100644
+--- a/adapter/outbound/direct_desync.go
++++ b/adapter/outbound/direct_desync.go
+@@ -1,6 +1,7 @@
+ package outbound
+ 
+ import (
++	"encoding/json"
+ 	"fmt"
+ 	"net"
+ 	"strings"
+@@ -9,13 +10,21 @@ import (
+ 	"github.com/Nemu-x/desync"
+ )
+ 
+-// DirectDesyncOption applies only to the first TLS record of this named
+-// outbound. It does not change global DIRECT or provide a UDP transformation.
++// DirectDesyncOption changes explicitly configured named direct outbounds.
++// Ordinary DIRECT and subscription DNS configuration are unchanged.
+ type DirectDesyncOption struct {
+ 	TLSRec       string                  `proxy:"tlsrec,omitempty"`
+ 	Split        string                  `proxy:"split,omitempty"`
+ 	SplitDelayMS int                     `proxy:"split-delay-ms,omitempty"`
+ 	Fake         *DirectDesyncFakeOption `proxy:"fake,omitempty"`
++	UDP          *DirectDesyncUDPOption  `proxy:"udp,omitempty"`
++	DNSFallback  bool                    `proxy:"dns-fallback,omitempty"`
++}
++
++type DirectDesyncUDPOption struct {
++	TTL     int `proxy:"ttl"`
++	Repeats int `proxy:"repeats,omitempty"`
++	Packets int `proxy:"packets,omitempty"`
+ }
+ 
+ type DirectDesyncFakeOption struct {
+@@ -27,6 +36,18 @@ type DirectDesyncFakeOption struct {
+ // directDesyncConn deliberately hides the underlying wrapper's NetConn method
+ // from generic fast-path casts while retaining ordinary net.Conn deadlines.
+ type directDesyncConn struct{ net.Conn }
++type directDesyncPacketConn struct{ net.PacketConn }
++
++func (d *Direct) MarshalJSON() ([]byte, error) {
++	result := map[string]any{"type": d.Type().String(), "id": d.Id()}
++	if d.desyncDNSFallback {
++		result["desyncDNSFallbacks"] = d.desyncDNSFallbacks.Load()
++	}
++	if d.desyncUDP != nil {
++		result["desyncUDP"] = map[string]any{"ttl": d.desyncUDP.TTL, "repeats": d.desyncUDP.Repeats, "packets": d.desyncUDP.Packets, "counters": d.desyncUDP.Counters.Snapshot()}
++	}
++	return json.Marshal(result)
++}
+ 
+ func parseDirectDesyncPositions(text string) ([]desync.Pos, error) {
+ 	if strings.TrimSpace(text) == "" {
+@@ -65,7 +86,7 @@ func (o *DirectDesyncOption) options() (desync.Options, error) {
+ 		}
+ 		result.Fake = &desync.FakeOptions{TTL: o.Fake.TTL, Prefix: o.Fake.Prefix, Timeout: time.Duration(o.Fake.TimeoutMS) * time.Millisecond}
+ 	}
+-	if !result.Enabled() {
++	if !result.Enabled() && o.UDP == nil {
+ 		return result, fmt.Errorf("desync requires at least one method")
+ 	}
+ 	return result, result.Validate()
+@@ -85,6 +106,22 @@ func NewDirectWithDesyncOption(option DirectOption) (*Direct, error) {
+ 	if option.TFO || option.MPTCP {
+ 		return nil, fmt.Errorf("desync direct does not support tfo or mptcp")
+ 	}
+-	direct.desync = &opts
++	if opts.Enabled() {
++		direct.desync = &opts
++	}
++	direct.desyncDNSFallback = option.Desync.DNSFallback
++	if udp := option.Desync.UDP; udp != nil {
++		udpOptions := desync.UDPOptions{TTL: udp.TTL, Repeats: udp.Repeats, Packets: udp.Packets, Counters: &desync.UDPCounters{}}
++		if err := udpOptions.Validate(); err != nil {
++			return nil, err
++		}
++		if udpOptions.Repeats == 0 {
++			udpOptions.Repeats = 6
++		}
++		if udpOptions.Packets == 0 {
++			udpOptions.Packets = 3
++		}
++		direct.desyncUDP = &udpOptions
++	}
+ 	return direct, nil
+ }
+diff --git a/adapter/outbound/direct_desync_dns_udp_test.go b/adapter/outbound/direct_desync_dns_udp_test.go
+new file mode 100644
+index 0000000..aca7da9
+--- /dev/null
++++ b/adapter/outbound/direct_desync_dns_udp_test.go
+@@ -0,0 +1,178 @@
++package outbound
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"net"
++	"net/netip"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/Nemu-x/desync"
++	N "github.com/metacubex/mihomo/common/net"
++	"github.com/metacubex/mihomo/component/resolver"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++type desyncDNSStub struct {
++	resolver.Resolver
++	ips   []netip.Addr
++	err   error
++	calls atomic.Int64
++}
++
++func (r *desyncDNSStub) Invalid() bool { return true }
++func (r *desyncDNSStub) LookupIP(context.Context, string) ([]netip.Addr, error) {
++	r.calls.Add(1)
++	return r.ips, r.err
++}
++func (r *desyncDNSStub) LookupIPv4(ctx context.Context, host string) ([]netip.Addr, error) {
++	return r.LookupIP(ctx, host)
++}
++func (r *desyncDNSStub) LookupIPv6(ctx context.Context, host string) ([]netip.Addr, error) {
++	return r.LookupIP(ctx, host)
++}
++
++func TestDirectDesyncDNSFallbackColdEmptyAndScope(t *testing.T) {
++	oldDirect, oldDefault, oldDisabled := resolver.DirectHostResolver, resolver.DefaultResolver, resolver.DisableIPv6
++	t.Cleanup(func() {
++		resolver.DirectHostResolver, resolver.DefaultResolver, resolver.DisableIPv6 = oldDirect, oldDefault, oldDisabled
++	})
++	resolver.DisableIPv6 = true
++	for _, tc := range []struct {
++		name         string
++		enabled      bool
++		directErr    error
++		directIPs    []netip.Addr
++		wantOK       bool
++		wantFallback bool
++	}{
++		{"cold empty direct DNS", true, resolver.ErrIPNotFound, nil, true, true},
++		{"empty answer without error", true, nil, nil, true, true},
++		{"ordinary direct retains policy", false, resolver.ErrIPNotFound, nil, false, false},
++		{"healthy direct DNS", true, nil, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, true, false},
++		{"other resolver failure remains visible", true, errors.New("upstream refused query"), nil, false, false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			ln, err := net.Listen("tcp4", "127.0.0.1:0")
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer ln.Close()
++			directDNS := &desyncDNSStub{ips: tc.directIPs, err: tc.directErr}
++			profileDNS := &desyncDNSStub{ips: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
++			resolver.DirectHostResolver, resolver.DefaultResolver = directDNS, profileDNS
++			options := DirectOption{Name: "selected"}
++			if tc.enabled {
++				options.Desync = &DirectDesyncOption{TLSRec: "3+s", DNSFallback: true}
++			}
++			direct, err := NewDirectWithDesyncOption(options)
++			if err != nil {
++				t.Fatal(err)
++			}
++			metadata := &C.Metadata{NetWork: C.TCP, Host: "cold.youtube.test", DstPort: uint16(ln.Addr().(*net.TCPAddr).Port)}
++			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++			defer cancel()
++			conn, err := direct.DialContext(ctx, metadata)
++			if (err == nil) != tc.wantOK {
++				t.Fatalf("unexpected connection result: %v", err)
++			}
++			if conn != nil {
++				conn.Close()
++			}
++			if (profileDNS.calls.Load() > 0) != tc.wantFallback {
++				t.Fatalf("fallback scope violated: %d calls", profileDNS.calls.Load())
++			}
++			if tc.wantFallback {
++				metadata.NetWork = C.UDP
++				if err := direct.ResolveUDP(ctx, metadata); err != nil || metadata.DstIP.String() != "127.0.0.1" {
++					t.Fatalf("UDP DNS fallback: %+v %v", metadata, err)
++				}
++				if direct.desyncDNSFallbacks.Load() != 2 {
++					t.Fatal("fallback count lost")
++				}
++			}
++		})
++	}
++}
++
++func TestDirectDesyncDNSFallbackDoesNotMaskConnectErrors(t *testing.T) {
++	oldDirect, oldDefault := resolver.DirectHostResolver, resolver.DefaultResolver
++	resolver.DirectHostResolver, resolver.DefaultResolver = &desyncDNSStub{}, &desyncDNSStub{}
++	t.Cleanup(func() { resolver.DirectHostResolver, resolver.DefaultResolver = oldDirect, oldDefault })
++	d := &Direct{desyncDNSFallback: true}
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	if d.shouldFallbackDesyncDNS(ctx, resolver.ErrIPNotFound) {
++		t.Fatal("retried a canceled request")
++	}
++	if d.shouldFallbackDesyncDNS(context.Background(), errors.New("connection refused")) {
++		t.Fatal("retried a TCP connect error as DNS")
++	}
++}
++
++func TestDirectDesyncUDPValidationAndCorePacketPath(t *testing.T) {
++	options := DirectOption{Name: "SLOTH-DESYNC-DISCORD-UDP", Desync: &DirectDesyncOption{UDP: &DirectDesyncUDPOption{TTL: 4, Repeats: 2, Packets: 1}, DNSFallback: true}}
++	direct, err := NewDirectWithDesyncOption(options)
++	if !desync.SupportsUDPFake() {
++		if !errors.Is(err, desync.ErrUDPFakeUnsupported) {
++			t.Fatalf("unsupported UDP accepted: %v", err)
++		}
++		return
++	}
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, udp := range []*DirectDesyncUDPOption{{TTL: 0}, {TTL: 256}, {TTL: 4, Repeats: 17}, {TTL: 4, Packets: 9}} {
++		if _, err := NewDirectWithDesyncOption(DirectOption{Name: "invalid", Desync: &DirectDesyncOption{UDP: udp}}); err == nil {
++			t.Fatalf("accepted invalid UDP: %+v", udp)
++		}
++	}
++	server, err := net.ListenPacket("udp4", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer server.Close()
++	metadata := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.1"), DstPort: uint16(server.LocalAddr().(*net.UDPAddr).Port)}
++	pc, err := direct.ListenPacketContext(context.Background(), metadata)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer pc.Close()
++	if _, ok := N.FindUpstream[*net.UDPConn](pc, nil); ok {
++		t.Fatal("core fast paths can bypass UDP desync")
++	}
++	if _, err := pc.WriteTo([]byte("original-media"), server.LocalAddr()); err != nil {
++		t.Fatal(err)
++	}
++	server.SetReadDeadline(time.Now().Add(time.Second))
++	for i := 0; i < 3; i++ {
++		data := make([]byte, 256)
++		n, _, err := server.ReadFrom(data)
++		if err != nil {
++			t.Fatal(err)
++		}
++		want := make([]byte, 64)
++		if i == 2 {
++			want = []byte("original-media")
++		}
++		if !bytes.Equal(data[:n], want) {
++			t.Fatalf("core packet path skipped or corrupted datagram %d: %q", i, data[:n])
++		}
++	}
++	encoded, err := direct.MarshalJSON()
++	if err != nil {
++		t.Fatal(err)
++	}
++	var status struct {
++		UDP struct {
++			Counters desync.UDPSnapshot `json:"counters"`
++		} `json:"desyncUDP"`
++	}
++	if err := json.Unmarshal(encoded, &status); err != nil || status.UDP.Counters.FakePackets != 2 || status.UDP.Counters.Packets != 1 {
++		t.Fatalf("missing observable UDP counters: %s %v", encoded, err)
++	}
++}
+diff --git a/go.mod b/go.mod
+index 85218a6..2ffc91b 100644
+--- a/go.mod
++++ b/go.mod
+@@ -3,7 +3,7 @@ module github.com/metacubex/mihomo
+ go 1.20
+ 
+ require (
+-	github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74
++	github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e
+ 	github.com/bahlo/generic-list-go v0.2.0
+ 	github.com/coreos/go-iptables v0.8.0
+ 	github.com/dlclark/regexp2 v1.12.0
+diff --git a/go.sum b/go.sum
+index f42640b..b2384a1 100644
+--- a/go.sum
++++ b/go.sum
+@@ -1,3 +1,7 @@
++github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74 h1:5jEzEoI2rYOxEk2rzauD8+EbcA6P83M37SrDJKhzgnI=
++github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
++github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e h1:yYLGt9g/zY1uXhSku56cXLV483MDgCAVYO0XbEz5Nhs=
++github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
+ github.com/RyuaNerin/go-krypto v1.3.0 h1:smavTzSMAx8iuVlGb4pEwl9MD2qicqMzuXR2QWp2/Pg=
+ github.com/RyuaNerin/go-krypto v1.3.0/go.mod h1:9R9TU936laAIqAmjcHo/LsaXYOZlymudOAxjaBf62UM=
+ github.com/RyuaNerin/testingutil v0.1.0 h1:IYT6JL57RV3U2ml3dLHZsVtPOP6yNK7WUVdzzlpNrss=
+@@ -331,5 +335,3 @@ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8
+ gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+ gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+ software.sslmate.com/src/go-pkcs12 v0.4.0 h1:H2g08FrTvSFKUj+D309j1DPfk5APnIdAQAB8aEykJ5k=
+-github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74 h1:5jEzEoI2rYOxEk2rzauD8+EbcA6P83M37SrDJKhzgnI=
+-github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=

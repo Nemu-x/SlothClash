@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import {
+  GetDesyncAutoStatus,
+  GetDesyncDiagnosticReport,
   GetDesyncStatus,
-  RunDesyncDiagnostics,
+  RetryDesyncAuto,
   SetDesyncSettings,
-  type DesyncProbeResult,
+  type DesyncAutoStatus,
   type DesyncSettings,
   type DesyncStatus,
 } from '../api/desync'
-
-import { DesyncUDPStatusPanel } from './DesyncUDPStatusPanel'
 
 export function DesyncSettingsCard({
   connected,
@@ -23,290 +24,220 @@ export function DesyncSettingsCard({
 }) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<DesyncStatus | null>(null)
-  const [ttl, setTTL] = useState('4')
-  const [udpTtl, setUdpTtl] = useState('4')
-  const [udpRepeats, setUdpRepeats] = useState('1')
+  const [automatic, setAutomatic] = useState<DesyncAutoStatus | null>(null)
   const [saving, setSaving] = useState(false)
-  const [probing, setProbing] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
-  const [results, setResults] = useState<DesyncProbeResult[]>([])
-  const generationRef = useRef({ value: 0 })
+  const lifeRef = useRef({
+    mounted: true,
+    generation: 0,
+    revision: 0,
+    saving: false,
+  })
 
   useEffect(() => {
-    const generation = generationRef.current
-    const epoch = ++generation.value
-    void GetDesyncStatus()
-      .then((next) => {
-        if (generation.value !== epoch) return
-        setStatus(next)
-        setTTL(String(next.settings.discordTTL))
-        setUdpTtl(String(next.settings.discordUDPTTL))
-        setUdpRepeats(String(next.settings.discordUDPRepeats))
-      })
-      .catch((err: unknown) => {
-        if (generation.value === epoch) setError(String(err))
-      })
-      .finally(() => {
-        if (generation.value === epoch) {
-          setSaving(false)
-          setProbing(false)
+    const life = lifeRef.current
+    life.mounted = true
+    const generation = ++life.generation
+    let pending = false
+    async function refresh() {
+      if (pending || life.saving) return
+      pending = true
+      const revision = life.revision
+      try {
+        const [next, auto] = await Promise.all([
+          GetDesyncStatus(),
+          GetDesyncAutoStatus(),
+        ])
+        if (
+          life.mounted &&
+          life.generation === generation &&
+          revision === life.revision &&
+          !life.saving
+        ) {
+          setStatus(next)
+          setAutomatic(auto)
         }
-      })
+      } catch (err: unknown) {
+        if (life.mounted && life.generation === generation)
+          setError(String(err))
+      } finally {
+        pending = false
+      }
+    }
+    void refresh()
+    const timer = setInterval(() => void refresh(), 2500)
     return () => {
-      generation.value++
+      life.generation++
+      life.mounted = false
+      clearInterval(timer)
     }
   }, [connected, mode, traffic])
 
   async function save(patch: Partial<DesyncSettings>) {
     if (!status) return
-    const epoch = ++generationRef.current.value
+    const life = lifeRef.current
+    if (life.saving) return
+    life.revision++
+    const generation = life.generation
+    life.saving = true
     setSaving(true)
-    setProbing(false)
-    setResults([])
     setError('')
     try {
       const next = await SetDesyncSettings({ ...status.settings, ...patch })
-      if (generationRef.current.value !== epoch) return
-      setStatus(next)
-      setTTL(String(next.settings.discordTTL))
-      setUdpTtl(String(next.settings.discordUDPTTL))
-      setUdpRepeats(String(next.settings.discordUDPRepeats))
+      if (life.mounted && life.generation === generation) setStatus(next)
     } catch (err: unknown) {
-      if (generationRef.current.value === epoch) setError(String(err))
+      if (life.mounted && life.generation === generation) setError(String(err))
     } finally {
-      if (generationRef.current.value === epoch) setSaving(false)
+      life.saving = false
+      if (life.mounted) setSaving(false)
     }
   }
 
-  async function probe() {
-    const epoch = ++generationRef.current.value
-    setProbing(true)
-    setResults([])
+  async function retry() {
     setError('')
     try {
-      const next = await RunDesyncDiagnostics()
-      if (generationRef.current.value === epoch) setResults(next)
+      const next = await RetryDesyncAuto()
+      if (lifeRef.current.mounted) setAutomatic(next)
     } catch (err: unknown) {
-      if (generationRef.current.value === epoch) setError(String(err))
-    } finally {
-      if (generationRef.current.value === epoch) setProbing(false)
+      if (lifeRef.current.mounted) setError(String(err))
     }
   }
 
-  function saveAdvanced() {
-    const value = Number(ttl)
-    const udpValue = Number(udpTtl)
-    const repeats = Number(udpRepeats)
-    if (
-      !Number.isInteger(value) ||
-      value < 1 ||
-      value > 255 ||
-      !Number.isInteger(udpValue) ||
-      udpValue < 1 ||
-      udpValue > 255
-    ) {
-      setError(t('desync.ttlInvalid'))
-      return
+  async function copyReport() {
+    setCopying(true)
+    setCopied(false)
+    setError('')
+    try {
+      const text = await GetDesyncDiagnosticReport()
+      if (!(await ClipboardSetText(text)))
+        throw new Error(t('desync.copyFailed'))
+      if (lifeRef.current.mounted) setCopied(true)
+    } catch (err: unknown) {
+      if (lifeRef.current.mounted) setError(String(err))
+    } finally {
+      if (lifeRef.current.mounted) setCopying(false)
     }
-    if (!Number.isInteger(repeats) || repeats < 1 || repeats > 16) {
-      setError(t('desync.repeatsInvalid'))
-      return
-    }
-    void save({
-      discordTTL: value,
-      discordUDPTTL: udpValue,
-      discordUDPRepeats: repeats,
-    })
   }
 
   const enabled = status?.settings.enabled === true
-  const supported = status?.coreSupported === true
   const ruleMode = mode.toLowerCase() === 'rule'
-  const udpSupported =
-    status?.udpCoreSupported === true && status.platform === 'windows'
+  const supported = status?.coreSupported === true
+  const rows = status
+    ? [
+        {
+          key: 'youtube',
+          name: 'YouTube',
+          checked: status.settings.youtube,
+          supported,
+          state: automatic?.youtube,
+          patch: { youtube: !status.settings.youtube },
+        },
+        {
+          key: 'discord',
+          name: 'Discord',
+          checked: status.settings.discord,
+          supported: supported && status.platform === 'windows',
+          state: automatic?.discord,
+          patch: { discord: !status.settings.discord },
+        },
+        {
+          key: 'voice',
+          name: t('desync.voice'),
+          checked: status.settings.discordUDP,
+          supported: status.udpCoreSupported && status.platform === 'windows',
+          state: automatic?.voice,
+          patch: { discordUDP: !status.settings.discordUDP },
+        },
+      ]
+    : []
 
   return (
     <div className="homeCard settingsCardCompact desyncSettingsCard">
       <h3 className="homeCardTitle">{t('desync.title')}</h3>
-      <p className="small muted">{t('desync.description')}</p>
+      <div className="settingsToggleRow">
+        <span>{t('desync.enabled')}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t('desync.enabled')}
+          className={`settingsSwitch${enabled ? ' on' : ''}`}
+          disabled={saving || !status || (!supported && !enabled)}
+          onClick={() => void save({ enabled: !enabled })}
+        >
+          <span className="settingsSwitchKnob" aria-hidden />
+        </button>
+      </div>
+      {!supported && status ? (
+        <p className="error small">{t('desync.unsupportedCore')}</p>
+      ) : null}
       {status ? (
-        <>
-          <div className="settingsToggleRow">
-            <span>{t('desync.enabled')}</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={enabled}
-              aria-label={t('desync.enabled')}
-              className={`settingsSwitch${enabled ? ' on' : ''}`}
-              disabled={saving || (!supported && !enabled)}
-              onClick={() => {
-                void save({ enabled: !enabled })
-              }}
-            >
-              <span className="settingsSwitchKnob" aria-hidden />
-            </button>
-          </div>
-          {!supported ? (
-            <p className="error small">{t('desync.unsupportedCore')}</p>
-          ) : null}
-          <label className="settingsToggleRow">
-            <span>YouTube</span>
-            <input
-              type="checkbox"
-              checked={status.settings.youtube}
-              disabled={saving || !supported}
-              onChange={(event) => {
-                void save({ youtube: event.target.checked })
-              }}
-            />
-          </label>
-          <label className="settingsToggleRow">
-            <span>Discord</span>
-            <input
-              type="checkbox"
-              checked={status.settings.discord}
-              disabled={
-                saving ||
-                !supported ||
-                (status.platform !== 'windows' && !status.settings.discord)
-              }
-              onChange={(event) => {
-                void save({ discord: event.target.checked })
-              }}
-            />
-          </label>
-          {status.platform !== 'windows' ? (
-            <p className="small muted">{t('desync.windowsOnly')}</p>
-          ) : null}
-          <label className="settingsToggleRow">
-            <span>{t('desync.udpEnabled')}</span>
-            <input
-              type="checkbox"
-              checked={status.settings.discordUDP}
-              disabled={
-                saving || (!udpSupported && !status.settings.discordUDP)
-              }
-              onChange={(event) =>
-                void save({ discordUDP: event.target.checked })
-              }
-            />
-          </label>
-          {enabled && status.settings.discordUDP && traffic !== 'tun' ? (
-            <p className="banner small">{t('desync.udpNeedsTun')}</p>
-          ) : null}
-          <DesyncUDPStatusPanel
-            enabled={enabled && status.settings.discordUDP}
-            connected={connected}
-          />
-          <details>
-            <summary>{t('desync.advanced')}</summary>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                saveAdvanced()
-              }}
-            >
-              <label className="desyncTTLRow">
-                <span>{t('desync.ttl')}</span>
+        rows.map((row) => {
+          const phase =
+            !enabled || !row.checked
+              ? 'disabled'
+              : !connected
+                ? 'connect'
+                : !ruleMode
+                  ? 'rule'
+                  : row.key === 'voice' && traffic !== 'tun'
+                    ? 'needs_tun'
+                    : row.state?.phase ||
+                      (row.key === 'voice' ? 'waiting' : 'queued')
+          return (
+            <div key={row.key}>
+              <label className="settingsToggleRow">
+                <span>{row.name}</span>
                 <input
-                  type="number"
-                  min={1}
-                  max={255}
-                  value={ttl}
-                  disabled={saving || !supported || !status.settings.discord}
-                  onChange={(event) => setTTL(event.target.value)}
+                  type="checkbox"
+                  checked={row.checked}
+                  disabled={saving || (!row.supported && !row.checked)}
+                  onChange={() => void save(row.patch)}
                 />
               </label>
-              <label className="desyncTTLRow">
-                <span>{t('desync.udpTTL')}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={255}
-                  value={udpTtl}
-                  disabled={
-                    saving || !udpSupported || !status.settings.discordUDP
-                  }
-                  onChange={(event) => setUdpTtl(event.target.value)}
-                />
-              </label>
-              <label className="desyncTTLRow">
-                <span>{t('desync.udpRepeats')}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={udpRepeats}
-                  disabled={
-                    saving || !udpSupported || !status.settings.discordUDP
-                  }
-                  onChange={(event) => setUdpRepeats(event.target.value)}
-                />
-              </label>
-              <button
-                type="submit"
-                className="btn ghost"
-                disabled={saving || !supported}
-              >
-                {t('desync.apply')}
-              </button>
-            </form>
-          </details>
-          {enabled && !ruleMode ? (
-            <p className="banner small">{t('desync.ruleMode')}</p>
-          ) : null}
-          <p className="small muted">{t('desync.reconnect')}</p>
-          <div className="row">
-            <button
-              type="button"
-              className="btn"
-              disabled={
-                !enabled ||
-                !connected ||
-                !ruleMode ||
-                saving ||
-                probing ||
-                (!status.settings.youtube && !status.settings.discord)
-              }
-              onClick={() => {
-                void probe()
-              }}
-            >
-              {t(probing ? 'desync.testing' : 'desync.test')}
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={!enabled || saving}
-              onClick={() => {
-                void save({ enabled: false })
-              }}
-            >
-              {t('desync.disable')}
-            </button>
-          </div>
-          <p className="small muted">{t('desync.testScope')}</p>
-          {results.length > 0 ? (
-            <ul className="desyncResults">
-              {results.map((result) => (
-                <li key={result.url}>
-                  <strong>
-                    {result.name}:{' '}
-                    {result.ok ? `${result.delayMS} ms` : t('desync.failed')}
-                  </strong>
-                  <span className="small muted">{result.route}</span>
-                  {result.error ? (
-                    <span className="error small">{result.error}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
+              {enabled && row.checked ? (
+                <p
+                  className={`small ${phase === 'failed' ? 'error' : 'muted'}`}
+                  role="status"
+                >
+                  {t(`desync.phase.${phase}`, {
+                    attempt: row.state?.attempt || 1,
+                    total: row.state?.total || 1,
+                  })}
+                </p>
+              ) : null}
+            </div>
+          )
+        })
       ) : (
         <p className="small muted">{t('desync.loading')}</p>
       )}
+      <div className="row">
+        <button
+          type="button"
+          className="btn"
+          disabled={!enabled || !connected || !ruleMode || saving}
+          onClick={() => void retry()}
+        >
+          {t('desync.retry')}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={copying}
+          onClick={() => void copyReport()}
+        >
+          {t(
+            copied
+              ? 'desync.copied'
+              : copying
+                ? 'desync.copying'
+                : 'desync.copy',
+          )}
+        </button>
+      </div>
       {error ? (
         <p className="error small" role="alert">
           {error}

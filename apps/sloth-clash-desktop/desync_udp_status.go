@@ -107,6 +107,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 		return out
 	}
 	var body struct {
+		Now string `json:"now"`
 		UDP *struct {
 			Counters DesyncUDPCounters `json:"counters"`
 		} `json:"desyncUDP"`
@@ -114,6 +115,22 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&body); err != nil {
 		out.LastError = err.Error()
 		return out
+	}
+	if body.UDP == nil && strings.HasPrefix(body.Now, desyncDiscordUDPRoute+"-") {
+		selected, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(body.Now), nil)
+		if err != nil {
+			out.LastError = err.Error()
+			return out
+		}
+		defer selected.Body.Close()
+		if selected.StatusCode != http.StatusOK {
+			out.LastError = "selected UDP counters unavailable"
+			return out
+		}
+		if err = json.NewDecoder(io.LimitReader(selected.Body, 64*1024)).Decode(&body); err != nil {
+			out.LastError = err.Error()
+			return out
+		}
 	}
 	if body.UDP != nil {
 		out.CountersAvailable = true

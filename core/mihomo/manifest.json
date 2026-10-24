@@ -86,6 +86,11 @@
       "file": "0019-desync-dns-udp.patch",
       "sha256": "a9e506dca79a7f575174346145441f04da8780ad3d4592c9eb5c42e68b31c48f",
       "feature": "desync-udp"
+    },
+    {
+      "file": "0020-desync-auto-diagnostics.patch",
+      "sha256": "09546ac835a9994e50614807b1c90c4656c3d1c0f6d06dbf72a33899adbb0f71",
+      "feature": "desync-auto"
     }
   ],
   "assets": {

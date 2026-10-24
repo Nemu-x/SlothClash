@@ -7,6 +7,11 @@ export function isUnsafeGroupName(name: string) {
   return u === 'DIRECT' || u === 'REJECT'
 }
 
+/** Reserved strategy routes are controlled by automatic Desync calibration. */
+export function isInternalDesyncName(name: string) {
+  return /^SLOTH-DESYNC-(YOUTUBE|DISCORD)(?:-|$)/.test(String(name))
+}
+
 /** Built-in policy nodes hidden from picker/grid when "show builtin" is off. */
 export function isBuiltinProxyNodeName(name: string) {
   const u = String(name ?? '')
@@ -20,7 +25,9 @@ export function filterProxyNodesForDisplay(
   showBuiltin: boolean,
   selected: string,
 ): string[] {
-  const raw = names.map((x) => String(x))
+  const raw = names
+    .map((x) => String(x))
+    .filter((name) => !isInternalDesyncName(name))
   if (showBuiltin) return raw
   const filtered = raw.filter((p) => !isBuiltinProxyNodeName(p))
   const sel = String(selected ?? '').trim()

@@ -104,6 +104,7 @@ export const FEATURE_ORDER = [
   'ech-xray',
   'desync',
   'desync-udp',
+  'desync-auto',
 ]
 
 /** The feature tokens of the manifest's series, in FEATURE_ORDER. */

@@ -14,24 +14,30 @@ import (
 
 const desyncYouTubeRoute = "SLOTH-DESYNC-YOUTUBE"
 const desyncDiscordRoute = "SLOTH-DESYNC-DISCORD"
+const desyncDiscordUDPRoute = "SLOTH-DESYNC-DISCORD-UDP"
 const desyncManagedKey = "_sloth-desync-managed"
 
-var desyncYouTubeDomains = []string{"youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubei.googleapis.com", "youtube.googleapis.com"}
+var desyncYouTubeDomains = []string{"youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubei.googleapis.com", "youtube.googleapis.com", "yt3.ggpht.com"}
 var desyncDiscordDomains = []string{"discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media", "discordcdn.com"}
 
 type DesyncSettings struct {
-	Enabled    bool `json:"enabled"`
-	YouTube    bool `json:"youtube"`
-	Discord    bool `json:"discord"`
-	DiscordTTL int  `json:"discordTTL"`
+	Enabled           bool `json:"enabled"`
+	YouTube           bool `json:"youtube"`
+	Discord           bool `json:"discord"`
+	DiscordTTL        int  `json:"discordTTL"`
+	DiscordUDP        bool `json:"discordUDP"`
+	DiscordUDPTTL     int  `json:"discordUDPTTL"`
+	DiscordUDPRepeats int  `json:"discordUDPRepeats"`
 }
 
 type DesyncStatus struct {
-	Settings      DesyncSettings `json:"settings"`
-	Platform      string         `json:"platform"`
-	CoreSupported bool           `json:"coreSupported"`
-	Connected     bool           `json:"connected"`
-	Mode          string         `json:"mode"`
+	Settings         DesyncSettings `json:"settings"`
+	Platform         string         `json:"platform"`
+	CoreSupported    bool           `json:"coreSupported"`
+	UDPCoreSupported bool           `json:"udpCoreSupported"`
+	Connected        bool           `json:"connected"`
+	Mode             string         `json:"mode"`
+	Traffic          string         `json:"traffic"`
 }
 
 type DesyncProbeResult struct {
@@ -46,10 +52,16 @@ type DesyncProbeResult struct {
 func currentDesyncSettings() DesyncSettings {
 	s := currentDesktopPrefs().Desync
 	if s == (DesyncSettings{}) {
-		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4}
+		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
 	}
 	if s.DiscordTTL == 0 {
 		s.DiscordTTL = 4
+	}
+	if s.DiscordUDPTTL == 0 {
+		s.DiscordUDPTTL = 4
+	}
+	if s.DiscordUDPRepeats == 0 {
+		s.DiscordUDPRepeats = 6
 	}
 	return s
 }
@@ -57,6 +69,15 @@ func currentDesyncSettings() DesyncSettings {
 func desyncCoreSupported() bool {
 	for _, feature := range embeddedCoreFeatures() {
 		if feature == "desync" {
+			return true
+		}
+	}
+	return false
+}
+
+func desyncUDPCoreSupported() bool {
+	for _, feature := range embeddedCoreFeatures() {
+		if feature == "desync-udp" {
 			return true
 		}
 	}
@@ -73,14 +94,32 @@ func validateDesyncSettings(s DesyncSettings, platform string, coreSupported boo
 		}
 		s.DiscordTTL = 4
 	}
+	if s.DiscordUDPTTL == 0 {
+		s.DiscordUDPTTL = 4
+	}
+	if s.DiscordUDPRepeats == 0 {
+		s.DiscordUDPRepeats = 6
+	}
+	if s.DiscordUDPTTL < 1 || s.DiscordUDPTTL > 255 {
+		if s.Enabled && s.DiscordUDP {
+			return s, fmt.Errorf("Discord UDP TTL must be between 1 and 255")
+		}
+		s.DiscordUDPTTL = 4
+	}
+	if s.DiscordUDPRepeats < 1 || s.DiscordUDPRepeats > 16 {
+		if s.Enabled && s.DiscordUDP {
+			return s, fmt.Errorf("Discord UDP repeats must be between 1 and 16")
+		}
+		s.DiscordUDPRepeats = 6
+	}
 	if s.Enabled {
 		if !coreSupported {
 			return s, fmt.Errorf("the embedded core does not support desync")
 		}
-		if !s.YouTube && !s.Discord {
+		if !s.YouTube && !s.Discord && !s.DiscordUDP {
 			return s, fmt.Errorf("select YouTube or Discord before enabling desync")
 		}
-		if s.Discord && platform != "windows" {
+		if (s.Discord || s.DiscordUDP) && platform != "windows" {
 			return s, fmt.Errorf("the Discord fake method currently requires Windows")
 		}
 	}
@@ -91,8 +130,9 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 	a.mu.RLock()
 	connected := a.state.Connection.Status == "connected" && a.state.Core.Running
 	mode := a.state.Mode.Current
+	traffic := a.state.Traffic
 	a.mu.RUnlock()
-	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), Connected: connected, Mode: mode}
+	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic}
 }
 
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
@@ -100,12 +140,15 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	if err != nil {
 		return a.GetDesyncStatus(), err
 	}
+	if next.Enabled && next.DiscordUDP && !desyncUDPCoreSupported() {
+		return a.GetDesyncStatus(), fmt.Errorf("the embedded core does not support desync UDP")
+	}
 	prefsMu.Lock()
 	prefsCurrent.Desync = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
 	prefsMu.Unlock()
-	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t ttl=%d", next.Enabled, next.YouTube, next.Discord, next.DiscordTTL))
+	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t ttl=%d discord_udp=%t udp_ttl=%d udp_repeats=%d", next.Enabled, next.YouTube, next.Discord, next.DiscordTTL, next.DiscordUDP, next.DiscordUDPTTL, next.DiscordUDPRepeats))
 	a.triggerRuntimeReloadForPrefs()
 	return a.GetDesyncStatus(), nil
 }
@@ -119,11 +162,18 @@ func desyncRules(domains []string, route string) []string {
 	return rules
 }
 
+func desyncDiscordUDPRules() []string {
+	return []string{"AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe))," + desyncDiscordUDPRoute}
+}
+
 // The profile body is never edited. Only generated runtime entries are
 // replaced; user scripts cannot silently remove an explicitly enabled route.
 func applyDesyncOverlay(m map[string]any, s DesyncSettings) {
 	managedRules := map[string]bool{}
 	for _, rule := range append(desyncRules(desyncYouTubeDomains, desyncYouTubeRoute), desyncRules(desyncDiscordDomains, desyncDiscordRoute)...) {
+		managedRules[rule] = true
+	}
+	for _, rule := range desyncDiscordUDPRules() {
 		managedRules[rule] = true
 	}
 	proxies := []any{}
@@ -149,7 +199,7 @@ func applyDesyncOverlay(m map[string]any, s DesyncSettings) {
 	}
 	generated := []any{}
 	if s.Enabled && s.YouTube {
-		proxies = append(proxies, map[string]any{"name": desyncYouTubeRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "3+s"}})
+		proxies = append(proxies, map[string]any{"name": desyncYouTubeRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "3+s", "dns-fallback": true}})
 		for _, rule := range desyncRules(desyncYouTubeDomains, desyncYouTubeRoute) {
 			generated = append(generated, rule)
 		}
@@ -159,10 +209,25 @@ func applyDesyncOverlay(m map[string]any, s DesyncSettings) {
 		if ttl == 0 {
 			ttl = 4
 		}
-		proxies = append(proxies, map[string]any{"name": desyncDiscordRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "1+s", "fake": map[string]any{"ttl": ttl, "prefix": -1}}})
+		proxies = append(proxies, map[string]any{"name": desyncDiscordRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "1+s", "dns-fallback": true, "fake": map[string]any{"ttl": ttl, "prefix": -1}}})
 		for _, rule := range desyncRules(desyncDiscordDomains, desyncDiscordRoute) {
 			generated = append(generated, rule)
 		}
+	}
+	if s.Enabled && s.DiscordUDP {
+		ttl, repeats := s.DiscordUDPTTL, s.DiscordUDPRepeats
+		if ttl == 0 {
+			ttl = 4
+		}
+		if repeats == 0 {
+			repeats = 6
+		}
+		proxies = append(proxies, map[string]any{"name": desyncDiscordUDPRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"dns-fallback": true, "udp": map[string]any{"ttl": ttl, "repeats": repeats, "packets": 3}}})
+		var udpRules []any
+		for _, rule := range desyncDiscordUDPRules() {
+			udpRules = append(udpRules, rule)
+		}
+		generated = append(udpRules, generated...)
 	}
 	// Do not create empty keys in a profile when the feature has never been used.
 	if _, present := m["proxies"]; present || len(proxies) > 0 {

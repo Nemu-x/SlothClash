@@ -103,6 +103,7 @@ export const FEATURE_ORDER = [
   'pin-list',
   'ech-xray',
   'desync',
+  'desync-udp',
 ]
 
 /** The feature tokens of the manifest's series, in FEATURE_ORDER. */

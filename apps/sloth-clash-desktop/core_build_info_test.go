@@ -75,12 +75,13 @@ func TestManifestFeatureTokens(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		"xdrive":   "0004-vless-xdrive.patch",
-		"chain":    "0006-chain-group.patch",
-		"mldsa65":  "0007-reality-mldsa65-verify.patch",
-		"pin-list": "0009-tls-pin-and-name-lists.patch",
-		"ech-xray": "0010-ech-xray-forms.patch",
-		"desync":   "0017-direct-desync.patch",
+		"xdrive":     "0004-vless-xdrive.patch",
+		"chain":      "0006-chain-group.patch",
+		"mldsa65":    "0007-reality-mldsa65-verify.patch",
+		"pin-list":   "0009-tls-pin-and-name-lists.patch",
+		"ech-xray":   "0010-ech-xray-forms.patch",
+		"desync":     "0017-direct-desync.patch",
+		"desync-udp": "0019-desync-dns-udp.patch",
 	}
 	for f, file := range want {
 		if byFeature[f] != file {

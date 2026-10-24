@@ -10,16 +10,22 @@ import {
   type DesyncStatus,
 } from '../api/desync'
 
+import { DesyncUDPStatusPanel } from './DesyncUDPStatusPanel'
+
 export function DesyncSettingsCard({
   connected,
   mode,
+  traffic,
 }: {
   connected: boolean
   mode: string
+  traffic: string
 }) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<DesyncStatus | null>(null)
   const [ttl, setTTL] = useState('4')
+  const [udpTtl, setUdpTtl] = useState('4')
+  const [udpRepeats, setUdpRepeats] = useState('6')
   const [saving, setSaving] = useState(false)
   const [probing, setProbing] = useState(false)
   const [error, setError] = useState('')
@@ -34,6 +40,8 @@ export function DesyncSettingsCard({
         if (generation.value !== epoch) return
         setStatus(next)
         setTTL(String(next.settings.discordTTL))
+        setUdpTtl(String(next.settings.discordUDPTTL))
+        setUdpRepeats(String(next.settings.discordUDPRepeats))
       })
       .catch((err: unknown) => {
         if (generation.value === epoch) setError(String(err))
@@ -47,7 +55,7 @@ export function DesyncSettingsCard({
     return () => {
       generation.value++
     }
-  }, [connected, mode])
+  }, [connected, mode, traffic])
 
   async function save(patch: Partial<DesyncSettings>) {
     if (!status) return
@@ -61,6 +69,8 @@ export function DesyncSettingsCard({
       if (generationRef.current.value !== epoch) return
       setStatus(next)
       setTTL(String(next.settings.discordTTL))
+      setUdpTtl(String(next.settings.discordUDPTTL))
+      setUdpRepeats(String(next.settings.discordUDPRepeats))
     } catch (err: unknown) {
       if (generationRef.current.value === epoch) setError(String(err))
     } finally {
@@ -83,18 +93,37 @@ export function DesyncSettingsCard({
     }
   }
 
-  function saveTTL() {
+  function saveAdvanced() {
     const value = Number(ttl)
-    if (!Number.isInteger(value) || value < 1 || value > 255) {
+    const udpValue = Number(udpTtl)
+    const repeats = Number(udpRepeats)
+    if (
+      !Number.isInteger(value) ||
+      value < 1 ||
+      value > 255 ||
+      !Number.isInteger(udpValue) ||
+      udpValue < 1 ||
+      udpValue > 255
+    ) {
       setError(t('desync.ttlInvalid'))
       return
     }
-    if (value !== status?.settings.discordTTL) void save({ discordTTL: value })
+    if (!Number.isInteger(repeats) || repeats < 1 || repeats > 16) {
+      setError(t('desync.repeatsInvalid'))
+      return
+    }
+    void save({
+      discordTTL: value,
+      discordUDPTTL: udpValue,
+      discordUDPRepeats: repeats,
+    })
   }
 
   const enabled = status?.settings.enabled === true
   const supported = status?.coreSupported === true
   const ruleMode = mode.toLowerCase() === 'rule'
+  const udpSupported =
+    status?.udpCoreSupported === true && status.platform === 'windows'
 
   return (
     <div className="homeCard settingsCardCompact desyncSettingsCard">
@@ -150,23 +179,79 @@ export function DesyncSettingsCard({
           {status.platform !== 'windows' ? (
             <p className="small muted">{t('desync.windowsOnly')}</p>
           ) : null}
+          <label className="settingsToggleRow">
+            <span>{t('desync.udpEnabled')}</span>
+            <input
+              type="checkbox"
+              checked={status.settings.discordUDP}
+              disabled={
+                saving || (!udpSupported && !status.settings.discordUDP)
+              }
+              onChange={(event) =>
+                void save({ discordUDP: event.target.checked })
+              }
+            />
+          </label>
+          {enabled && status.settings.discordUDP && traffic !== 'tun' ? (
+            <p className="banner small">{t('desync.udpNeedsTun')}</p>
+          ) : null}
+          <DesyncUDPStatusPanel
+            enabled={enabled && status.settings.discordUDP}
+            connected={connected}
+          />
           <details>
             <summary>{t('desync.advanced')}</summary>
-            <label className="desyncTTLRow">
-              <span>{t('desync.ttl')}</span>
-              <input
-                type="number"
-                min={1}
-                max={255}
-                value={ttl}
-                disabled={saving || !supported || !status.settings.discord}
-                onChange={(event) => setTTL(event.target.value)}
-                onBlur={saveTTL}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur()
-                }}
-              />
-            </label>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                saveAdvanced()
+              }}
+            >
+              <label className="desyncTTLRow">
+                <span>{t('desync.ttl')}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={255}
+                  value={ttl}
+                  disabled={saving || !supported || !status.settings.discord}
+                  onChange={(event) => setTTL(event.target.value)}
+                />
+              </label>
+              <label className="desyncTTLRow">
+                <span>{t('desync.udpTTL')}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={255}
+                  value={udpTtl}
+                  disabled={
+                    saving || !udpSupported || !status.settings.discordUDP
+                  }
+                  onChange={(event) => setUdpTtl(event.target.value)}
+                />
+              </label>
+              <label className="desyncTTLRow">
+                <span>{t('desync.udpRepeats')}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={udpRepeats}
+                  disabled={
+                    saving || !udpSupported || !status.settings.discordUDP
+                  }
+                  onChange={(event) => setUdpRepeats(event.target.value)}
+                />
+              </label>
+              <button
+                type="submit"
+                className="btn ghost"
+                disabled={saving || !supported}
+              >
+                {t('desync.apply')}
+              </button>
+            </form>
           </details>
           {enabled && !ruleMode ? (
             <p className="banner small">{t('desync.ruleMode')}</p>
@@ -177,7 +262,12 @@ export function DesyncSettingsCard({
               type="button"
               className="btn"
               disabled={
-                !enabled || !connected || !ruleMode || saving || probing
+                !enabled ||
+                !connected ||
+                !ruleMode ||
+                saving ||
+                probing ||
+                (!status.settings.youtube && !status.settings.discord)
               }
               onClick={() => {
                 void probe()

@@ -288,6 +288,8 @@ were checked against proxies instead of `sub-rules`.
 
 ## Controller diagnostics
 
+Patch `0019-desync-dns-udp.patch` adds explicit DNS fallback for named Desync outbounds when direct DNS returns no IP, plus a validated Windows UDP fake option with per-outbound counters. The ordinary direct route and subscription resolvers are retained. Tests cover cold empty resolution, retry scope/cancellation, UDP configuration, native datagram integrity and the core wrapper path. Desktop media routing is enabled independently in Settings; live network success remains an owner-run measurement.
+
 Patch `0018-probe-error-details.patch` preserves URL-test error messages in controller responses and writes failed manual delay tests to the core warning log with the outbound name. It covers dial/TLS failures, timeouts, zero-delay failures and successful responses with deterministic HTTP-handler tests. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
 
 ## Lab results (2026-10-04, Windows, same host and containers for every run)

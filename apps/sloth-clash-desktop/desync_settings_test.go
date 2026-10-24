@@ -192,8 +192,14 @@ func TestDesyncUDPMigrationAndValidation(t *testing.T) {
 	prefsMu.Unlock()
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	migrated := currentDesyncSettings()
-	if migrated.DiscordUDP || migrated.DiscordUDPTTL != 4 || migrated.DiscordUDPRepeats != 6 {
+	if migrated.DiscordUDP || migrated.DiscordUDPTTL != 4 || migrated.DiscordUDPRepeats != 1 {
 		t.Fatalf("migration enabled untested UDP or lost defaults: %+v", migrated)
+	}
+	prefsMu.Lock()
+	prefsCurrent.Desync.DiscordUDPRepeats = 6
+	prefsMu.Unlock()
+	if got := currentDesyncSettings(); got.DiscordUDPRepeats != 6 {
+		t.Fatalf("explicit UDP repeat setting was overwritten: %+v", got)
 	}
 	for _, s := range []DesyncSettings{{Enabled: true, DiscordUDP: true, DiscordUDPTTL: 256}, {Enabled: true, DiscordUDP: true, DiscordUDPRepeats: 17}} {
 		if _, err := validateDesyncSettings(s, "windows", true); err == nil {

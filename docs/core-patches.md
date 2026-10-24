@@ -255,6 +255,12 @@ Delete together with 0004, or when XDrive drops local storage.
   selectable, with the hop the last health check failed at.
 - **`tcp-connect-timeout`** has its place in the generated layout next to the other TCP keys.
 
+## Direct TCP desynchronization
+
+Patch **0017** links the separately published `github.com/Nemu-x/desync` library at an exact version and checksum. An optional `desync` mapping on a named `direct` outbound wraps the TCP socket before its first TLS write; the ordinary DIRECT route and UDP behaviour remain unchanged. The parser validates settings, rejects unsupported native fake platforms and disallows TFO/MPTCP for these outbounds. Tests verify configuration decoding and that the core's buffered copy path retains the transformation.
+
+The client injects service-specific routes only when explicitly enabled in Settings. See [DPI bypass with desync](desync.md) for controls, production-subscription testing and rollback. Windows patch tests also execute the standalone library's native tests.
+
 ## Citrus compatibility suite
 
 `apps/sloth-clash-desktop/citrus_compat_test.go` runs Citrus' own client-side examples through the

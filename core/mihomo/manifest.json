@@ -72,14 +72,31 @@
     {
       "file": "0016-xdrive-local-storage-tests-only.patch",
       "sha256": "8195081fc5218d7a60c98083b4a891753e002842c2d510b785dbbc3567404565"
+    },
+    {
+      "file": "0017-direct-desync.patch",
+      "sha256": "9fbabbc0d3f507abb1373ad643aa667b0db6324e12eb1eabc357a0d69096a296",
+      "feature": "desync"
     }
   ],
   "assets": {
-    "windows-amd64": { "file": "mihomo-windows-amd64.exe" },
-    "windows-arm64": { "file": "mihomo-windows-arm64.exe" },
-    "darwin-amd64": { "file": "mihomo-darwin-amd64" },
-    "darwin-arm64": { "file": "mihomo-darwin-arm64" },
-    "linux-amd64": { "file": "mihomo-linux-amd64" },
-    "linux-arm64": { "file": "mihomo-linux-arm64" }
+    "windows-amd64": {
+      "file": "mihomo-windows-amd64.exe"
+    },
+    "windows-arm64": {
+      "file": "mihomo-windows-arm64.exe"
+    },
+    "darwin-amd64": {
+      "file": "mihomo-darwin-amd64"
+    },
+    "darwin-arm64": {
+      "file": "mihomo-darwin-arm64"
+    },
+    "linux-amd64": {
+      "file": "mihomo-linux-amd64"
+    },
+    "linux-arm64": {
+      "file": "mihomo-linux-arm64"
+    }
   }
 }

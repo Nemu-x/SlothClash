@@ -723,5 +723,23 @@
     "warning": "任何网站都可以打开此类链接。请勿添加您未主动请求的订阅。",
     "confirm": "添加订阅",
     "adding": "正在添加…"
+  },
+  "desync": {
+    "title": "DPI 绕过",
+    "description": "通过 desync 直接连接所选服务，其他流量仍遵循订阅规则。",
+    "enabled": "启用 DPI 绕过",
+    "unsupportedCore": "此版本未包含兼容的内核。",
+    "windowsOnly": "Discord 方法目前仅支持 Windows。",
+    "advanced": "高级",
+    "ttl": "Discord TTL",
+    "ttlInvalid": "TTL 必须是 1 到 255 的整数。",
+    "ruleMode": "请选择规则模式以应用服务路由。",
+    "reconnect": "更改仅适用于新连接。切换策略后请重启浏览器或 Discord。",
+    "test": "测试所选服务",
+    "testing": "测试中…",
+    "disable": "禁用绕过",
+    "testScope": "HTTPS 测试使用下方的内核路由。请在应用中检查视频、消息和语音。所选服务的 UDP/443 被阻止以回退到 TCP；尚未实现语音绕过。",
+    "failed": "失败",
+    "loading": "正在加载设置…"
   }
 }

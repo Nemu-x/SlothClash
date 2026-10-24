@@ -25,7 +25,7 @@ export function DesyncSettingsCard({
   const [status, setStatus] = useState<DesyncStatus | null>(null)
   const [ttl, setTTL] = useState('4')
   const [udpTtl, setUdpTtl] = useState('4')
-  const [udpRepeats, setUdpRepeats] = useState('6')
+  const [udpRepeats, setUdpRepeats] = useState('1')
   const [saving, setSaving] = useState(false)
   const [probing, setProbing] = useState(false)
   const [error, setError] = useState('')

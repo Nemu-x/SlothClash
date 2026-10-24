@@ -8,7 +8,7 @@ Open **Settings → Desync**. The feature is off by default.
 
 - **YouTube** uses TLS record fragmentation at `3+s`.
 - **Discord** uses TLS record fragmentation at `1+s` and a Windows low-TTL fake prefix. The initial preset is TTL 4; the advanced field accepts 1–255.
-- **Discord UDP (experimental)** routes UDP belonging to `Discord.exe` directly through `SLOTH-DESYNC-DISCORD-UDP`. It requires Windows and TUN. It is off by default, including after updating an existing installation. The initial preset sends six low-TTL fake datagrams before each of the first three application datagrams to a peer, with TTL 4. Originals are unchanged. There is no automatic fallback to subscription nodes; effectiveness must be tested on the actual network.
+- **Discord UDP (experimental)** routes UDP belonging to `Discord.exe` directly through `SLOTH-DESYNC-DISCORD-UDP`. It requires Windows and TUN. It is off by default, including after updating an existing installation. The initial preset sends one low-TTL fake datagram before each of the first three application datagrams to a peer, with TTL 4. Originals are unchanged. There is no automatic fallback to subscription nodes; effectiveness must be tested on the actual network. Existing explicit TTL/repeat settings are retained when updating.
 - **Advanced → Apply parameters** saves TCP TTL and UDP TTL/repeats together. UDP repeats accept 1–16. TTL values are examples, not a route-independent guarantee.
 - **Test HTTPS** sends fixed HTTPS checks through the named TCP outbounds in the running core. It requires a connected client in Rule mode. These checks do not log in, send messages or test voice.
 - **Reset Discord UDP connections** closes only current Discord UDP flows so new traffic can select the configured route. Leave and rejoin the voice channel to renegotiate its public address. Browser UDP, TCP/Gateway connections and other applications are retained.
@@ -38,7 +38,7 @@ A named Desync outbound can retry resolution once through the profile's normal r
 
 For a cold YouTube comparison, restart the client and browser and record the first HTTPS check/page load without repeatedly refreshing. If it fails, retain the complete new error and the `[desync DNS]` log lines.
 
-For direct UDP: use Rule + TUN mode, enable **Discord UDP (experimental)**, leave the voice channel, reset Discord UDP connections, and rejoin it. Confirm `SLOTH-DESYNC-DISCORD-UDP` in Connections, increasing fake/original counters, audible voice and working streams. If media fails, turn off only the UDP option, reset its flows and rejoin; verify the subscription route returns. A working call through a subscription node is not a successful direct UDP test.
+For direct UDP: use Rule + TUN mode, enable **Discord UDP (experimental)**, leave the voice channel, reset Discord UDP connections, and rejoin it. Confirm `SLOTH-DESYNC-DISCORD-UDP` in Connections, a nonzero fake count, increasing original counters and traffic in both directions, audible voice and working streams. Fake counts stop increasing after the initial three-datagram window. Initial discovery replies or a normal initial ping do not establish sustained media delivery. Larger fake bursts can disrupt the exchange on some paths; start with UDP TTL 4 and **UDP fake repeats = 1**, save the parameters and restart Discord. These are separate fields. If media fails, turn off only the UDP option, reset its flows and rejoin; verify the subscription route returns. A working call through a subscription node is not a successful direct UDP test.
 
 Do not treat an HTTPS probe or a title-only Discord page as a complete application success. Authentication and real usage are owner-run checks. If the client is in Global or Direct mode, the service-specific rules are inactive.
 
@@ -67,7 +67,7 @@ proxies:
       dns-fallback: true
       udp:
         ttl: 4
-        repeats: 6
+        repeats: 1
         packets: 3
 ```
 

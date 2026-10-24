@@ -16,6 +16,7 @@ const desyncYouTubeRoute = "SLOTH-DESYNC-YOUTUBE"
 const desyncDiscordRoute = "SLOTH-DESYNC-DISCORD"
 const desyncDiscordUDPRoute = "SLOTH-DESYNC-DISCORD-UDP"
 const desyncManagedKey = "_sloth-desync-managed"
+const desyncDefaultUDPRepeats = 1
 
 var desyncYouTubeDomains = []string{"youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubei.googleapis.com", "youtube.googleapis.com", "yt3.ggpht.com"}
 var desyncDiscordDomains = []string{"discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media", "discordcdn.com"}
@@ -52,7 +53,7 @@ type DesyncProbeResult struct {
 func currentDesyncSettings() DesyncSettings {
 	s := currentDesktopPrefs().Desync
 	if s == (DesyncSettings{}) {
-		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
+		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats}
 	}
 	if s.DiscordTTL == 0 {
 		s.DiscordTTL = 4
@@ -61,7 +62,7 @@ func currentDesyncSettings() DesyncSettings {
 		s.DiscordUDPTTL = 4
 	}
 	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = 6
+		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
 	}
 	return s
 }
@@ -98,7 +99,7 @@ func validateDesyncSettings(s DesyncSettings, platform string, coreSupported boo
 		s.DiscordUDPTTL = 4
 	}
 	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = 6
+		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
 	}
 	if s.DiscordUDPTTL < 1 || s.DiscordUDPTTL > 255 {
 		if s.Enabled && s.DiscordUDP {
@@ -110,7 +111,7 @@ func validateDesyncSettings(s DesyncSettings, platform string, coreSupported boo
 		if s.Enabled && s.DiscordUDP {
 			return s, fmt.Errorf("Discord UDP repeats must be between 1 and 16")
 		}
-		s.DiscordUDPRepeats = 6
+		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
 	}
 	if s.Enabled {
 		if !coreSupported {
@@ -220,7 +221,7 @@ func applyDesyncOverlay(m map[string]any, s DesyncSettings) {
 			ttl = 4
 		}
 		if repeats == 0 {
-			repeats = 6
+			repeats = desyncDefaultUDPRepeats
 		}
 		proxies = append(proxies, map[string]any{"name": desyncDiscordUDPRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"dns-fallback": true, "udp": map[string]any{"ttl": ttl, "repeats": repeats, "packets": 3}}})
 		var udpRules []any

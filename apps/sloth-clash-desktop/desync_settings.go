@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -183,6 +184,21 @@ func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target st
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return 0, fmt.Errorf("core probe: HTTP %d: %w", resp.StatusCode, readErr)
+		}
+		var failure struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(body, &failure)
+		message := strings.TrimSpace(failure.Message)
+		if message == "" && !json.Valid(body) {
+			message = strings.TrimSpace(string(body))
+		}
+		if message != "" {
+			return 0, fmt.Errorf("core probe: HTTP %d: %s", resp.StatusCode, truncateString(redactCredentialQuery(message), 1024))
+		}
 		return 0, fmt.Errorf("core probe: HTTP %d", resp.StatusCode)
 	}
 	var body struct {
@@ -233,7 +249,7 @@ func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
 		if err != nil {
 			checks[i].Error = err.Error()
 		}
-		a.appendRuntimeDiag("desync.probe", fmt.Sprintf("route=%s target=%s ok=%t delay_ms=%d", checks[i].Route, checks[i].Name, checks[i].OK, delay))
+		a.appendRuntimeDiag("desync.probe", fmt.Sprintf("route=%s target=%s ok=%t delay_ms=%d error=%q", checks[i].Route, checks[i].Name, checks[i].OK, delay, checks[i].Error))
 	}
 	return checks, nil
 }

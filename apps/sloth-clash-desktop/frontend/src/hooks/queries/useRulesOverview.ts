@@ -10,6 +10,8 @@ export function useRulesOverview(enabled: boolean) {
     queryKey: ['rules-overview'],
     queryFn: () => FetchRulesOverview() as Promise<main.RulesOverview>,
     enabled,
+    refetchInterval: enabled ? 5000 : false,
+    refetchIntervalInBackground: false,
   })
   const refresh = useCallback(() => void refetch(), [refetch])
   return { overview: data ?? null, busy: isFetching, refresh }

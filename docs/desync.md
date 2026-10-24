@@ -1,26 +1,28 @@
-# DPI bypass with desync
+# Desync
 
 SlothClash can apply direct TCP desynchronization to selected services while keeping the subscription's routes for other traffic. The implementation is linked into the embedded mihomo core through patch `0017-direct-desync.patch`; it is not a separate background proxy.
 
 ## Controls
 
-Open **Settings → DPI bypass**. The feature is off by default.
+Open **Settings → Desync**. The feature is off by default.
 
 - **YouTube** uses TLS record fragmentation at `3+s`.
 - **Discord** uses TLS record fragmentation at `1+s` and a Windows low-TTL fake prefix. The initial preset is TTL 4; the advanced field accepts 1–255.
 - **Test selected services** sends fixed HTTPS checks through the named outbounds in the running core. It requires a connected client in Rule mode. These checks do not log in, send messages or test voice.
-- **Disable bypass** removes the generated service routes and reloads the normal runtime configuration. Existing application connections retain their handshake; restart the application being compared.
+- **Disable Desync** removes the generated service routes and reloads the normal runtime configuration. Existing application connections retain their handshake; restart the application being compared.
 
 The subscription body is unchanged. Generated TCP rules take priority over its normal service rules. Targeted UDP/443 is rejected so browsers can fall back to TCP. Other UDP retains the profile's routing; this feature does not implement a UDP voice bypass. Corporate VPN coexistence rules retain their existing priority.
 
 Settings and diagnostic outcomes are included in the existing runtime diagnostics. The Connections screen identifies selected connections as `SLOTH-DESYNC-YOUTUBE` or `SLOTH-DESYNC-DISCORD`.
 
+The current client uses fixed presets; it does not automatically try or switch strategies. Failed HTTPS checks show the core's error detail and write a warning containing the outbound name to **Logs**. An API `503` denotes a failed core URL test, not necessarily a `503` response from the target website. A successful browser connection can coexist with a failed probe because the checks use a separate HEAD request and connection.
+
 ## Live verification with a production subscription
 
 1. Back up `%APPDATA%\SlothClash\prefs.json` and `profiles.json`. Keep the previous installer for rollback.
 2. Close the running client and install the test build as a normal update. The Windows installer preserves user data and refreshes an existing service's core hash pin. If service startup still reports an old pin, use the existing reinstall-service action.
-3. Select the existing subscription, choose **Rule** mode and connect using the normal Proxy or TUN mode. Verify the subscription works with DPI bypass disabled.
-4. Enable DPI bypass for the service being measured. Restart its browser or desktop application to create fresh connections.
+3. Select the existing subscription, choose **Rule** mode and connect using the normal Proxy or TUN mode. Verify the subscription works with Desync disabled.
+4. Enable Desync for the service being measured. Restart its browser or desktop application to create fresh connections.
 5. Run the in-client HTTPS checks and inspect Connections for the expected named outbound.
 6. For YouTube, play a video, seek, and compare buffering. For Discord, check full UI, sign-in, messages, attachments and Gateway reconnect. Assess voice separately and record its actual route.
 7. Disable bypass, restart the same applications and repeat the comparison. Other subscription traffic should keep its original route throughout.

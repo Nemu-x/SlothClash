@@ -550,6 +550,7 @@
       "match": "匹配",
       "policy": "策略",
       "noParsed": "请先在首页连接，然后点击刷新以加载规则。",
+      "empty": "核心返回的规则列表为空。请刷新重试。",
       "toggleCol": "启用",
       "toggleEnable": "启用此规则",
       "toggleDisable": "停用此规则",
@@ -725,9 +726,9 @@
     "adding": "正在添加…"
   },
   "desync": {
-    "title": "DPI 绕过",
-    "description": "通过 desync 直接连接所选服务，其他流量仍遵循订阅规则。",
-    "enabled": "启用 DPI 绕过",
+    "title": "Desync",
+    "description": "使用固定的 desync 预设直接连接所选服务，尚不支持自动策略选择。其他流量仍遵循订阅规则。",
+    "enabled": "启用 Desync",
     "unsupportedCore": "此版本未包含兼容的内核。",
     "windowsOnly": "Discord 方法目前仅支持 Windows。",
     "advanced": "高级",
@@ -737,7 +738,7 @@
     "reconnect": "更改仅适用于新连接。切换策略后请重启浏览器或 Discord。",
     "test": "测试所选服务",
     "testing": "测试中…",
-    "disable": "禁用绕过",
+    "disable": "禁用 Desync",
     "testScope": "HTTPS 测试使用下方的内核路由。请在应用中检查视频、消息和语音。所选服务的 UDP/443 被阻止以回退到 TCP；尚未实现语音绕过。",
     "failed": "失败",
     "loading": "正在加载设置…"

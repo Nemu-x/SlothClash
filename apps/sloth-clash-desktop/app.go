@@ -74,6 +74,8 @@ type App struct {
 	emitStateTimer        *time.Timer
 	insightRefreshRunning atomic.Bool
 
+	desyncMu   sync.Mutex
+	desyncAuto desyncAutoRuntime
 	diagMu     sync.Mutex
 	diagEvents []RuntimeDiagEvent
 
@@ -141,6 +143,7 @@ func (a *App) startup(ctx context.Context) {
 	go a.runGuardedLoop(ctx, "profile-autoupdate", a.startProfileAutoUpdateLoop)
 	go a.runGuardedLoop(ctx, "update-check", a.updateCheckLoop)
 	go a.runGuardedLoop(ctx, "supervisor", a.runRuntimeSupervisorLoop)
+	go a.runGuardedLoop(ctx, "desync-auto", a.runDesyncAutoLoop)
 	a.emitAppStateChanged()
 	// Warm the core in the background for the active profile (cold start with
 	// tun.enable: false) so the first Connect only has to push a single

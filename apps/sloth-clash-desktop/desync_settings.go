@@ -137,6 +137,7 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 }
 
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
+	a.invalidateDesyncAuto()
 	next, err := validateDesyncSettings(next, runtime.GOOS, desyncCoreSupported())
 	if err != nil {
 		return a.GetDesyncStatus(), err
@@ -169,80 +170,12 @@ func desyncDiscordUDPRules() []string {
 
 // The profile body is never edited. Only generated runtime entries are
 // replaced; user scripts cannot silently remove an explicitly enabled route.
-func applyDesyncOverlay(m map[string]any, s DesyncSettings) {
-	managedRules := map[string]bool{}
-	for _, rule := range append(desyncRules(desyncYouTubeDomains, desyncYouTubeRoute), desyncRules(desyncDiscordDomains, desyncDiscordRoute)...) {
-		managedRules[rule] = true
-	}
-	for _, rule := range desyncDiscordUDPRules() {
-		managedRules[rule] = true
-	}
-	proxies := []any{}
-	removed := false
-	for _, value := range desyncSlice(m["proxies"]) {
-		entry, ok := value.(map[string]any)
-		if ok && entry[desyncManagedKey] == true {
-			removed = true
-			continue
-		}
-		proxies = append(proxies, value)
-	}
-	rules := []any{}
-	for _, value := range desyncSlice(m["rules"]) {
-		if text, ok := value.(string); ok && managedRules[text] {
-			removed = true
-			continue
-		}
-		rules = append(rules, value)
-	}
-	if !s.Enabled && !removed {
-		return
-	}
-	generated := []any{}
-	if s.Enabled && s.YouTube {
-		proxies = append(proxies, map[string]any{"name": desyncYouTubeRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "3+s", "dns-fallback": true}})
-		for _, rule := range desyncRules(desyncYouTubeDomains, desyncYouTubeRoute) {
-			generated = append(generated, rule)
-		}
-	}
-	if s.Enabled && s.Discord {
-		ttl := s.DiscordTTL
-		if ttl == 0 {
-			ttl = 4
-		}
-		proxies = append(proxies, map[string]any{"name": desyncDiscordRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"tlsrec": "1+s", "dns-fallback": true, "fake": map[string]any{"ttl": ttl, "prefix": -1}}})
-		for _, rule := range desyncRules(desyncDiscordDomains, desyncDiscordRoute) {
-			generated = append(generated, rule)
-		}
-	}
-	if s.Enabled && s.DiscordUDP {
-		ttl, repeats := s.DiscordUDPTTL, s.DiscordUDPRepeats
-		if ttl == 0 {
-			ttl = 4
-		}
-		if repeats == 0 {
-			repeats = desyncDefaultUDPRepeats
-		}
-		proxies = append(proxies, map[string]any{"name": desyncDiscordUDPRoute, "type": "direct", desyncManagedKey: true, "desync": map[string]any{"dns-fallback": true, "udp": map[string]any{"ttl": ttl, "repeats": repeats, "packets": 3}}})
-		var udpRules []any
-		for _, rule := range desyncDiscordUDPRules() {
-			udpRules = append(udpRules, rule)
-		}
-		generated = append(udpRules, generated...)
-	}
-	// Do not create empty keys in a profile when the feature has never been used.
-	if _, present := m["proxies"]; present || len(proxies) > 0 {
-		m["proxies"] = proxies
-	}
-	if _, present := m["rules"]; present || len(generated) > 0 {
-		m["rules"] = append(generated, rules...)
-	}
-}
+func applyDesyncOverlay(m map[string]any, s DesyncSettings) { applyAutomaticDesyncOverlay(m, s) }
 
 func desyncSlice(value any) []any { values, _ := value.([]any); return values }
 
 func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target string) (int, error) {
-	q := url.Values{"url": {target}, "timeout": {"10000"}}
+	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {"200-299"}}
 	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode()
 	resp, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, path, nil)
 	if err != nil {

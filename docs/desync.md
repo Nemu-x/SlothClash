@@ -1,76 +1,49 @@
 # Desync
 
-SlothClash applies direct TCP desynchronization to selected services and provides a separate experimental Discord desktop UDP mode. Other traffic retains the subscription's routes. The library is linked into the embedded mihomo core through patches `0017-direct-desync.patch` and `0019-desync-dns-udp.patch`.
+Desync connects selected services directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription. The feature is off by default.
 
-## Controls
+## Use
 
-Open **Settings → Desync**. The feature is off by default.
+Open **Settings → Desync**, enable it and select YouTube, Discord, or Discord voice. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer exposed.
 
-- **YouTube** uses TLS record fragmentation at `3+s`.
-- **Discord** uses TLS record fragmentation at `1+s` and a Windows low-TTL fake prefix. The initial preset is TTL 4; the advanced field accepts 1–255.
-- **Discord UDP (experimental)** routes UDP belonging to `Discord.exe` directly through `SLOTH-DESYNC-DISCORD-UDP`. It requires Windows and TUN. It is off by default, including after updating an existing installation. The initial preset sends one low-TTL fake datagram before each of the first three application datagrams to a peer, with TTL 4. Originals are unchanged. There is no automatic fallback to subscription nodes; effectiveness must be tested on the actual network. Existing explicit TTL/repeat settings are retained when updating.
-- **Advanced → Apply parameters** saves TCP TTL and UDP TTL/repeats together. UDP repeats accept 1–16. TTL values are examples, not a route-independent guarantee.
-- **Test HTTPS** sends fixed HTTPS checks through the named TCP outbounds in the running core. It requires a connected client in Rule mode. These checks do not log in, send messages or test voice.
-- **Reset Discord UDP connections** closes only current Discord UDP flows so new traffic can select the configured route. Leave and rejoin the voice channel to renegotiate its public address. Browser UDP, TCP/Gateway connections and other applications are retained.
-- **Disable Desync** removes the generated service routes and reloads the normal runtime configuration. Existing application connections retain their handshake; restart the application being compared.
+Selection runs in the background even when Settings is closed. The panel shows progress and one of these outcomes:
 
-The subscription body is unchanged. Generated TCP rules take priority over its normal service rules. The YouTube list includes `yt3.ggpht.com` thumbnails/avatars as well as the video/site domains. Targeted UDP/443 is rejected for TCP fallback, except for desktop Discord UDP when the experimental route is explicitly enabled. Other UDP retains the profile's routing. Corporate VPN coexistence rules retain their existing priority. Browser voice is outside the desktop process rule.
+- **HTTPS available**: the service passed two independent rounds of HTTPS checks with a successful HTTP status.
+- **Waiting for a Discord voice connection**: no current voice endpoint is available to test. Join a channel.
+- **Checking voice traffic**: the current route is being observed; sustained application traffic is not established yet. Rejoining the channel can accelerate renegotiation after a strategy change.
+- **UDP exchange detected**: the actual application has sustained incoming and outgoing UDP traffic.
+- **Media traffic in both directions**: RTP-shaped packets are progressing in both directions across multiple observations. This does not inspect, decrypt or certify audible audio.
+- **No working strategy found**: the bounded search failed; the controller backs off and tries again. **Check again** restarts calibration immediately.
 
-Settings and diagnostic outcomes are included in the existing runtime diagnostics. The Connections screen identifies selected connections as `SLOTH-DESYNC-YOUTUBE` or `SLOTH-DESYNC-DISCORD`.
+**Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
 
-When UDP mode is enabled, its settings panel polls actual connection chains and aggregate native counters. **Desync flows** means the dedicated UDP route; **subscription rules** means an existing route (including a subscription's own DIRECT rule). Fake datagrams sent and original packet counters verify that the wrapper ran, while hearing voice and receiving a stream verify application success. No voice payload or Discord credentials are collected by this status view.
+## Selection and recovery
 
-The current client uses fixed presets; it does not automatically try or switch strategies. Failed HTTPS checks show the core's error detail and write a warning containing the outbound name to **Logs**. An API `503` denotes a failed core URL test, not necessarily a `503` response from the target website. A successful browser connection can coexist with a failed probe because the checks use a separate HEAD request and connection.
+Generated hidden selector groups keep the familiar `SLOTH-DESYNC-YOUTUBE`, `SLOTH-DESYNC-DISCORD` and `SLOTH-DESYNC-DISCORD-UDP` connection routes. Candidates are independent named direct outbounds. The controller tests candidates before changing a selector; candidate changes do not reload the whole core or edit the subscription.
 
-## Direct DNS fallback
+The initial YouTube candidate uses TLS record fragmentation at `3+s`. Discord TCP starts with `1+s` plus a Windows fake prefix at TTL 4. Voice starts at TTL 4 with one fake before each of the first three application datagrams. Searches vary TLS record/write boundaries or fake TTL independently for each service. UDP searches use conservative one- or two-fake bursts rather than assuming that more fakes are better.
 
-A named Desync outbound can retry resolution once through the profile's normal resolver when its direct resolver supplies no usable IP (`couldn't find ip` or an empty answer). This applies to TCP and hostname-based UDP and is enabled by the generated `dns-fallback: true` option. Ordinary DIRECT and all subscription DNS settings remain unchanged. Connection/TLS errors and canceled requests do not trigger this DNS retry. Successful fallback is recorded as `[desync DNS]` in Logs and as `desyncDNSFallbacks` on the named proxy's controller JSON. This addresses the observed empty direct-DNS result without changing the proven TLS preset or hard-coding a cached YouTube IP.
+Successful candidate IDs are cached for up to six network/build digests, expire after 24 hours, and are revalidated on connection/network changes. HTTPS services are checked independently and periodically. TTL candidates cover 1–32, with the proven presets first. Searches have deadlines and retry backoff, and resume across a failed search budget instead of repeatedly testing only the first candidates. Disabling Desync, disconnecting, changing mode/network or selecting different services cancels superseded work; a late result cannot apply to a newer connection generation.
 
-## Live verification with a production subscription
+Voice calibration waits for an endpoint actually used by `Discord.exe`. An authenticated core API probe sends at most twelve independent IP-discovery requests through a candidate, validates the reply address/type/length/SSRC, and rejects sequences that only answer the first few requests. No cached voice server, account credentials or captured call packets are used. These diagnostic requests are excluded from the real application activity counters.
 
-1. Back up `%APPDATA%\SlothClash\prefs.json` and `profiles.json`. Keep the previous installer for rollback.
-2. Close the running client and install the test build as a normal update. The Windows installer preserves user data and refreshes an existing service's core hash pin. If service startup still reports an old pin, use the existing reinstall-service action.
-3. Select the existing subscription, choose **Rule** mode and connect using the normal Proxy or TUN mode. Verify the subscription works with Desync disabled.
-4. Enable Desync for the service being measured. Restart its browser or desktop application to create fresh connections.
-5. Run the in-client HTTPS checks and inspect Connections for the expected named outbound.
-6. For YouTube, play a video, seek, and compare buffering. For Discord, check full UI, sign-in, messages, attachments and Gateway reconnect. Assess voice separately and record its actual route.
-7. Disable bypass, restart the same applications and repeat the comparison. Other subscription traffic should keep its original route throughout.
+Actual application traffic takes priority: an already working call is observed and retained rather than being invalidated by a separate discovery socket. Initial discovery or one good ping never establishes media success. Ongoing sends with no incoming progress trigger candidate probing and reselection after a grace period. An idle or silent channel is not itself a failure. If a selector changes, only stale Desync voice UDP flows for that endpoint are closed; other applications, Discord TCP and subscription selections are retained. Discord may need time to renegotiate, or the user can rejoin the voice channel.
 
-For a cold YouTube comparison, restart the client and browser and record the first HTTPS check/page load without repeatedly refreshing. If it fails, retain the complete new error and the `[desync DNS]` log lines.
+There is no automatic fallback to remote subscription nodes. Disable only the voice service and rejoin to return to the subscription's normal voice rule. A call working through a subscription node does not validate direct Desync voice.
 
-For direct UDP: use Rule + TUN mode, enable **Discord UDP (experimental)**, leave the voice channel, reset Discord UDP connections, and rejoin it. Confirm `SLOTH-DESYNC-DISCORD-UDP` in Connections, a nonzero fake count, increasing original counters and traffic in both directions, audible voice and working streams. Fake counts stop increasing after the initial three-datagram window. Initial discovery replies or a normal initial ping do not establish sustained media delivery. Larger fake bursts can disrupt the exchange on some paths; start with UDP TTL 4 and **UDP fake repeats = 1**, save the parameters and restart Discord. These are separate fields. If media fails, turn off only the UDP option, reset its flows and rejoin; verify the subscription route returns. A working call through a subscription node is not a successful direct UDP test.
+## Routing and DNS
 
-Do not treat an HTTPS probe or a title-only Discord page as a complete application success. Authentication and real usage are owner-run checks. If the client is in Global or Direct mode, the service-specific rules are inactive.
+The YouTube overlay includes the site/API, `googlevideo.com`, `ytimg.com` and `yt3.ggpht.com`. Selected service TCP rules precede subscription service rules; targeted UDP/443 is rejected for TCP fallback, except desktop Discord UDP when explicitly enabled. Corporate VPN coexistence retains its priority. Browser voice is outside the desktop process rule.
 
-## Core configuration
+Named Desync outbounds retry empty direct DNS resolution once through the profile's normal resolver. Ordinary DIRECT, subscription DNS configuration, canceled requests and TLS/connect errors retain their behavior. The core reports resolution fallbacks and exact probe failures; HTTP test error pages do not count as successful availability.
 
-The optional configuration belongs to a named `direct` proxy. Plain `DIRECT` is unchanged:
+## Trial checklist
 
-```yaml
-proxies:
-  - name: SLOTH-DESYNC-YOUTUBE
-    type: direct
-    desync:
-      tlsrec: 3+s
-      dns-fallback: true
-  - name: SLOTH-DESYNC-DISCORD
-    type: direct
-    desync:
-      tlsrec: 1+s
-      dns-fallback: true
-      fake:
-        ttl: 4
-        prefix: -1
-  - name: SLOTH-DESYNC-DISCORD-UDP
-    type: direct
-    desync:
-      dns-fallback: true
-      udp:
-        ttl: 4
-        repeats: 1
-        packets: 3
-```
+1. Keep the previous installer and back up `%APPDATA%\SlothClash\prefs.json` and `profiles.json`.
+2. Close SlothClash and install the trial as a normal update. The installer preserves data and refreshes the existing service's core hash pin.
+3. Connect the existing subscription in Rule mode. Use TUN for voice. Enable the desired Desync services; no strategy values need to be entered.
+4. Restart the browser/Discord, verify YouTube playback and seeking, and test a two-way Discord call and a stream separately. Inspect connection chains to distinguish direct Desync from subscription routing.
+5. Include cold startup, reconnect, a longer call and a different network where available. If something fails, press **Copy diagnostics** and send the report with what failed and when. **Check again** restarts the search.
+6. To compare subscription behavior, disable the relevant service and restart the application. Other subscription routes should retain their behavior.
 
-The standalone dependency is pinned to `github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e` with Go module checksums in patch 0019. Native TCP/UDP fake platforms and options are validated before configuration is accepted. TFO and MPTCP are rejected for a configured Desync outbound. UDP uses the owned application's UDP socket, restores its hop limit before originals and requires no packet driver or remote proxy. See the [library API and platform details](https://github.com/Nemu-x/desync/tree/feat/udp-fake).
-
-The core build tests the patch packages on both Linux and Windows, runs the library's native Windows tests on Windows, and retains the existing six-target cross-compilation matrix.
+The library remains pinned to `github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e`. Core patches 0017/0019 provide native transformations and DNS fallback; 0020 adds scoped UDP probes, application-only activity telemetry, cancellation and strict HTTP probe status handling. Build validation applies and tests the entire patch series. Local mechanics and automated checks do not replace testing on each tester's network.

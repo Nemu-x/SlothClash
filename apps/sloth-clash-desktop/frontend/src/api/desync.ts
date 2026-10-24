@@ -1,5 +1,8 @@
 import {
   GetDesyncStatus as getStatus,
+  GetDesyncAutoStatus as getAutoStatus,
+  GetDesyncDiagnosticReport as getReport,
+  RetryDesyncAuto as retryAuto,
   GetDesyncUDPStatus as getUDPStatus,
   ReconnectDiscordUDP as reconnectUDP,
   RunDesyncDiagnostics as runDiagnostics,
@@ -59,3 +62,23 @@ export const RunDesyncDiagnostics = (): Promise<DesyncProbeResult[]> =>
   runDiagnostics()
 export const GetDesyncUDPStatus = (): Promise<DesyncUDPStatus> => getUDPStatus()
 export const ReconnectDiscordUDP = (): Promise<number> => reconnectUDP()
+
+export interface DesyncAutoService {
+  phase: string
+  candidate?: string
+  attempt: number
+  total: number
+  code?: string
+  updated: number
+}
+export interface DesyncAutoStatus {
+  running: boolean
+  network?: string
+  youtube: DesyncAutoService
+  discord: DesyncAutoService
+  voice: DesyncAutoService
+}
+export const GetDesyncAutoStatus = (): Promise<DesyncAutoStatus> =>
+  getAutoStatus()
+export const RetryDesyncAuto = (): Promise<DesyncAutoStatus> => retryAuto()
+export const GetDesyncDiagnosticReport = (): Promise<string> => getReport()

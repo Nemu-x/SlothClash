@@ -44,7 +44,7 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 	doc := map[string]any{"proxies": []any{userProxy}, "rules": []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}, "mode": "rule"}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
 	applyDesyncOverlay(doc, settings)
-	if len(doc["proxies"].([]any)) != 3 {
+	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
 		t.Fatalf("unexpected proxies: %v", doc["proxies"])
 	}
 	if !reflect.DeepEqual(doc["proxies"].([]any)[0], userProxy) {
@@ -108,7 +108,7 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 			managed++
 		}
 	}
-	if managed != 2 {
+	if managed != len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
 		t.Fatal("enabled routes were not restored through the complete script/finalization pipeline")
 	}
 	if doc["rules"].([]any)[len(doc["rules"].([]any))-1] != "MATCH,DIRECT" {
@@ -118,7 +118,7 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 
 func TestDesyncDiagnosticUsesExplicitNamedOutbound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/proxies/"+desyncDiscordRoute+"/delay" || r.URL.Query().Get("url") != "https://discord.com/api/v10/gateway" || r.Header.Get("Authorization") != "Bearer local-secret" {
+		if r.URL.Path != "/proxies/"+desyncDiscordRoute+"/delay" || r.URL.Query().Get("url") != "https://discord.com/api/v10/gateway" || r.Header.Get("Authorization") != "Bearer local-secret" || r.URL.Query().Get("expected") != "200-299" {
 			t.Errorf("unexpected probe: %s %v", r.URL, r.Header)
 		}
 		_, _ = w.Write([]byte(`{"delay":12}`))
@@ -159,20 +159,32 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 		t.Fatal("Discord UDP did not override only the intended desktop rule")
 	}
 	proxies := doc["proxies"].([]any)
-	if len(proxies) != 4 {
-		t.Fatal("missing independent UDP outbound")
+	var udp, youtube map[string]any
+	for _, raw := range proxies {
+		p := raw.(map[string]any)
+		switch p["name"] {
+		case desyncDiscordUDPRoute + "-f4":
+			udp = p
+		case desyncYouTubeRoute + "-r3":
+			youtube = p
+		}
 	}
-	udp := proxies[3].(map[string]any)
-	if udp["name"] != desyncDiscordUDPRoute || udp["desync"].(map[string]any)["udp"].(map[string]any)["packets"] != 3 {
-		t.Fatalf("wrong UDP preset: %v", udp)
+	if udp == nil || youtube == nil {
+		t.Fatal("missing isolated candidates")
 	}
-	youtube := proxies[1].(map[string]any)["desync"].(map[string]any)
-	if youtube["tlsrec"] != "3+s" || youtube["dns-fallback"] != true {
-		t.Fatal("proven YouTube method changed or DNS fallback missing")
+	if options := udp["desync"].(map[string]any)["udp"].(map[string]any); options["packets"] != 3 || options["repeats"] != 1 {
+		t.Fatalf("unsafe initial UDP preset: %v", options)
+	}
+	if options := youtube["desync"].(map[string]any); options["tlsrec"] != "3+s" || options["dns-fallback"] != true {
+		t.Fatal("proven YouTube candidate lost")
+	}
+	groups := doc["proxy-groups"].([]any)
+	if len(groups) != 3 || groups[0].(map[string]any)["name"] != desyncDiscordUDPRoute || groups[0].(map[string]any)["hidden"] != true {
+		t.Fatal("missing hidden voice selector")
 	}
 	s.DiscordUDP = false
 	applyDesyncOverlay(doc, s)
-	if len(doc["proxies"].([]any)) != 3 {
+	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
 		t.Fatal("UDP disable removed or retained the wrong outbounds")
 	}
 	for _, rule := range doc["rules"].([]any) {

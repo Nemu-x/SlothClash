@@ -6,6 +6,7 @@ import {
   extractNodeFlagIso,
   filterProxyNodesForDisplay,
   isUnsafeGroupName,
+  isInternalDesyncName,
   nodeDisplayName,
   nodeFeatureTags,
 } from '../utils/proxyNames'
@@ -171,6 +172,7 @@ export function ProxiesPage({
   const [showHidden, setShowHidden] = useState(false)
   const baseVisibleGroups = groups.filter((g: any) => {
     const name = String(g?.name ?? '')
+    if (isInternalDesyncName(name)) return false
     if (!showBuiltin) {
       if (isUnsafeGroupName(name)) return false
       if (displayMode === 'rule' && name.toUpperCase() === 'GLOBAL')

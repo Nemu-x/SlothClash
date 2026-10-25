@@ -114,9 +114,9 @@ func TestDesyncTCPFailedCandidatesUseVerifiedReserveWithoutReload(t *testing.T) 
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
-	a.desyncAuto.epoch = 1
+	a.desyncCtl.epoch = 1
 	network := desyncNetworkKey()
-	a.desyncAuto.status.Network = network
+	a.desyncCtl.status.Network = network
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -204,8 +204,8 @@ func TestDesyncVoiceReserveClosesOnlyConfirmedFailedOwnedFlows(t *testing.T) {
 			a.state.Connection.Status = "connected"
 			a.state.Core.Running = true
 			a.state.Mode.Current = "rule"
-			a.desyncAuto.epoch = 1
-			a.desyncAuto.status.Network = desyncNetworkKey()
+			a.desyncCtl.epoch = 1
+			a.desyncCtl.status.Network = desyncNetworkKey()
 			changed := a.tryDesyncVoiceReserve(context.Background(), 1, a.core.listen, "", "104.29.1.1:19330", desync.DiscordUDPRoute+"-f4")
 			if changed == recovered || puts.Load() != deletes.Load() || (!recovered && puts.Load() != 1) || (recovered && puts.Load() != 0) {
 				t.Fatalf("changed=%t puts=%d deletes=%d", changed, puts.Load(), deletes.Load())
@@ -248,21 +248,21 @@ func TestDesyncUnavailableProfileRetainsSelectorAndBackgroundSearchCannotSwitch(
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
-	a.desyncAuto.epoch = 1
-	a.desyncAuto.status.Network = desyncNetworkKey()
+	a.desyncCtl.epoch = 1
+	a.desyncCtl.status.Network = desyncNetworkKey()
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	a.runDesyncTCPService(ctx, 1, a.desyncAuto.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute)
+	a.runDesyncTCPService(ctx, 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute)
 	cancel()
 	if puts.Load() != 0 || a.GetDesyncAutoStatus().YouTube.Code != "reserve_direct" {
 		t.Fatal("unavailable reserve changed selector or hid reason")
 	}
 	candidatesPass.Store(true)
-	a.desyncService(1, "youtube", DesyncAutoService{Phase: "profile", Candidate: "profile"})
-	first, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, true)
+	a.desyncCtl.setService(1, "youtube", DesyncAutoService{Phase: "profile", Candidate: "profile"})
+	first, err := a.findDesyncTCP(context.Background(), 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, true)
+	second, err := a.findDesyncTCP(context.Background(), 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, true)
 	if err != nil || first.ID != second.ID {
 		t.Fatal("background confirmation rotated a passing candidate")
 	}

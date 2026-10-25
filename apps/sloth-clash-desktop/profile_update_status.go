@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net"
@@ -73,11 +75,14 @@ func redactURLToHost(raw string) string {
 }
 
 // isTransientFetchError reports whether a body fetch failed on the network
+// (DNS, dial, timeout, connection reset, cut-off body, cancelled context)
 // rather than on what the provider answered. Background refreshes race the
 // core coming up (routes and TUN change under them), so these are not
 // recorded from that path: they would badge a healthy subscription.
+// http.Client wraps every transport failure in a *url.Error, including the
+// deterministic ones (isDeterministicTransportError), which are not transient.
 func isTransientFetchError(err error) bool {
-	if err == nil {
+	if err == nil || isDeterministicTransportError(err) {
 		return false
 	}
 	var urlErr *url.Error
@@ -85,6 +90,38 @@ func isTransientFetchError(err error) bool {
 	return errors.As(err, &urlErr) || errors.As(err, &netErr) ||
 		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
 		errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// goRedirectLimitRe matches net/http's own redirect limit error, returned when
+// a client has no CheckRedirect of its own.
+var goRedirectLimitRe = regexp.MustCompile(`^stopped after \d+ redirects$`)
+
+// isDeterministicTransportError reports a transport-level failure that a
+// retry cannot fix: the server's certificate does not verify (unknown
+// authority, wrong host name, expired or otherwise invalid, no usable roots)
+// or the request is caught in a redirect loop. Retrying these sooner only
+// repeats them.
+func isDeterministicTransportError(err error) bool {
+	var (
+		certVerify   *tls.CertificateVerificationError
+		unknownCA    x509.UnknownAuthorityError
+		hostname     x509.HostnameError
+		invalidCert  x509.CertificateInvalidError
+		systemRoots  x509.SystemRootsError
+		constraint   x509.ConstraintViolationError
+		critical     x509.UnhandledCriticalExtension
+		insecureAlgo x509.InsecureAlgorithmError
+	)
+	switch {
+	case errors.As(err, &certVerify), errors.As(err, &unknownCA), errors.As(err, &hostname),
+		errors.As(err, &invalidCert), errors.As(err, &systemRoots), errors.As(err, &constraint),
+		errors.As(err, &critical), errors.As(err, &insecureAlgo):
+		return true
+	case errors.Is(err, runtimecfg.ErrTooManyRedirects):
+		return true
+	}
+	var urlErr *url.Error
+	return errors.As(err, &urlErr) && urlErr.Err != nil && goRedirectLimitRe.MatchString(urlErr.Err.Error())
 }
 
 // applyProfileUpdateOutcomeLocked records one refresh attempt on p: success

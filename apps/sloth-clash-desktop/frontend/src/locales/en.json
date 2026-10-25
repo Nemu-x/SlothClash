@@ -747,6 +747,9 @@
       "observing": "Checking voice traffic · rejoin the channel if needed",
       "transport": "UDP exchange detected",
       "media": "Media traffic in both directions",
+      "receiving": "Receiving media",
+      "partial": "One media connection stalled; other connections are working",
+      "interrupted": "UDP traffic interrupted; waiting for recovery",
       "failed": "No working strategy found · retrying automatically",
       "queued": "Waiting for a check"
     },

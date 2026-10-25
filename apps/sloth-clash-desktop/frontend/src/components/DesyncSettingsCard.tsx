@@ -137,18 +137,15 @@ export function DesyncSettingsCard({
         {
           key: 'discord',
           name: 'Discord',
-          checked: status.settings.discord,
+          checked: status.settings.discord || status.settings.discordUDP,
           supported: supported && status.platform === 'windows',
           state: automatic?.discord,
-          patch: { discord: !status.settings.discord },
-        },
-        {
-          key: 'voice',
-          name: t('desync.voice'),
-          checked: status.settings.discordUDP,
-          supported: status.udpCoreSupported && status.platform === 'windows',
-          state: automatic?.voice,
-          patch: { discordUDP: !status.settings.discordUDP },
+          patch: {
+            discord: !(status.settings.discord || status.settings.discordUDP),
+            discordUDP:
+              !(status.settings.discord || status.settings.discordUDP) &&
+              status.udpCoreSupported,
+          },
         },
       ]
     : []
@@ -165,7 +162,16 @@ export function DesyncSettingsCard({
           aria-label={t('desync.enabled')}
           className={`settingsSwitch${enabled ? ' on' : ''}`}
           disabled={saving || !status || (!supported && !enabled)}
-          onClick={() => void save({ enabled: !enabled })}
+          onClick={() =>
+            void save({
+              enabled: !enabled,
+              ...(!enabled &&
+              status &&
+              (status.settings.discord || status.settings.discordUDP)
+                ? { discord: true, discordUDP: status.udpCoreSupported }
+                : {}),
+            })
+          }
         >
           <span className="settingsSwitchKnob" aria-hidden />
         </button>
@@ -182,10 +188,7 @@ export function DesyncSettingsCard({
                 ? 'connect'
                 : !ruleMode
                   ? 'rule'
-                  : row.key === 'voice' && traffic !== 'tun'
-                    ? 'needs_tun'
-                    : row.state?.phase ||
-                      (row.key === 'voice' ? 'waiting' : 'queued')
+                  : row.state?.phase || 'queued'
           return (
             <div key={row.key}>
               <label className="settingsToggleRow">
@@ -206,6 +209,28 @@ export function DesyncSettingsCard({
                     attempt: row.state?.attempt || 1,
                     total: row.state?.total || 1,
                   })}
+                </p>
+              ) : null}
+              {enabled && row.key === 'discord' && row.checked ? (
+                <p className="small muted" role="status">
+                  {t('desync.voice')}:{' '}
+                  {t(
+                    `desync.phase.${
+                      !status.settings.discordUDP
+                        ? 'disabled'
+                        : !connected
+                          ? 'connect'
+                          : !ruleMode
+                            ? 'rule'
+                            : traffic !== 'tun'
+                              ? 'needs_tun'
+                              : automatic?.voice.phase || 'waiting'
+                    }`,
+                    {
+                      attempt: automatic?.voice.attempt || 1,
+                      total: automatic?.voice.total || 1,
+                    },
+                  )}
                 </p>
               ) : null}
             </div>

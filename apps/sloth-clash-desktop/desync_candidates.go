@@ -165,6 +165,7 @@ func orderedDesyncCandidates(service, cached string) []desyncCandidate {
 func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
 	// Also removes r1-r4 generated entries when migrating or disabling.
 	managedRules := map[string]bool{}
+	managedRules["AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe)),"+desyncDiscordUDPRoute] = true // r3-r5 migration
 	for _, r := range append(desyncRules(desyncYouTubeDomains, desyncYouTubeRoute), desyncRules(desyncDiscordDomains, desyncDiscordRoute)...) {
 		managedRules[r] = true
 	}

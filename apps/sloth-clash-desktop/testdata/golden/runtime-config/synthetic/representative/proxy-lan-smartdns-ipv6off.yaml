@@ -1,0 +1,66 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: false
+allow-lan: true
+bind-address: '*'
+mode: rule
+tcp-concurrent: true
+unified-delay: true
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+sniffer:
+    enable: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - +.ru
+        - '*.lan'
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: false
+    listen: :1053
+    nameserver:
+        - https://1.1.1.1/dns-query
+        - https://77.88.8.8/dns-query
+    nameserver-policy:
+        +.ru:
+            - https://77.88.8.8/dns-query
+    proxy-server-nameserver:
+        - 1.1.1.1
+        - 8.8.8.8
+        - 77.88.8.8
+    respect-rules: true
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: true
+geo-update-interval: 72
+reality-mlkem: auto
+proxies:
+    - cipher: aes-128-gcm
+      name: n1
+      password: pw
+      port: 443
+      server: s.example.com
+      type: ss
+proxy-groups:
+    - name: PROXY
+      proxies:
+        - n1
+        - DIRECT
+      type: select
+rules:
+    - MATCH,PROXY

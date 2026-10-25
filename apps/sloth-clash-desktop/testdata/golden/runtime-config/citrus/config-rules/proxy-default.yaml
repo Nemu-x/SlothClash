@@ -1,0 +1,107 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - cipher: chacha20-ietf-poly1305
+      name: ss1
+      password: password
+      port: 443
+      server: 192.0.2.1
+      type: ss
+proxy-groups:
+    - name: PROXY
+      proxies:
+        - ss1
+        - DIRECT
+      type: select
+rule-providers:
+    rule1:
+        behavior: classical
+        interval: 259200
+        path: /path/to/save/file.yaml
+        proxy: DIRECT
+        type: http
+        url: url
+    rule2:
+        behavior: classical
+        interval: 259200
+        path: /path/to/save/file.yaml
+        type: file
+    rule3:
+        behavior: domain
+        format: mrs
+        path: /path/to/save/file.mrs
+        type: http
+        url: url
+    rule4:
+        behavior: domain
+        payload:
+            - .blogger.com
+            - '*.*.microsoft.com'
+            - books.itunes.apple.com
+        type: inline
+rules:
+    - RULE-SET,rule1,REJECT
+    - DOMAIN-REGEX,^abc,DIRECT
+    - DOMAIN-SUFFIX,baidu.com,DIRECT
+    - DOMAIN-KEYWORD,google,ss1
+    - DOMAIN-WILDCARD,test.*.citrus.com,ss1
+    - IP-CIDR,1.1.1.1/32,ss1
+    - IP-CIDR6,2409::/64,DIRECT
+    - PROTOCOL,bittorrent,REJECT
+    - SUB-RULE,(OR,((NETWORK,TCP),(NETWORK,UDP))),sub-rule-name1
+    - SUB-RULE,(AND,((NETWORK,UDP))),sub-rule-name2
+sub-rules:
+    sub-rule-name1:
+        - DOMAIN,google.com,ss1
+        - DOMAIN,baidu.com,DIRECT
+    sub-rule-name2:
+        - IP-CIDR,1.1.1.1/32,REJECT
+        - IP-CIDR,8.8.8.8/32,ss1
+        - DOMAIN,dns.alidns.com,REJECT

@@ -1,0 +1,98 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+mode: rule
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - name: vless-ws
+      network: ws
+      port: 443
+      server: example.com
+      tls: true
+      type: vless
+      uuid: 11111111-1111-1111-1111-111111111111
+      ws-opts:
+        path: /ws
+    - alpn:
+        - h3
+      name: tuic-node
+      password: abcdef
+      port: 443
+      server: tuic.example.com
+      type: tuic
+      uuid: 22222222-2222-2222-2222-222222222222
+    - name: hysteria2-node
+      password: 123456
+      port: 443
+      server: hy2.example.com
+      type: hysteria2
+    - ip: 10.14.0.2
+      name: wg-node
+      port: 443
+      private-key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=
+      public-key: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy=
+      server: wg.example.com
+      type: wireguard
+proxy-groups:
+    - interval: 300
+      name: Latency
+      proxies:
+        - vless-ws
+        - tuic-node
+        - hysteria2-node
+        - wg-node
+      type: url-test
+      url: http://www.gstatic.com/generate_204
+    - name: Main
+      proxies:
+        - Latency
+        - DIRECT
+      type: select
+rules:
+    - DOMAIN-SUFFIX,openai.com,Main
+    - MATCH,Main

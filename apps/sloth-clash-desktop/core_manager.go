@@ -1014,14 +1014,10 @@ func (a *App) coreGetJSON(ctx context.Context, path string, out any) error {
 		return err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
-	return json.Unmarshal(b, out)
+	return decodeCoreJSON(resp.Body, "GET "+path, coreJSONLimitForRoute(path), out)
 }
 
 func (a *App) coreFetchVersion(ctx context.Context) (string, error) {
@@ -1694,14 +1690,10 @@ func pullProxyGroupsFromCore(listen, secret string) ([]ProxyGroup, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return nil, err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GET /proxies: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("GET /proxies: HTTP %d %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := decodeCoreJSON(resp.Body, "GET /proxies", coreProxiesMaxJSONBytes, &raw); err != nil {
 		return nil, err
 	}
 	proxiesNode, ok := raw["proxies"]
@@ -1793,14 +1785,15 @@ func getCoreModeAt(ctx context.Context, listen, secret string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("GET /configs: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return "", fmt.Errorf("GET /configs: HTTP %d %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
+	// /configs echoes tun.route-exclude-address and similar lists, which can be
+	// thousands of CIDRs; the former 32 KiB cap truncated those configs.
 	var out struct {
 		Mode string `json:"mode"`
 	}
-	if err := json.Unmarshal(b, &out); err != nil {
+	if err := decodeCoreJSON(resp.Body, "GET /configs", coreDefaultMaxJSONBytes, &out); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out.Mode), nil

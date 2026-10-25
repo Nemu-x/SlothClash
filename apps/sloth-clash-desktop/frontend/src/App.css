@@ -110,133 +110,6 @@
   }
 }
 
-.titleBar {
-  grid-area: titlebar;
-  position: relative;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(
-    180deg,
-    rgba(42, 39, 36, 0.72) 0%,
-    rgba(28, 26, 24, 0.82) 45%,
-    rgba(20, 19, 18, 0.92) 100%
-  );
-  backdrop-filter: blur(14px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  user-select: none;
-}
-
-.titleBarLeft {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-}
-
-.titleBarLogo {
-  flex-shrink: 0;
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-  align-self: center;
-}
-
-.titleBarTitle {
-  font-weight: 700;
-  font-size: var(--font-size-md);
-  letter-spacing: 0.02em;
-  line-height: 38px;
-  display: flex;
-  align-items: center;
-}
-
-.titleBarWin {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 4px;
-}
-
-.winBtnIcon {
-  box-sizing: border-box;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.22);
-  color: #c9c4bc;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  transition:
-    background 0.14s ease,
-    color 0.14s ease,
-    border-color 0.14s ease,
-    transform 0.12s ease;
-}
-
-.winBtnIcon:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: #fff;
-}
-
-.winBtnIcon:active {
-  transform: scale(0.94);
-}
-
-.winBtnIcon:focus {
-  outline: none;
-}
-
-.winBtnIcon:focus-visible {
-  outline: 2px solid var(--accent-muted);
-  outline-offset: 2px;
-}
-
-.winBtnIcon.winClose:hover {
-  background: rgba(190, 55, 55, 0.42);
-  border-color: rgba(255, 130, 130, 0.35);
-  color: #fff;
-}
-
-.winBtnIcon.winClose:active {
-  background: rgba(200, 45, 45, 0.55);
-}
-
-.winIcon {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.35;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.wailsDrag {
-  --wails-draggable: drag;
-}
-
-.noDrag,
-.noDrag button {
-  --wails-draggable: no-drag;
-}
-
 .shell[data-theme="light"] {
   /* Milky-coffee (latte) light theme — the warm opposite of dark, not stark
      white (visual-polish). */
@@ -308,8 +181,7 @@
 .shell[data-theme="light"] .segment,
 .shell[data-theme="light"] .statusCard,
 .shell[data-theme="light"] .homeCard,
-.shell[data-theme="light"] .profileCard,
-.shell[data-theme="light"] .proxyGroupCard {
+.shell[data-theme="light"] .profileCard {
   background: var(--panel);
   border-color: var(--hairline-strong);
 }
@@ -352,10 +224,6 @@
 .shell[data-theme="light"] .modalCard {
   background: linear-gradient(165deg, #f7f0e3, #e9ddc8);
   border-color: var(--hairline-strong);
-}
-
-.shell[data-theme="light"] .vergeCard {
-  background: rgba(247, 240, 228, 0.7);
 }
 
 .shell[data-theme="light"] .ctxMenu {
@@ -461,36 +329,6 @@
   color: #6e5025;
 }
 
-.shell[data-theme="light"] .titleBar {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 248, 0.92) 0%,
-    rgba(244, 240, 234, 0.9) 55%,
-    rgba(235, 230, 223, 0.95) 100%
-  );
-  backdrop-filter: blur(12px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
-  border-bottom-color: var(--hairline-strong);
-}
-
-.shell[data-theme="light"] .winBtnIcon {
-  color: #45423d;
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.shell[data-theme="light"] .winBtnIcon:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: rgba(0, 0, 0, 0.14);
-  color: #1c1b19;
-}
-
-.shell[data-theme="light"] .winBtnIcon.winClose:hover {
-  background: rgba(200, 60, 60, 0.2);
-  border-color: rgba(180, 50, 50, 0.35);
-  color: #7a1515;
-}
-
 .nav {
   grid-area: nav;
   border-right: 1px solid var(--hairline);
@@ -543,6 +381,8 @@
 }
 
 .navIcon {
+  /* Anchor for the corporate-VPN .navActiveDot indicator. */
+  position: relative;
   display: flex;
   flex-shrink: 0;
   opacity: 0.92;
@@ -612,29 +452,6 @@
   .content {
     overflow-y: overlay;
   }
-}
-
-.compatDetails {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.compatSummary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: var(--font-size-md);
-  color: #e0dbd4;
-}
-
-.shell[data-theme="light"] .compatDetails {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.shell[data-theme="light"] .compatSummary {
-  color: #2a2622;
 }
 
 .home {
@@ -768,14 +585,6 @@
   margin: 4px 0 0;
 }
 
-.linkish {
-  border: 0;
-  background: transparent;
-  color: #d4b896;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
 .connectArea {
   margin: 28px 0 18px;
   text-align: center;
@@ -864,11 +673,6 @@
   transition:
     left 0.22s cubic-bezier(0.33, 1, 0.68, 1),
     width 0.22s cubic-bezier(0.33, 1, 0.68, 1);
-}
-
-.segmentInset3 .segmentGlider {
-  width: calc((100% - 6px) / 3);
-  left: calc(3px + (100% - 6px) / 3 * var(--seg-i, 0));
 }
 
 .segmentInset2 .segmentGlider {
@@ -986,14 +790,6 @@
   .connectSideRight .sideLabel {
     text-align: center;
   }
-
-  .sideSwitch {
-    justify-content: center;
-  }
-
-  .connectSideRight .sideSwitch {
-    justify-content: center;
-  }
 }
 
 .connectBtn {
@@ -1085,47 +881,8 @@
   text-overflow: ellipsis;
 }
 
-.proxyCardList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-
 .proxyModeInset {
   max-width: 280px;
-}
-
-.proxyGroupCard {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  padding: 8px 10px;
-}
-
-.proxyGroupHead {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.proxyGroupHeadMain {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.proxyGroupHeadLeft {
-  min-width: 0;
-}
-
-.proxyGroupMeta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .proxyTypeChip {
@@ -1206,68 +963,6 @@
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   color: #ecd7b2;
-}
-
-.proxyExpandBtn {
-  flex-shrink: 0;
-  font-size: var(--font-size-xs);
-  padding: 4px 8px;
-  border-radius: 8px;
-}
-
-.proxySelectedInline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: min(58%, 560px);
-}
-
-.proxySelectedName {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-size-sm);
-}
-
-.proxyGroupToolbar {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 2px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.proxyToolbarIconBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.22);
-  color: var(--accent);
-  cursor: pointer;
-}
-
-.proxyToolbarIconBtn:hover:not(:disabled) {
-  border-color: var(--accent-muted);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.proxyToolbarIconBtn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.proxyToolbarIcon {
-  width: 18px;
-  height: 18px;
 }
 
 .proxyNodesGrid {
@@ -1470,8 +1165,9 @@
   margin: 0;
 }
 
-/* Proxies fills the viewport: header is fixed, the split grows and scrolls
-   internally so the page itself never scrolls (visual-polish UX fix). */
+/* Proxies fills the viewport: title, lead and toolbar stay fixed while the
+   group accordion (.proxyAccordion) takes the remaining height and scrolls its
+   group list (.proxyAccList) internally, so the page itself never scrolls. */
 .proxiesPanel {
   display: flex;
   flex-direction: column;
@@ -1486,33 +1182,6 @@
   flex: 0 0 auto;
 }
 
-.proxySplit {
-  display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.proxySplitSidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.18);
-  min-height: 0;
-  overflow: hidden;
-}
-
-.proxySplitSearchRow {
-  flex: 0 0 auto;
-}
-
-.proxySplitSearchRow .inputModern,
 .proxySplitNodeSearch {
   width: 100%;
   box-sizing: border-box;
@@ -1524,144 +1193,11 @@
   font: inherit;
   font-size: var(--font-size-sm);
   outline: none;
-}
-
-.proxySplitSearchRow .inputModern:focus,
-.proxySplitNodeSearch:focus {
-  border-color: var(--accent-muted);
-}
-
-.proxySplitGroupList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
-.proxySplitEmpty {
-  padding: 6px 8px;
-}
-
-.proxySplitGroupItem {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
-}
-
-.proxySplitGroupItem:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--hairline);
-}
-
-.proxySplitGroupItem.active {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-color: var(--accent-muted);
-}
-
-.proxySplitGroupItemTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.proxySplitGroupName {
-  font-weight: 600;
-  font-size: var(--font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.proxySplitGroupItemBottom {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-
-.proxySplitGroupSelectedName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.proxySplitDetail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.12);
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.proxySplitDetailHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.proxySplitDetailTitle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.proxySplitDetailTools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.proxySplitNodeSearch {
   min-width: 180px;
 }
 
-.proxySplitNodesGrid {
-  overflow-y: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
-@media (max-width: 820px) {
-  .proxySplit {
-    grid-template-columns: 1fr;
-  }
-  .proxySplitSidebar {
-    max-height: 240px;
-  }
+.proxySplitNodeSearch:focus {
+  border-color: var(--accent-muted);
 }
 
 .proxyDelayText.proxyDelayFail {
@@ -1680,38 +1216,8 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.proxyTopSwitches {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.proxyGroupTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.proxyGroupFlag {
-  font-size: var(--font-size-sm);
-  line-height: 1;
-}
-
-.shell[data-theme="light"] .proxyGroupCard {
-  background: var(--panel);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
 .shell[data-theme="light"] .proxyNodeCard {
   background: rgba(255, 255, 255, 0.7);
-}
-
-.shell[data-theme="light"] .proxySelectedNode {
-  background: rgba(255, 255, 255, 0.75);
 }
 
 .statusLine {
@@ -1734,66 +1240,11 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.segmentRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 18px 0;
-  align-items: stretch;
-}
-
-.segmentRow > .segment.modern:first-child {
-  flex: 0 1 auto;
-}
-
-.segmentRow > .segment.modern:last-child {
-  flex: 1 1 280px;
-  min-width: min(100%, 260px);
-}
-
-.modeSwitch {
-  justify-content: flex-start;
-}
-
-.modeSwitch .trafficKnob {
-  flex: 0 1 auto;
-  flex-grow: 0;
-  min-width: 0;
-  padding: 8px 14px;
-}
-
 .segment {
   background: var(--panel);
   border: 1px solid var(--hairline);
   border-radius: 16px;
   padding: 12px;
-}
-
-.segLabel {
-  display: block;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-
-.segButtons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.segBtn {
-  border: 0;
-  border-radius: 10px;
-  padding: 8px 12px;
-  background: #3d3834;
-  color: #f2efe8;
-  cursor: pointer;
-}
-
-.segBtn.on {
-  background: var(--accent-dim);
-  color: #ffffff;
 }
 
 .statusCard {
@@ -1879,10 +1330,6 @@
   flex: 0 0 auto;
 }
 
-.homeStatusGrid .statusCardCompact .statusRowMultiline {
-  align-items: flex-start;
-}
-
 .homeStatusGrid .statusCardCompact .statusRow > span:first-child {
   flex: 0 0 76px;
 }
@@ -1941,54 +1388,6 @@
   overflow-y: auto;
 }
 
-.homeSupportLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--hairline-strong);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-  max-width: 100%;
-}
-
-.homeSupportLink:hover {
-  border-color: var(--accent-muted);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-.homeSupportIcon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  opacity: 0.92;
-}
-
-.homeSupportLinkText {
-  font-size: var(--font-size-sm);
-  word-break: break-all;
-  min-width: 0;
-  color: #e8dfd0;
-}
-
-.statusNodePickWithFlag {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  width: 100%;
-}
-
-.statusNodePickWithFlag .selectModern.selectInline.selectCompact {
-  flex: 1;
-  min-width: 0;
-}
-
 .statusNodeStatic {
   display: inline-flex;
   align-items: center;
@@ -1996,48 +1395,6 @@
   min-width: 0;
   max-width: 100%;
   justify-content: flex-end;
-}
-
-.statusCardCompact .statusExitStack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-  max-width: 100%;
-  text-align: right;
-}
-
-.statusCardCompact .exitGeoLine {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 100%;
-}
-
-.statusCardCompact .exitFlagImg {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 11px;
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
-  object-fit: cover;
-}
-
-.statusCardCompact .exitGeoText {
-  min-width: 0;
-  text-align: right;
-  font-size: var(--font-size-xs);
-  line-height: 1.3;
-  font-weight: 600;
-}
-
-.statusCardCompact .exitIpCompact {
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  max-width: 100%;
 }
 
 .statusCardCompact .insightExitErr {
@@ -2061,14 +1418,6 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.statusRowMultiline {
-  align-items: flex-start;
-}
-
-.statusCardCompact .statusRow.statusRowMultiline {
-  align-items: flex-start;
 }
 
 .statusCardCompact {
@@ -2593,87 +1942,10 @@
   }
 }
 
-.profileCardMain {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex: 1;
-}
-
-.profileCardGlyph {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--font-size-md);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.profileCardText {
-  min-width: 0;
-}
-
-.profileTrafficHint {
-  margin-top: 4px;
-  font-size: var(--font-size-xs);
-  color: #b8d8be;
-  opacity: 0.92;
-}
-
 .profileTitle {
   font-weight: 600;
   font-size: var(--font-size-md);
   line-height: 1.25;
-}
-
-.profileMeta {
-  margin-top: 4px;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.profileType {
-  text-transform: lowercase;
-}
-
-.profileDot {
-  opacity: 0.55;
-}
-
-.profileUrlHint {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0.85;
-}
-
-.profileCardActions {
-  flex-shrink: 0;
-}
-
-.profileCardActionsCol {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.profileRefreshBtn {
-  font-size: var(--font-size-xs);
-  padding: 4px 8px;
-  border-radius: 8px;
 }
 
 .rulesSummaryRow {
@@ -2950,14 +2222,6 @@
   line-height: var(--leading-normal);
 }
 
-.advancedRuntimeTraceHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
 .advancedRuntimeTraceList {
   max-height: 260px;
   overflow-y: auto;
@@ -3112,12 +2376,6 @@
   font-size: var(--font-size-xs);
 }
 
-.profileActivate {
-  font-size: var(--font-size-sm);
-  padding: 7px 14px;
-  border-radius: 10px;
-}
-
 .profileClickHint {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
@@ -3142,14 +2400,6 @@
   background: var(--panel-deep);
 }
 
-.homeCardHead {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
 .homeCardTitle {
   margin: 0 0 6px;
   font-size: var(--font-size-lg);
@@ -3171,10 +2421,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.fieldWide {
-  grid-column: span 1;
 }
 
 .fieldLab {
@@ -3227,16 +2473,6 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.detailsBlock {
-  margin-top: 10px;
-}
-
-.detailsBlock summary {
-  cursor: pointer;
-  color: #c9c3bb;
-  font-size: var(--font-size-sm);
 }
 
 .code {
@@ -3316,10 +2552,6 @@
   animation: pulseGlow 1.8s ease-in-out infinite;
 }
 
-.segment.modern {
-  padding: 14px;
-}
-
 .segPill {
   display: flex;
   gap: 6px;
@@ -3344,12 +2576,6 @@
   color: #ffffff;
 }
 
-.trafficSwitch {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .trafficKnob {
   flex: 1;
   min-width: 120px;
@@ -3368,10 +2594,6 @@
   color: #ffffff;
 }
 
-.policyBlock {
-  margin-top: 4px;
-}
-
 /* Proxies header — compact single-row toolbar (visual-polish) */
 .proxiesLead {
   margin: var(--space-1) 0 var(--space-3);
@@ -3384,21 +2606,6 @@
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
-}
-
-.proxyFocusGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.proxyFocusGroup .selectModern {
-  width: auto;
-  min-width: 150px;
-  max-width: 240px;
-  padding-top: var(--space-1);
-  padding-bottom: var(--space-1);
 }
 
 .proxyToolbarActions {
@@ -3703,10 +2910,6 @@
   color: var(--danger);
 }
 
-.policyHint {
-  margin: 0 0 10px;
-}
-
 .selectModern {
   /* Full-width like .input so form fields are a consistent size project-wide.
      Context-specific widths (Proxies focus group, Home compact pickers) keep
@@ -4008,22 +3211,6 @@
   margin-top: 0;
 }
 
-.modalTextarea {
-  width: 100%;
-  max-width: 100%;
-  min-height: 260px;
-  resize: vertical;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-  box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: auto;
-  word-break: normal;
-  overflow-wrap: normal;
-  white-space: pre;
-}
-
 .vergeModal .vergeModalHead {
   display: flex;
   flex-wrap: wrap;
@@ -4050,63 +3237,8 @@
   border-radius: 999px;
 }
 
-.vergeSplit {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 8px;
-}
-
-@media (max-width: 760px) {
-  .vergeSplit {
-    grid-template-columns: 1fr;
-  }
-}
-
-.vergePane {
-  min-width: 0;
-}
-
 .vergePaneYaml {
   min-height: 220px;
-}
-
-.vergePaneList {
-  border-left: 1px solid var(--hairline);
-  padding-left: 16px;
-}
-
-@media (max-width: 760px) {
-  .vergePaneList {
-    border-left: 0;
-    padding-left: 0;
-    border-top: 1px solid var(--hairline);
-    padding-top: 14px;
-  }
-}
-
-.vergeScrollList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 260px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.vergeCardReadOnly {
-  background: rgba(255, 255, 255, 0.03);
-  border-style: dashed;
-  border-color: var(--hairline);
-}
-
-.vergeCardDeleted {
-  opacity: 0.55;
-}
-
-.vergeCardDeleted .vergeCardTitle,
-.vergeCardDeleted .muted {
-  text-decoration: line-through;
 }
 
 .modalMonacoWrap {
@@ -4126,55 +3258,6 @@
 .monacoEditorHost * {
   -webkit-user-select: text;
   user-select: text;
-}
-
-.vergeSplitAdvanced {
-  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 1fr);
-}
-
-@media (max-width: 1100px) {
-  .vergeSplitAdvanced {
-    grid-template-columns: 1fr;
-  }
-}
-
-.vergeCard {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.vergeCardTitle {
-  font-weight: 600;
-  font-size: var(--font-size-md);
-}
-
-.vergeCardSub {
-  font-size: var(--font-size-xs);
-  word-break: break-word;
-}
-
-.vergeTrash {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  font-size: var(--font-size-lg);
-  line-height: 1;
-}
-
-.vergeStackBtn {
-  width: 100%;
-  margin-top: 4px;
-}
-
-.vergeRuleActions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .modalTitle {
@@ -4277,10 +3360,6 @@
   color: var(--text-muted);
 }
 
-.settingsCard {
-  margin-bottom: 16px;
-}
-
 .ctxMenu {
   position: fixed;
   z-index: 60;
@@ -4331,57 +3410,6 @@
 
 .ctxItemSub {
   padding-left: 24px;
-}
-
-.ctxHint {
-  margin: 0;
-  padding: 6px 14px 4px;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-
-.onboardingOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(4, 6, 10, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.onboardingCard {
-  width: min(440px, 100%);
-  border-radius: 18px;
-  padding: 18px 20px 16px;
-  background: linear-gradient(165deg, #1a222c, #12171e);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5);
-}
-
-.shell[data-theme="light"] .onboardingCard {
-  background: linear-gradient(165deg, #ffffff, #eef1f6);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-.onboardingStep {
-  margin: 0 0 8px;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
-
-.onboardingTitle {
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-.onboardingActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 
 .spotlightRoot {
@@ -4697,18 +3725,6 @@
   white-space: nowrap;
 }
 
-.settingsBasics {
-  margin-bottom: 16px;
-}
-
-.coreVer {
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  text-align: right;
-  max-width: 55%;
-  word-break: break-word;
-}
-
 .panel.settingsPanel {
   max-width: 1040px;
 }
@@ -4902,11 +3918,6 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-/* Operator (brand) card — panel-driven branding, Settings top. */
-.operatorCard {
-  margin-bottom: 12px;
 }
 
 /* Operator entry point in the Home header (left of "Add subscription"). */
@@ -5433,12 +4444,6 @@
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
-.devicesCaps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
 .devicesActions {
   display: flex;
   flex-wrap: wrap;
@@ -5883,9 +4888,6 @@
 }
 
 /* Corporate VPN — live indicators + log view */
-.navIcon {
-  position: relative;
-}
 .navActiveDot {
   position: absolute;
   top: -2px;
@@ -6072,36 +5074,6 @@
 }
 
 /* "JS" badge on a profile card whose script failed on the last generation. */
-.desyncTTLRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 10px;
-}
-.desyncUDPStatus {
-  border-left: 2px solid var(--border-strong);
-  margin: 12px 0;
-  padding-left: 12px;
-}
-.desyncUDPStatus p {
-  margin: 6px 0;
-}
-.desyncTTLRow input {
-  width: 84px;
-}
-.desyncResults {
-  margin: 8px 0 0;
-  padding-left: 18px;
-}
-.desyncResults li {
-  margin-bottom: 8px;
-}
-.desyncResults li > span {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
 .profileScriptBadge {
   flex: 0 0 auto;
   align-self: center;

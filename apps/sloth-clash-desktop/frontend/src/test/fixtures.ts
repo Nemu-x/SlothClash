@@ -51,7 +51,9 @@ export function connectionsOverview(count: number): ConnectionsOverview {
   for (let i = 0; i < count; i++) {
     const direct = i % 4 === 0
     connections.push({
-      id: `conn-${String(i).padStart(8, '0')}-uuid`,
+      // UUID-shaped like mihomo ids; the row index leads so the 8-char id
+      // cell the page renders is unique per row.
+      id: `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`,
       upload: i * 10,
       download: i * 100,
       rule: direct ? 'GeoIP' : 'DomainSuffix',

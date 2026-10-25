@@ -165,7 +165,17 @@ func TestFullProfilePipelineRefusesOversizedSubscription(t *testing.T) {
 	url := subscriptionServer(t, &body)
 	dataDir := t.TempDir()
 
-	outcome, err := tryWriteMergedFullProfile(dataDir, url, "", "", "", "", 9090, 7890, "s", "rule", true, false)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                dataDir,
+		SubURL:                 url,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "s",
+		WithExternalController: true,
+		Traffic:                "rule",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if outcome != pipelineBodyTooLarge || outcome.useBareFallback() || !isReadLimitError(err) {
 		t.Fatalf("outcome %s, err %v", outcome, err)
 	}

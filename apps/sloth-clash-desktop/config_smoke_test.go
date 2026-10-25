@@ -57,20 +57,17 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		tmp,
-		srv.URL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                tmp,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
 	}
@@ -113,20 +110,17 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		tmp,
-		srv.URL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                tmp,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile returned error: %v", err)
 	}
@@ -180,20 +174,17 @@ rules:
 	tmp := t.TempDir()
 	writeSubscriptionBodyCache(tmp, body)
 
-	outcome, err := tryWriteMergedFullProfile(
-		tmp,
-		closedURL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                tmp,
+		SubURL:                 closedURL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile (cache-first) returned error: %v", err)
 	}
@@ -227,20 +218,17 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		tmp,
-		srv.URL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                tmp,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile (no cache) returned error: %v", err)
 	}

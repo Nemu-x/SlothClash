@@ -44,8 +44,17 @@ func TestLocalProfileBuildsRuntimeConfigFromSeededCacheWithoutURL(t *testing.T) 
 		"  - MATCH,PROXY\n"
 	writeSubscriptionBodyCache(dataDir, []byte(body))
 
-	// subURL = "" — exactly what a local profile passes. Cache-first means no network.
-	outcome, err := tryWriteMergedFullProfile(dataDir, "", "", "", "", "", 0, 7890, "secret", "tun", false, true)
+	// No SubURL — exactly what a local profile passes. Cache-first means no network.
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                dataDir,
+		CtrlPort:               0,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: false,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("pipeline error: %v", err)
 	}

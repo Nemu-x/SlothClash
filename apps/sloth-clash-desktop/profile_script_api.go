@@ -212,22 +212,22 @@ func (a *App) generatePreviewConfig(liveDir string, profile Profile, script stri
 	// tun.enable=false and no external controller: a preview is a document, not
 	// a session. The invariants that depend on those are asserted by the
 	// pipeline tests, not by eyeballing a preview.
-	if err := a.writeRuntimeConfigWithScript(
-		tmpDir,
-		profile.URL,
-		profile.AgeSecretKey,
-		profile.MergeTemplate,
-		profile.ProxyTemplate,
-		profile.RulesTemplate,
-		script,
-		0,
-		mixedPort,
-		secret,
-		"proxy",
-		false,
-		false,
-		&res,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                tmpDir,
+		SubURL:                 profile.URL,
+		AgeKey:                 profile.AgeSecretKey,
+		ExtendTemplate:         profile.MergeTemplate,
+		ProxyTemplate:          profile.ProxyTemplate,
+		RulesTemplate:          profile.RulesTemplate,
+		Script:                 script,
+		CtrlPort:               0,
+		MixedPort:              mixedPort,
+		Secret:                 secret,
+		WithExternalController: false,
+		Traffic:                "proxy",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, &res); err != nil {
 		return "", res, err
 	}
 

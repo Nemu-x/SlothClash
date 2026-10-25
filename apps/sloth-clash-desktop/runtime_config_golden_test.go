@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"embed"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -20,7 +19,7 @@ import (
 // Golden snapshots of the generated runtime config.
 //
 // Every profile of the test corpora goes through the production entry point
-// (App.writeRuntimeConfigWithScript: fetch -> parse -> merge templates ->
+// (writeRuntimeConfig: fetch -> parse -> merge templates ->
 // finalize -> marshal -> config.yaml) for both traffic modes and a few key
 // desktop-prefs combinations, and the resulting config.yaml is compared byte
 // for byte with testdata/golden/runtime-config/. The point is to make any
@@ -122,7 +121,7 @@ append:
 )
 
 // goldenBareNodeList is not a full profile, so it takes the bare fallback
-// writer in writeRuntimeConfigWithScript (provider-based config).
+// writer in writeRuntimeConfig (provider-based config).
 var goldenBareNodeList = []byte("proxies:\n  - {name: n1, type: ss, server: s.example.com, port: 443, cipher: aes-128-gcm, password: pw}\n")
 
 func loadGoldenProfiles(t *testing.T) []goldenProfile {
@@ -209,8 +208,6 @@ func (g *goldenSubscriptionServer) serve(b []byte) string {
 func TestRuntimeConfigGolden(t *testing.T) {
 	profiles := loadGoldenProfiles(t)
 	server := newGoldenSubscriptionServer(t)
-	var bundle embed.FS
-	a := NewApp(bundle)
 
 	expected := map[string]bool{}
 	for _, p := range profiles {
@@ -224,7 +221,7 @@ func TestRuntimeConfigGolden(t *testing.T) {
 				expected[rel] = true
 				t.Run(rel, func(t *testing.T) {
 					withConnectionPrefs(t, v.conn)
-					got := generateGoldenRuntimeConfig(t, a, server, p, mode.traffic, mode.enableTun)
+					got := generateGoldenRuntimeConfig(t, server, p, mode.traffic, mode.enableTun)
 					compareRuntimeConfigGolden(t, rel, got)
 				})
 			}
@@ -233,7 +230,7 @@ func TestRuntimeConfigGolden(t *testing.T) {
 	checkStaleRuntimeConfigGoldens(t, expected)
 }
 
-func generateGoldenRuntimeConfig(t *testing.T, a *App, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {
+func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {
 	t.Helper()
 	dataDir := t.TempDir()
 	if p.seedGeo {
@@ -249,11 +246,22 @@ func generateGoldenRuntimeConfig(t *testing.T, a *App, server *goldenSubscriptio
 	}
 	subURL := server.serve(p.body)
 	var res scriptResult
-	if err := a.writeRuntimeConfigWithScript(
-		dataDir, subURL, "", p.extendTemplate, p.proxyTemplate, p.rulesTmpl, p.script,
-		goldenCtrlPort, goldenMixedPort, goldenSecret, traffic, true, enableTun, &res,
-	); err != nil {
-		t.Fatalf("writeRuntimeConfigWithScript: %v", err)
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                dataDir,
+		SubURL:                 subURL,
+		ExtendTemplate:         p.extendTemplate,
+		ProxyTemplate:          p.proxyTemplate,
+		RulesTemplate:          p.rulesTmpl,
+		Script:                 p.script,
+		CtrlPort:               goldenCtrlPort,
+		MixedPort:              goldenMixedPort,
+		Secret:                 goldenSecret,
+		WithExternalController: true,
+		Traffic:                traffic,
+		EnableTun:              enableTun,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, &res); err != nil {
+		t.Fatalf("writeRuntimeConfig: %v", err)
 	}
 	if p.script != "" && !res.Applied {
 		t.Fatalf("script was not applied: %+v", res)

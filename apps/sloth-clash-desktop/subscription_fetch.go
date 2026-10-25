@@ -251,38 +251,19 @@ func kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey string, sendHWID 
 // The returned pipelineOutcome explicitly tells the caller which branch was
 // taken — replaces the prior `(bool, error)` return that conflated "not a
 // full profile" with "fetch failed" with "merge template malformed".
-// tryWriteMergedFullProfile builds the merged full profile with no script.
-func tryWriteMergedFullProfile(
-	dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate string,
-	ctrlPort, mixedPort int,
-	secret, traffic string,
-	withExternalController bool,
-	enableTun bool,
-) (pipelineOutcome, error) {
-	return tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil, currentRuntimeConfigPrefs())
-}
-
-// tryWriteMergedFullProfileWithScript is the same build with the profile's
-// JavaScript override threaded through to the pipeline. p is the prefs
-// snapshot the caller captured for this generation.
-func tryWriteMergedFullProfileWithScript(
-	dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script string,
-	ctrlPort, mixedPort int,
-	secret, traffic string,
-	withExternalController bool,
-	enableTun bool,
-	scriptOut *scriptResult,
-	p runtimeConfigPrefs,
-) (pipelineOutcome, error) {
+//
+// The profile's JavaScript override (in.Script) is threaded through to the
+// pipeline; scriptOut, when non-nil, receives what it did.
+func tryWriteMergedFullProfile(in runtimeConfigInput, scriptOut *scriptResult) (pipelineOutcome, error) {
 	overallStart := time.Now()
 	traceFields := map[string]any{
-		"dataDir":   dataDir,
-		"traffic":   traffic,
-		"enableTun": enableTun,
+		"dataDir":   in.DataDir,
+		"traffic":   in.Traffic,
+		"enableTun": in.EnableTun,
 	}
 
 	var body []byte
-	cached := readSubscriptionBodyCache(dataDir)
+	cached := readSubscriptionBodyCache(in.DataDir)
 	cacheHit := len(bytes.TrimSpace(cached)) > 0
 	if cacheHit {
 		body = cached
@@ -290,20 +271,20 @@ func tryWriteMergedFullProfileWithScript(
 		// Fresh-enough body is on disk; defer the network hit. Next Connect
 		// will pick up whatever the origin ships, but THIS Connect does
 		// not wait for it.
-		kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey, p.SendHWID)
+		kickBackgroundSubscriptionRefresh(in.DataDir, in.SubURL, in.AgeKey, in.Prefs.SendHWID)
 	} else {
 		// First-ever Connect for this profile (or cache was wiped). We HAVE
 		// to block on the network because there's no prior body to serve.
 		fetchStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 		defer cancel()
-		b, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey, p.SendHWID)
+		b, hdr, err := fetchSubscriptionBody(ctx, in.SubURL, in.AgeKey, in.Prefs.SendHWID)
 		fetchDur := time.Since(fetchStart)
 		if err == nil {
-			persistBrandManifestFromHeaders(dataDir, subURL, hdr)
+			persistBrandManifestFromHeaders(in.DataDir, in.SubURL, hdr)
 		}
 		if err != nil || len(bytes.TrimSpace(b)) == 0 {
-			f := map[string]any{"dataDir": dataDir}
+			f := map[string]any{"dataDir": in.DataDir}
 			if err != nil {
 				f["error"] = err.Error()
 			} else {
@@ -316,17 +297,17 @@ func tryWriteMergedFullProfileWithScript(
 			return pipelineCacheMissNoNet, nil
 		}
 		traceEvent("pipeline.subscription.fetch", "ok", fetchDur, map[string]any{
-			"dataDir":    dataDir,
+			"dataDir":    in.DataDir,
 			"body_bytes": len(b),
 		})
 		body = b
-		writeSubscriptionBodyCache(dataDir, body)
+		writeSubscriptionBodyCache(in.DataDir, body)
 	}
 
 	parseStart := time.Now()
 	doc, err := parseClashDocToMap(body)
 	if err != nil || doc == nil {
-		f := map[string]any{"dataDir": dataDir}
+		f := map[string]any{"dataDir": in.DataDir}
 		if err != nil {
 			f["error"] = err.Error()
 		}
@@ -335,7 +316,7 @@ func tryWriteMergedFullProfileWithScript(
 	}
 	if !subscriptionDocIsFullProfile(doc) {
 		traceEvent("pipeline.subscription.parse", "skip", time.Since(parseStart), map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"reason":  "not_full_profile",
 		})
 		return pipelineNotFullProfile, nil
@@ -343,25 +324,25 @@ func tryWriteMergedFullProfileWithScript(
 	traceEvent("pipeline.subscription.parse", "ok", time.Since(parseStart), traceFields)
 
 	mergeStart := time.Now()
-	if err := applyProfileMergeTemplate(doc, extendTemplate); err != nil {
+	if err := applyProfileMergeTemplate(doc, in.ExtendTemplate); err != nil {
 		traceEvent("pipeline.subscription.merge", "fail", time.Since(mergeStart), map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"stage":   "extend",
 			"error":   err.Error(),
 		})
 		return pipelineTemplateFail, err
 	}
-	if err := applyProfileMergeTemplate(doc, proxyTemplate); err != nil {
+	if err := applyProfileMergeTemplate(doc, in.ProxyTemplate); err != nil {
 		traceEvent("pipeline.subscription.merge", "fail", time.Since(mergeStart), map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"stage":   "proxy",
 			"error":   err.Error(),
 		})
 		return pipelineTemplateFail, err
 	}
-	if err := applyProfileMergeTemplate(doc, rulesTemplate); err != nil {
+	if err := applyProfileMergeTemplate(doc, in.RulesTemplate); err != nil {
 		traceEvent("pipeline.subscription.merge", "fail", time.Since(mergeStart), map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"stage":   "rules",
 			"error":   err.Error(),
 		})
@@ -372,19 +353,19 @@ func tryWriteMergedFullProfileWithScript(
 	finalizeStart := time.Now()
 	if err := finalizeRuntimeConfigPipelineWithScript(
 		doc,
-		dataDir,
-		mixedPort,
-		ctrlPort,
-		secret,
-		traffic,
-		withExternalController,
-		enableTun,
-		script,
+		in.DataDir,
+		in.MixedPort,
+		in.CtrlPort,
+		in.Secret,
+		in.Traffic,
+		in.WithExternalController,
+		in.EnableTun,
+		in.Script,
 		scriptOut,
-		p,
+		in.Prefs,
 	); err != nil {
 		traceEvent("pipeline.subscription.finalize", "fail", time.Since(finalizeStart), map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"error":   err.Error(),
 		})
 		return pipelineValidateFail, err
@@ -394,23 +375,23 @@ func tryWriteMergedFullProfileWithScript(
 	out, err := marshalRuntimeYAML(doc)
 	if err != nil {
 		traceEvent("pipeline.subscription.write", "fail", 0, map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"error":   err.Error(),
 			"stage":   "marshal",
 		})
 		return pipelineWriteFail, err
 	}
-	cfgPath := filepath.Join(dataDir, "config.yaml")
+	cfgPath := filepath.Join(in.DataDir, "config.yaml")
 	if err := atomicWriteFile(cfgPath, out, 0o644); err != nil {
 		traceEvent("pipeline.subscription.write", "fail", 0, map[string]any{
-			"dataDir": dataDir,
+			"dataDir": in.DataDir,
 			"error":   err.Error(),
 			"stage":   "writeFile",
 		})
 		return pipelineWriteFail, err
 	}
 	traceEvent("pipeline.subscription.write", "ok", time.Since(overallStart), map[string]any{
-		"dataDir":   dataDir,
+		"dataDir":   in.DataDir,
 		"cache_hit": cacheHit,
 		"yaml_size": len(out),
 	})

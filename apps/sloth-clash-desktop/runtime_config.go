@@ -61,6 +61,7 @@ func subscriptionClientFor(p DesktopPrefs) runtimecfg.SubscriptionClient {
 		DeviceModel: id.DeviceModel,
 		SendHWID:    p.Privacy.IsHwidEnabled(),
 		OnHeaders:   persistBrandManifestFromHeaders,
+		OnBodyFetch: recordPipelineBodyFetch,
 	}
 }
 

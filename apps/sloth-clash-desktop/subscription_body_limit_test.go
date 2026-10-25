@@ -12,8 +12,9 @@ import (
 )
 
 // The explicit Refresh tolerates transient fetch failures, but an oversized
-// body must reach the UI; LastUpdated still advances so the auto-update loop
-// does not re-download it every minute.
+// body must reach the UI. LastUpdated stays put (the body was not refreshed);
+// the attempt and its error are recorded instead, which is what keeps the
+// auto-update loop from re-downloading it every minute.
 func TestRefreshProfileSubscriptionSurfacesOversizedBody(t *testing.T) {
 	small := runtimecfgtest.RealisticSubscriptionYAML(10)
 	var body atomic.Pointer[[]byte]
@@ -38,13 +39,24 @@ func TestRefreshProfileSubscriptionSurfacesOversizedBody(t *testing.T) {
 
 	over := runtimecfgtest.PadYAML(t, small, 32<<20+1) // runtimecfg's subscription body cap + 1
 	body.Store(&over)
-	a.profiles[0].LastUpdated = 0
+	const lastGood = int64(1000)
+	a.profiles[0].LastUpdated = lastGood
 	state, err := a.refreshProfileSubscription(profileID, false)
 	if err == nil || err.Error() != "subscription response exceeds the 32 MiB limit" {
 		t.Fatalf("oversized refresh: %v", err)
 	}
-	if len(state.Profile.Profiles) != 1 || state.Profile.Profiles[0].LastUpdated == 0 {
-		t.Fatalf("LastUpdated not advanced: %+v", state.Profile.Profiles)
+	if len(state.Profile.Profiles) != 1 {
+		t.Fatalf("profiles: %+v", state.Profile.Profiles)
+	}
+	got := state.Profile.Profiles[0]
+	if got.LastUpdated != lastGood {
+		t.Fatalf("LastUpdated = %d, want %d (an oversized body is not an update)", got.LastUpdated, lastGood)
+	}
+	if got.LastUpdateAttempt <= lastGood {
+		t.Fatalf("LastUpdateAttempt = %d, want the attempt time", got.LastUpdateAttempt)
+	}
+	if got.LastUpdateError != "subscription response exceeds the 32 MiB limit" {
+		t.Fatalf("LastUpdateError = %q", got.LastUpdateError)
 	}
 	if !bytes.Equal(runtimecfg.ReadSubscriptionBodyCache(dataDir), small) {
 		t.Fatal("oversized refresh replaced the last-known-good cache")

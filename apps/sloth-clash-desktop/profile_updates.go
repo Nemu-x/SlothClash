@@ -15,9 +15,11 @@ const (
 	profileAutoUpdateTick           = time.Minute
 )
 
-// RefreshProfileSubscription force-refreshes one subscription profile metadata.
-// It updates Subscription-Userinfo (when provider sends it), bumps LastUpdated,
-// and reconnects if this is the active connected profile so runtime config is re-applied.
+// RefreshProfileSubscription force-refreshes one subscription profile: provider
+// metadata (Subscription-Userinfo and friends) and the cached body. Every call
+// is recorded as an attempt (LastUpdateAttempt / LastUpdateError); LastUpdated
+// moves only when the body was actually refreshed. If this is the active
+// connected profile it reconnects so the runtime config is re-applied.
 func (a *App) RefreshProfileSubscription(profileID string) (AppState, error) {
 	return a.refreshProfileSubscription(profileID, true)
 }
@@ -47,39 +49,33 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	}
 
 	// One client snapshot for both requests of this refresh (peek + body).
+	// This path records its own outcome below, so the pipeline hook is off.
 	client := currentSubscriptionClient()
+	client.OnBodyFetch = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	peek, err := peekSubscription(ctx, target.URL, client)
-	if err != nil {
-		return a.GetAppState(), err
-	}
+	peek, peekErr := peekSubscription(ctx, target.URL, client)
 
 	// Also refresh the on-disk subscription body cache. Connect now reads
 	// from this cache synchronously (cache-first policy in runtimecfg's
 	// tryWriteMergedFullProfile), so if we don't update it here the
 	// reconnect triggered below would come up on the OLD body even though
-	// the user just clicked "Refresh subscription". Fetch failure is
-	// tolerated: the existing cache stays in place and peek already told
-	// us the subscription is reachable, so the background kicker will
-	// retry on the next Connect.
+	// the user just clicked "Refresh subscription". A failed fetch leaves the
+	// existing cache in place; it is recorded on the profile (the UI badges
+	// it) and retried at the profile's normal interval.
 	//
 	// Routes through runSubscriptionFetchOnce so an in-flight background
 	// refresh isn't trampled by this explicit click — both callers attach
 	// to the same singleflight slot per dataDir and share the outcome.
-	//
-	// The one failure NOT tolerated is an oversized body: it is deterministic,
-	// so the cache would silently stay stale forever. It is returned to the
-	// caller (the UI shows it) after the metadata below is still persisted, so
-	// LastUpdated advances and the auto-update loop does not re-download the
-	// oversized body every tick.
 	var bodyErr error
-	if root, derr := slothDataRoot(); derr == nil {
+	if peekErr != nil {
+		bodyErr = peekErr
+	} else if root, derr := slothDataRoot(); derr != nil {
+		bodyErr = derr
+	} else {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		if err := runtimecfg.RunSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey, client); isReadLimitError(err) {
-			bodyErr = err
-		}
+		bodyErr = runtimecfg.RunSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey, client)
 		bodyCancel()
 	}
 
@@ -93,19 +89,21 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 			continue
 		}
 		found = true
-		if s := strings.TrimSpace(peek.SubscriptionInfo); s != "" {
-			a.profiles[i].SubscriptionInfo = s
+		if peekErr == nil {
+			if s := strings.TrimSpace(peek.SubscriptionInfo); s != "" {
+				a.profiles[i].SubscriptionInfo = s
+			}
+			if s := strings.TrimSpace(peek.SubscriptionSupportURL); s != "" {
+				a.profiles[i].SubscriptionSupportURL = s
+			}
+			if s := strings.TrimSpace(peek.SubscriptionAnnouncement); s != "" {
+				a.profiles[i].SubscriptionAnnouncement = s
+			}
+			if a.profiles[i].AutoUpdateIntervalMinutes <= 0 {
+				a.profiles[i].AutoUpdateIntervalMinutes = defaultProfileAutoUpdateMinutes
+			}
 		}
-		if s := strings.TrimSpace(peek.SubscriptionSupportURL); s != "" {
-			a.profiles[i].SubscriptionSupportURL = s
-		}
-		if s := strings.TrimSpace(peek.SubscriptionAnnouncement); s != "" {
-			a.profiles[i].SubscriptionAnnouncement = s
-		}
-		if a.profiles[i].AutoUpdateIntervalMinutes <= 0 {
-			a.profiles[i].AutoUpdateIntervalMinutes = defaultProfileAutoUpdateMinutes
-		}
-		a.profiles[i].LastUpdated = now
+		applyProfileUpdateOutcomeLocked(&a.profiles[i], now, bodyErr)
 		activeAndConnected =
 			a.state.Connection.Status == "connected" &&
 				a.state.Profile.ActiveProfileID == profileID
@@ -119,8 +117,12 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	if err := a.persistProfilesLocked(); err != nil {
 		return a.state, err
 	}
-	if bodyErr != nil {
-		// The cache is unchanged, so a reconnect would only reload the old body.
+	if peekErr != nil || isReadLimitError(bodyErr) {
+		// Returned to the caller as before: the provider is unreachable, or
+		// the body is deterministically too large. The cache is unchanged, so
+		// a reconnect would only reload the old body. Every other body
+		// failure is tolerated here and reaches the UI through
+		// LastUpdateError only.
 		a.emitAppStateChanged()
 		return a.state, bodyErr
 	}
@@ -185,7 +187,14 @@ func (a *App) startProfileAutoUpdateLoop(ctx context.Context) {
 }
 
 func (a *App) refreshDueProfiles() {
-	now := time.Now().Unix()
+	for _, id := range a.dueProfileIDs(time.Now().Unix()) {
+		_, _ = a.refreshProfileSubscription(id, false)
+	}
+}
+
+// dueProfileIDs lists the subscription profiles whose auto-update interval has
+// elapsed at now, counted from profileRefreshAnchor.
+func (a *App) dueProfileIDs(now int64) []string {
 	dueIDs := make([]string, 0, 4)
 	a.mu.RLock()
 	for _, p := range a.profiles {
@@ -204,13 +213,11 @@ func (a *App) refreshDueProfiles() {
 		if interval <= 0 {
 			interval = defaultProfileAutoUpdateMinutes
 		}
-		if p.LastUpdated <= 0 || (now-p.LastUpdated) >= int64(interval)*60 {
+		anchor := profileRefreshAnchor(p)
+		if anchor <= 0 || (now-anchor) >= int64(interval)*60 {
 			dueIDs = append(dueIDs, p.ID)
 		}
 	}
 	a.mu.RUnlock()
-
-	for _, id := range dueIDs {
-		_, _ = a.refreshProfileSubscription(id, false)
-	}
+	return dueIDs
 }

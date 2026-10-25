@@ -154,16 +154,20 @@ func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey s
 		return nil
 	}
 	body, hdr, err := FetchSubscriptionBody(ctx, subURL, ageKey, client)
-	if err != nil {
-		return err
+	if err == nil && len(bytes.TrimSpace(body)) == 0 {
+		err = errEmptySubscriptionBody
 	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		return errors.New("empty subscription body")
+	if err != nil {
+		client.bodyFetched(dataDir, err)
+		return err
 	}
 	WriteSubscriptionBodyCache(dataDir, body)
 	client.headers(dataDir, subURL, hdr)
+	client.bodyFetched(dataDir, nil)
 	return nil
 }
+
+var errEmptySubscriptionBody = errors.New("empty subscription body")
 
 // ---------------------------------------------------------------------------
 // Singleflight dedup for subscription fetches.
@@ -290,13 +294,12 @@ func tryWriteMergedFullProfile(in Input, scriptOut *ScriptResult) (pipelineOutco
 		if err == nil {
 			in.Env.Client.headers(in.DataDir, in.SubURL, hdr)
 		}
-		if err != nil || len(bytes.TrimSpace(b)) == 0 {
-			f := map[string]any{"dataDir": in.DataDir}
-			if err != nil {
-				f["error"] = err.Error()
-			} else {
-				f["error"] = "empty body"
-			}
+		if err == nil && len(bytes.TrimSpace(b)) == 0 {
+			err = errEmptySubscriptionBody
+		}
+		if err != nil {
+			in.Env.Client.bodyFetched(in.DataDir, err)
+			f := map[string]any{"dataDir": in.DataDir, "error": err.Error()}
 			traceEvent("pipeline.subscription.fetch", "fail", fetchDur, f)
 			if boundedio.IsLimitError(err) {
 				return pipelineBodyTooLarge, err
@@ -309,6 +312,7 @@ func tryWriteMergedFullProfile(in Input, scriptOut *ScriptResult) (pipelineOutco
 		})
 		body = b
 		WriteSubscriptionBodyCache(in.DataDir, body)
+		in.Env.Client.bodyFetched(in.DataDir, nil)
 	}
 
 	parseStart := time.Now()

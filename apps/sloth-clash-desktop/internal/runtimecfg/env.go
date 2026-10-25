@@ -34,11 +34,25 @@ type SubscriptionClient struct {
 	// OnHeaders receives the headers of every successful subscription fetch
 	// (main caches the provider's brand manifest from them). May be nil.
 	OnHeaders func(dataDir, subURL string, hdr http.Header)
+	// OnBodyFetch receives the outcome of every subscription body fetch the
+	// generation pipeline makes on its own (the cache-miss fetch of a first
+	// Connect and the background refresh kicked after a cache hit): nil on
+	// success (the cache now holds the fetched body), the failure otherwise.
+	// main records it on the profile so a refresh that keeps failing is
+	// visible in the UI. May be nil.
+	OnBodyFetch func(dataDir string, err error)
 }
 
 // headers hands a successful fetch's headers to OnHeaders, if set.
 func (c SubscriptionClient) headers(dataDir, subURL string, hdr http.Header) {
 	if c.OnHeaders != nil {
 		c.OnHeaders(dataDir, subURL, hdr)
+	}
+}
+
+// bodyFetched hands a body fetch outcome to OnBodyFetch, if set.
+func (c SubscriptionClient) bodyFetched(dataDir string, err error) {
+	if c.OnBodyFetch != nil {
+		c.OnBodyFetch(dataDir, err)
 	}
 }

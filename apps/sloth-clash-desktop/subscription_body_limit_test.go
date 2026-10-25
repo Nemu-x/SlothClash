@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"SlothClashDesktop/internal/boundedio"
+
 	"github.com/metacubex/age"
 	"github.com/metacubex/age/armor"
 )
@@ -84,13 +86,13 @@ func TestRealisticSubscriptionFitsBodyCap(t *testing.T) {
 	body := realisticSubscriptionYAML(realisticSubscriptionNodes)
 	t.Logf("%d-node subscription: %d bytes (%.2f MiB), %d B/node; cap %s",
 		realisticSubscriptionNodes, len(body), float64(len(body))/(1<<20), len(body)/realisticSubscriptionNodes,
-		formatByteLimit(subscriptionMaxBodyBytes))
+		boundedio.FormatLimit(subscriptionMaxBodyBytes))
 	if len(body) <= 6<<20 {
 		t.Fatalf("fixture (%d bytes) must exceed the former 6 MiB cap it is meant to justify replacing", len(body))
 	}
 	if int64(len(body))*3 > subscriptionMaxBodyBytes {
 		t.Fatalf("a %d-node subscription (%d bytes) leaves less than 3x headroom under %s",
-			realisticSubscriptionNodes, len(body), formatByteLimit(subscriptionMaxBodyBytes))
+			realisticSubscriptionNodes, len(body), boundedio.FormatLimit(subscriptionMaxBodyBytes))
 	}
 	assertSubscriptionNodes(t, body, realisticSubscriptionNodes)
 }
@@ -136,8 +138,8 @@ func TestFetchAgeSubscriptionAtAndOverLimit(t *testing.T) {
 
 	at := ageArmor(t, id.Recipient(), padYAML(t, yaml, subscriptionMaxBodyBytes))
 	t.Logf("age armor of a %s body: %d bytes (%.3fx), wire cap %s",
-		formatByteLimit(subscriptionMaxBodyBytes), len(at), float64(len(at))/subscriptionMaxBodyBytes,
-		formatByteLimit(subscriptionMaxWireBytes))
+		boundedio.FormatLimit(subscriptionMaxBodyBytes), len(at), float64(len(at))/subscriptionMaxBodyBytes,
+		boundedio.FormatLimit(subscriptionMaxWireBytes))
 	if int64(len(at)) > subscriptionMaxWireBytes {
 		t.Fatalf("an armored body at the content cap (%d bytes) does not fit the wire cap", len(at))
 	}

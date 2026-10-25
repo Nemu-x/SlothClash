@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -112,7 +110,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 			Counters DesyncUDPCounters `json:"counters"`
 		} `json:"desyncUDP"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&body); err != nil {
+	if err := decodeCoreJSON(response.Body, "GET /proxies/"+desyncDiscordUDPRoute, coreDefaultMaxJSONBytes, &body); err != nil {
 		out.LastError = err.Error()
 		return out
 	}
@@ -127,7 +125,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 			out.LastError = "selected UDP counters unavailable"
 			return out
 		}
-		if err = json.NewDecoder(io.LimitReader(selected.Body, 64*1024)).Decode(&body); err != nil {
+		if err = decodeCoreJSON(selected.Body, "GET /proxies/"+body.Now, coreDefaultMaxJSONBytes, &body); err != nil {
 			out.LastError = err.Error()
 			return out
 		}

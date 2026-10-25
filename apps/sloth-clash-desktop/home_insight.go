@@ -322,8 +322,13 @@ func fetchProxyLastHistoryDelay(ctx context.Context, listen, secret, proxyName s
 		return 0, false
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
-	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, false
+	}
+	// A group detail lists every member in "all"; large subscriptions passed
+	// the former 256 KiB cap and the truncated body hid the history delay.
+	b, err := readCoreJSON(resp.Body, "GET "+path, coreDefaultMaxJSONBytes)
+	if err != nil {
 		return 0, false
 	}
 	var detail struct {

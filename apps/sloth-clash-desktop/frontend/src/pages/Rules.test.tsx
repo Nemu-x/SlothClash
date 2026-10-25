@@ -1,19 +1,20 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { useMemo, useState } from 'react'
+import { useLayoutEffect } from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { useRulesOverview } from '../hooks/queries/useRulesOverview'
+import { useRulesView } from '../hooks/useRulesView'
 import { parseMihomoRulesJson } from '../rulesTable'
 import { mihomoRulesBody, RULE_POLICIES, RULE_TYPES } from '../test/fixtures'
 import { renderHookWithProviders, renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
 
-import { type RuleToggleApi, RulesPage } from './Rules'
+import { RulesPage } from './Rules'
 
 // Regression: on profiles with tens of thousands of rules the Rules screen
 // rendered nothing. These tests drive the real data path (FetchRulesOverview
-// binding -> useRulesOverview -> parseMihomoRulesJson -> RulesPage) with a
-// large body and assert the rows, counters and filters.
+// binding -> useRulesOverview -> useRulesView -> RulesPage) with a large body
+// and assert the rows, counters and filters.
 //
 // jsdom cost note (measured): inserting/removing children of a connected node
 // is O(n) per operation in jsdom, so narrowing a mounted 20k-row table via the
@@ -24,88 +25,29 @@ import { type RuleToggleApi, RulesPage } from './Rules'
 const RULE_COUNT = 20_000
 const TOTAL_ROWS = RULE_COUNT + 1 // + trailing MATCH
 
-const noProfileToggle: RuleToggleApi = {
-  hasActiveProfile: false,
-  baselineLoading: false,
-  baselineError: null,
-  busyLines: new Set(),
-  isToggleable: () => false,
-  matchLine: () => null,
-  onDisable: () => {},
-  onEnable: () => {},
-}
-
 type Filters = { search?: string; type?: string; policy?: string }
 
-function sortedUnique(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b))
-}
-
-// Mirrors the Rules wiring in App.tsx (rows, filter options, filtered rows,
-// type summary) without the rule-toggle baseline, which needs an active
-// profile and is covered by useRuleToggles.test.ts.
 const NO_FILTERS: Filters = {}
+const ignoreError = () => {}
 
+// The Rules wiring from App.tsx: the real useRulesView, without an active
+// profile (the rule-toggle baseline is covered by useRuleToggles.test.ts).
+// `initial` filters are applied before the first snapshot lands, so a 20k
+// list mounts already narrowed (see the jsdom cost note above).
 function RulesScreen({ initial = NO_FILTERS }: { initial?: Filters }) {
-  const { overview, busy, refresh } = useRulesOverview(true)
-  const [search, setSearch] = useState(initial.search ?? '')
-  const [typeFilter, setTypeFilter] = useState(initial.type ?? 'all')
-  const [policyFilter, setPolicyFilter] = useState(initial.policy ?? 'all')
-  const rows = useMemo(
-    () => parseMihomoRulesJson(overview?.rulesBody),
-    [overview?.rulesBody],
-  )
-  const typeOptions = useMemo(
-    () => sortedUnique(rows.map((r) => r.type)),
-    [rows],
-  )
-  const policyOptions = useMemo(
-    () => sortedUnique(rows.map((r) => r.proxy)),
-    [rows],
-  )
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return rows
-      .map((r) => ({ ...r, disabled: false as const }))
-      .filter((r) => {
-        if (typeFilter !== 'all' && r.type !== typeFilter) return false
-        if (policyFilter !== 'all' && r.proxy !== policyFilter) return false
-        if (!q) return true
-        return `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q)
-      })
-  }, [rows, search, typeFilter, policyFilter])
-  const typeTop = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const r of filtered) counts.set(r.type, (counts.get(r.type) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
-  }, [filtered])
-  return (
-    <RulesPage
-      rulesOverview={overview}
-      connectionStatus="connected"
-      rulesBusy={busy}
-      providers={[]}
-      providerBusyMap={{}}
-      providerErrMap={{}}
-      bulkBusy={false}
-      rulesRows={rows}
-      filteredRulesRows={filtered}
-      rulesTypeTop={typeTop}
-      ruleSearch={search}
-      ruleTypeFilter={typeFilter}
-      rulePolicyFilter={policyFilter}
-      ruleTypeOptions={typeOptions}
-      rulePolicyOptions={policyOptions}
-      error={null}
-      onRefresh={refresh}
-      onRefreshAll={() => {}}
-      onRefreshOne={() => {}}
-      onSearchChange={setSearch}
-      onTypeFilterChange={setTypeFilter}
-      onPolicyFilterChange={setPolicyFilter}
-      ruleToggle={noProfileToggle}
-    />
-  )
+  const view = useRulesView({
+    enabled: true,
+    activeProfileId: '',
+    profiles: undefined,
+    onError: ignoreError,
+  })
+  const { onSearchChange, onTypeFilterChange, onPolicyFilterChange } = view
+  useLayoutEffect(() => {
+    if (initial.search) onSearchChange(initial.search)
+    if (initial.type) onTypeFilterChange(initial.type)
+    if (initial.policy) onPolicyFilterChange(initial.policy)
+  }, [initial, onSearchChange, onTypeFilterChange, onPolicyFilterChange])
+  return <RulesPage view={view} connectionStatus="connected" error={null} />
 }
 
 function stubRules(rulesBody: string) {

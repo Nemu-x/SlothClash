@@ -50,23 +50,12 @@ import {
 } from './api/prefs'
 import {
   ActivateProfile,
-  ConfirmInstallConfigFromLink,
   DeleteProfile,
-  DeriveAgePublicKey,
-  GenerateAgeKeyPair,
   GetProfilePaths,
-  ImportProfileFromText,
-  ImportProfileFromURL,
-  ReadProfileConfig,
   RefreshProfileSubscription,
-  SetProfileAgeSecretKey,
   SetProfileAutoUpdate,
-  SetProfileMergeTemplate,
-  UpdateProfileInfo,
-  WriteProfileConfig,
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
-import { UpdateRuleProvider } from './api/rules'
 import { BrowserOpenURL, EventsOn } from './api/runtime'
 import {
   GetServiceInfo,
@@ -77,22 +66,9 @@ import {
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
-import { DeleteProfileModal } from './components/DeleteProfileModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import {
-  ImportProfileModal,
-  type ImportMode,
-} from './components/ImportProfileModal'
-import type { InstallConfigRequest } from './components/InstallConfigConfirmModal'
-import { InstallConfigConfirmModal } from './components/InstallConfigConfirmModal'
 import { OperatorModal } from './components/OperatorModal'
-import { ProfileContextMenu } from './components/ProfileContextMenu'
-import { ProfileEditInfoModal } from './components/ProfileEditInfoModal'
-import { ProfileFileModal } from './components/ProfileFileModal'
-import { ProfileMergeModal } from './components/ProfileMergeModal'
-import { ProfileProxyModal } from './components/ProfileProxyModal'
-import { ProfileRulesModal } from './components/ProfileRulesModal'
-import { ProfileScriptModal } from './components/ProfileScriptModal'
+import { ProfileModalsHost } from './components/ProfileModalsHost'
 import { SettingsResetModal } from './components/SettingsResetModal'
 import { SidebarNav } from './components/SidebarNav'
 import { ToastHub } from './components/ToastHub'
@@ -106,20 +82,16 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
-import { useConnectionsOverview } from './hooks/queries/useConnectionsOverview'
-import { useRulesOverview } from './hooks/queries/useRulesOverview'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
+import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
+import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
-import { useRuleToggles } from './hooks/useRuleToggles'
+import { useRulesView } from './hooks/useRulesView'
 import { useToasts } from './hooks/useToasts'
 import i18n, { LS_LANG, readStoredLang } from './i18n'
-import {
-  DEFAULT_MERGE_TEMPLATE,
-  mergeTemplateFromProfile,
-} from './mergeTemplate'
 import { HomePage } from './pages/Home'
 import { ProfilesPage } from './pages/Profiles'
 import { ProxiesPage } from './pages/Proxies'
@@ -146,7 +118,6 @@ const RulesPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/Settings').then((m) => ({ default: m.SettingsPage })),
 )
-import { parseMihomoRulesJson, parseRuleProvidersJson } from './rulesTable'
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { CompactSettings, ImportModalReason, Screen } from './types/app'
@@ -157,7 +128,6 @@ import {
   DEFAULT_SETTINGS,
   loadCompactSettings,
 } from './utils/settings'
-import { friendlyErrorMessage, yamlValidationError } from './utils/yaml'
 
 function App() {
   const { t } = useTranslation()
@@ -165,18 +135,10 @@ function App() {
   const [screen, setScreen] = useState<Screen>('home')
   // Server-state queries. Each one drives a single screen's view, polls itself
   // while that screen is open, and exposes a `refresh()` for manual triggers
-  // (rule-providers bulk update, the "Refresh" buttons in headers).
-  const {
-    overview: rulesOverview,
-    busy: rulesBusy,
-    refresh: refreshRules,
-  } = useRulesOverview(screen === 'rules')
-  const {
-    overview: connectionsOverview,
-    busy: connectionsBusy,
-    refresh: refreshConnections,
-    closeAll: closeAllConnections,
-  } = useConnectionsOverview(screen === 'connections')
+  // (rule-providers bulk update, the "Refresh" buttons in headers). The Rules
+  // query lives in useRulesView below. Connections: snapshot + search, held
+  // here (not in ConnectionsPage) so the search survives leaving the screen.
+  const connectionsView = useConnectionsView(screen === 'connections')
   const { log: serviceLog, refresh: refreshRuntimeLog } = useServiceLog(
     screen === 'logs',
   )
@@ -217,82 +179,9 @@ function App() {
   } = useConnectivityChecks()
   const [deviceIdentity, setDeviceIdentity] =
     useState<main.SubscriptionDeviceIdentityPublic | null>(null)
-  const [importName, setImportName] = useState('')
-  const [importUrl, setImportUrl] = useState('')
-  const [importMode, setImportMode] = useState<ImportMode>('url')
-  const [importContent, setImportContent] = useState('')
-  const [importModalOpen, setImportModalOpen] = useState(false)
-  const [importModalReason, setImportModalReason] =
-    useState<ImportModalReason>('manual')
-  const [importBusy, setImportBusy] = useState(false)
-  const [connectionsSearch, setConnectionsSearch] = useState('')
-  const [ruleProviderBusyMap, setRuleProviderBusyMap] = useState<
-    Record<string, boolean>
-  >({})
-  const [ruleProviderErrMap, setRuleProviderErrMap] = useState<
-    Record<string, string>
-  >({})
-  const [ruleProvidersBulkBusy, setRuleProvidersBulkBusy] = useState(false)
-  const [profileMenu, setProfileMenu] = useState<{
-    id: string
-    name: string
-    x: number
-    y: number
-  } | null>(null)
-  const [profileMergeModal, setProfileMergeModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [mergeTemplateDraft, setMergeTemplateDraft] = useState('')
-  const [mergeTemplateYamlErr, setMergeTemplateYamlErr] = useState<
-    string | null
-  >(null)
-  const [profileFileModal, setProfileFileModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileFileText, setProfileFileText] = useState('')
-  const [profileFileYamlErr, setProfileFileYamlErr] = useState<string | null>(
-    null,
-  )
-  const [profileFilePath, setProfileFilePath] = useState('')
-  const [profileFileLoadErr, setProfileFileLoadErr] = useState('')
-  const [profileProxyModal, setProfileProxyModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  // Proxy / Rules edit drafts now live inside ProfileProxyModal / ProfileRulesModal.
-  const [profileRulesModal, setProfileRulesModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileScriptModal, setProfileScriptModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileEditInfo, setProfileEditInfo] = useState<{
-    id: string
-    name: string
-    url: string
-  } | null>(null)
-  const [profileEditName, setProfileEditName] = useState('')
-  const [profileEditUrl, setProfileEditUrl] = useState('')
-  const [profileEditAutoEnabled, setProfileEditAutoEnabled] = useState(true)
-  const [profileEditAutoInterval, setProfileEditAutoInterval] = useState('360')
-  const [profileEditAgeKey, setProfileEditAgeKey] = useState('')
-  const isAnyEditorModalOpen = Boolean(
-    profileMergeModal ||
-      profileFileModal ||
-      profileProxyModal ||
-      profileRulesModal,
-  )
-  const [deleteProfileModal, setDeleteProfileModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [installConfigRequest, setInstallConfigRequest] =
-    useState<InstallConfigRequest | null>(null)
-  const [installConfigBusy, setInstallConfigBusy] = useState(false)
+  // Which profile dialog is open; their drafts live in ProfileModalsHost.
+  const profileModals = useProfileModals()
+  const isAnyEditorModalOpen = profileModals.isAnyEditorModalOpen
   const [serviceInfo, setServiceInfo] =
     useState<main.ServiceRuntimeInfo | null>(null)
   // Session-dismiss for the app-wide "update the helper service" banner. It
@@ -386,9 +275,6 @@ function App() {
   const branding = useBranding()
   const brandManifest = branding?.manifest ?? null
   const [operatorModalOpen, setOperatorModalOpen] = useState(false)
-  const [ruleSearch, setRuleSearch] = useState('')
-  const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
-  const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const refreshQueuedRef = useRef(false)
   const stateEventTimerRef = useRef<number | null>(null)
@@ -469,14 +355,6 @@ function App() {
       if (timer !== null) window.clearTimeout(timer)
     }
   }, [refresh])
-
-  useEffect(() => {
-    setMergeTemplateYamlErr(yamlValidationError(mergeTemplateDraft, true))
-  }, [mergeTemplateDraft])
-
-  useEffect(() => {
-    setProfileFileYamlErr(yamlValidationError(profileFileText, true))
-  }, [profileFileText])
 
   // Sync the persisted autostart state with the OS-level registry on mount.
   // "Start minimized" is honoured natively by Go (StartHidden from prefs.json)
@@ -636,39 +514,6 @@ function App() {
     })
     return () => off()
   }, [refresh])
-
-  // A deep link never imports silently: the backend asks first (audit SEC1).
-  useEffect(() => {
-    const off = EventsOn('app:install-config-request', (payload: unknown) => {
-      const p = payload as { name?: string; url?: string; host?: string }
-      if (!p?.url) return
-      setInstallConfigRequest({
-        name: String(p.name ?? ''),
-        url: String(p.url),
-        host: String(p.host ?? p.url),
-      })
-    })
-    return () => off()
-  }, [])
-
-  const confirmInstallConfig = useCallback(
-    async (req: InstallConfigRequest) => {
-      setInstallConfigBusy(true)
-      try {
-        await ConfirmInstallConfigFromLink(req.name, req.url)
-      } catch (e) {
-        pushToast({
-          kind: 'error',
-          message: friendlyErrorMessage(String(e)),
-          durationMs: 0,
-        })
-      } finally {
-        setInstallConfigBusy(false)
-        setInstallConfigRequest(null)
-      }
-    },
-    [pushToast],
-  )
 
   useEffect(() => {
     const off = EventsOn('app:install-config', (payload: unknown) => {
@@ -1028,79 +873,6 @@ function App() {
       Boolean(settings.closeToTray && trayAvailable),
     )
   }, [settings.closeToTray, trayAvailable])
-
-  useEffect(() => {
-    if (!profileMenu) return
-    const close = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null
-      if (el?.closest?.('.ctxMenu')) return
-      setProfileMenu(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [profileMenu])
-
-  useEffect(() => {
-    if (!profileMergeModal) return
-    const raw = mergeTemplateFromProfile(
-      state?.profile?.profiles,
-      profileMergeModal.id,
-    )
-    setMergeTemplateDraft(raw.trim() ? raw : DEFAULT_MERGE_TEMPLATE)
-    // Intentionally only when opening the modal — avoid overwriting edits on refresh.
-  }, [profileMergeModal])
-
-  useEffect(() => {
-    if (!profileEditInfo) return
-    setProfileEditName(profileEditInfo.name)
-    setProfileEditUrl(profileEditInfo.url)
-    setProfileEditAgeKey(
-      String(
-        state?.profile?.profiles?.find((x: any) => x.id === profileEditInfo.id)
-          ?.ageSecretKey ?? '',
-      ),
-    )
-    const p = state?.profile?.profiles?.find(
-      (x: any) => x.id === profileEditInfo.id,
-    )
-    const interval = Number(p?.autoUpdateIntervalMinutes ?? 360)
-    setProfileEditAutoEnabled(p?.autoUpdateEnabled === false ? false : true)
-    setProfileEditAutoInterval(
-      String(Number.isFinite(interval) && interval > 0 ? interval : 360),
-    )
-  }, [profileEditInfo])
-
-  useEffect(() => {
-    if (!profileFileModal) return
-    let cancelled = false
-    void (async () => {
-      setProfileFileLoadErr('')
-      setProfileFilePath('')
-      setProfileFileText('')
-      try {
-        const peek = await ReadProfileConfig(profileFileModal.id)
-        if (cancelled) return
-        setProfileFilePath(peek.path ?? '')
-        if (peek.lastError) {
-          setProfileFileLoadErr(peek.lastError)
-          setProfileFileText(
-            `# config.yaml not found yet (${peek.lastError}).\n# Connect once to generate, then open again — or paste a full profile below.\n`,
-          )
-        } else {
-          setProfileFileText(peek.body ?? '')
-        }
-      } catch (e: any) {
-        if (cancelled) return
-        setProfileFileLoadErr(String(e))
-        setProfileFileText(
-          '# Could not load current config.yaml. Paste YAML below to overwrite.\n',
-        )
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [profileFileModal])
 
   const run = async (action: () => Promise<any>) => {
     setError('')
@@ -1613,91 +1385,15 @@ function App() {
     setHomeActiveNodeOpen(false)
   }, [screen, state?.connection?.status])
 
-  const rulesRows = useMemo(
-    () => parseMihomoRulesJson(rulesOverview?.rulesBody),
-    [rulesOverview?.rulesBody],
-  )
-  const ruleProvidersRows = useMemo(
-    () => parseRuleProvidersJson(rulesOverview?.ruleProvidersBody),
-    [rulesOverview?.ruleProvidersBody],
-  )
-  const ruleTypeFilterOptions = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of rulesRows) {
-      const t = String(r.type ?? '').trim()
-      if (t) set.add(t)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [rulesRows])
-  const rulePolicyFilterOptions = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of rulesRows) {
-      const p = String(r.proxy ?? '').trim()
-      if (p) set.add(p)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [rulesRows])
-  // Dashboard rule enable/disable. The hook loads the active profile's rule
-  // baseline, tracks which lines are disabled (rules-template `delete` bucket),
-  // and toggles them via SetProfileRulesTemplate (which auto-reconnects). See
-  // useRuleToggles for the safety invariant (only unambiguous matches toggle).
-  const ruleToggles = useRuleToggles({
+  // Rules screen: /rules snapshot, provider updates, dashboard toggles and the
+  // filters. Held here (not in RulesPage) so filters and in-flight provider
+  // updates survive leaving the screen.
+  const rulesView = useRulesView({
+    enabled: screen === 'rules',
     activeProfileId: String(state?.profile?.activeProfileId ?? '').trim(),
     profiles: state?.profile?.profiles,
-    enabled: screen === 'rules',
     onError: (m) => setError(m),
-    // The reconnect reloads the core; refetch /rules shortly after so the live
-    // list reconciles with the optimistic view.
-    onApplied: () => {
-      window.setTimeout(() => void refreshRules(), 1500)
-    },
   })
-  // Combined display: live rows (minus any optimistically-disabled ones) tagged
-  // enabled, followed by disabled rows so they can be re-enabled from the table.
-  const combinedRulesRows = useMemo(() => {
-    const live = rulesRows
-      .filter((r) => {
-        const line = ruleToggles.matchLine(r)
-        return !(line && ruleToggles.deleteLines.has(line))
-      })
-      .map((r) => ({ ...r, disabled: false as const }))
-    return [...live, ...ruleToggles.disabledRows]
-  }, [
-    rulesRows,
-    ruleToggles.matchLine,
-    ruleToggles.deleteLines,
-    ruleToggles.disabledRows,
-  ])
-  const filteredRulesRows = useMemo(() => {
-    const q = ruleSearch.trim().toLowerCase()
-    return combinedRulesRows.filter((r) => {
-      if (ruleTypeFilter !== 'all' && r.type !== ruleTypeFilter) return false
-      if (rulePolicyFilter !== 'all' && r.proxy !== rulePolicyFilter)
-        return false
-      if (!q) return true
-      const hay = `${r.type} ${r.payload} ${r.proxy}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [combinedRulesRows, ruleSearch, ruleTypeFilter, rulePolicyFilter])
-  const rulesTypeTop = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const r of filteredRulesRows) {
-      const key = String(r.type || '—')
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
-  }, [filteredRulesRows])
-  const filteredConnections = useMemo(() => {
-    const rows = connectionsOverview?.connections ?? []
-    const q = connectionsSearch.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((c) => {
-      const meta = c.metadata ?? {}
-      const hay =
-        `${c.id} ${meta.host ?? ''} ${meta.destinationIP ?? ''} ${meta.process ?? ''} ${c.rule ?? ''} ${c.rulePayload ?? ''}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [connectionsOverview?.connections, connectionsSearch])
 
   const dismissSpotlight = useCallback(() => {
     localStorage.setItem(LS_SPOTLIGHT, '1')
@@ -1705,49 +1401,8 @@ function App() {
   }, [])
 
   const openImportModal = (reason: ImportModalReason) => {
-    setImportModalReason(reason)
-    setImportModalOpen(true)
+    profileModals.openImport(reason)
     setError('')
-  }
-
-  const closeImportModal = () => {
-    setImportModalOpen(false)
-    setImportBusy(false)
-  }
-
-  const pasteFromClipboard = async () => {
-    setError('')
-    try {
-      const text = await navigator.clipboard.readText()
-      if (importMode === 'paste') setImportContent(text)
-      else setImportUrl(text.trim())
-    } catch {
-      setError(t('ui.toasts.clipboardReadFail'))
-    }
-  }
-
-  const performImportAndClose = async () => {
-    setError('')
-    setImportBusy(true)
-    try {
-      const name = importName.trim()
-      if (importMode === 'paste') {
-        await ImportProfileFromText(name, importContent.trim())
-      } else {
-        await ImportProfileFromURL(name, importUrl.trim())
-      }
-      await refresh()
-      dismissSpotlight()
-      setImportUrl('')
-      setImportName('')
-      setImportContent('')
-      closeImportModal()
-    } catch (e: any) {
-      setError(String(e))
-      await refresh()
-    } finally {
-      setImportBusy(false)
-    }
   }
 
   const ensureTun = async () => {
@@ -1931,71 +1586,9 @@ function App() {
     }
   }, [canAutoConnect])
 
-  const refreshRuleProviderOne = useCallback(
-    async (name: string) => {
-      const id = String(name ?? '').trim()
-      if (!id) return
-      setRuleProviderErrMap((prev) => {
-        if (!prev[id]) return prev
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
-      setRuleProviderBusyMap((prev) => ({ ...prev, [id]: true }))
-      try {
-        await UpdateRuleProvider(id)
-        refreshRules()
-      } catch (e: any) {
-        setRuleProviderErrMap((prev) => ({ ...prev, [id]: String(e) }))
-      } finally {
-        setRuleProviderBusyMap((prev) => ({ ...prev, [id]: false }))
-      }
-    },
-    [refreshRules],
-  )
-
-  const refreshRuleProvidersAll = useCallback(async () => {
-    if (ruleProvidersRows.length === 0) return
-    setRuleProvidersBulkBusy(true)
-    setRuleProviderErrMap({})
-    const busySeed: Record<string, boolean> = {}
-    for (const p of ruleProvidersRows) busySeed[p.name] = true
-    setRuleProviderBusyMap(busySeed)
-    try {
-      for (const p of ruleProvidersRows) {
-        try {
-          await UpdateRuleProvider(p.name)
-          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
-        } catch (e: any) {
-          setRuleProviderErrMap((prev) => ({ ...prev, [p.name]: String(e) }))
-          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
-        }
-      }
-      refreshRules()
-    } finally {
-      setRuleProvidersBulkBusy(false)
-    }
-  }, [refreshRules, ruleProvidersRows])
   // Rules / Connections / Logs polling moved to react-query hooks
   // (useRulesOverview, useConnectionsOverview, useServiceLog) — they fetch on
   // mount and refetch on the same screen-change semantics via their `enabled`.
-
-  const importModalTitle = () => {
-    if (importModalReason === 'connect') {
-      return t('ui.import.connectNeedsProfile')
-    }
-    if (importModalReason === 'beacon') {
-      return t('ui.import.addFirstSubscription')
-    }
-    return t('ui.import.importSubscription')
-  }
-
-  const importModalBlurb = () => {
-    if (importModalReason === 'connect') {
-      return t('ui.import.connectBlurb')
-    }
-    return t('ui.import.defaultBlurb')
-  }
 
   return (
     <div
@@ -2171,20 +1764,15 @@ function App() {
                   }
                 })()
               }}
-              onContextMenu={(target) => setProfileMenu(target)}
+              onContextMenu={(target) => profileModals.setMenu(target)}
             />
           ) : null}
 
           {screen === 'connections' ? (
             <Suspense fallback={<div className="panel" />}>
               <ConnectionsPage
-                overview={connectionsOverview}
-                filtered={filteredConnections}
-                busy={connectionsBusy}
-                search={connectionsSearch}
-                onSearchChange={setConnectionsSearch}
-                onRefresh={() => void refreshConnections()}
-                onCloseAll={() => run(closeAllConnections)}
+                view={connectionsView}
+                onCloseAll={() => run(connectionsView.closeAll)}
               />
             </Suspense>
           ) : null}
@@ -2213,38 +1801,9 @@ function App() {
           {screen === 'rules' ? (
             <Suspense fallback={<div className="panel" />}>
               <RulesPage
-                rulesOverview={rulesOverview}
+                view={rulesView}
                 connectionStatus={state?.connection?.status ?? ''}
-                rulesBusy={rulesBusy}
-                providers={ruleProvidersRows}
-                providerBusyMap={ruleProviderBusyMap}
-                providerErrMap={ruleProviderErrMap}
-                bulkBusy={ruleProvidersBulkBusy}
-                rulesRows={rulesRows}
-                filteredRulesRows={filteredRulesRows}
-                rulesTypeTop={rulesTypeTop}
-                ruleSearch={ruleSearch}
-                ruleTypeFilter={ruleTypeFilter}
-                rulePolicyFilter={rulePolicyFilter}
-                ruleTypeOptions={ruleTypeFilterOptions}
-                rulePolicyOptions={rulePolicyFilterOptions}
                 error={error}
-                onRefresh={() => refreshRules()}
-                onRefreshAll={() => void refreshRuleProvidersAll()}
-                onRefreshOne={(name) => void refreshRuleProviderOne(name)}
-                onSearchChange={setRuleSearch}
-                onTypeFilterChange={setRuleTypeFilter}
-                onPolicyFilterChange={setRulePolicyFilter}
-                ruleToggle={{
-                  hasActiveProfile: ruleToggles.hasActiveProfile,
-                  baselineLoading: ruleToggles.baselineLoading,
-                  baselineError: ruleToggles.baselineError,
-                  busyLines: ruleToggles.busyLines,
-                  isToggleable: ruleToggles.isToggleable,
-                  matchLine: ruleToggles.matchLine,
-                  onDisable: ruleToggles.disableRow,
-                  onEnable: ruleToggles.enableLine,
-                }}
               />
             </Suspense>
           ) : null}
@@ -2540,239 +2099,23 @@ function App() {
         onBrowserOpen={(url) => BrowserOpenURL(url)}
       />
 
-      <ImportProfileModal
-        open={importModalOpen}
-        title={importModalTitle()}
-        blurb={importModalBlurb()}
-        mode={importMode}
-        url={importUrl}
-        name={importName}
-        content={importContent}
-        busy={importBusy}
-        hidePaste={brandManifest?.hideLocalConfigs}
-        onModeChange={setImportMode}
-        onUrlChange={setImportUrl}
-        onNameChange={setImportName}
-        onContentChange={setImportContent}
-        onPasteFromClipboard={() => pasteFromClipboard()}
-        onClose={closeImportModal}
-        onSubmit={() => performImportAndClose()}
-      />
-
-      <ProfileMergeModal
-        target={profileMergeModal}
-        value={mergeTemplateDraft}
-        yamlError={mergeTemplateYamlErr}
-        onChange={setMergeTemplateDraft}
-        onResetScaffold={() => setMergeTemplateDraft(DEFAULT_MERGE_TEMPLATE)}
-        onClose={() => setProfileMergeModal(null)}
-        onSave={async (id) => {
-          if (mergeTemplateYamlErr) return
-          setError('')
-          try {
-            await SetProfileMergeTemplate(id, mergeTemplateDraft)
-            setProfileMergeModal(null)
-            setTunBanner(
-              'Merge template saved. Reconnect if you are already connected.',
-            )
-          } catch (e: any) {
-            setError(String(e))
-          }
-          await refresh()
-        }}
-      />
-
-      <ProfileFileModal
-        target={profileFileModal}
-        path={profileFilePath}
-        loadError={profileFileLoadErr}
-        value={profileFileText}
-        yamlError={profileFileYamlErr}
-        onChange={setProfileFileText}
-        onCopyPath={(path) => {
-          if (path) {
-            void navigator.clipboard.writeText(path)
-            setTunBanner(t('ui.toasts.configPathCopied'))
-          }
-        }}
-        onClose={() => setProfileFileModal(null)}
-        onSave={async (id) => {
-          if (profileFileYamlErr) return
-          setError('')
-          try {
-            await WriteProfileConfig(id, profileFileText)
-            setProfileFileModal(null)
-            setTunBanner(
-              'Config saved. Sloth reapplies ports and secret on connect.',
-            )
-          } catch (e: any) {
-            setError(String(e))
-          }
-          await refresh()
-        }}
-      />
-
-      <ProfileProxyModal
-        key={`pgm-${profileProxyModal?.id ?? 'closed'}`}
-        target={profileProxyModal}
-        profiles={state?.profile?.profiles}
-        onClose={() => setProfileProxyModal(null)}
-        onSaved={(banner) => {
-          setProfileProxyModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileRulesModal
-        key={`prm-${profileRulesModal?.id ?? 'closed'}`}
-        target={profileRulesModal}
+      <ProfileModalsHost
+        modals={profileModals}
         profiles={state?.profile?.profiles}
         proxyGroups={state?.proxy?.groups}
-        onClose={() => setProfileRulesModal(null)}
-        onSaved={(banner) => {
-          setProfileRulesModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileScriptModal
-        key={`psm-${profileScriptModal?.id ?? 'closed'}`}
-        target={profileScriptModal}
-        profiles={state?.profile?.profiles}
-        onClose={() => setProfileScriptModal(null)}
-        onSaved={(banner) => {
-          setProfileScriptModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileEditInfoModal
-        target={profileEditInfo}
-        name={profileEditName}
-        url={profileEditUrl}
-        autoEnabled={profileEditAutoEnabled}
-        autoInterval={profileEditAutoInterval}
-        ageKey={profileEditAgeKey}
-        onAgeKeyChange={setProfileEditAgeKey}
-        onGenerateAgeKeyPair={async (kind) => {
-          const pair = await GenerateAgeKeyPair(kind)
-          return {
-            publicKey: String(pair?.publicKey ?? ''),
-            secretKey: String(pair?.secretKey ?? ''),
-          }
-        }}
-        onDeriveAgePublicKey={async (secret) =>
-          String((await DeriveAgePublicKey(secret)) ?? '')
-        }
-        onNameChange={setProfileEditName}
-        onUrlChange={setProfileEditUrl}
-        onAutoEnabledToggle={() => setProfileEditAutoEnabled((v) => !v)}
-        onAutoIntervalChange={setProfileEditAutoInterval}
-        onCopyUrl={(url) => {
-          if (url) {
-            void navigator.clipboard.writeText(url)
-            setTunBanner(t('ui.toasts.urlCopied'))
-          }
-        }}
-        onCopyName={(name) => {
-          if (name) {
-            void navigator.clipboard.writeText(name)
-            setTunBanner(t('ui.toasts.nameCopied'))
-          }
-        }}
-        onClose={() => setProfileEditInfo(null)}
-        onSave={(id) => {
-          void run(async () => {
-            await UpdateProfileInfo(
-              id,
-              profileEditName.trim(),
-              profileEditUrl.trim(),
-            )
-            await SetProfileAgeSecretKey(id, profileEditAgeKey.trim())
-            const interval = Number(profileEditAutoInterval || '360')
-            await SetProfileAutoUpdate(
-              id,
-              profileEditAutoEnabled,
-              Number.isFinite(interval) && interval > 0 ? interval : 360,
-            )
-          })
-          setProfileEditInfo(null)
-        }}
-      />
-
-      <InstallConfigConfirmModal
-        request={installConfigRequest}
-        busy={installConfigBusy}
-        onCancel={() => setInstallConfigRequest(null)}
-        onConfirm={(req) => void confirmInstallConfig(req)}
-      />
-
-      <DeleteProfileModal
-        target={deleteProfileModal}
-        onClose={() => setDeleteProfileModal(null)}
-        onConfirm={(id) => {
-          setDeleteProfileModal(null)
-          void run(() => DeleteProfile(id))
-        }}
+        hidePaste={brandManifest?.hideLocalConfigs}
+        run={run}
+        refresh={refresh}
+        setError={setError}
+        setBanner={setTunBanner}
+        pushToast={pushToast}
+        onImported={dismissSpotlight}
       />
 
       <SettingsResetModal
         mode={settingsResetModal}
         onClose={() => setSettingsResetModal(null)}
         onConfirm={(withProfiles) => void resetAppSettings(withProfiles)}
-      />
-
-      <ProfileContextMenu
-        target={profileMenu}
-        profile={
-          profileMenu
-            ? (state?.profile?.profiles?.find(
-                (x: any) => x.id === profileMenu.id,
-              ) ?? null)
-            : null
-        }
-        onUpdate={(id) => {
-          setProfileMenu(null)
-          void run(() => RefreshProfileSubscription(id))
-        }}
-        onEditInfo={(id, name, url) => {
-          setProfileMenu(null)
-          setProfileEditInfo({ id, name, url })
-        }}
-        onCopyUrl={(url) => {
-          if (url) {
-            void navigator.clipboard.writeText(url)
-            setTunBanner(t('ui.toasts.urlCopied'))
-          }
-          setProfileMenu(null)
-        }}
-        onOpenRules={(id, name) => {
-          setProfileMenu(null)
-          setProfileRulesModal({ id, name })
-        }}
-        onDelete={(id, name) => {
-          setProfileMenu(null)
-          setDeleteProfileModal({ id, name })
-        }}
-        onOpenExtendConfig={(id, name) => {
-          setProfileMenu(null)
-          setProfileMergeModal({ id, name })
-        }}
-        onOpenProxyGroups={(id, name) => {
-          setProfileMenu(null)
-          setProfileProxyModal({ id, name })
-        }}
-        onOpenScript={(id, name) => {
-          setProfileMenu(null)
-          setProfileScriptModal({ id, name })
-        }}
-        onOpenEditFile={(id, name) => {
-          setProfileMenu(null)
-          setProfileFileModal({ id, name })
-        }}
       />
 
       <TunSettingsModal

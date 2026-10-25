@@ -37,7 +37,7 @@ func TestDesyncLateProbeCannotWinAfterCancellation(t *testing.T) {
 		t.Fatal("a canceled result was selected")
 	}
 	a := &App{}
-	a.desyncAuto.epoch = 2
+	a.desyncCtl.epoch = 2
 	if err = a.applyDesyncCandidate(context.Background(), 1, "must-not-be-contacted.invalid", "private", "group", "candidate"); err != context.Canceled {
 		t.Fatalf("old session mutation: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestDesyncReportDoesNotSerializeSecretsAndProfiles(t *testing.T) {
 	a := &App{coreSecret: "test-controller-secret"}
 	a.state.Connection.LastError = "https://private.example/subscription-token"
 	a.coreActiveProfileID = "secret-profile-id"
-	a.desyncAuto.status.Attempts = []DesyncAutoAttempt{{Service: "voice", Candidate: "f4", Code: "udp_stalled"}}
+	a.desyncCtl.status.Attempts = []DesyncAutoAttempt{{Service: "voice", Candidate: "f4", Code: "udp_stalled"}}
 	report := a.GetDesyncDiagnosticReport()
 	for _, secret := range []string{"test-controller-secret", "private.example", "subscription-token", "secret-profile-id"} {
 		if strings.Contains(report, secret) {
@@ -201,8 +201,8 @@ func TestDesyncCalibrationAppliesOnlyVerifiedCandidateAndCachesIt(t *testing.T) 
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
 	network := desyncNetworkKey()
-	a.desyncAuto.epoch = 1
-	a.desyncAuto.status.Network = network
+	a.desyncCtl.epoch = 1
+	a.desyncCtl.status.Network = network
 	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desync.DiscordRoute)
 	if err != nil || selected != desync.DiscordRoute+"-f5" || checks != 5 || desyncCachedSelection(network, "discord") != "f5" {
 		t.Fatalf("calibration not applied: %q checks=%d err=%v", selected, checks, err)
@@ -258,9 +258,9 @@ func TestDesyncCalibrationResumesAfterInterruptedBudget(t *testing.T) {
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
-	a.desyncAuto.epoch = 1
+	a.desyncCtl.epoch = 1
 	network := desyncNetworkKey()
-	a.desyncAuto.status.Network = network
+	a.desyncCtl.status.Network = network
 	if err := a.calibrateDesyncTCP(firstCtx, 1, network, a.coreListen, "", "discord", desync.DiscordRoute); err == nil {
 		t.Fatal("interrupted calibration succeeded")
 	}
@@ -310,7 +310,7 @@ func TestDesyncKeepsWorkingApplicationTrafficWithoutSeparateProbe(t *testing.T) 
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
 	a.state.Traffic = "tun"
-	a.desyncAuto.epoch = 1
+	a.desyncCtl.epoch = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	finished := make(chan struct{})

@@ -131,7 +131,7 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 		if err == nil {
 			break
 		}
-		a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		if !desyncWait(ctx, time.Minute) {
 			return
 		}
@@ -139,7 +139,7 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 	reserve := group.Now == desyncProfileSelection
 	recovery := desyncReserveRecovery{since: time.Now()}
 	if reserve {
-		a.desyncService(lease, service, DesyncAutoService{Phase: "profile", Candidate: "profile"})
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "profile", Candidate: "profile"})
 	}
 	for ctx.Err() == nil {
 		if !reserve {
@@ -152,11 +152,11 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 					if a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, desyncProfileSelection) == nil {
 						reserve = true
 						recovery = desyncReserveRecovery{since: time.Now()}
-						a.desyncService(lease, service, DesyncAutoService{Phase: "profile", Candidate: "profile"})
+						a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "profile", Candidate: "profile"})
 						a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: "profile", OK: true, Code: "fallback_applied"})
 					}
 				} else {
-					a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(fallbackErr)})
+					a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(fallbackErr)})
 				}
 				if !reserve {
 					if !desyncWait(ctx, time.Minute) {
@@ -171,14 +171,14 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 					if err == nil {
 						continue
 					}
-					a.desyncService(lease, service, DesyncAutoService{Phase: "checking", Code: desyncErrorCode(err)})
+					a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "checking", Code: desyncErrorCode(err)})
 					if confirmDesyncTCPFailure(ctx, check, func(c context.Context) bool { return desyncWait(c, 3*time.Second) }) {
 						break
 					}
 					if ctx.Err() != nil {
 						return
 					}
-					a.desyncService(lease, service, DesyncAutoService{Phase: "ready"})
+					a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "ready"})
 				}
 				continue
 			}
@@ -204,7 +204,7 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 		if e != nil {
 			phase = "profile_failed"
 		}
-		a.desyncService(lease, service, DesyncAutoService{Phase: phase, Candidate: "profile", Code: desyncErrorCode(e)})
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: phase, Candidate: "profile", Code: desyncErrorCode(e)})
 		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: "profile", OK: e == nil, Code: desyncErrorCode(e), DurationMS: p.DurationMS})
 	}
 }
@@ -318,7 +318,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 		}
 		if err != nil {
 			lastProgress = time.Now() // an observation gap never establishes idleness
-			a.desyncService(lease, "voice", DesyncAutoService{Phase: "profile_failed", Candidate: "profile", Code: desyncErrorCode(err)})
+			a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "profile_failed", Candidate: "profile", Code: desyncErrorCode(err)})
 			if !desyncWait(ctx, 4*time.Second) {
 				return
 			}
@@ -362,7 +362,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 				return
 			}
 		}
-		a.desyncService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile", Code: "sticky_until_idle"})
+		a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile", Code: "sticky_until_idle"})
 		if !desyncWait(ctx, 4*time.Second) {
 			return
 		}

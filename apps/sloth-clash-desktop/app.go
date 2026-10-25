@@ -62,8 +62,7 @@ type App struct {
 	emitStateTimer        *time.Timer
 	insightRefreshRunning atomic.Bool
 
-	desyncMu   sync.Mutex
-	desyncAuto desyncAutoRuntime
+	desyncCtl  desyncController
 	diagMu     sync.Mutex
 	diagEvents []RuntimeDiagEvent
 

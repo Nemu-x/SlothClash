@@ -95,6 +95,10 @@
     {
       "file": "0021-desync-stable-udp-binding.patch",
       "sha256": "da96000d11841e3e79a5240f608c26061878e294d2891857ce02e0fe77473f76"
+    },
+    {
+      "file": "0022-desync-profile-reserve.patch",
+      "sha256": "0355270d5fe881d33855a684de7a2f437bb785209504357e39539f6ea1628f06"
     }
   ],
   "assets": {

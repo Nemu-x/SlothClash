@@ -58,6 +58,9 @@ func desyncCandidates(service string) []desyncCandidate {
 }
 func (c desyncCandidate) proxy(route string) map[string]any {
 	opts := map[string]any{"dns-fallback": true}
+	if !c.UDP {
+		opts["reject-quic"] = true
+	}
 	if c.TLSRec != "" {
 		opts["tlsrec"] = c.TLSRec
 	}
@@ -168,6 +171,9 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
 	managedRules["AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe)),"+desyncDiscordUDPRoute] = true // r3-r5 migration
 	for _, r := range append(desyncRules(desyncYouTubeDomains, desyncYouTubeRoute), desyncRules(desyncDiscordDomains, desyncDiscordRoute)...) {
 		managedRules[r] = true
+		if strings.Contains(r, "DST-PORT,443") {
+			managedRules[r[:strings.LastIndex(r, ",")]+",REJECT"] = true // r1-r8 migration
+		}
 	}
 	for _, r := range desyncDiscordUDPRules() {
 		managedRules[r] = true
@@ -235,6 +241,7 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
 			proxies = append(proxies, c.proxy(route))
 			names = append(names, c.name(route))
 		}
+		names = append(names, "PASS")
 		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": names[0], desyncManagedKey: true})
 		if service == "voice" {
 			for _, r := range desyncDiscordUDPRules() {

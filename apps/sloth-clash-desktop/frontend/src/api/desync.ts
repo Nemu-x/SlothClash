@@ -64,6 +64,7 @@ export const GetDesyncUDPStatus = (): Promise<DesyncUDPStatus> => getUDPStatus()
 export const ReconnectDiscordUDP = (): Promise<number> => reconnectUDP()
 
 export interface DesyncAutoService {
+  route?: string
   phase: string
   candidate?: string
   attempt: number

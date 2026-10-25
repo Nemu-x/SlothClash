@@ -19,6 +19,7 @@ import (
 )
 
 type DesyncAutoService struct {
+	Route     string `json:"route,omitempty"`
 	Phase     string `json:"phase"`
 	Candidate string `json:"candidate,omitempty"`
 	Attempt   int    `json:"attempt"`
@@ -83,6 +84,12 @@ func (a *App) desyncService(lease uint64, service string, state DesyncAutoServic
 		return
 	}
 	state.Updated = time.Now().Unix()
+	if state.Route == "" && state.Phase != "disabled" && state.Phase != "needs_tun" {
+		state.Route = "desync"
+		if state.Phase == "profile" || state.Phase == "profile_failed" {
+			state.Route = "profile"
+		}
+	}
 	switch service {
 	case "youtube":
 		a.desyncAuto.status.YouTube = state
@@ -310,18 +317,22 @@ func chooseDesyncTCP(ctx context.Context, service string, candidates []desyncCan
 	}
 	return desyncCandidate{}, fmt.Errorf("no candidate passed")
 }
-func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) error {
+func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, background bool) (desyncCandidate, error) {
 	candidates := orderedDesyncCandidates(service, desyncCachedSelection(network, service))
 	a.desyncMu.Lock()
 	startAt := a.desyncAuto.nextTCP[service] % len(candidates)
 	a.desyncMu.Unlock()
 	candidates = append(append([]desyncCandidate{}, candidates[startAt:]...), candidates[:startAt]...)
-	a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Total: len(candidates)})
-	if err := waitDesyncGroup(ctx, endpoint, secret, route); err != nil {
-		a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
-		return err
+	if !background {
+		a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Total: len(candidates)})
 	}
-	trial, cancel := context.WithTimeout(ctx, 100*time.Second)
+	if err := waitDesyncGroup(ctx, endpoint, secret, route); err != nil {
+		if !background {
+			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+		}
+		return desyncCandidate{}, err
+	}
+	trial, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	winner, err := chooseDesyncTCP(trial, service, candidates, func(one context.Context, c desyncCandidate, target string) error {
 		_, e := probeDesyncOutbound(one, endpoint, secret, c.name(route), target)
@@ -332,14 +343,30 @@ func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, end
 			if a.desyncAuto.nextTCP == nil {
 				a.desyncAuto.nextTCP = map[string]int{}
 			}
-			a.desyncAuto.nextTCP[service] = (startAt + i) % len(candidates)
+			next := startAt + i
+			if e == nil {
+				next--
+			} // keep a passing background candidate for confirmation
+			a.desyncAuto.nextTCP[service] = next % len(candidates)
 		}
 		a.desyncMu.Unlock()
-		a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i, Total: len(candidates), Code: desyncErrorCode(e)})
+		if !background {
+			a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i, Total: len(candidates), Code: desyncErrorCode(e)})
+		}
 		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: c.ID, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
 	})
 	if err != nil {
-		a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+		if !background {
+			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+		}
+		return desyncCandidate{}, err
+	}
+	return winner, nil
+}
+
+func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) error {
+	winner, err := a.findDesyncTCP(ctx, lease, network, endpoint, secret, service, route, false)
+	if err != nil {
 		return err
 	}
 	if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.name(route)); err != nil {
@@ -458,7 +485,7 @@ func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, end
 	if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group); err != nil {
 		return "", false, err
 	}
-	trial, cancel := context.WithTimeout(ctx, 120*time.Second)
+	trial, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	for i, c := range candidates {
 		if rejected[c.ID] {
@@ -574,7 +601,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		}
 	}
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
-	report["controllerRevision"] = 2
+	report["controllerRevision"] = 3
 	if build, ok := debug.ReadBuildInfo(); ok {
 		report["goVersion"] = build.GoVersion
 		for _, s := range build.Settings {
@@ -631,37 +658,4 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		return "Desync report unavailable"
 	}
 	return string(raw)
-}
-
-func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) {
-	for {
-		err := a.calibrateDesyncTCP(ctx, lease, network, endpoint, secret, service, route)
-		delay := 90 * time.Second
-		if err != nil {
-			delay = 60 * time.Second
-		}
-		for {
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-			if err != nil {
-				break
-			}
-			for _, target := range desyncTargets(service) {
-				one, cancel := context.WithTimeout(ctx, 6*time.Second)
-				_, err = probeDesyncOutbound(one, endpoint, secret, route, target)
-				cancel()
-				if err != nil {
-					break
-				}
-			}
-			if err != nil {
-				break
-			}
-		}
-	}
 }

@@ -158,7 +158,7 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 func desyncRules(domains []string, route string) []string {
 	var rules []string
 	for _, domain := range domains {
-		rules = append(rules, "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,"+domain+")),REJECT")
+		rules = append(rules, "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,"+domain+")),"+route)
 		rules = append(rules, "AND,((NETWORK,tcp),(DOMAIN-SUFFIX,"+domain+")),"+route)
 	}
 	return rules
@@ -241,7 +241,17 @@ func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
 	defer cancel()
 	for i := range checks {
 		probeCtx, probeCancel := context.WithTimeout(ctx, 11*time.Second)
-		delay, err := probeDesyncOutbound(probeCtx, endpoint, secret, checks[i].Route, checks[i].URL)
+		var group desyncUDPProxy
+		err := autoCoreJSON(probeCtx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(checks[i].Route), nil, &group)
+		delay := 0
+		if err == nil && group.Now == desyncProfileSelection {
+			var result desyncProfileProbe
+			result, err = probeDesyncProfile(probeCtx, endpoint, secret, checks[i].Route, "")
+			delay = int(result.DurationMS)
+			checks[i].Route = "profile"
+		} else if err == nil {
+			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, checks[i].Route, checks[i].URL)
+		}
 		probeCancel()
 		checks[i].DelayMS = delay
 		checks[i].OK = err == nil

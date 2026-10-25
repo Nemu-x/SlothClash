@@ -215,6 +215,14 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 		if err == nil {
 			err = autoCoreJSON(one, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group)
 		}
+		if err == nil && group.Now == desyncProfileSelection {
+			cancel()
+			a.runDesyncVoiceReserve(ctx, lease, network, endpoint, secret)
+			monitor = desyncVoiceMonitor{}
+			previousSelected, validated = "", ""
+			rejected = map[string]bool{}
+			continue
+		}
 		if err == nil && !knownDesyncVoiceCandidate(group.Now) {
 			err = &desyncControllerError{Status: 503, Code: "candidate_pending"}
 		}
@@ -267,7 +275,11 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 				}
 				retryAt = time.Now().Add(time.Minute)
 				if err != nil {
-					a.desyncService(lease, "voice", DesyncAutoService{Phase: "interrupted", Candidate: id, Code: desyncErrorCode(err)})
+					if a.tryDesyncVoiceReserve(ctx, lease, endpoint, secret, target, group.Now) {
+						a.desyncService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile"})
+					} else {
+						a.desyncService(lease, "voice", DesyncAutoService{Phase: "interrupted", Candidate: id, Code: desyncErrorCode(err)})
+					}
 				} else if changed {
 					closeStaleDesyncVoice(ctx, endpoint, secret, target, chosen, overview.Connections)
 					graceUntil = time.Now().Add(75 * time.Second)

@@ -415,7 +415,7 @@ func (a *App) connectAfterCoreStarts(gen uint64) error {
 		a.mu.Unlock()
 		return errors.New("core not running")
 	}
-	secret = a.coreSecret
+	secret = a.core.secret
 	mode = strings.TrimSpace(a.state.Mode.Current)
 	traffic = strings.TrimSpace(a.state.Traffic)
 	if mode != "rule" && mode != "global" && mode != "direct" {
@@ -614,7 +614,7 @@ func (a *App) Disconnect() AppState {
 				dctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 				defer cancel()
 				_ = coreSetTunEnabledAt(dctx, ep, sec, false)
-			}(listen, a.coreSecret)
+			}(listen, a.core.secret)
 		}
 		// Regeneration + PUT runs off the Wails bridge so Disconnect returns
 		// immediately. If the user clicks Connect again before the reload

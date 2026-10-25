@@ -16,7 +16,7 @@ func (a *App) SetMode(mode string) (AppState, error) {
 	a.mu.Lock()
 	connected := a.state.Connection.Status == "connected"
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	activeGroup := strings.TrimSpace(a.state.Proxy.ActiveGroup)
 	a.mu.Unlock()
 

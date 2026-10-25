@@ -1,0 +1,35 @@
+.rulesSummaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.rulesSummaryChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.rulesFilterRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(
+      130px,
+      1fr
+    );
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rulesFilterSearch {
+  min-width: 0;
+}
+
+.rulesFilterSelect {
+  min-width: 0;
+}

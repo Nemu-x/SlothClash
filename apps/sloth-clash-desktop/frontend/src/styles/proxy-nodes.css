@@ -1,0 +1,203 @@
+.proxyModeInset {
+  max-width: 280px;
+}
+
+.proxyTypeChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  /* default (unknown type) — neutral; per-type colours override below */
+  background: rgba(150, 150, 150, 0.14);
+  border: 1px solid rgba(150, 150, 150, 0.32);
+  color: var(--text-muted);
+}
+
+/* Per-type colours (no blue): url-test=emerald, selector=purple,
+   fallback=turquoise, load-balance=olive. */
+.proxyType-urltest {
+  background: rgba(46, 204, 113, 0.16);
+  border-color: rgba(46, 204, 113, 0.4);
+  color: #7ee0a8;
+}
+
+.proxyType-selector {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: rgba(167, 139, 250, 0.42);
+  color: #c4b5fd;
+}
+
+.proxyType-fallback {
+  background: rgba(45, 212, 191, 0.16);
+  border-color: rgba(45, 212, 191, 0.4);
+  color: #5eead4;
+}
+
+.proxyType-loadbalance {
+  background: rgba(170, 170, 70, 0.18);
+  border-color: rgba(170, 170, 70, 0.45);
+  color: #d2d27a;
+}
+
+.shell[data-theme="light"] .proxyType-urltest {
+  background: rgba(34, 150, 84, 0.14);
+  border-color: rgba(34, 150, 84, 0.34);
+  color: #1f7a44;
+}
+
+.shell[data-theme="light"] .proxyType-selector {
+  background: rgba(124, 92, 214, 0.14);
+  border-color: rgba(124, 92, 214, 0.34);
+  color: #6a45b8;
+}
+
+.shell[data-theme="light"] .proxyType-fallback {
+  background: rgba(20, 150, 135, 0.14);
+  border-color: rgba(20, 150, 135, 0.34);
+  color: #0f766e;
+}
+
+.shell[data-theme="light"] .proxyType-loadbalance {
+  background: rgba(120, 120, 40, 0.16);
+  border-color: rgba(120, 120, 40, 0.42);
+  color: #5f5f1e;
+}
+
+.proxyCountChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: #ecd7b2;
+}
+
+.proxyNodesGrid {
+  display: grid;
+  /* Fixed-track columns + start alignment: a single-node group ("Без VPN" →
+     DIRECT) no longer stretches a lone card across the whole pane. Cards
+     keep a sensible 220px width regardless of how many fit per row. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
+  justify-content: start;
+  align-content: start;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.proxyNodeCard {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  color: inherit;
+  text-align: left;
+  padding: 6px 7px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.proxyNodeCard:hover {
+  border-color: var(--accent-muted);
+}
+
+.proxyNodeCard.active {
+  border-color: rgba(90, 184, 120, 0.55);
+  background: rgba(90, 184, 120, 0.15);
+}
+
+.proxyNodeCard.proxyNodeDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.proxyNodeCard.proxyNodeDisabled:hover {
+  border-color: var(--hairline);
+}
+
+/* type: chain — hops are numbered in dial order; the first hop that failed the
+   chain's health check is outlined. */
+.proxyChainHopNo {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.proxyNodeCard.proxyChainHopFailed,
+.proxyNodeCard.proxyChainHopFailed:hover {
+  opacity: 1;
+  border-color: var(--danger);
+}
+
+.proxyAutoGroupHint {
+  grid-column: 1 / -1;
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-xs);
+  opacity: 0.8;
+}
+
+.proxyNodeTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.proxyNodeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  flex: 1;
+}
+
+.proxyFlagEmoji {
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+.proxyFlagIso {
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.proxyNodeTags {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  max-width: 42%;
+  overflow: hidden;
+}
+
+.proxyDelayBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.proxyDelayText {
+  min-width: 44px;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

@@ -1,0 +1,238 @@
+.profileBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #f2efe8;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.profileCardFoot .profileBadge {
+  padding: 3px 8px;
+  font-size: var(--font-size-xs);
+}
+
+.profileCardFoot .profileClickHint {
+  font-size: var(--font-size-xs);
+}
+
+.profileClickHint {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.mono {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #141210;
+  color: #e8e4dc;
+  overflow: auto;
+  max-height: 320px;
+  font-size: var(--font-size-sm);
+}
+
+.homeCard {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-deep);
+}
+
+.homeCardTitle {
+  margin: 0 0 6px;
+  font-size: var(--font-size-lg);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLab {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.input {
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline-strong);
+  background: rgba(12, 11, 10, 0.75);
+  color: #f2efe8;
+  padding: 7px 11px;
+  font-size: var(--font-size-sm);
+}
+
+.input:focus {
+  outline: 2px solid var(--accent-dim);
+  outline-offset: 1px;
+}
+
+/* Visible placeholders in both themes (browser default gray vanishes on cream). */
+.input::placeholder,
+.inputModern::placeholder,
+.proxySplitNodeSearch::placeholder,
+.selectModern::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.small {
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.tight {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.tightPre {
+  margin-top: 8px;
+  max-height: 220px;
+}
+
+.logPre {
+  margin-top: 8px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: #d8d2c9;
+}
+
+.homeHeaderActions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.homeSupportHeaderBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.homeSupportHeaderBtn:hover {
+  border-color: var(--accent-muted);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.homeSupportHeaderGlyph {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
+.btn.subtle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline-strong);
+}
+
+.btn.subtle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes pulseGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent);
+    transform: scale(1.02);
+  }
+}
+
+.pulseBeacon {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #ffffff;
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 62%, #000)
+  );
+  animation: pulseGlow 1.8s ease-in-out infinite;
+}
+
+.segPill {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.pillOpt {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  background: transparent;
+  color: #d2cdc4;
+  font-size: var(--font-size-sm);
+}
+
+.pillOpt.active {
+  background: var(--accent-dim);
+  color: #ffffff;
+}
+
+.trafficKnob {
+  flex: 1;
+  min-width: 120px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  padding: 10px 12px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.18);
+  color: #d2cdc4;
+  font-size: var(--font-size-sm);
+}
+
+.trafficKnob.on {
+  border-color: var(--accent-muted);
+  background: var(--accent-dim);
+  color: #ffffff;
+}

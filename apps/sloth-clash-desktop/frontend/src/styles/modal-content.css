@@ -1,0 +1,204 @@
+.yamlModalBlurb {
+  margin-top: 0;
+}
+
+.vergeModal .vergeModalHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.vergeModalTitle {
+  color: var(--accent);
+  margin: 0;
+}
+
+.vergeToggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vergeToggle.btn {
+  font-size: var(--font-size-sm);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.vergePaneYaml {
+  min-height: 220px;
+}
+
+.modalMonacoWrap {
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.modalMonacoWrap .monaco-editor,
+.modalMonacoWrap .overflow-guard {
+  border-radius: 12px;
+}
+
+/* Monaco uses div/contenteditable internals (not plain textarea); allow selection/focus in shell. */
+.monacoEditorHost,
+.monacoEditorHost * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.modalTitle {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.modalField {
+  margin-top: 12px;
+}
+
+.modalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modalFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.modalFooterRight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.modalFooterLeft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.importModeTabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 var(--space-4);
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.importModeTabs .btn {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-pill);
+}
+
+.importTextarea {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 160px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.importDetect {
+  font-weight: 500;
+}
+
+.importDetect-yaml,
+.importDetect-links {
+  color: var(--accent);
+}
+
+.importDetect-unknown {
+  color: #d98c6a;
+}
+
+.btnModalSecondary {
+  font-size: var(--font-size-sm);
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--hairline-strong);
+  color: #e8e4dc;
+}
+
+.btnModalSecondary:hover {
+  border-color: var(--accent-muted);
+  color: #fff;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.ctxMenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 220px;
+  border-radius: 12px;
+  padding: 8px 0;
+  background: #1e1c1a;
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.ctxTitle {
+  padding: 4px 12px 8px;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: #eaf0f8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ctxItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #f2efe8;
+  padding: 10px 14px;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.ctxItem:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ctxItem:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ctxSection {
+  padding: 8px 14px 4px;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ctxItemSub {
+  padding-left: 24px;
+}

@@ -1,0 +1,178 @@
+/* === Edit rules — compact add-bar + two columns (rules-editor-rework) === */
+.rulesEditorModal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rulesEditorModal > .vergeModalHead,
+.rulesEditorModal > .modalFooter,
+.rulesEditorModal > .rulesAdvancedField {
+  flex: 0 0 auto;
+}
+
+.rulesEditorBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rulesAddBar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.shell[data-theme="light"] .rulesAddBar {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.rulesAddType {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 150px;
+  max-width: 190px;
+}
+
+.rulesAddContent {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+
+.rulesAddArrow {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.rulesAddPolicy {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 130px;
+  max-width: 180px;
+}
+
+.rulesAddPos {
+  flex: 0 0 auto;
+}
+
+.rulesAddBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.rulesCols {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 760px) {
+  .rulesCols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rulesCol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rulesCol > .eyebrow {
+  flex: 0 0 auto;
+  margin: 0 0 var(--space-2);
+}
+
+.rulesList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-right: var(--space-1);
+}
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.12);
+  font-size: var(--font-size-sm);
+}
+
+.shell[data-theme="light"] .ruleRow {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.ruleRowDeleted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.ruleTypeChip {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(150, 150, 150, 0.14);
+  border: 1px solid rgba(150, 150, 150, 0.3);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ruleContent {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruleArrow {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.rulePolicy {
+  flex: 0 0 auto;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+}
+
+.rulePos {
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ruleRemove {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  line-height: 1.4;
+}
+
+.rulesYamlErr {
+  color: var(--danger);
+}

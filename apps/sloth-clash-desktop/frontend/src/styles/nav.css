@@ -1,0 +1,124 @@
+.nav {
+  grid-area: nav;
+  border-right: 1px solid var(--hairline);
+  padding: 12px 10px 10px;
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.navList {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.navCollapseBtn {
+  margin-top: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #d2cdc4;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navCollapseBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.navChevronWrap {
+  display: flex;
+  transition: transform 0.2s ease;
+}
+
+.navChevronWrap.collapsed {
+  transform: rotate(180deg);
+}
+
+.shell.navCollapsed .navItem {
+  justify-content: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.navIcon {
+  /* Anchor for the corporate-VPN .navActiveDot indicator. */
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.navItem.active .navIcon {
+  opacity: 1;
+}
+
+.navLabel {
+  text-align: left;
+}
+
+.shell.navCollapsed .navLabel {
+  display: none;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+  margin-bottom: 16px;
+}
+
+.navItem {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  background: transparent;
+  color: #d4dfee;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.navItem:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.navItem.active {
+  background: var(--accent-dim);
+  color: #ffffff;
+}
+
+.content {
+  grid-area: content;
+  padding: 22px 26px;
+  min-height: 0;
+  overflow-x: hidden;
+  /* default: classic scrollbar */
+  overflow-y: auto;
+}
+
+.content > .home,
+.content > .panel {
+  margin-left: auto;
+  margin-right: auto;
+  width: min(100%, 1100px);
+}
+
+/* Chromium/WebView2: overlay scrollbars don't steal the right inner edge from the window resize hit-area */
+@supports (overflow: overlay) {
+  .content {
+    overflow-y: overlay;
+  }
+}

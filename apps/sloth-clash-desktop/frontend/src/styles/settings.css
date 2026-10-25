@@ -1,0 +1,164 @@
+.panel.settingsPanel {
+  max-width: 1040px;
+}
+
+.settingsTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settingsTopBar h2 {
+  margin-bottom: 0;
+}
+
+.settingsPanelLead {
+  margin: 0 0 8px;
+  font-size: var(--font-size-sm);
+}
+
+/* Masonry-style packing so cards fill each column by height instead of being
+   locked to ragged grid rows (visual-polish: fixes the uneven-columns / dead
+   space the user flagged). */
+/* Two explicit columns, each a tight flex stack: cards keep a fixed column
+   (no jumping when one grows) AND pack top-down with no inter-card gaps (unlike
+   a row-major grid). Columns may differ in length — that's fine. */
+.settingsGridCompact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.settingsCol,
+.advancedCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .settingsGridCompact {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settingsPanel .homeCard,
+.homeCard.settingsCardCompact {
+  margin: 0;
+}
+
+.settingsCardCompact {
+  padding: 6px 10px;
+}
+
+.settingsCardCompact .homeCardTitle {
+  font-size: var(--font-size-md);
+  margin-bottom: 4px;
+}
+
+.settingsCardCompact .field {
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settingsCardCompact .field:first-of-type {
+  margin-top: 0;
+}
+
+.settingsCardCompact .fieldLab {
+  font-size: var(--font-size-xs);
+}
+
+.settingsCardCompact .segPill {
+  padding: 2px;
+  gap: 4px;
+}
+
+.settingsCardCompact .pillOpt {
+  padding: 5px 10px;
+  font-size: var(--font-size-xs);
+}
+
+.settingsTunPillRow {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.settingsTunSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 4px 0 8px;
+  font-size: var(--font-size-xs);
+}
+
+.settingsTunSummaryItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsTunSummaryLabel {
+  opacity: 0.7;
+}
+
+.settingsTunSummaryValue {
+  font-weight: 600;
+}
+
+.settingsInlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tunSettingsModal {
+  width: min(560px, calc(92vw / var(--ui-zoom, 1)));
+  max-width: 560px;
+}
+
+.tunModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(60vh / var(--ui-zoom, 1));
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tunModalBody .modalField {
+  margin: 0;
+}
+
+.settingsToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 22px;
+  padding: 1px 0;
+  font-size: var(--font-size-sm);
+}
+
+.settingsPortInput {
+  width: 96px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.settingsToggleRow > span:first-child {
+  min-width: 0;
+}
+
+.settingsToggleRow .trafficKnob {
+  flex: 0 0 auto;
+  min-width: 48px;
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  border-radius: 999px;
+}

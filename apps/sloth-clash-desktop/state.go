@@ -54,9 +54,23 @@ type Profile struct {
 	AgeSecretKey     string `json:"ageSecretKey,omitempty"`
 	SubscriptionInfo string `json:"subscriptionInfo,omitempty"` // decoded Subscription-Userinfo header when provider exposes it
 	// Optional provider metadata from subscription HTTP response headers (non-standard; see subscription.go).
-	SubscriptionSupportURL    string `json:"subscriptionSupportUrl,omitempty"`
-	SubscriptionAnnouncement  string `json:"subscriptionAnnouncement,omitempty"`
-	LastUpdated               int64  `json:"lastUpdated,omitempty"`
+	SubscriptionSupportURL   string `json:"subscriptionSupportUrl,omitempty"`
+	SubscriptionAnnouncement string `json:"subscriptionAnnouncement,omitempty"`
+	// LastUpdated (unix seconds) is when the profile last changed for real:
+	// created or edited (its settings included), or a scheduled/explicit
+	// subscription refresh (refreshProfileSubscription) that actually fetched
+	// a new body. Fresh metadata alone never moves it, nor does a failed body
+	// fetch, nor the pipeline's own background refresh after Connect. It
+	// anchors the auto-update schedule and the UI's "updated X ago".
+	LastUpdated int64 `json:"lastUpdated,omitempty"`
+	// LastUpdateAttempt (unix seconds) is the last subscription refresh
+	// attempt, successful or not; the schedule counts from the later of it
+	// and LastUpdated (profileRefreshAnchor), so a failing profile retries at
+	// its normal interval. LastUpdateError is that attempt's failure, cleared
+	// on the next successful body fetch, so the UI can badge a profile stuck
+	// on its last-known-good body. Same precedent as ScriptError below.
+	LastUpdateAttempt         int64  `json:"lastUpdateAttempt,omitempty"`
+	LastUpdateError           string `json:"lastUpdateError,omitempty"`
 	AutoUpdateEnabled         bool   `json:"autoUpdateEnabled,omitempty"`         // periodically refresh subscription metadata/content
 	AutoUpdateIntervalMinutes int    `json:"autoUpdateIntervalMinutes,omitempty"` // 0 => use default backend interval
 	MergeTemplate             string `json:"mergeTemplate,omitempty"`             // Extend config YAML

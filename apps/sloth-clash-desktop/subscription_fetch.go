@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"SlothClashDesktop/internal/boundedio"
 )
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string, se
 	// The wire cap leaves room for age armor; the content cap applies to what
 	// the pipeline actually parses, encrypted or not.
 	if int64(len(body)) > subscriptionMaxBodyBytes {
-		return nil, nil, &readLimitError{What: "subscription", Limit: subscriptionMaxBodyBytes}
+		return nil, nil, &boundedio.LimitError{What: "subscription", Limit: subscriptionMaxBodyBytes}
 	}
 	return body, resp.Header, nil
 }

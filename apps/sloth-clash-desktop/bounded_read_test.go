@@ -3,26 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 )
-
-func TestReadLimitErrorIsDetectableThroughWrapping(t *testing.T) {
-	_, err := readBounded(strings.NewReader("12345"), "GET /x", 4)
-	if err == nil || err.Error() != "GET /x response exceeds the 4 bytes limit" {
-		t.Fatalf("oversized body: %v", err)
-	}
-	if !isReadLimitError(err) || !isReadLimitError(fmt.Errorf("refresh: %w", err)) {
-		t.Fatal("limit error not detectable")
-	}
-	if isReadLimitError(io.ErrUnexpectedEOF) || isReadLimitError(nil) {
-		t.Fatal("unrelated error classified as a limit error")
-	}
-}
 
 func ipcTestResponse(status int, body []byte) *http.Response {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(body))}

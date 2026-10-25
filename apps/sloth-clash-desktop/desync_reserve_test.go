@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 func TestDesyncReserveNeedsSeparatedRecoveryAndMinimumDwell(t *testing.T) {
@@ -68,7 +70,7 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 	old := "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),REJECT"
 	doc := map[string]any{"rules": []any{old, "DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}
-	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, settings, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	for _, raw := range desyncSlice(doc["rules"]) {
 		if raw == old {
 			t.Fatal("old static QUIC rejection survived")
@@ -81,12 +83,12 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 			t.Fatal("missing original-rule reserve")
 		}
 	}
-	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, DesyncSettings{}, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	if !reflect.DeepEqual(doc["rules"], []any{"DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}) {
 		t.Fatal("profile rules changed")
 	}
 	for _, service := range []string{"youtube", "discord", "voice"} {
-		opts := desyncCandidates(service)[0].proxy("test")["desync"].(map[string]any)
+		opts := desync.Candidates(service)[0].Proxy("test")["desync"].(map[string]any)
 		if (opts["reject-quic"] == true) != (service != "voice") {
 			t.Fatal("conditional QUIC scope changed")
 		}
@@ -96,7 +98,7 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 func TestDesyncUnavailableReserveCannotBePromotedOrLeakRawReason(t *testing.T) {
 	for _, reply := range []string{`{"ok":true,"route":"direct"}`, `{"ok":false,"route":"remote","code":"private node token"}`, `{"ok":false,"route":"blocked","code":"reserve_blocked"}`} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, reply) }))
-		_, err := probeDesyncProfile(context.Background(), strings.TrimPrefix(server.URL, "http://"), "", desyncYouTubeRoute, "")
+		_, err := probeDesyncProfile(context.Background(), strings.TrimPrefix(server.URL, "http://"), "", desync.YouTubeRoute, "")
 		server.Close()
 		if err == nil || strings.Contains(err.Error(), "private node") {
 			t.Fatal("invalid/untrusted reserve result accepted")
@@ -148,7 +150,7 @@ func TestDesyncTCPFailedCandidatesUseVerifiedReserveWithoutReload(t *testing.T) 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		a.runDesyncTCPService(ctx, 1, network, a.coreListen, "", "youtube", desyncYouTubeRoute)
+		a.runDesyncTCPService(ctx, 1, network, a.coreListen, "", "youtube", desync.YouTubeRoute)
 	}()
 	select {
 	case value := <-selected:
@@ -234,7 +236,7 @@ func TestDesyncVoiceReserveClosesOnlyConfirmedFailedOwnedFlows(t *testing.T) {
 			a.state.Mode.Current = "rule"
 			a.desyncAuto.epoch = 1
 			a.desyncAuto.status.Network = desyncNetworkKey()
-			changed := a.tryDesyncVoiceReserve(context.Background(), 1, a.coreListen, "", "104.29.1.1:19330", desyncDiscordUDPRoute+"-f4")
+			changed := a.tryDesyncVoiceReserve(context.Background(), 1, a.coreListen, "", "104.29.1.1:19330", desync.DiscordUDPRoute+"-f4")
 			if changed == recovered || puts.Load() != deletes.Load() || (!recovered && puts.Load() != 1) || (recovered && puts.Load() != 0) {
 				t.Fatalf("changed=%t puts=%d deletes=%d", changed, puts.Load(), deletes.Load())
 			}
@@ -279,18 +281,18 @@ func TestDesyncUnavailableProfileRetainsSelectorAndBackgroundSearchCannotSwitch(
 	a.desyncAuto.epoch = 1
 	a.desyncAuto.status.Network = desyncNetworkKey()
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	a.runDesyncTCPService(ctx, 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desyncYouTubeRoute)
+	a.runDesyncTCPService(ctx, 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desync.YouTubeRoute)
 	cancel()
 	if puts.Load() != 0 || a.GetDesyncAutoStatus().YouTube.Code != "reserve_direct" {
 		t.Fatal("unavailable reserve changed selector or hid reason")
 	}
 	candidatesPass.Store(true)
 	a.desyncService(1, "youtube", DesyncAutoService{Phase: "profile", Candidate: "profile"})
-	first, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desyncYouTubeRoute, true)
+	first, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desync.YouTubeRoute, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desyncYouTubeRoute, true)
+	second, err := a.findDesyncTCP(context.Background(), 1, a.desyncAuto.status.Network, a.coreListen, "", "youtube", desync.YouTubeRoute, true)
 	if err != nil || first.ID != second.ID {
 		t.Fatal("background confirmation rotated a passing candidate")
 	}

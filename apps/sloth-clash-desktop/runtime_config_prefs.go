@@ -1,5 +1,7 @@
 package main
 
+import "SlothClashDesktop/internal/desync"
+
 // runtimeConfigPrefs is the slice of the desktop prefs the config generation
 // reads. The caller captures it ONCE, when a generation starts
 // (currentRuntimeConfigPrefs()), and threads it down: one generated config
@@ -22,7 +24,7 @@ type runtimeConfigPrefs struct {
 	// (effectiveDesyncSettings); DesyncCache is the per-network winner cache the
 	// overlay orders candidates by.
 	Desync      DesyncSettings
-	DesyncCache []DesyncNetworkCache
+	DesyncCache []desync.CacheEntry
 }
 
 // currentRuntimeConfigPrefs captures the generation inputs from the live prefs.
@@ -41,6 +43,6 @@ func runtimeConfigPrefsFrom(p DesktopPrefs) runtimeConfigPrefs {
 		Traffic:     p.Traffic,
 		Reality:     p.Reality,
 		Desync:      effectiveDesyncSettings(p.Desync),
-		DesyncCache: p.DesyncCache,
+		DesyncCache: desyncCacheEntries(p.DesyncCache),
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 func TestDiscordUDPStatusAndResetScope(t *testing.T) {
@@ -17,9 +19,9 @@ func TestDiscordUDPStatusAndResetScope(t *testing.T) {
 	prefsMu.Unlock()
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	connections := []ConnectionItem{
-		{ID: "direct-udp", Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe"}, Chains: []string{desyncDiscordUDPRoute}, Download: 100},
+		{ID: "direct-udp", Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe"}, Chains: []string{desync.DiscordUDPRoute}, Download: 100},
 		{ID: "profile-udp", Metadata: ConnectionMeta{Network: "udp", Process: `C:\Apps\Discord.exe`}, Chains: []string{"test-node", "Discord"}, Download: 200},
-		{ID: "discord-tcp", Metadata: ConnectionMeta{Network: "tcp", Process: "Discord.exe"}, Chains: []string{desyncDiscordRoute}},
+		{ID: "discord-tcp", Metadata: ConnectionMeta{Network: "tcp", Process: "Discord.exe"}, Chains: []string{desync.DiscordRoute}},
 		{ID: "browser-udp", Metadata: ConnectionMeta{Network: "udp", Process: "firefox.exe"}, Chains: []string{"browser-node"}},
 	}
 	var mu sync.Mutex
@@ -28,7 +30,7 @@ func TestDiscordUDPStatusAndResetScope(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/connections":
 			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
-		case r.Method == http.MethodGet && r.URL.Path == "/proxies/"+desyncDiscordUDPRoute:
+		case r.Method == http.MethodGet && r.URL.Path == "/proxies/"+desync.DiscordUDPRoute:
 			_, _ = w.Write([]byte(`{"desyncUDP":{"counters":{"packets":12,"fakePackets":18,"fakeErrors":0,"peers":1}}}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/connections/"):
 			mu.Lock()

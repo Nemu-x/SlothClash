@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 type DesyncUDPCounters struct {
@@ -37,7 +39,7 @@ func isDiscordUDPConnection(c ConnectionItem) bool {
 		return true
 	}
 	for _, chain := range c.Chains {
-		if chain == desyncDiscordUDPRoute {
+		if chain == desync.DiscordUDPRoute {
 			return true
 		}
 	}
@@ -53,7 +55,7 @@ func summarizeDiscordUDP(connections []ConnectionItem) DesyncUDPStatus {
 		}
 		direct := false
 		for _, chain := range c.Chains {
-			if chain == desyncDiscordUDPRoute {
+			if chain == desync.DiscordUDPRoute {
 				direct = true
 				break
 			}
@@ -94,7 +96,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 	a.mu.RUnlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	response, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(desyncDiscordUDPRoute), nil)
+	response, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(desync.DiscordUDPRoute), nil)
 	if err != nil {
 		out.LastError = err.Error()
 		return out
@@ -110,11 +112,11 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 			Counters DesyncUDPCounters `json:"counters"`
 		} `json:"desyncUDP"`
 	}
-	if err := decodeBoundedJSON(response.Body, "GET /proxies/"+desyncDiscordUDPRoute, coreDefaultMaxJSONBytes, &body); err != nil {
+	if err := decodeBoundedJSON(response.Body, "GET /proxies/"+desync.DiscordUDPRoute, coreDefaultMaxJSONBytes, &body); err != nil {
 		out.LastError = err.Error()
 		return out
 	}
-	if body.UDP == nil && strings.HasPrefix(body.Now, desyncDiscordUDPRoute+"-") {
+	if body.UDP == nil && strings.HasPrefix(body.Now, desync.DiscordUDPRoute+"-") {
 		selected, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(body.Now), nil)
 		if err != nil {
 			out.LastError = err.Error()

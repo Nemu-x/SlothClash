@@ -10,16 +10,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
-const desyncYouTubeRoute = "SLOTH-DESYNC-YOUTUBE"
-const desyncDiscordRoute = "SLOTH-DESYNC-DISCORD"
-const desyncDiscordUDPRoute = "SLOTH-DESYNC-DISCORD-UDP"
-const desyncManagedKey = "_sloth-desync-managed"
 const desyncDefaultUDPRepeats = 1
-
-var desyncYouTubeDomains = []string{"youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubei.googleapis.com", "youtube.googleapis.com", "yt3.ggpht.com"}
-var desyncDiscordDomains = []string{"discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media", "discordcdn.com"}
 
 type DesyncSettings struct {
 	Enabled           bool `json:"enabled"`
@@ -160,22 +155,9 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	return a.GetDesyncStatus(), nil
 }
 
-func desyncRules(domains []string, route string) []string {
-	var rules []string
-	for _, domain := range domains {
-		rules = append(rules, "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,"+domain+")),"+route)
-		rules = append(rules, "AND,((NETWORK,tcp),(DOMAIN-SUFFIX,"+domain+")),"+route)
-	}
-	return rules
-}
-
-func desyncDiscordUDPRules() []string {
-	return []string{"AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe),(DST-PORT,1024-65535))," + desyncDiscordUDPRoute}
-}
-
 // The profile body is never edited. Only generated runtime entries are
 // replaced; user scripts cannot silently remove an explicitly enabled route.
-func applyDesyncOverlay(m map[string]any, s DesyncSettings, cache []DesyncNetworkCache) {
+func applyDesyncOverlay(m map[string]any, s DesyncSettings, cache []desync.CacheEntry) {
 	applyAutomaticDesyncOverlay(m, s, cache)
 }
 
@@ -235,10 +217,10 @@ func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
 	a.mu.RUnlock()
 	var checks []DesyncProbeResult
 	if status.Settings.YouTube {
-		checks = append(checks, DesyncProbeResult{Name: "YouTube HTTPS", URL: "https://www.youtube.com/generate_204", Route: desyncYouTubeRoute})
+		checks = append(checks, DesyncProbeResult{Name: "YouTube HTTPS", URL: "https://www.youtube.com/generate_204", Route: desync.YouTubeRoute})
 	}
 	if status.Settings.Discord {
-		checks = append(checks, DesyncProbeResult{Name: "Discord API", URL: "https://discord.com/api/v10/gateway", Route: desyncDiscordRoute}, DesyncProbeResult{Name: "Discord CDN", URL: "https://cdn.discordapp.com/embed/avatars/0.png", Route: desyncDiscordRoute})
+		checks = append(checks, DesyncProbeResult{Name: "Discord API", URL: "https://discord.com/api/v10/gateway", Route: desync.DiscordRoute}, DesyncProbeResult{Name: "Discord CDN", URL: "https://cdn.discordapp.com/embed/avatars/0.png", Route: desync.DiscordRoute})
 	}
 	parent := a.ctx
 	if parent == nil {

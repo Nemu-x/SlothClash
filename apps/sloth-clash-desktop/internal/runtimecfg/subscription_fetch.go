@@ -50,6 +50,15 @@ const (
 	subscriptionMaxWireBytes = 48 << 20
 )
 
+// ErrTooManyRedirects is what the subscription clients' CheckRedirect returns
+// once a request has followed SubscriptionMaxRedirects redirects. http.Client
+// wraps it in a *url.Error; main matches it with errors.Is to tell a redirect
+// loop (deterministic) from a network failure.
+var ErrTooManyRedirects = errors.New("too many redirects")
+
+// SubscriptionMaxRedirects bounds the redirects a subscription request follows.
+const SubscriptionMaxRedirects = 12
+
 // FetchSubscriptionBody returns the (decrypted) subscription body plus the
 // response headers of the successful GET — the same response carries the
 // optional brand manifest (main's branding.go), so callers can capture it
@@ -74,8 +83,8 @@ func FetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string, cl
 	httpClient := &http.Client{
 		Timeout: 50 * time.Second,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 12 {
-				return errors.New("too many redirects")
+			if len(via) >= SubscriptionMaxRedirects {
+				return ErrTooManyRedirects
 			}
 			return nil
 		},

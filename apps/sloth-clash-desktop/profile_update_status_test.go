@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -177,6 +181,72 @@ func TestProfileUpdateErrorText(t *testing.T) {
 	long := profileUpdateErrorText(errors.New(strings.Repeat("x", 5000)))
 	if r := []rune(long); len(r) != maxProfileUpdateErrorRunes+1 {
 		t.Fatalf("long error is %d runes, want %d", len(r), maxProfileUpdateErrorRunes+1)
+	}
+}
+
+// Transport failures are transient unless a retry cannot fix them: a
+// certificate that does not verify or a redirect loop is deterministic even
+// though http.Client wraps it in a *url.Error like a dial failure.
+func TestIsTransientFetchError(t *testing.T) {
+	wrap := func(inner error) error {
+		return fmt.Errorf("fetch: %w", &url.Error{Op: "Get", URL: "https://sub.example.com/t", Err: inner})
+	}
+	dialErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connectex: connection refused")}
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"plain", errors.New("subscription HTTP 403: forbidden"), false},
+		{"dns", wrap(&net.DNSError{Err: "no such host", Name: "sub.example.com", IsNotFound: true}), true},
+		{"dial", wrap(dialErr), true},
+		{"bare net error", dialErr, true},
+		{"timeout", wrap(context.DeadlineExceeded), true},
+		{"canceled", context.Canceled, true},
+		{"connection reset", wrap(&net.OpError{Op: "read", Net: "tcp", Err: errors.New("wsarecv: An existing connection was forcibly closed by the remote host.")}), true},
+		{"eof", wrap(io.EOF), true},
+		{"cut-off body", fmt.Errorf("read body: %w", io.ErrUnexpectedEOF), true},
+		{"unknown authority", wrap(&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}), false},
+		{"unknown authority unwrapped", wrap(x509.UnknownAuthorityError{}), false},
+		{"hostname", wrap(&tls.CertificateVerificationError{Err: x509.HostnameError{Host: "sub.example.com", Certificate: &x509.Certificate{}}}), false},
+		{"expired", wrap(&tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}), false},
+		{"no roots", wrap(x509.SystemRootsError{}), false},
+		{"tls verification", wrap(&tls.CertificateVerificationError{Err: errors.New("x509: something new")}), false},
+		{"redirect loop", wrap(runtimecfg.ErrTooManyRedirects), false},
+		{"net/http redirect limit", wrap(errors.New("stopped after 10 redirects")), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTransientFetchError(tc.err); got != tc.want {
+				t.Fatalf("isTransientFetchError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// The real failures, as the subscription fetch produces them: a server whose
+// certificate the client does not trust, and a redirect loop.
+func TestIsTransientFetchErrorRealFailures(t *testing.T) {
+	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	t.Cleanup(tlsSrv.Close)
+	var loop *httptest.Server
+	loop = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, loop.URL+r.URL.Path+"x", http.StatusFound)
+	}))
+	t.Cleanup(loop.Close)
+	client := currentSubscriptionClient()
+	client.OnBodyFetch = nil
+	for name, u := range map[string]string{"untrusted certificate": tlsSrv.URL + "/sub", "redirect loop": loop.URL + "/sub"} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := runtimecfg.FetchSubscriptionBody(t.Context(), u, "", client)
+			if err == nil {
+				t.Fatal("fetch succeeded")
+			}
+			if isTransientFetchError(err) {
+				t.Fatalf("classified as transient: %v", err)
+			}
+		})
 	}
 }
 

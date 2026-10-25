@@ -215,8 +215,8 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string, c
 	httpClient := &http.Client{
 		Timeout: 22 * time.Second,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 12 {
-				return errors.New("too many redirects")
+			if len(via) >= runtimecfg.SubscriptionMaxRedirects {
+				return runtimecfg.ErrTooManyRedirects
 			}
 			return nil
 		},

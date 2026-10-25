@@ -12,19 +12,6 @@
   margin: 0;
 }
 
-.pill {
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.segment {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 16px;
-  padding: 12px;
-}
-
 .statusCard {
   background: var(--panel);
   border: 1px solid var(--hairline);

@@ -1,3 +1,15 @@
+.shell[data-theme="light"] .proxyTypeChip {
+  background: rgba(90, 80, 60, 0.1);
+  border-color: rgba(90, 80, 60, 0.28);
+  color: var(--text-muted);
+}
+
+.shell[data-theme="light"] .proxyCountChip {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: #6e5025;
+}
+
 .proxyModeInset {
   max-width: 280px;
 }

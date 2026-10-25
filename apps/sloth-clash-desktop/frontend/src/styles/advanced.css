@@ -141,58 +141,6 @@
   margin-top: 12px;
 }
 
-.collapsibleCard {
-  padding: 8px 12px;
-}
-
-.collapsibleCardHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 32px;
-}
-
-.collapsibleCardToggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  padding: 4px 0;
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.collapsibleCardChevron {
-  display: inline-block;
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  color: var(--text-muted);
-  transform: rotate(0deg);
-  transition: transform 140ms ease;
-  width: 12px;
-  text-align: center;
-}
-
-.collapsibleCardChevron.open {
-  transform: rotate(90deg);
-}
-
-.collapsibleCardActions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.collapsibleCardBody {
-  margin-top: 8px;
-}
-
 .advancedPanel .collapsibleCardActions .muted.small {
   font-size: var(--font-size-xs);
 }

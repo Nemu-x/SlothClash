@@ -475,7 +475,7 @@ func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byt
 		}
 		return body, nil
 	}
-	body, _, err := fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey)
+	body, _, err := fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey, currentDesktopPrefs().Privacy.IsHwidEnabled())
 	return body, err
 }
 

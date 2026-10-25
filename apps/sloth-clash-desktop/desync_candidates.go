@@ -110,7 +110,13 @@ func desyncNetworkKey() string {
 	return hex.EncodeToString(sum[:12])
 }
 func desyncCachedSelection(network, service string) string {
-	for _, c := range currentDesktopPrefs().DesyncCache {
+	return desyncCachedSelectionIn(currentDesktopPrefs().DesyncCache, network, service)
+}
+
+// desyncCachedSelectionIn is desyncCachedSelection over an explicit cache (the
+// config generation passes the one in its prefs snapshot).
+func desyncCachedSelectionIn(cache []DesyncNetworkCache, network, service string) string {
+	for _, c := range cache {
 		if c.Network != network || time.Now().Unix()-c.Updated > 86400 {
 			continue
 		}
@@ -165,7 +171,7 @@ func orderedDesyncCandidates(service, cached string) []desyncCandidate {
 	return candidates
 }
 
-func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
+func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []DesyncNetworkCache) {
 	// Also removes r1-r4 generated entries when migrating or disabling.
 	managedRules := map[string]bool{}
 	managedRules["AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe)),"+desyncDiscordUDPRoute] = true // r3-r5 migration
@@ -237,7 +243,7 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
 			domains = desyncDiscordDomains
 		}
 		names := []string{}
-		for _, c := range orderedDesyncCandidates(service, desyncCachedSelection(network, service)) {
+		for _, c := range orderedDesyncCandidates(service, desyncCachedSelectionIn(cache, network, service)) {
 			proxies = append(proxies, c.proxy(route))
 			names = append(names, c.name(route))
 		}

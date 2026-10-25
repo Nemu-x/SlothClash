@@ -9,7 +9,7 @@ import "testing"
 
 func TestEnsureDefaultDNSForTunListenDefault(t *testing.T) {
 	m := map[string]any{"dns": map[string]any{"enable": true}}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 	dns := m["dns"].(map[string]any)
 	// Default :1053 (all interfaces, real fixed port — verge parity). Loopback
 	// breaks TUN dns-hijack; an ephemeral :0 listen did not work for users.
@@ -20,7 +20,7 @@ func TestEnsureDefaultDNSForTunListenDefault(t *testing.T) {
 
 func TestEnsureDefaultDNSForTunRespectsExplicitListen(t *testing.T) {
 	m := map[string]any{"dns": map[string]any{"enable": true, "listen": "127.0.0.1:5353"}}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 	dns := m["dns"].(map[string]any)
 	if dns["listen"] != "127.0.0.1:5353" {
 		t.Fatalf("explicit listen overwritten: %v (must be honoured)", dns["listen"])
@@ -31,7 +31,7 @@ func TestEnsureDefaultDNSForTunRespectsExplicitListen(t *testing.T) {
 // bind all-interfaces (the const path used to be loopback-only).
 func TestEnsureDefaultDNSForTunNoBlockBindsAllInterfaces(t *testing.T) {
 	m := map[string]any{}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 	dns, _ := m["dns"].(map[string]any)
 	if dns == nil {
 		t.Fatal("dns block not created")

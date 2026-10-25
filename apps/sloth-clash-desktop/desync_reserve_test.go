@@ -68,7 +68,7 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 	old := "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),REJECT"
 	doc := map[string]any{"rules": []any{old, "DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}
-	applyDesyncOverlay(doc, settings)
+	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
 	for _, raw := range desyncSlice(doc["rules"]) {
 		if raw == old {
 			t.Fatal("old static QUIC rejection survived")
@@ -81,7 +81,7 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 			t.Fatal("missing original-rule reserve")
 		}
 	}
-	applyDesyncOverlay(doc, DesyncSettings{})
+	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
 	if !reflect.DeepEqual(doc["rules"], []any{"DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}) {
 		t.Fatal("profile rules changed")
 	}

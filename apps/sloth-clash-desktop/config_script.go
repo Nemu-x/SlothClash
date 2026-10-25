@@ -604,6 +604,7 @@ func applyProfileScriptStep(
 	secret string,
 	withExternalController bool,
 	enableTun bool,
+	p runtimeConfigPrefs,
 ) scriptResult {
 	if strings.TrimSpace(script) == "" {
 		// No engine is constructed, and the invariants are already in place from
@@ -627,7 +628,7 @@ func applyProfileScriptStep(
 	// 4b — unconditional: after a successful run because the script may have
 	// rewritten them, after a failed one because it costs nothing and keeps the
 	// two paths identical.
-	reassertCriticalRuntimeInvariants(m, mixedPort, ctrlPort, secret, withExternalController, enableTun)
+	reassertCriticalRuntimeInvariants(m, mixedPort, ctrlPort, secret, withExternalController, enableTun, p)
 	return res
 }
 

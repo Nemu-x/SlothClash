@@ -7,7 +7,7 @@ import "testing"
 // looks broken (audit finding TO1 / CP-A).
 func TestEnsureDefaultDNSForTun_FillsFakeIPFilterWhenNoDNSBlock(t *testing.T) {
 	m := map[string]any{}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 
 	dns, ok := m["dns"].(map[string]any)
 	if !ok {
@@ -36,7 +36,7 @@ func TestEnsureDefaultDNSForTun_FillsFakeIPFilterWhenPartialDNS(t *testing.T) {
 			"enhanced-mode": "fake-ip",
 		},
 	}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 
 	dns := m["dns"].(map[string]any)
 	filter, ok := dns["fake-ip-filter"].([]any)
@@ -58,7 +58,7 @@ func TestEnsureDefaultDNSForTun_KeepsSubscriptionFakeIPFilter(t *testing.T) {
 			"fake-ip-filter": []any{"custom.example"},
 		},
 	}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 
 	filter := m["dns"].(map[string]any)["fake-ip-filter"].([]any)
 	if len(filter) != 1 || filter[0] != "custom.example" {
@@ -74,7 +74,7 @@ func TestEnsureDefaultDNSForTun_NoFilterOutsideFakeIP(t *testing.T) {
 			"enhanced-mode": "redir-host",
 		},
 	}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 
 	if _, present := m["dns"].(map[string]any)["fake-ip-filter"]; present {
 		t.Fatal("fake-ip-filter must not be added in redir-host mode")

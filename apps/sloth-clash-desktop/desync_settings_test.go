@@ -43,7 +43,7 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 	userProxy := map[string]any{"name": "subscription-node", "type": "socks5", "server": "example.test", "port": 1080}
 	doc := map[string]any{"proxies": []any{userProxy}, "rules": []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}, "mode": "rule"}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
-	applyDesyncOverlay(doc, settings)
+	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
 	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
 		t.Fatalf("unexpected proxies: %v", doc["proxies"])
 	}
@@ -64,12 +64,12 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 		}
 	}
 	first, _ := json.Marshal(doc)
-	applyDesyncOverlay(doc, settings)
+	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
 	second, _ := json.Marshal(doc)
 	if string(first) != string(second) {
 		t.Fatal("overlay is not idempotent")
 	}
-	applyDesyncOverlay(doc, DesyncSettings{})
+	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
 	if !reflect.DeepEqual(doc["proxies"], []any{userProxy}) || !reflect.DeepEqual(doc["rules"], []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}) {
 		t.Fatalf("disable failed to restore profile routes: %v", doc)
 	}
@@ -77,7 +77,7 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 
 func TestDesyncOverlayDisabledDoesNotCreateKeys(t *testing.T) {
 	doc := map[string]any{"mode": "rule"}
-	applyDesyncOverlay(doc, DesyncSettings{})
+	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
 	if len(doc) != 1 {
 		t.Fatalf("disabled overlay created entries: %v", doc)
 	}
@@ -96,7 +96,7 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
         config.rules = ['MATCH,DIRECT']
         return config
     }`
-	if err := finalizeRuntimeConfigPipelineWithScript(doc, t.TempDir(), 7890, 9090, "local", "proxy", true, false, script, &result); err != nil {
+	if err := finalizeRuntimeConfigPipelineWithScript(doc, t.TempDir(), 7890, 9090, "local", "proxy", true, false, script, &result, currentRuntimeConfigPrefs()); err != nil {
 		t.Fatal(err)
 	}
 	if !result.Applied {
@@ -137,7 +137,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 	}
 	doc := map[string]any{"mode": "rule", "rules": []any{"MATCH,DIRECT"}, "proxies": []any{}}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDP: runtime.GOOS == "windows", DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
-	applyDesyncOverlay(doc, settings)
+	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
 	data, err := yaml.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	doc := map[string]any{"rules": []any{"PROCESS-NAME,Discord.exe,subscription-node", "MATCH,subscription-node"}, "proxies": []any{map[string]any{"name": "subscription-node", "type": "direct"}}}
 	s := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4, DiscordUDP: true, DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
-	applyDesyncOverlay(doc, s)
+	applyDesyncOverlay(doc, s, currentDesktopPrefs().DesyncCache)
 	if doc["rules"].([]any)[0] != desyncDiscordUDPRules()[0] {
 		t.Fatal("Discord UDP did not override only the intended desktop rule")
 	}
@@ -183,7 +183,7 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 		t.Fatal("missing hidden voice selector")
 	}
 	s.DiscordUDP = false
-	applyDesyncOverlay(doc, s)
+	applyDesyncOverlay(doc, s, currentDesktopPrefs().DesyncCache)
 	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
 		t.Fatal("UDP disable removed or retained the wrong outbounds")
 	}

@@ -118,7 +118,7 @@ func normalizeSubscriptionAnnouncementFromHeader(raw string) string {
 
 func (a *App) PeekSubscriptionFromURL(raw string) (SubscriptionPeek, error) {
 	_ = a
-	return peekSubscription(context.Background(), raw)
+	return peekSubscription(context.Background(), raw, currentDesktopPrefs().Privacy.IsHwidEnabled())
 }
 
 func hostFromSubscriptionURL(norm string) string {
@@ -204,7 +204,7 @@ func normalizeSubscriptionUserinfoHeader(raw string) string {
 	return ""
 }
 
-func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (SubscriptionPeek, error) {
+func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string, sendHWID bool) (SubscriptionPeek, error) {
 	out := SubscriptionPeek{URL: norm}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, norm, nil)
@@ -213,7 +213,7 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 		return out, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	applySubscriptionIdentityHeaders(req)
+	applySubscriptionIdentityHeaders(req, sendHWID)
 
 	client := &http.Client{
 		Timeout: 22 * time.Second,
@@ -258,7 +258,8 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 	return out, nil
 }
 
-func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error) {
+// sendHWID is the caller's PrivacySettings.IsHwidEnabled snapshot.
+func peekSubscription(ctx context.Context, raw string, sendHWID bool) (SubscriptionPeek, error) {
 	norm, err := normalizeSubscriptionURL(raw)
 	if err != nil {
 		return SubscriptionPeek{}, err
@@ -277,7 +278,7 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 	var lastErr error
 
 	for _, ua := range userAgents {
-		out, err := fetchSubscriptionPeekHeaders(cctx, norm, ua)
+		out, err := fetchSubscriptionPeekHeaders(cctx, norm, ua, sendHWID)
 		if err != nil {
 			lastErr = err
 			if out.HTTPStatus != 0 || out.LastError != "" {

@@ -44,9 +44,11 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 		return a.GetAppState(), errors.New("profile has no subscription url")
 	}
 
+	// One privacy snapshot for both requests of this refresh (peek + body).
+	sendHWID := currentDesktopPrefs().Privacy.IsHwidEnabled()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	peek, err := peekSubscription(ctx, target.URL)
+	peek, err := peekSubscription(ctx, target.URL, sendHWID)
 	if err != nil {
 		return a.GetAppState(), err
 	}
@@ -73,7 +75,7 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	if root, derr := slothDataRoot(); derr == nil {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		if err := runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey); isReadLimitError(err) {
+		if err := runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey, sendHWID); isReadLimitError(err) {
 			bodyErr = err
 		}
 		bodyCancel()

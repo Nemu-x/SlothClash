@@ -51,7 +51,8 @@ const (
 // response headers of the successful GET — the same response carries the
 // optional brand manifest (branding.go), so callers can capture it without a
 // second billed request. Header is nil for non-HTTP sources (mieru).
-func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([]byte, http.Header, error) {
+// sendHWID is the caller's PrivacySettings.IsHwidEnabled snapshot.
+func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string, sendHWID bool) ([]byte, http.Header, error) {
 	norm, err := normalizeSubscriptionURL(rawURL)
 	if err != nil {
 		return nil, nil, err
@@ -65,7 +66,7 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([
 		return nil, nil, err
 	}
 	req.Header.Set("User-Agent", subscriptionUserAgentCurrent())
-	applySubscriptionIdentityHeaders(req)
+	applySubscriptionIdentityHeaders(req, sendHWID)
 
 	client := &http.Client{
 		Timeout: 50 * time.Second,
@@ -141,11 +142,11 @@ func readSubscriptionBodyCache(dataDir string) []byte {
 // the freshly fetched body (cache-first semantics). On fetch failure it
 // leaves the existing cache untouched — a transient flap must never wipe the
 // last-known-good body.
-func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey string) error {
+func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey string, sendHWID bool) error {
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
 		return nil
 	}
-	body, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey)
+	body, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey, sendHWID)
 	if err != nil {
 		return err
 	}
@@ -178,7 +179,7 @@ var inflightSubscriptionFetch sync.Map // dataDir -> *subscriptionFetchInFlight
 // All callers — background ticks and explicit refresh clicks alike — share
 // the same outcome. If a fetch is already running, this call blocks (subject
 // to its own ctx) until that fetch completes and then returns its error.
-func runSubscriptionFetchOnce(ctx context.Context, dataDir, subURL, ageKey string) error {
+func runSubscriptionFetchOnce(ctx context.Context, dataDir, subURL, ageKey string, sendHWID bool) error {
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
 		return nil
 	}
@@ -198,7 +199,7 @@ func runSubscriptionFetchOnce(ctx context.Context, dataDir, subURL, ageKey strin
 		close(candidate.done)
 		inflightSubscriptionFetch.Delete(dataDir)
 	}()
-	candidate.err = refreshSubscriptionBodyCache(ctx, dataDir, subURL, ageKey)
+	candidate.err = refreshSubscriptionBodyCache(ctx, dataDir, subURL, ageKey, sendHWID)
 	return candidate.err
 }
 
@@ -206,7 +207,7 @@ func runSubscriptionFetchOnce(ctx context.Context, dataDir, subURL, ageKey strin
 // shared singleflight gate. Errors are logged through the pipeline trace
 // (previously they were swallowed via `_ = refresh(...)` which made stale-
 // cache regressions invisible).
-func kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey string) {
+func kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey string, sendHWID bool) {
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(subURL) == "" {
 		return
 	}
@@ -214,7 +215,7 @@ func kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey string) {
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 		defer cancel()
-		err := runSubscriptionFetchOnce(ctx, dataDir, subURL, ageKey)
+		err := runSubscriptionFetchOnce(ctx, dataDir, subURL, ageKey, sendHWID)
 		fields := map[string]any{"dataDir": dataDir}
 		if err != nil {
 			fields["error"] = err.Error()
@@ -258,11 +259,12 @@ func tryWriteMergedFullProfile(
 	withExternalController bool,
 	enableTun bool,
 ) (pipelineOutcome, error) {
-	return tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil)
+	return tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil, currentRuntimeConfigPrefs())
 }
 
 // tryWriteMergedFullProfileWithScript is the same build with the profile's
-// JavaScript override threaded through to the pipeline.
+// JavaScript override threaded through to the pipeline. p is the prefs
+// snapshot the caller captured for this generation.
 func tryWriteMergedFullProfileWithScript(
 	dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script string,
 	ctrlPort, mixedPort int,
@@ -270,6 +272,7 @@ func tryWriteMergedFullProfileWithScript(
 	withExternalController bool,
 	enableTun bool,
 	scriptOut *scriptResult,
+	p runtimeConfigPrefs,
 ) (pipelineOutcome, error) {
 	overallStart := time.Now()
 	traceFields := map[string]any{
@@ -287,14 +290,14 @@ func tryWriteMergedFullProfileWithScript(
 		// Fresh-enough body is on disk; defer the network hit. Next Connect
 		// will pick up whatever the origin ships, but THIS Connect does
 		// not wait for it.
-		kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey)
+		kickBackgroundSubscriptionRefresh(dataDir, subURL, ageKey, p.SendHWID)
 	} else {
 		// First-ever Connect for this profile (or cache was wiped). We HAVE
 		// to block on the network because there's no prior body to serve.
 		fetchStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 		defer cancel()
-		b, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey)
+		b, hdr, err := fetchSubscriptionBody(ctx, subURL, ageKey, p.SendHWID)
 		fetchDur := time.Since(fetchStart)
 		if err == nil {
 			persistBrandManifestFromHeaders(dataDir, subURL, hdr)
@@ -378,6 +381,7 @@ func tryWriteMergedFullProfileWithScript(
 		enableTun,
 		script,
 		scriptOut,
+		p,
 	); err != nil {
 		traceEvent("pipeline.subscription.finalize", "fail", time.Since(finalizeStart), map[string]any{
 			"dataDir": dataDir,

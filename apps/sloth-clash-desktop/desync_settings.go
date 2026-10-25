@@ -51,7 +51,12 @@ type DesyncProbeResult struct {
 }
 
 func currentDesyncSettings() DesyncSettings {
-	s := currentDesktopPrefs().Desync
+	return effectiveDesyncSettings(currentDesktopPrefs().Desync)
+}
+
+// effectiveDesyncSettings fills the defaults a stored (possibly never-touched)
+// desync config leaves at zero.
+func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
 	if s == (DesyncSettings{}) {
 		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats}
 	}
@@ -170,7 +175,9 @@ func desyncDiscordUDPRules() []string {
 
 // The profile body is never edited. Only generated runtime entries are
 // replaced; user scripts cannot silently remove an explicitly enabled route.
-func applyDesyncOverlay(m map[string]any, s DesyncSettings) { applyAutomaticDesyncOverlay(m, s) }
+func applyDesyncOverlay(m map[string]any, s DesyncSettings, cache []DesyncNetworkCache) {
+	applyAutomaticDesyncOverlay(m, s, cache)
+}
 
 func desyncSlice(value any) []any { values, _ := value.([]any); return values }
 

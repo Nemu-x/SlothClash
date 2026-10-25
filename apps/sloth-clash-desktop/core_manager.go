@@ -598,10 +598,13 @@ func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, e
 // JavaScript override threaded through, exactly like the declarative templates
 // beside it. scriptOut, when non-nil, receives what the script did.
 func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, script string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool, scriptOut *scriptResult) error {
+	// The one prefs read of this generation; everything below works off p.
+	p := currentRuntimeConfigPrefs()
+
 	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
 
-	outcome, err := tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, scriptOut)
+	outcome, err := tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, scriptOut, p)
 	if outcome == pipelineOK {
 		return nil
 	}
@@ -626,7 +629,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	fmt.Fprintf(&cfg, "secret: %q\n", secret)
 	// Same user pref as the subscription path (default off = localhost only);
 	// the wildcard bind keeps LAN clients able to reach us when it is on.
-	if currentDesktopPrefs().Connection.IsAllowLanEnabled() {
+	if p.AllowLan {
 		fmt.Fprintf(&cfg, "allow-lan: true\n")
 		fmt.Fprintf(&cfg, "bind-address: \"*\"\n")
 	} else {
@@ -637,7 +640,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	// Top-level ipv6 must agree with dns.ipv6 below (the subscription path
 	// force-aligns them for the same reason): a machine with no working IPv6
 	// route that gets AAAA records dials v6 and fails.
-	fmt.Fprintf(&cfg, "ipv6: %t\n\n", currentDesktopPrefs().Connection.IsDNSIPv6Enabled())
+	fmt.Fprintf(&cfg, "ipv6: %t\n\n", p.DNSIPv6)
 
 	// profile.store-selected mirrors clash-verge-rev's `use_clash` defaults:
 	// preserves per-group node selections across hot reloads (we reload on
@@ -654,13 +657,12 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 		// "connected" apps but no working resolution / routing.
 		// Both flags follow the Settings → Connection toggles (same source of
 		// truth as the subscription path), instead of being pinned on here.
-		conn := currentDesktopPrefs().Connection
 		fmt.Fprintf(&cfg, `dns:
   enable: true
   listen: ":1053"
   ipv6: %t
   respect-rules: %t
-  enhanced-mode: fake-ip`, conn.IsDNSIPv6Enabled(), conn.IsSmartDNSEnabled())
+  enhanced-mode: fake-ip`, p.DNSIPv6, p.SmartDNS)
 		cfg.WriteString(`
   fake-ip-range: 198.18.0.1/16
   # Required whenever fake-ip runs with ipv6:true — without a v6 pool AAAA
@@ -757,6 +759,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 		enableTun,
 		script,
 		scriptOut,
+		p,
 	); err != nil {
 		return err
 	}
@@ -810,6 +813,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 				enableTun,
 				profile.ScriptOverride,
 				&scriptRes,
+				currentRuntimeConfigPrefs(),
 			); err != nil {
 				return err
 			}
@@ -959,7 +963,7 @@ func repairRuntimeConfigDNS(cfgPath string) error {
 			return nil
 		}
 	}
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, currentRuntimeConfigPrefs())
 	// The self-heal above fills dns.fake-ip-range6 unconditionally, so the guard
 	// has to run here too — this is the LAST writer of config.yaml before the
 	// core reads it, and without this it would silently undo the pipeline's

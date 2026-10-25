@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-func validateDNSInvariants(m map[string]any) error {
+func validateDNSInvariants(m map[string]any, p runtimeConfigPrefs) error {
 	// Self-heal before validating so template/profile edge cases do not break connect.
-	ensureDefaultDNSForTun(m)
+	ensureDefaultDNSForTun(m, p)
 	dns, ok := m["dns"].(map[string]any)
 	if !ok || dns == nil {
 		return nil
@@ -110,14 +110,14 @@ func validateProxyGroupRefs(m map[string]any) error {
 	return nil
 }
 
-func validateFinalConfigSemantics(m map[string]any) error {
+func validateFinalConfigSemantics(m map[string]any, p runtimeConfigPrefs) error {
 	if err := validateProxyGroupRefs(m); err != nil {
 		return err
 	}
 	if err := validateRulePoliciesExist(m); err != nil {
 		return err
 	}
-	if err := validateDNSInvariants(m); err != nil {
+	if err := validateDNSInvariants(m, p); err != nil {
 		return err
 	}
 	return nil
@@ -174,7 +174,7 @@ func finalizeRuntimeConfigPipeline(
 	withExternalController bool,
 	enableTun bool,
 ) error {
-	return finalizeRuntimeConfigPipelineWithScript(m, dataDir, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun, "", nil)
+	return finalizeRuntimeConfigPipelineWithScript(m, dataDir, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun, "", nil, currentRuntimeConfigPrefs())
 }
 
 // finalizeRuntimeConfigPipelineWithScript is the pipeline with the per-profile
@@ -190,6 +190,7 @@ func finalizeRuntimeConfigPipelineWithScript(
 	enableTun bool,
 	script string,
 	scriptOut *scriptResult,
+	p runtimeConfigPrefs,
 ) error {
 	if fixed, ok := normalizeEscapedUnicodeStrings(m).(map[string]any); ok {
 		for k := range m {
@@ -205,11 +206,11 @@ func finalizeRuntimeConfigPipelineWithScript(
 	normalizeProxySNI(m)
 	pruneFallbackAutoManualIfCustom(m)
 	cleanupUnusedProxyProviders(m)
-	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun)
-	if res := applyProfileScriptStep(m, script, traffic, mixedPort, ctrlPort, secret, withExternalController, enableTun); scriptOut != nil {
+	overlaySlothRuntimeOnMap(m, mixedPort, ctrlPort, secret, traffic, withExternalController, enableTun, p)
+	if res := applyProfileScriptStep(m, script, traffic, mixedPort, ctrlPort, secret, withExternalController, enableTun, p); scriptOut != nil {
 		*scriptOut = res
 	}
-	if err := validateFinalConfigSemantics(m); err != nil {
+	if err := validateFinalConfigSemantics(m, p); err != nil {
 		return err
 	}
 	// Last word on the fake-ip v6 pool: it may only survive if the final tun

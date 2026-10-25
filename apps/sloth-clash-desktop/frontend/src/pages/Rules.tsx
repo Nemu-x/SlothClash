@@ -1,75 +1,44 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { main } from '../api/models'
 import { RuleProvidersModal } from '../components/RuleProvidersModal'
-import type { RuleRow } from '../rulesTable'
+import type { DashboardRuleRow, RulesView } from '../hooks/useRulesView'
 import { friendlyErrorMessage } from '../utils/yaml'
 
-// A rule row as rendered on the dashboard: a live rule (disabled=false) or a
-// user-disabled baseline rule (disabled=true, carrying its exact `line`).
-type DashboardRuleRow = RuleRow & { disabled?: boolean; line?: string }
-
-export type RuleToggleApi = {
-  hasActiveProfile: boolean
-  baselineLoading: boolean
-  baselineError: string | null
-  busyLines: Set<string>
-  isToggleable: (row: RuleRow) => boolean
-  matchLine: (row: RuleRow) => string | null
-  onDisable: (row: RuleRow) => void
-  onEnable: (line: string) => void
-}
-
 export function RulesPage({
-  rulesOverview,
+  view,
   connectionStatus,
-  rulesBusy,
-  providers,
-  providerBusyMap,
-  providerErrMap,
-  bulkBusy,
-  rulesRows,
-  filteredRulesRows,
-  rulesTypeTop,
-  ruleSearch,
-  ruleTypeFilter,
-  rulePolicyFilter,
-  ruleTypeOptions,
-  rulePolicyOptions,
   error,
-  onRefresh,
-  onRefreshAll,
-  onRefreshOne,
-  onSearchChange,
-  onTypeFilterChange,
-  onPolicyFilterChange,
-  ruleToggle,
 }: {
-  rulesOverview: main.RulesOverview | null
+  // Rules data, filters and toggles (useRulesView, owned by App so they
+  // survive leaving the screen).
+  view: RulesView
   connectionStatus: string
-  rulesBusy: boolean
-  providers: any[]
-  providerBusyMap: Record<string, boolean>
-  providerErrMap: Record<string, string>
-  bulkBusy: boolean
-  rulesRows: any[]
-  filteredRulesRows: DashboardRuleRow[]
-  rulesTypeTop: Array<[string, number]>
-  ruleSearch: string
-  ruleTypeFilter: string
-  rulePolicyFilter: string
-  ruleTypeOptions: string[]
-  rulePolicyOptions: string[]
   error: string | null
-  onRefresh: () => void
-  onRefreshAll: () => void
-  onRefreshOne: (name: string) => void
-  onSearchChange: (next: string) => void
-  onTypeFilterChange: (next: string) => void
-  onPolicyFilterChange: (next: string) => void
-  ruleToggle: RuleToggleApi
 }) {
+  const {
+    rulesOverview,
+    rulesBusy,
+    providers,
+    providerBusyMap,
+    providerErrMap,
+    bulkBusy,
+    rulesRows,
+    filteredRulesRows,
+    rulesTypeTop,
+    ruleSearch,
+    ruleTypeFilter,
+    rulePolicyFilter,
+    ruleTypeOptions,
+    rulePolicyOptions,
+    onRefresh,
+    onRefreshAll,
+    onRefreshOne,
+    onSearchChange,
+    onTypeFilterChange,
+    onPolicyFilterChange,
+    ruleToggle,
+  } = view
   const { t } = useTranslation()
   const [providersModalOpen, setProvidersModalOpen] = useState(false)
   // Toggling is offered only with an active profile whose baseline loaded.

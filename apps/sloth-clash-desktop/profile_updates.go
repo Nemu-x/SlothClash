@@ -63,10 +63,19 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	// Routes through runSubscriptionFetchOnce so an in-flight background
 	// refresh isn't trampled by this explicit click — both callers attach
 	// to the same singleflight slot per dataDir and share the outcome.
+	//
+	// The one failure NOT tolerated is an oversized body: it is deterministic,
+	// so the cache would silently stay stale forever. It is returned to the
+	// caller (the UI shows it) after the metadata below is still persisted, so
+	// LastUpdated advances and the auto-update loop does not re-download the
+	// oversized body every tick.
+	var bodyErr error
 	if root, derr := slothDataRoot(); derr == nil {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		_ = runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey)
+		if err := runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey); isReadLimitError(err) {
+			bodyErr = err
+		}
 		bodyCancel()
 	}
 
@@ -105,6 +114,11 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	a.state.UpdatedAt = now
 	if err := a.persistProfilesLocked(); err != nil {
 		return a.state, err
+	}
+	if bodyErr != nil {
+		// The cache is unchanged, so a reconnect would only reload the old body.
+		a.emitAppStateChanged()
+		return a.state, bodyErr
 	}
 
 	// Reconnect without blocking the bridge thread.

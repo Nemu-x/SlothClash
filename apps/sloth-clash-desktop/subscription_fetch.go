@@ -28,6 +28,25 @@ import (
 //     └── on cache miss: blocking fetchSubscriptionBody (55 s)
 // ---------------------------------------------------------------------------
 
+// Subscription size caps. A truncated body is worse than none: YAML cut at a
+// node boundary still parses and silently drops nodes, groups and rules, so an
+// oversized body is refused with an explicit error instead.
+//
+// Measured with realisticSubscriptionYAML (subscription_fixture_test.go): block
+// YAML with mixed vless-reality / vmess-ws / ss2022 / hysteria2 nodes, five
+// groups listing every node, per-country groups and 3000 inline rules costs
+// ~825 B per node; 10k nodes = 7.9 MiB, which the former 6 MiB cap truncated.
+// 32 MiB leaves 4x headroom (~40k nodes) while still bounding memory.
+//
+// The wire cap covers an age-armored body whose plaintext is at the content
+// cap: base64 (4/3), armor line breaks (65/64) and per-chunk tags measure
+// 1.355x (TestFetchAgeSubscriptionAtAndOverLimit), so 32 MiB of YAML arrives
+// as 43.3 MiB; 48 MiB covers it.
+const (
+	subscriptionMaxBodyBytes = 32 << 20
+	subscriptionMaxWireBytes = 48 << 20
+)
+
 // fetchSubscriptionBody returns the (decrypted) subscription body plus the
 // response headers of the successful GET — the same response carries the
 // optional brand manifest (branding.go), so callers can capture it without a
@@ -67,7 +86,7 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, nil, fmt.Errorf("subscription HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 6<<20))
+	body, err := readBounded(resp.Body, "subscription", subscriptionMaxWireBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -76,6 +95,11 @@ func fetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string) ([
 	body, err = decryptSubscriptionBodyIfAge(body, ageKey)
 	if err != nil {
 		return nil, nil, err
+	}
+	// The wire cap leaves room for age armor; the content cap applies to what
+	// the pipeline actually parses, encrypted or not.
+	if int64(len(body)) > subscriptionMaxBodyBytes {
+		return nil, nil, &readLimitError{What: "subscription", Limit: subscriptionMaxBodyBytes}
 	}
 	return body, resp.Header, nil
 }
@@ -283,6 +307,9 @@ func tryWriteMergedFullProfileWithScript(
 				f["error"] = "empty body"
 			}
 			traceEvent("pipeline.subscription.fetch", "fail", fetchDur, f)
+			if isReadLimitError(err) {
+				return pipelineBodyTooLarge, err
+			}
 			return pipelineCacheMissNoNet, nil
 		}
 		traceEvent("pipeline.subscription.fetch", "ok", fetchDur, map[string]any{

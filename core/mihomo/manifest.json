@@ -89,7 +89,7 @@
     },
     {
       "file": "0020-desync-auto-diagnostics.patch",
-      "sha256": "09546ac835a9994e50614807b1c90c4656c3d1c0f6d06dbf72a33899adbb0f71",
+      "sha256": "f8228def1cb7ecd7e9125dd4943db0870987846aa10a5146c9e029c4095f744b",
       "feature": "desync-auto"
     }
   ],

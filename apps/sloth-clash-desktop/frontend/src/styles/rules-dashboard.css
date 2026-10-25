@@ -1,0 +1,259 @@
+.rulesTableWrap {
+  margin-top: 12px;
+  max-height: 360px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+}
+
+.rulesTableWrapFull {
+  max-height: min(calc(62vh / var(--ui-zoom, 1)), 520px);
+}
+
+.rulesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rulesPanelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rulesPanelTitle {
+  margin: 0;
+}
+
+.rulesProvidersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+/* Rule providers modal — full-list scroll, opened from the "Rule providers (N)"
+ * trigger in the Rules screen header. Keeps a wide layout so 4-column grid
+ * still fits on the typical 1200px window. */
+.ruleProvidersModalCard {
+  max-height: calc(80vh / var(--ui-zoom, 1));
+  display: flex;
+  flex-direction: column;
+}
+.ruleProvidersModalScroll {
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 4px;
+  /* leave room for the scrollbar without shifting the card edge */
+}
+.rulesProvidersTriggerWarn {
+  outline: 1px solid #d97706;
+}
+.rulesProvidersFailBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #d97706;
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ruleProviderCard {
+  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(
+    155deg,
+    rgba(34, 32, 29, 0.96) 0%,
+    rgba(18, 17, 16, 0.98) 100%
+  );
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 10px 12px 10px 9px;
+  min-width: 0;
+}
+
+.ruleProviderCardInner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ruleProviderCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ruleProviderTitle {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruleProviderMetaLine {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.ruleProviderFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ruleProviderUpdated {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.ruleProviderErr {
+  margin: 0;
+}
+
+.ruleProviderRefreshIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ruleProviderRefreshIcon:hover:not(:disabled) {
+  border-color: var(--accent-muted);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.ruleProviderRefreshIcon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ruleProviderRefreshIcon.isBusy .profileRefreshSvg {
+  animation: profileRefreshSpin 0.75s linear infinite;
+}
+
+.rulesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.rulesTable th,
+.rulesTable td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rulesTable th {
+  color: #b9c5d6;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: rgba(12, 16, 22, 0.95);
+}
+
+.shell[data-theme="light"] .rulesTable th {
+  background: rgba(238, 229, 213, 0.96);
+  color: #5a5142;
+}
+
+.rulesPayload {
+  max-width: 540px;
+  word-break: break-all;
+  color: #d4dfee;
+}
+
+.shell[data-theme="light"] .rulesPayload {
+  color: #374151;
+}
+
+.rulesPolicyProxy {
+  color: #5eead4;
+  font-weight: 600;
+}
+
+.shell[data-theme="light"] .rulesPolicyProxy {
+  color: #0f766e;
+}
+
+/* Rules dashboard enable/disable toggle column. */
+.rulesToggleCol {
+  width: 44px;
+  text-align: center;
+}
+
+.rulesToggleCell {
+  text-align: center;
+}
+
+.ruleToggleBox {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #5eead4;
+}
+
+.ruleToggleBox:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* A rule the user has disabled: dimmed + struck so it reads as "off" while
+   staying visible for re-enabling. */
+.ruleRowDisabled td {
+  opacity: 0.5;
+}
+
+.ruleRowDisabled .rulesPayload {
+  text-decoration: line-through;
+}
+
+.ruleRowDisabled .ruleToggleBox {
+  opacity: 1;
+}
+
+/* "hidden" chip on revealed hidden proxy groups (subscription hidden:true). */
+.proxyHiddenChip {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #c9a86c;
+  background: rgba(201, 168, 108, 0.14);
+  border: 1px solid rgba(201, 168, 108, 0.35);
+  white-space: nowrap;
+}

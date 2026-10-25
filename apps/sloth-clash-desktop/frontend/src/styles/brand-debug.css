@@ -1,0 +1,29 @@
+/* Dev-only brand header injector (Advanced). */
+.brandDebugPanel {
+  margin-top: 12px;
+}
+
+.brandDebugTextarea {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs);
+  resize: vertical;
+  margin: 8px 0;
+}
+
+.brandDebugActions {
+  gap: 8px;
+}
+
+.brandDebugResult {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background: var(--surface-deep);
+  font-size: var(--font-size-xs);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

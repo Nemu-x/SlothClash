@@ -1,0 +1,221 @@
+.diagList {
+  margin-top: 8px;
+}
+
+/* Advanced panel typography — aligned with settingsPanel / visual-polish tokens */
+.advancedPanel {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+}
+
+.advancedPanel h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.advancedPanel > p.muted {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-normal);
+}
+
+.advancedPanel .homeCardTitle,
+.advancedPanel .collapsibleCard .homeCardTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.advancedPanel .advancedGrid .statusRow {
+  padding: var(--space-1) 0;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.advancedPanel .advancedGrid .statusRow > span:first-child {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.advancedPanel .advancedGrid .statusRow strong {
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.advancedPanel .advancedGrid .diagList {
+  margin-top: 4px;
+}
+
+.advancedPanel .advancedGrid .row {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.advancedPanel .advancedGrid .btn.ghost,
+.advancedPanel .btnCompact {
+  padding: 5px 10px;
+  font-size: var(--font-size-xs);
+}
+
+/* Masonry packing (like Settings) so every card flows into two balanced
+   columns instead of a tall vertical stack — fits one screen (visual-polish). */
+/* Stable 2-column grid (not column-count masonry) so expanding a collapsible
+   card doesn't make the others jump between columns. */
+.advancedGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.advancedPanel .homeCard,
+.advancedPanel .collapsibleCard {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+@media (max-width: 980px) {
+  .advancedGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.advancedDeviceIdentityCard .deviceIdentityHwidRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.advancedDeviceIdentityCard .deviceIdentityHwid {
+  flex: 1;
+  min-width: min(100%, 220px);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-normal);
+  word-break: break-all;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+}
+
+.advancedDeviceIdentityCard .deviceIdentityActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Dim the HWID block when the user has turned off x-hwid sending so it is
+   visually clear that the value displayed is not currently transmitted. The
+   number is still readable for copy-and-paste support cases. */
+.advancedDeviceIdentityCard
+  .deviceIdentityHwidRow[data-hwid-disabled="true"]
+  .deviceIdentityHwid {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.advancedDeviceIdentityCard .hwidSendToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.advancedDeviceIdentityCard .hwidSendNote {
+  margin-top: 4px;
+}
+
+.advancedRuntimeTraceCard {
+  margin-top: 12px;
+}
+
+.advancedPanel .collapsibleCardActions .muted.small {
+  font-size: var(--font-size-xs);
+}
+
+.advancedPanel .collapsibleCard .homeCardTitle {
+  margin: 0;
+}
+
+.advancedPathsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.advancedPathsGrid .btn {
+  text-align: left;
+  font-size: var(--font-size-xs);
+}
+
+.advancedPowerGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.advancedPowerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.advancedPowerRow .btn {
+  flex-shrink: 0;
+}
+
+.advancedPowerRow .muted.small {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-normal);
+}
+
+.advancedRuntimeTraceList {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.16);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-normal);
+}
+
+.advancedRuntimeTraceRow {
+  display: grid;
+  grid-template-columns: 64px 180px 1fr;
+  gap: 8px;
+  padding: 1px 0;
+  align-items: baseline;
+}
+
+.advancedRuntimeTraceTime {
+  color: var(--text-muted);
+}
+
+.advancedRuntimeTraceCat {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.advancedRuntimeTraceMsg {
+  color: var(--text);
+  word-break: break-word;
+}

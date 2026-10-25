@@ -1,0 +1,242 @@
+.shell[data-theme="light"] .profileCardFoot {
+  border-top-color: rgba(0, 0, 0, 0.07);
+}
+
+.shell[data-theme="light"] .profileTrafficPair {
+  color: #2d6a45;
+}
+
+.shell[data-theme="light"] .profileRefreshIcon {
+  border-color: rgba(154, 115, 64, 0.35);
+  background: rgba(154, 115, 64, 0.08);
+  color: var(--accent);
+}
+
+.shell[data-theme="light"] .profileRefreshIcon:hover:not(:disabled) {
+  box-shadow: 0 0 14px rgba(154, 115, 64, 0.22);
+  border-color: rgba(154, 115, 64, 0.5);
+}
+
+.shell[data-theme="light"] .profileCardActive {
+  border-left-color: var(--accent);
+}
+
+.profilesHeader {
+  margin-bottom: 4px;
+}
+
+.profilesPageTitle {
+  margin: 0 0 8px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.profilesLead {
+  margin: 0 0 16px;
+  max-width: 52ch;
+  line-height: 1.45;
+}
+
+.profilesToolbar {
+  margin-bottom: 14px;
+}
+
+.profileList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.profileCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 10px 12px 10px 9px;
+  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid transparent;
+  background: linear-gradient(
+    155deg,
+    rgba(34, 32, 29, 0.96) 0%,
+    rgba(18, 17, 16, 0.98) 100%
+  );
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    border-left-color 0.16s ease;
+  cursor: pointer;
+}
+
+.profileCard:hover {
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.profileCardActive {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-left-color: var(--accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 14px 40px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 12px 36px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.profileCardActive .profileTitle {
+  color: var(--accent);
+}
+
+.profileCardInner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profileCardTopRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profileCardTopRow .profileTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileHostRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.profileHost {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  opacity: 0.92;
+}
+
+.profileUpdated {
+  flex-shrink: 0;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.profileTrafficPair {
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  color: #b8d8be;
+  opacity: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+
+.profileCardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.profileTypeChip {
+  font-size: var(--font-size-xs);
+  text-transform: lowercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+
+.profileRefreshIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.profileRefreshIcon:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.profileRefreshIcon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.profileRefreshIcon.isBusy .profileRefreshSvg {
+  animation: profileRefreshSpin 0.75s linear infinite;
+}
+
+@keyframes profileRefreshSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.profileTitle {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  line-height: 1.25;
+}
+
+.profileBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #f2efe8;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.profileCardFoot .profileBadge {
+  padding: 3px 8px;
+  font-size: var(--font-size-xs);
+}
+
+.profileCardFoot .profileClickHint {
+  font-size: var(--font-size-xs);
+}
+
+.profileClickHint {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}

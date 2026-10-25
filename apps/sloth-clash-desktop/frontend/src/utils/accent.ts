@@ -4,13 +4,13 @@
 
 export type AccentTheme = 'dark' | 'light'
 
-// Alphas mirror the stock stylesheet recipe (App.css --accent-dim/--accent-muted).
+// Alphas mirror the stock stylesheet recipe (styles/base.css --accent-dim/--accent-muted).
 const ACCENT_ALPHAS: Record<AccentTheme, { dim: number; muted: number }> = {
   dark: { dim: 0.24, muted: 0.42 },
   light: { dim: 0.18, muted: 0.34 },
 }
 
-// Mid-stop of each theme's background gradient in App.css — the surface most
+// Mid-stop of each theme's background gradient in styles/base.css — the surface most
 // accent-colored elements sit on, used as the contrast reference.
 const THEME_BG: Record<AccentTheme, string> = {
   dark: '#1a1918',
@@ -20,7 +20,7 @@ const THEME_BG: Record<AccentTheme, string> = {
 // Below this ratio against the theme background the accent is auto-adjusted.
 export const MIN_ACCENT_CONTRAST = 3
 
-// Built-in bronze accents from App.css — used as picker/preview fallbacks.
+// Built-in bronze accents from styles/base.css — used as picker/preview fallbacks.
 export const STOCK_ACCENTS: Record<AccentTheme, string> = {
   dark: '#c9a86c',
   light: '#936b38',

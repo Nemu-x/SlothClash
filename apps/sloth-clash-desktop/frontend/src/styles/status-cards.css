@@ -1,0 +1,429 @@
+.statusLine {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.serviceIssueText {
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.statusCard {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.homeStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 22px;
+  align-items: stretch;
+  max-width: 720px;
+  margin: var(--space-2) auto 0;
+  padding: 0 6px;
+}
+
+@media (max-width: 760px) {
+  .homeStatusGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.homeStatusGrid .statusCardCompact {
+  margin: 0;
+  max-width: none;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  /* Extra height is split between row gaps, not stacked under Core/Speed */
+  justify-content: space-between;
+}
+
+.homeStatusGrid .statusRowNode {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* Same chevron + padding for Pick group `<select>` and Active node trigger — avoids mismatched OS glyph vs ▾ */
+.homeStatusGrid .statusRowNode select.selectModern.selectInline.selectCompact,
+.homeStatusGrid
+  .statusRowNode
+  button.statusNodeMenuTrigger.selectModern.selectInline.selectCompact {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  margin: 0;
+  padding: 2px 26px 2px 6px;
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+  min-height: 26px;
+  max-height: 28px;
+  background-color: rgba(12, 11, 10, 0.75);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23b8aea0' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.25 6 7.75 9.5 4.25'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 10px 10px;
+}
+
+.shell[data-theme="light"]
+  .homeStatusGrid
+  .statusRowNode
+  select.selectModern.selectInline.selectCompact,
+.shell[data-theme="light"]
+  .homeStatusGrid
+  .statusRowNode
+  button.statusNodeMenuTrigger.selectModern.selectInline.selectCompact {
+  background-color: #fdf9f0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23585048' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.25 6 7.75 9.5 4.25'/%3E%3C/svg%3E");
+}
+
+/* Tighter label column; rows share vertical space evenly when cards stretch */
+.homeStatusGrid .statusCardCompact .statusRow {
+  padding: 3px 0;
+  gap: 8px;
+  align-items: center;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.homeStatusGrid .statusCardCompact .statusRow > span:first-child {
+  flex: 0 0 76px;
+}
+
+.homeStatusGrid .statusCardCompact .speedRow {
+  gap: 4px 8px;
+}
+
+.homeStatusGrid .statusCardCompact .speedChip {
+  line-height: 1.25;
+}
+
+/* Home insight: country flags only; full geo / IPs in native tooltip */
+.homeStatusGrid .insightFlagCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 22px;
+}
+
+.homeSubscriptionExtras {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 720px;
+  margin: var(--space-2) auto 0;
+  padding: 0 6px;
+}
+
+.homeSubscriptionCard {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.homeSubscriptionCardTitle {
+  margin: 0 0 6px 0;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.homeSubscriptionAnnounce {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* Cap height + scroll inside the card so a multi-paragraph announcement
+     stays compact on Home (the rest of the page would otherwise push the
+     sidebar nav out of reach on small windows). */
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.statusNodeStatic {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.statusCardCompact .insightExitErr {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.statusCardCompact .speedRow {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
+}
+
+.statusCardCompact .speedChip {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.statusCardCompact {
+  max-width: 400px;
+  margin: 14px auto 0;
+  padding: 8px 12px;
+}
+
+.statusCardCompact .statusRow {
+  padding: 5px 0;
+  gap: 10px;
+  align-items: center;
+}
+
+.statusCardCompact .statusRow > span:first-child {
+  flex: 0 0 86px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.statusCardCompact .statusRow strong {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.statusCardCompact .statusRowValue {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.homeStatusGrid .statusCardCompact .statusRow.serviceIssueRow {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.homeStatusGrid
+  .statusCardCompact
+  .statusRow.serviceIssueRow
+  .serviceIssueText {
+  width: 100%;
+  text-align: left;
+}
+
+.statusCardCompact .statusRowNodeValue {
+  max-width: min(100%, 260px);
+}
+
+.statusNodeTextClamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  line-height: 1.35;
+  font-weight: 500;
+  text-align: right;
+}
+
+.selectCompact {
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+  line-height: 1.25;
+  max-width: 100%;
+}
+
+.statusRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.statusRow:last-child {
+  border-bottom: 0;
+}
+
+.statusRowValue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  text-align: right;
+}
+
+.statusRowNode {
+  align-items: flex-start;
+}
+
+.statusRowNodeValue {
+  flex: 1;
+  min-width: 0;
+  max-width: min(100%, 520px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.statusRowNodeValue .selectInline {
+  width: 100%;
+  max-width: 100%;
+}
+
+.statusNodePick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.statusNodeMenu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.statusNodeMenuTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.statusNodeMenuTriggerInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.statusNodeMenuTriggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusNodeMenuList {
+  position: absolute;
+  /* Opens upward: this menu sits low in the Home status card, so opening down
+     pushed past the viewport and forced a page scroll (visual-polish fix). */
+  bottom: calc(100% + 3px);
+  top: auto;
+  right: 0;
+  left: auto;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  min-width: min(100%, 260px);
+  max-width: min(calc(calc(100vw / var(--ui-zoom, 1)) - 48px), 400px);
+  max-height: min(calc(38vh / var(--ui-zoom, 1)), 240px);
+  overflow-y: auto;
+  z-index: 45;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(12, 11, 10, 0.96);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.48);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  font-family: var(--font-sans);
+}
+
+.statusNodeMenuList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.statusNodeMenuList::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.statusNodeMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  line-height: 1.15;
+}
+
+.statusNodeMenuItem:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.statusNodeMenuItem.isActive {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.statusNodeMenuItemLabel {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Readable but still flat — slightly brighter than panel text */
+.statusDotOk {
+  background: rgba(120, 165, 132, 0.92);
+  border: 1px solid rgba(160, 200, 170, 0.55);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+
+.statusDotBad {
+  background: rgba(200, 120, 120, 0.88);
+  border: 1px solid rgba(230, 170, 170, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) inset;
+}
+
+.shell[data-theme="light"] .statusDotOk {
+  background: rgba(72, 130, 88, 0.85);
+  border-color: rgba(50, 100, 65, 0.45);
+  box-shadow: none;
+}
+
+.shell[data-theme="light"] .statusDotBad {
+  background: rgba(190, 85, 85, 0.75);
+  border-color: rgba(140, 50, 50, 0.4);
+  box-shadow: none;
+}

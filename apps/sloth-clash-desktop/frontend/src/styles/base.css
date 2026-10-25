@@ -1,0 +1,174 @@
+.shell {
+  --nav-w: 220px;
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "nav content";
+  /* `height` (not `min-height`) clamps the shell to the window so the inner
+     .content owns scrolling on its own. With `min-height` a tall page could
+     push the whole shell — including the sidebar — past the viewport and the
+     user lost reach to nav buttons.
+     Percentage (not a viewport unit) so Interface scale works: see style.css —
+     `zoom` does not affect viewport units, so a vh-based height under-filled the
+     window below 100% scale and overflowed above it. */
+  height: 100%;
+  overflow: hidden;
+  --accent: #c9a86c;
+  --accent-dim: rgba(201, 168, 108, 0.24);
+  --accent-muted: rgba(201, 168, 108, 0.42);
+  --panel: rgba(30, 28, 26, 0.94);
+  --panel-deep: rgba(18, 17, 16, 0.92);
+  --text-muted: #a39e96;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* === design tokens (visual-polish) ===
+     Additive layer — mapped to the existing palette so the look is unchanged.
+     New/refactored CSS should consume these instead of hard-coded values. */
+  /* spacing — rem-based (1rem = 16px at default root) so the whole UI scales
+     proportionally when window-scaling adjusts the root font-size. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
+  /* radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-pill: 999px;
+  /* elevation */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --elev-3: 0 12px 40px rgba(0, 0, 0, 0.45);
+  /* typography scale (rem) */
+  --font-size-xs: 0.6875rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-md: 0.9375rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  /* semantic roles over the existing palette */
+  --surface: var(--panel);
+  --surface-deep: var(--panel-deep);
+  --border: var(--hairline);
+  --border-strong: var(--hairline-strong);
+  --text: #f2efe8;
+  /* state colors, tuned to the bronze identity */
+  --ok: #7fb069;
+  --warn: #d9a441;
+  --danger: #d97356;
+  /* motion */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* scrollbars — themed (bronze) instead of stark white */
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 30%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 50%, transparent);
+
+  background: radial-gradient(
+    circle at 18% 10%,
+    #242220 0,
+    #1a1918 45%,
+    #121110 100%
+  );
+  color: #f2efe8;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.shell input,
+.shell textarea,
+.shell select,
+.shell [contenteditable="true"],
+.shell .allowSelect {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.shell.navCollapsed {
+  --nav-w: 72px;
+}
+
+/* Accessibility: honor reduced-motion — neutralize non-essential animation
+   and transitions when the OS requests it (visual-polish). */
+@media (prefers-reduced-motion: reduce) {
+  .shell *,
+  .shell *::before,
+  .shell *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.shell[data-theme="light"] {
+  /* Milky-coffee (latte) light theme — the warm opposite of dark, not stark
+     white (visual-polish). */
+  color: #2b2317;
+  --accent: #936b38;
+  --accent-dim: rgba(147, 107, 56, 0.18);
+  --accent-muted: rgba(147, 107, 56, 0.34);
+  --panel: rgba(247, 240, 228, 0.96);
+  --panel-deep: rgba(238, 229, 213, 0.98);
+  --text: #2b2317;
+  --text-muted: #6f6450;
+  --hairline: rgba(70, 52, 28, 0.1);
+  --hairline-strong: rgba(70, 52, 28, 0.16);
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 34%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: radial-gradient(
+    circle at 18% 10%,
+    #f2ebdc 0,
+    #e9dec8 50%,
+    #ddccb0 100%
+  );
+}
+
+/* Themed scrollbars everywhere inside the app (WebView2 / Chromium) so they
+   blend with the palette instead of the stark default white bar. */
+.shell {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.shell ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shell ::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.shell ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.shell[data-theme="light"] .segment,
+.shell[data-theme="light"] .statusCard,
+.shell[data-theme="light"] .homeCard,
+.shell[data-theme="light"] .profileCard {
+  background: var(--panel);
+  border-color: var(--hairline-strong);
+}

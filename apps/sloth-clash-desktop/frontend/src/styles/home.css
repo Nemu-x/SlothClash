@@ -1,0 +1,418 @@
+.home {
+  max-width: 960px;
+  margin: 0 auto;
+  width: min(100%, 960px);
+}
+
+.homeLinkToast {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #efe8dc;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid var(--accent-muted);
+}
+
+.shell[data-theme="light"] .homeLinkToast {
+  color: #2a2215;
+  background: rgba(154, 115, 64, 0.12);
+}
+
+.homeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.homeTitleWithAlert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.homeTitleWithAlert h2 {
+  margin: 0;
+}
+
+.homeAlertBadge {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: help;
+  color: #1a1816;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 72%, #fff),
+    var(--accent)
+  );
+  border: 1px solid var(--accent-muted);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* "Update available" pill — reads as an action, not an alarm. Uses the accent
+   so it follows the user's custom / brand colour instead of a fixed green. */
+.homeUpdatePill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.homeUpdatePill:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  transform: translateY(-1px);
+}
+
+.homeUpdatePillArrow {
+  font-size: 0.85em;
+  transition: transform 0.16s ease;
+}
+
+.homeUpdatePill:hover .homeUpdatePillArrow {
+  transform: translateX(2px);
+}
+
+.homeUpdatePill:active {
+  transform: translateY(0);
+}
+
+.homeUpdatePill:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+}
+
+.shell[data-theme="light"] .homeAlertBadge {
+  color: #2a2215;
+}
+
+.homeHeader h2 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.muted {
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.connectArea {
+  margin: 28px 0 18px;
+  text-align: center;
+}
+
+.connectRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+
+.connectCenter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.connectSide {
+  flex: 1 1 160px;
+  max-width: 228px;
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.connectSideLeft {
+  text-align: center;
+}
+
+.connectSideRight {
+  text-align: center;
+}
+
+.sideLabel {
+  display: block;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.sideLabelCentered {
+  width: 100%;
+  text-align: center;
+}
+
+/* Inset segmented control (slider thumb) */
+.segmentInset {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 216px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 2px 10px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.shell[data-theme="light"] .segmentInset {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 250, 240, 0.45);
+}
+
+.segmentGlider {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  z-index: 0;
+  border-radius: 9px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 1px solid var(--accent-muted);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition:
+    left 0.22s cubic-bezier(0.33, 1, 0.68, 1),
+    width 0.22s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.segmentInset2 .segmentGlider {
+  width: calc((100% - 6px) / 2);
+  left: calc(3px + (100% - 6px) / 2 * var(--seg-i, 0));
+}
+
+/* Single-option segment: brand hide-flags can drop one choice (e.g. Global or
+   Proxy), leaving the control as a read-only state indicator. */
+.segmentInset1 .segmentGlider {
+  width: calc(100% - 6px);
+  left: 3px;
+}
+
+.segmentInsetBtn {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 5px;
+  border: 0;
+  border-radius: 8px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  transition: color 0.18s ease;
+}
+
+.segmentInsetBtn:hover {
+  color: #e8e4dc;
+}
+
+.segmentInsetBtn.isOn {
+  color: #f6f3ed;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.shell[data-theme="light"] .segmentInsetBtn.isOn {
+  color: #2a2215;
+  text-shadow: none;
+}
+
+.protectedLine {
+  margin-top: 12px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.homeTrafficHealth {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: rgba(230, 225, 215, 0.55);
+  text-align: center;
+  letter-spacing: 0.04em;
+  max-width: 280px;
+  line-height: 1.35;
+}
+
+.shell[data-theme="light"] .homeTrafficHealth {
+  color: rgba(42, 34, 21, 0.58);
+}
+
+.protectedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #b8c9b4;
+  letter-spacing: 0.03em;
+}
+
+.shell[data-theme="light"] .protectedBadge {
+  color: #4a6b4e;
+}
+
+/* Same sage family as .connectBtn[data-visual='connected'] */
+.protectedDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(145deg, #7a9a7d, #556b58);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.statusLineSolo {
+  justify-content: center;
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .connectRow {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .connectSide {
+    max-width: 320px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .connectSideLeft,
+  .connectSideRight {
+    text-align: center;
+  }
+
+  .connectSideLeft .sideLabel,
+  .connectSideRight .sideLabel {
+    text-align: center;
+  }
+}
+
+.connectBtn {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  border: 0;
+  background: linear-gradient(
+    145deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 68%, #000)
+  );
+  color: #ffffff;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 140ms ease,
+    color 180ms ease,
+    opacity 140ms ease;
+}
+
+.connectBtn:hover {
+  transform: translateY(-1px);
+}
+
+.connectBtn:disabled {
+  opacity: 0.85;
+  cursor: wait;
+}
+
+.connectBtn[data-visual="connected"] {
+  /* Muted sage / bronze-green — matches dark UI vs neon #22c55e */
+  background: linear-gradient(145deg, #6f8f72, #4d654f);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.38);
+  color: #f4f1ea;
+}
+
+.connectBtn[data-visual="degraded"] {
+  /* Still "on", but visibly different from fully-ready sage */
+  background: linear-gradient(145deg, #b8893a, #8a6324);
+  box-shadow: 0 16px 36px rgba(184, 137, 58, 0.22);
+  color: #fffaf1;
+}
+
+.connectBtn[data-visual="warming"] {
+  background: linear-gradient(145deg, #6b7c92, #4a5666);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+  color: #f4f1ea;
+}
+
+.connectBtn[data-visual="broken"] {
+  background: linear-gradient(145deg, #b45309, #7c2d12);
+  box-shadow: 0 16px 34px rgba(180, 83, 9, 0.22);
+  color: #fff7ed;
+}
+
+.connectBtn[data-visual="connecting"] {
+  background: linear-gradient(145deg, #f59e0b, #d97706);
+  box-shadow: 0 18px 36px rgba(245, 158, 11, 0.22);
+  animation: connectPulse 1.6s ease-in-out infinite;
+}
+
+.connectBtn[data-visual="error"] {
+  background: linear-gradient(145deg, #ef4444, #b91c1c);
+  box-shadow: 0 18px 36px rgba(239, 68, 68, 0.28);
+}
+
+@keyframes connectPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+}
+
+.monoTight {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-align: right;
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

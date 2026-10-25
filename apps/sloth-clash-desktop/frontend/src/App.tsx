@@ -66,7 +66,6 @@ import {
   WriteProfileConfig,
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
-import { UpdateRuleProvider } from './api/rules'
 import { BrowserOpenURL, EventsOn } from './api/runtime'
 import {
   GetServiceInfo,
@@ -107,13 +106,12 @@ import {
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
 import { useConnectionsOverview } from './hooks/queries/useConnectionsOverview'
-import { useRulesOverview } from './hooks/queries/useRulesOverview'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useProxyDelay } from './hooks/useProxyDelay'
-import { useRuleToggles } from './hooks/useRuleToggles'
+import { useRulesView } from './hooks/useRulesView'
 import { useToasts } from './hooks/useToasts'
 import i18n, { LS_LANG, readStoredLang } from './i18n'
 import {
@@ -146,7 +144,6 @@ const RulesPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/Settings').then((m) => ({ default: m.SettingsPage })),
 )
-import { parseMihomoRulesJson, parseRuleProvidersJson } from './rulesTable'
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { CompactSettings, ImportModalReason, Screen } from './types/app'
@@ -165,12 +162,8 @@ function App() {
   const [screen, setScreen] = useState<Screen>('home')
   // Server-state queries. Each one drives a single screen's view, polls itself
   // while that screen is open, and exposes a `refresh()` for manual triggers
-  // (rule-providers bulk update, the "Refresh" buttons in headers).
-  const {
-    overview: rulesOverview,
-    busy: rulesBusy,
-    refresh: refreshRules,
-  } = useRulesOverview(screen === 'rules')
+  // (rule-providers bulk update, the "Refresh" buttons in headers). The Rules
+  // query lives in useRulesView below.
   const {
     overview: connectionsOverview,
     busy: connectionsBusy,
@@ -226,13 +219,6 @@ function App() {
     useState<ImportModalReason>('manual')
   const [importBusy, setImportBusy] = useState(false)
   const [connectionsSearch, setConnectionsSearch] = useState('')
-  const [ruleProviderBusyMap, setRuleProviderBusyMap] = useState<
-    Record<string, boolean>
-  >({})
-  const [ruleProviderErrMap, setRuleProviderErrMap] = useState<
-    Record<string, string>
-  >({})
-  const [ruleProvidersBulkBusy, setRuleProvidersBulkBusy] = useState(false)
   const [profileMenu, setProfileMenu] = useState<{
     id: string
     name: string
@@ -386,9 +372,6 @@ function App() {
   const branding = useBranding()
   const brandManifest = branding?.manifest ?? null
   const [operatorModalOpen, setOperatorModalOpen] = useState(false)
-  const [ruleSearch, setRuleSearch] = useState('')
-  const [ruleTypeFilter, setRuleTypeFilter] = useState('all')
-  const [rulePolicyFilter, setRulePolicyFilter] = useState('all')
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const refreshQueuedRef = useRef(false)
   const stateEventTimerRef = useRef<number | null>(null)
@@ -1613,80 +1596,15 @@ function App() {
     setHomeActiveNodeOpen(false)
   }, [screen, state?.connection?.status])
 
-  const rulesRows = useMemo(
-    () => parseMihomoRulesJson(rulesOverview?.rulesBody),
-    [rulesOverview?.rulesBody],
-  )
-  const ruleProvidersRows = useMemo(
-    () => parseRuleProvidersJson(rulesOverview?.ruleProvidersBody),
-    [rulesOverview?.ruleProvidersBody],
-  )
-  const ruleTypeFilterOptions = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of rulesRows) {
-      const t = String(r.type ?? '').trim()
-      if (t) set.add(t)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [rulesRows])
-  const rulePolicyFilterOptions = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of rulesRows) {
-      const p = String(r.proxy ?? '').trim()
-      if (p) set.add(p)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [rulesRows])
-  // Dashboard rule enable/disable. The hook loads the active profile's rule
-  // baseline, tracks which lines are disabled (rules-template `delete` bucket),
-  // and toggles them via SetProfileRulesTemplate (which auto-reconnects). See
-  // useRuleToggles for the safety invariant (only unambiguous matches toggle).
-  const ruleToggles = useRuleToggles({
+  // Rules screen: /rules snapshot, provider updates, dashboard toggles and the
+  // filters. Held here (not in RulesPage) so filters and in-flight provider
+  // updates survive leaving the screen.
+  const rulesView = useRulesView({
+    enabled: screen === 'rules',
     activeProfileId: String(state?.profile?.activeProfileId ?? '').trim(),
     profiles: state?.profile?.profiles,
-    enabled: screen === 'rules',
     onError: (m) => setError(m),
-    // The reconnect reloads the core; refetch /rules shortly after so the live
-    // list reconciles with the optimistic view.
-    onApplied: () => {
-      window.setTimeout(() => void refreshRules(), 1500)
-    },
   })
-  // Combined display: live rows (minus any optimistically-disabled ones) tagged
-  // enabled, followed by disabled rows so they can be re-enabled from the table.
-  const combinedRulesRows = useMemo(() => {
-    const live = rulesRows
-      .filter((r) => {
-        const line = ruleToggles.matchLine(r)
-        return !(line && ruleToggles.deleteLines.has(line))
-      })
-      .map((r) => ({ ...r, disabled: false as const }))
-    return [...live, ...ruleToggles.disabledRows]
-  }, [
-    rulesRows,
-    ruleToggles.matchLine,
-    ruleToggles.deleteLines,
-    ruleToggles.disabledRows,
-  ])
-  const filteredRulesRows = useMemo(() => {
-    const q = ruleSearch.trim().toLowerCase()
-    return combinedRulesRows.filter((r) => {
-      if (ruleTypeFilter !== 'all' && r.type !== ruleTypeFilter) return false
-      if (rulePolicyFilter !== 'all' && r.proxy !== rulePolicyFilter)
-        return false
-      if (!q) return true
-      const hay = `${r.type} ${r.payload} ${r.proxy}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [combinedRulesRows, ruleSearch, ruleTypeFilter, rulePolicyFilter])
-  const rulesTypeTop = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const r of filteredRulesRows) {
-      const key = String(r.type || '—')
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
-  }, [filteredRulesRows])
   const filteredConnections = useMemo(() => {
     const rows = connectionsOverview?.connections ?? []
     const q = connectionsSearch.trim().toLowerCase()
@@ -1931,51 +1849,6 @@ function App() {
     }
   }, [canAutoConnect])
 
-  const refreshRuleProviderOne = useCallback(
-    async (name: string) => {
-      const id = String(name ?? '').trim()
-      if (!id) return
-      setRuleProviderErrMap((prev) => {
-        if (!prev[id]) return prev
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
-      setRuleProviderBusyMap((prev) => ({ ...prev, [id]: true }))
-      try {
-        await UpdateRuleProvider(id)
-        refreshRules()
-      } catch (e: any) {
-        setRuleProviderErrMap((prev) => ({ ...prev, [id]: String(e) }))
-      } finally {
-        setRuleProviderBusyMap((prev) => ({ ...prev, [id]: false }))
-      }
-    },
-    [refreshRules],
-  )
-
-  const refreshRuleProvidersAll = useCallback(async () => {
-    if (ruleProvidersRows.length === 0) return
-    setRuleProvidersBulkBusy(true)
-    setRuleProviderErrMap({})
-    const busySeed: Record<string, boolean> = {}
-    for (const p of ruleProvidersRows) busySeed[p.name] = true
-    setRuleProviderBusyMap(busySeed)
-    try {
-      for (const p of ruleProvidersRows) {
-        try {
-          await UpdateRuleProvider(p.name)
-          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
-        } catch (e: any) {
-          setRuleProviderErrMap((prev) => ({ ...prev, [p.name]: String(e) }))
-          setRuleProviderBusyMap((prev) => ({ ...prev, [p.name]: false }))
-        }
-      }
-      refreshRules()
-    } finally {
-      setRuleProvidersBulkBusy(false)
-    }
-  }, [refreshRules, ruleProvidersRows])
   // Rules / Connections / Logs polling moved to react-query hooks
   // (useRulesOverview, useConnectionsOverview, useServiceLog) — they fetch on
   // mount and refetch on the same screen-change semantics via their `enabled`.
@@ -2213,38 +2086,9 @@ function App() {
           {screen === 'rules' ? (
             <Suspense fallback={<div className="panel" />}>
               <RulesPage
-                rulesOverview={rulesOverview}
+                view={rulesView}
                 connectionStatus={state?.connection?.status ?? ''}
-                rulesBusy={rulesBusy}
-                providers={ruleProvidersRows}
-                providerBusyMap={ruleProviderBusyMap}
-                providerErrMap={ruleProviderErrMap}
-                bulkBusy={ruleProvidersBulkBusy}
-                rulesRows={rulesRows}
-                filteredRulesRows={filteredRulesRows}
-                rulesTypeTop={rulesTypeTop}
-                ruleSearch={ruleSearch}
-                ruleTypeFilter={ruleTypeFilter}
-                rulePolicyFilter={rulePolicyFilter}
-                ruleTypeOptions={ruleTypeFilterOptions}
-                rulePolicyOptions={rulePolicyFilterOptions}
                 error={error}
-                onRefresh={() => refreshRules()}
-                onRefreshAll={() => void refreshRuleProvidersAll()}
-                onRefreshOne={(name) => void refreshRuleProviderOne(name)}
-                onSearchChange={setRuleSearch}
-                onTypeFilterChange={setRuleTypeFilter}
-                onPolicyFilterChange={setRulePolicyFilter}
-                ruleToggle={{
-                  hasActiveProfile: ruleToggles.hasActiveProfile,
-                  baselineLoading: ruleToggles.baselineLoading,
-                  baselineError: ruleToggles.baselineError,
-                  busyLines: ruleToggles.busyLines,
-                  isToggleable: ruleToggles.isToggleable,
-                  matchLine: ruleToggles.matchLine,
-                  onDisable: ruleToggles.disableRow,
-                  onEnable: ruleToggles.enableLine,
-                }}
               />
             </Suspense>
           ) : null}

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 // TUN bring-up verification & diagnostics.
@@ -399,7 +401,7 @@ func (a *App) collectTunDiagnostics() string {
 	// Recent core.log tail.
 	if activeID != "" {
 		if logPath, err := coreLogPathForProfile(activeID); err == nil {
-			tail := redactCredentialQuery(readFileTail(logPath, 8*1024))
+			tail := runtimecfg.RedactCredentialQuery(readFileTail(logPath, 8*1024))
 			if strings.TrimSpace(tail) != "" {
 				fmt.Fprintf(&b, "core.log (tail):\n%s\n", strings.TrimRight(tail, "\n"))
 			} else {

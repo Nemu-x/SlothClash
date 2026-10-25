@@ -10,19 +10,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 func TestDesyncTCPNeedsAllTargetsAndTwoRounds(t *testing.T) {
-	candidates := []desyncCandidate{{ID: "first"}, {ID: "second"}, {ID: "unused"}}
+	candidates := []desync.Candidate{{ID: "first"}, {ID: "second"}, {ID: "unused"}}
 	calls := map[string]int{}
 	records := 0
-	winner, err := chooseDesyncTCP(context.Background(), "discord", candidates, func(_ context.Context, c desyncCandidate, target string) error {
+	winner, err := chooseDesyncTCP(context.Background(), "discord", candidates, func(_ context.Context, c desync.Candidate, target string) error {
 		calls[c.ID]++
 		if c.ID == "first" && strings.Contains(target, "cdn.") {
 			return fmt.Errorf("TLS handshake failed")
 		}
 		return nil
-	}, func(_ desyncCandidate, _ int, _ error, _ time.Duration) { records++ })
+	}, func(_ desync.Candidate, _ int, _ error, _ time.Duration) { records++ })
 	if err != nil || winner.ID != "second" || calls["first"] != 2 || calls["second"] != 4 || calls["unused"] != 0 || records != 2 {
 		t.Fatalf("selection: %s %v %v", winner.ID, err, calls)
 	}
@@ -30,7 +32,7 @@ func TestDesyncTCPNeedsAllTargetsAndTwoRounds(t *testing.T) {
 func TestDesyncLateProbeCannotWinAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	winner, err := chooseDesyncTCP(ctx, "youtube", []desyncCandidate{{ID: "late"}}, func(context.Context, desyncCandidate, string) error { cancel(); return nil }, func(desyncCandidate, int, error, time.Duration) {})
+	winner, err := chooseDesyncTCP(ctx, "youtube", []desync.Candidate{{ID: "late"}}, func(context.Context, desync.Candidate, string) error { cancel(); return nil }, func(desync.Candidate, int, error, time.Duration) {})
 	if err == nil || winner.ID != "" {
 		t.Fatal("a canceled result was selected")
 	}
@@ -100,8 +102,8 @@ func TestDesyncConnectedReportAnonymizesUDPEndpoints(t *testing.T) {
 	prefsMu.Unlock()
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/proxies/"+desyncDiscordUDPRoute {
-			fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
+		if r.URL.Path == "/proxies/"+desync.DiscordUDPRoute {
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
 			return
 		}
 		fmt.Fprint(w, `{"desyncUDP":{"counters":{"packets":100,"fakePackets":3},"activity":[{"endpoint":"104.29.2.2:19330","txPackets":100,"rxPackets":80}],"binding":{"enabled":true,"nativeSockets":2,"handovers":13,"queuedBytes":0,"ssrc":"private-session-id","address":"private-binding-address","process":"private-process"}}}`)
@@ -126,24 +128,8 @@ func TestDesyncConnectedReportAnonymizesUDPEndpoints(t *testing.T) {
 	}
 }
 
-func TestDesyncStableBindingOnlyGeneratedForDiscordUDP(t *testing.T) {
-	for _, service := range []string{"youtube", "discord", "voice"} {
-		for _, candidate := range desyncCandidates(service) {
-			proxy := candidate.proxy("test-route")
-			opts := proxy["desync"].(map[string]any)
-			udp, present := opts["udp"].(map[string]any)
-			if service == "voice" {
-				if !present || udp["stable-binding"] != true {
-					t.Fatal("Discord UDP candidate lost binding continuity")
-				}
-			} else if present {
-				t.Fatal("TCP candidate received UDP pooling")
-			}
-		}
-	}
-}
 func TestDesyncVoiceTargetSkipsUnrelatedQUICAndOtherApplications(t *testing.T) {
-	connections := []ConnectionItem{{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "1.1.1.1", DestinationPort: "443"}, Chains: []string{desyncDiscordUDPRoute}}, {Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "104.29.1.1", DestinationPort: "19299"}, Chains: []string{"subscription"}}, {Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "104.29.2.2", DestinationPort: "19330"}, Chains: []string{desyncDiscordUDPRoute}}}
+	connections := []ConnectionItem{{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "1.1.1.1", DestinationPort: "443"}, Chains: []string{desync.DiscordUDPRoute}}, {Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "104.29.1.1", DestinationPort: "19299"}, Chains: []string{"subscription"}}, {Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: "104.29.2.2", DestinationPort: "19330"}, Chains: []string{desync.DiscordUDPRoute}}}
 	if got := desyncVoiceTarget(connections); got != "104.29.2.2:19330" {
 		t.Fatalf("wrong target %q", got)
 	}
@@ -169,30 +155,11 @@ func TestDesyncCacheIsNetworkScopedExpiresAndIsBounded(t *testing.T) {
 	if desyncCachedSelection("network-7", "voice") != "" {
 		t.Fatal("expired cache reused")
 	}
-	if got := orderedDesyncCandidates("voice", "not-a-strategy"); got[0].ID != "f4" {
+	if got := desync.Ordered("voice", "not-a-strategy"); got[0].ID != "f4" {
 		t.Fatal("invalid saved strategy accepted")
 	}
-	if got := orderedDesyncCandidates("voice", "f8"); got[0].ID != "f8" || len(got) != len(desyncCandidates("voice")) {
+	if got := desync.Ordered("voice", "f8"); got[0].ID != "f8" || len(got) != len(desync.Candidates("voice")) {
 		t.Fatal("cached candidate removed alternatives")
-	}
-}
-
-func TestDesyncCandidatesCoverTTLRangeWithoutUDPRepeatFlood(t *testing.T) {
-	for _, service := range []string{"discord", "voice"} {
-		seen := map[int]bool{}
-		for _, c := range desyncCandidates(service) {
-			if c.TTL > 0 {
-				seen[c.TTL] = true
-			}
-			if service == "voice" && c.Repeats > 2 {
-				t.Fatal("aggressive UDP burst reintroduced")
-			}
-		}
-		for ttl := 1; ttl <= 32; ttl++ {
-			if !seen[ttl] {
-				t.Fatalf("%s has no candidate for TTL %d", service, ttl)
-			}
-		}
 	}
 }
 
@@ -236,8 +203,8 @@ func TestDesyncCalibrationAppliesOnlyVerifiedCandidateAndCachesIt(t *testing.T) 
 	network := desyncNetworkKey()
 	a.desyncAuto.epoch = 1
 	a.desyncAuto.status.Network = network
-	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desyncDiscordRoute)
-	if err != nil || selected != desyncDiscordRoute+"-f5" || checks != 5 || desyncCachedSelection(network, "discord") != "f5" {
+	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desync.DiscordRoute)
+	if err != nil || selected != desync.DiscordRoute+"-f5" || checks != 5 || desyncCachedSelection(network, "discord") != "f5" {
 		t.Fatalf("calibration not applied: %q checks=%d err=%v", selected, checks, err)
 	}
 	status := a.GetDesyncAutoStatus()
@@ -294,16 +261,16 @@ func TestDesyncCalibrationResumesAfterInterruptedBudget(t *testing.T) {
 	a.desyncAuto.epoch = 1
 	network := desyncNetworkKey()
 	a.desyncAuto.status.Network = network
-	if err := a.calibrateDesyncTCP(firstCtx, 1, network, a.coreListen, "", "discord", desyncDiscordRoute); err == nil {
+	if err := a.calibrateDesyncTCP(firstCtx, 1, network, a.coreListen, "", "discord", desync.DiscordRoute); err == nil {
 		t.Fatal("interrupted calibration succeeded")
 	}
 	firstPass.Store(false)
-	if err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desyncDiscordRoute); err != nil {
+	if err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desync.DiscordRoute); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case selected := <-selections:
-		if selected != desyncDiscordRoute+"-f3" || firstCalls.Load() != 2 {
+		if selected != desync.DiscordRoute+"-f3" || firstCalls.Load() != 2 {
 			t.Fatalf("retried the prefix instead of resuming: %s calls=%d", selected, firstCalls.Load())
 		}
 	default:
@@ -326,11 +293,11 @@ func TestDesyncKeepsWorkingApplicationTrafficWithoutSeparateProbe(t *testing.T) 
 			return
 		}
 		if r.URL.Path == "/connections" {
-			fmt.Fprintf(w, `{"connections":[{"id":"active-voice","start":"2026-10-25T01:00:00Z","metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.2.2","destinationPort":"19330"},"chains":[%q,%q]}]}`, desyncDiscordUDPRoute+"-f4", desyncDiscordUDPRoute)
+			fmt.Fprintf(w, `{"connections":[{"id":"active-voice","start":"2026-10-25T01:00:00Z","metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.2.2","destinationPort":"19330"},"chains":[%q,%q]}]}`, desync.DiscordUDPRoute+"-f4", desync.DiscordUDPRoute)
 			return
 		}
-		if r.URL.Path == "/proxies/"+desyncDiscordUDPRoute {
-			fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
+		if r.URL.Path == "/proxies/"+desync.DiscordUDPRoute {
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
 			return
 		}
 		n := reads.Add(1)

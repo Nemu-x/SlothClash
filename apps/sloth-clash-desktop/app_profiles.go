@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 func (a *App) ListProfiles() []Profile {
@@ -21,7 +23,7 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 		return a.GetAppState(), errors.New("subscription url is required")
 	}
 
-	norm, err := normalizeSubscriptionURL(rawURL)
+	norm, err := runtimecfg.NormalizeSubscriptionURL(rawURL)
 	if err != nil {
 		return a.GetAppState(), err
 	}
@@ -29,7 +31,7 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	finalName := strings.TrimSpace(name)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	peek, peekErr := peekSubscription(ctx, norm)
+	peek, peekErr := peekSubscription(ctx, norm, currentSubscriptionClient())
 	if finalName == "" {
 		if peekErr != nil {
 			return a.GetAppState(), peekErr
@@ -86,7 +88,7 @@ func (a *App) ImportProfileFromText(name string, content string) (AppState, erro
 	}
 	// Validate up front: it must parse as a Clash doc, base64-Clash, or a
 	// supported share-link list. parseClashDocToMap covers all three.
-	doc, skipped, perr := parseClashDocToMapReport([]byte(content))
+	doc, skipped, perr := runtimecfg.ParseClashDocReport([]byte(content))
 	if perr != nil || len(doc) == 0 {
 		if perr != nil {
 			return a.GetAppState(), fmt.Errorf("not a valid config or supported share link: %w", perr)
@@ -114,7 +116,7 @@ func (a *App) ImportProfileFromText(name string, content string) (AppState, erro
 	// Seed the per-profile body cache (the pipeline's cache-first source). For a
 	// local profile this is the durable home of the content — there is no URL to
 	// re-fetch from — so ResetSubscriptionCache refuses to wipe local caches.
-	writeSubscriptionBodyCache(filepath.Join(root, "runtime", id), []byte(content))
+	runtimecfg.WriteSubscriptionBodyCache(filepath.Join(root, "runtime", id), []byte(content))
 
 	p := Profile{
 		ID:                id,
@@ -270,7 +272,7 @@ func (a *App) UpdateProfileInfo(profileID string, displayName string, subscripti
 		found = true
 		a.profiles[i].Name = displayName
 		if subscriptionURL != "" {
-			norm, err := normalizeSubscriptionURL(subscriptionURL)
+			norm, err := runtimecfg.NormalizeSubscriptionURL(subscriptionURL)
 			if err != nil {
 				return a.state, err
 			}
@@ -303,7 +305,7 @@ type AgeKeyPair struct {
 // on a profile (SetProfileAgeSecretKey) and hands the public key to the
 // provider.
 func (a *App) GenerateAgeKeyPair(kind string) (AgeKeyPair, error) {
-	pub, sec, err := generateAgeKeyPair(kind)
+	pub, sec, err := runtimecfg.GenerateAgeKeyPair(kind)
 	if err != nil {
 		return AgeKeyPair{}, err
 	}
@@ -314,7 +316,7 @@ func (a *App) GenerateAgeKeyPair(kind string) (AgeKeyPair, error) {
 // identity so the user can copy it for the provider at any time. Pure; nothing
 // persisted or logged.
 func (a *App) DeriveAgePublicKey(secretKey string) (string, error) {
-	return deriveAgePublicKeys(secretKey)
+	return runtimecfg.DeriveAgePublicKeys(secretKey)
 }
 
 // SetProfileAgeSecretKey stores (or clears, when empty) the age identity used
@@ -327,7 +329,7 @@ func (a *App) SetProfileAgeSecretKey(profileID string, secretKey string) (AppSta
 	}
 	secretKey = strings.TrimSpace(secretKey)
 	if secretKey != "" {
-		if err := validateAgeSecretKey(secretKey); err != nil {
+		if err := runtimecfg.ValidateAgeSecretKey(secretKey); err != nil {
 			return a.GetAppState(), fmt.Errorf("invalid AGE secret key: %w", err)
 		}
 	}

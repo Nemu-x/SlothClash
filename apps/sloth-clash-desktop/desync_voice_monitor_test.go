@@ -10,10 +10,12 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 func monitorConnection(ip string) ConnectionItem {
-	return ConnectionItem{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: ip, DestinationPort: "19330"}, Chains: []string{desyncDiscordUDPRoute + "-f4", desyncDiscordUDPRoute}}
+	return ConnectionItem{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: ip, DestinationPort: "19330"}, Chains: []string{desync.DiscordUDPRoute + "-f4", desync.DiscordUDPRoute}}
 }
 
 func TestDesyncStreamStallDoesNotReplaceHealthyVoice(t *testing.T) {
@@ -81,8 +83,8 @@ func TestDesyncProbeWinnerCannotOverrideRecoveredApplicationTraffic(t *testing.T
 			w.WriteHeader(204)
 		case r.Method == http.MethodPost:
 			fmt.Fprint(w, `{"sent":12,"received":12,"maxConsecutiveLoss":0,"durationMS":2200}`)
-		case r.URL.Path == "/proxies/"+desyncDiscordUDPRoute:
-			fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
+		case r.URL.Path == "/proxies/"+desync.DiscordUDPRoute:
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
 		default:
 			fmt.Fprintf(w, `{"desyncUDP":{"activity":[{"lastRXMS":%d,"rxPackets":100,"discoveryRX":3}]}}`, time.Now().UnixMilli())
 		}
@@ -90,7 +92,7 @@ func TestDesyncProbeWinnerCannotOverrideRecoveredApplicationTraffic(t *testing.T
 	defer server.Close()
 	a := &App{}
 	selected, changed, err := a.calibrateDesyncUDP(context.Background(), 0, "test-network", strings.TrimPrefix(server.URL, "http://"), "", "104.29.1.1:19330", map[string]bool{"f4": true})
-	if err != nil || changed || puts != 0 || selected != desyncDiscordUDPRoute+"-f4" {
+	if err != nil || changed || puts != 0 || selected != desync.DiscordUDPRoute+"-f4" {
 		t.Fatalf("recovered application overridden: %s %t %d %v", selected, changed, puts, err)
 	}
 }
@@ -122,7 +124,7 @@ func TestDesyncReportSeparatesDirectAndProfileFlowsWithoutPrivateRoutes(t *testi
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/connections" {
-			fmt.Fprintf(w, `{"connections":[{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.1","destinationPort":"19330"},"chains":[%q,%q]},{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.2","destinationPort":"19330"},"chains":["private subscription node"]}]}`, desyncDiscordUDPRoute+"-f4", desyncDiscordUDPRoute)
+			fmt.Fprintf(w, `{"connections":[{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.1","destinationPort":"19330"},"chains":[%q,%q]},{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.2","destinationPort":"19330"},"chains":["private subscription node"]}]}`, desync.DiscordUDPRoute+"-f4", desync.DiscordUDPRoute)
 			return
 		}
 		fmt.Fprint(w, `{}`)
@@ -135,20 +137,6 @@ func TestDesyncReportSeparatesDirectAndProfileFlowsWithoutPrivateRoutes(t *testi
 	report := a.GetDesyncDiagnosticReport()
 	if strings.Contains(report, "104.29.") || strings.Contains(report, "private subscription") || !strings.Contains(report, `"route": "profile"`) || !strings.Contains(report, `"route": "desync"`) {
 		t.Fatalf("route evidence missing or privacy regression: %s", report)
-	}
-}
-
-func TestDesyncVoiceRuleUpgradeRemovesOldAllUDPMatch(t *testing.T) {
-	old := "AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe))," + desyncDiscordUDPRoute
-	doc := map[string]any{"rules": []any{old, "MATCH,DIRECT"}}
-	applyDesyncOverlay(doc, DesyncSettings{Enabled: true, DiscordUDP: true})
-	for _, r := range doc["rules"].([]any) {
-		if r == old {
-			t.Fatal("legacy broad UDP rule retained")
-		}
-	}
-	if !strings.Contains(doc["rules"].([]any)[0].(string), "DST-PORT,1024-65535") {
-		t.Fatal("voice includes unrelated low-port UDP")
 	}
 }
 
@@ -171,8 +159,8 @@ func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"connections": []ConnectionItem{monitorConnection("104.29.1.1"), monitorConnection("104.29.1.2")}})
 			return
 		}
-		if r.URL.Path == "/proxies/"+desyncDiscordUDPRoute {
-			fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
+		if r.URL.Path == "/proxies/"+desync.DiscordUDPRoute {
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
 			return
 		}
 		n := uint64(reads.Add(1))
@@ -222,7 +210,7 @@ func TestDesyncNativeProbeErrorDoesNotRejectEveryTTL(t *testing.T) {
 			fmt.Fprint(w, `{"message":"UDP candidate socket failed"}`)
 			return
 		}
-		fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
+		fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
 	}))
 	defer server.Close()
 	a := &App{}

@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strings"
 
+	"SlothClashDesktop/internal/runtimecfg"
+
 	"github.com/wailsapp/wails/v2/pkg/options"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -35,13 +37,13 @@ func (a *App) handleInstallConfigURL(raw string) {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return
 	}
-	norm, err := normalizeSubscriptionURL(subURL)
+	norm, err := runtimecfg.NormalizeSubscriptionURL(subURL)
 	if err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return
 	}
 	// Untrusted origin: never let a link aim us at the LAN / cloud metadata.
-	if err := validateUntrustedSubscriptionURL(norm); err != nil {
+	if err := runtimecfg.ValidateUntrustedSubscriptionURL(norm); err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return
 	}
@@ -52,12 +54,12 @@ func (a *App) handleInstallConfigURL(raw string) {
 // the user accepted the confirmation dialog. It re-validates the URL: the
 // frontend must not be able to widen what the link was allowed to reach.
 func (a *App) ConfirmInstallConfigFromLink(name string, subscriptionURL string) (AppState, error) {
-	norm, err := normalizeSubscriptionURL(subscriptionURL)
+	norm, err := runtimecfg.NormalizeSubscriptionURL(subscriptionURL)
 	if err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return a.GetAppState(), err
 	}
-	if err := validateUntrustedSubscriptionURL(norm); err != nil {
+	if err := runtimecfg.ValidateUntrustedSubscriptionURL(norm); err != nil {
 		a.emitInstallConfigResult(false, err.Error(), "", "")
 		return a.GetAppState(), err
 	}

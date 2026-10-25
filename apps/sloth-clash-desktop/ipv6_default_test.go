@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg/runtimecfgtest"
+)
 
 // IPv6 leak guard (architecture/ipv6.md). The master IPv6 switch defaults ON
 // (verge parity: verge's template ships top-level `ipv6: true`). With it OFF,
@@ -28,9 +32,9 @@ func boolPtr(b bool) *bool { return &b }
 // block and one that ships none (the early-return branch in ensureDefaultDNSForTun).
 func TestIPv6DefaultsOnAndCoherent(t *testing.T) {
 	cases := map[string]func() map[string]any{
-		"with dns block": representativeFullProfile,
+		"with dns block": runtimecfgtest.RepresentativeFullProfile,
 		"without dns block": func() map[string]any {
-			m := representativeFullProfile()
+			m := runtimecfgtest.RepresentativeFullProfile()
 			delete(m, "dns")
 			return m
 		},
@@ -45,7 +49,7 @@ func TestIPv6DefaultsOnAndCoherent(t *testing.T) {
 			if m["ipv6"] != true {
 				t.Errorf("top-level ipv6 = %v, want true (default ON — verge parity, no v6 leak)", m["ipv6"])
 			}
-			d := dnsMap(t, m)
+			d := runtimecfgtest.DNSMap(t, m)
 			if d["ipv6"] != true {
 				t.Errorf("dns.ipv6 = %v, want true (mirrors top-level)", d["ipv6"])
 			}
@@ -63,14 +67,14 @@ func TestIPv6DefaultsOnAndCoherent(t *testing.T) {
 // assets.msn.com).
 func TestIPv6DisabledIsCoherent(t *testing.T) {
 	withConnectionPrefs(t, ConnectionSettings{DNSIPv6: boolPtr(false)})
-	m := representativeFullProfile()
+	m := runtimecfgtest.RepresentativeFullProfile()
 	if err := finalizeRuntimeConfigPipeline(m, t.TempDir(), 54333, 9097, "secret", "tun", true, true); err != nil {
 		t.Fatalf("pipeline error: %v", err)
 	}
 	if m["ipv6"] != false {
 		t.Errorf("top-level ipv6 = %v, want false (user opted out)", m["ipv6"])
 	}
-	if d := dnsMap(t, m); d["ipv6"] != false {
+	if d := runtimecfgtest.DNSMap(t, m); d["ipv6"] != false {
 		t.Errorf("dns.ipv6 = %v, want false (mirrors top-level)", d["ipv6"])
 	}
 }

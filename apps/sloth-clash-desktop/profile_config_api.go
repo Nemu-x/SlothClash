@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"SlothClashDesktop/internal/runtimecfg"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,14 +66,14 @@ func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 	if err != nil {
 		return ProfileRulesBaseline{LastError: err.Error()}
 	}
-	doc, err := parseClashDocToMap(body)
+	doc, err := runtimecfg.ParseClashDoc(body)
 	if err != nil || doc == nil {
 		if err == nil {
 			err = errors.New("subscription payload is not a YAML mapping")
 		}
 		return ProfileRulesBaseline{LastError: err.Error()}
 	}
-	isFull := subscriptionDocIsFullProfile(doc)
+	isFull := runtimecfg.IsFullProfile(doc)
 	if !isFull {
 		// Non-full-profile subs provide only proxies; start from the same
 		// synthetic `rules: [MATCH,Manual]` base that writeRuntimeConfig seeds
@@ -82,10 +84,10 @@ func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 		// on url-test groups.)
 		doc = map[string]any{"rules": []any{"MATCH,Manual"}}
 	}
-	if err := applyProfileMergeTemplate(doc, target.MergeTemplate); err != nil {
+	if err := runtimecfg.ApplyMergeTemplate(doc, target.MergeTemplate); err != nil {
 		return ProfileRulesBaseline{LastError: err.Error()}
 	}
-	if err := applyProfileMergeTemplate(doc, target.ProxyTemplate); err != nil {
+	if err := runtimecfg.ApplyMergeTemplate(doc, target.ProxyTemplate); err != nil {
 		return ProfileRulesBaseline{LastError: err.Error()}
 	}
 	rawRules, _ := doc["rules"].([]any)
@@ -139,14 +141,14 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 	if err != nil {
 		return ProfileProxyGroupsBaseline{LastError: err.Error()}
 	}
-	doc, err := parseClashDocToMap(body)
+	doc, err := runtimecfg.ParseClashDoc(body)
 	if err != nil || doc == nil {
 		if err == nil {
 			err = errors.New("subscription payload is not a YAML mapping")
 		}
 		return ProfileProxyGroupsBaseline{LastError: err.Error()}
 	}
-	isFull := subscriptionDocIsFullProfile(doc)
+	isFull := runtimecfg.IsFullProfile(doc)
 	if !isFull {
 		// Non-full-profile subs ship only proxies; start from the same
 		// synthetic Auto/Manual base that writeRuntimeConfig seeds so the
@@ -170,7 +172,7 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 			},
 		}
 	}
-	if err := applyProfileMergeTemplate(doc, target.MergeTemplate); err != nil {
+	if err := runtimecfg.ApplyMergeTemplate(doc, target.MergeTemplate); err != nil {
 		return ProfileProxyGroupsBaseline{LastError: err.Error()}
 	}
 	rawGroups, _ := doc["proxy-groups"].([]any)
@@ -247,22 +249,22 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 	// Snapshot is generated on demand for the profile-edit UI; no live session
 	// yet, so the YAML carries tun.enable=false. Connect/SetTrafficMode will
 	// rewrite it with the correct intent before Mihomo sees it.
-	return a.writeRuntimeConfigWithScript(
-		dataDir,
-		target.URL,
-		target.AgeSecretKey,
-		target.MergeTemplate,
-		target.ProxyTemplate,
-		target.RulesTemplate,
-		target.ScriptOverride,
-		0,
-		7890,
-		secret,
-		traffic,
-		false,
-		false,
-		nil,
-	)
+	return runtimecfg.Write(runtimecfg.Input{
+		DataDir:                dataDir,
+		SubURL:                 target.URL,
+		AgeKey:                 target.AgeSecretKey,
+		ExtendTemplate:         target.MergeTemplate,
+		ProxyTemplate:          target.ProxyTemplate,
+		RulesTemplate:          target.RulesTemplate,
+		Script:                 target.ScriptOverride,
+		CtrlPort:               0,
+		MixedPort:              7890,
+		Secret:                 secret,
+		WithExternalController: false,
+		Traffic:                traffic,
+		EnableTun:              false,
+		Env:                    currentRuntimeConfigEnv(),
+	}, nil)
 }
 
 // WriteProfileConfig replaces config.yaml for a profile (must be valid YAML mapping).
@@ -450,7 +452,7 @@ func (a *App) reloadActiveProfileConfig() error {
 // is seeded into the subscription body cache at import, see ImportProfileFromText)
 // or one with a hand-edited on-disk config.yaml (SkipAutoConfig). Such profiles
 // must NOT be rejected by the "needs a subscription URL" guards — the runtime
-// pipeline (tryWriteMergedFullProfile → cache-first) builds their config from the
+// pipeline (runtimecfg's tryWriteMergedFullProfile → cache-first) builds their config from the
 // cached body / on-disk file, no network involved. (See architecture/core-lifecycle.md #1.)
 func profileHasLocalConfig(p Profile) bool {
 	return strings.EqualFold(strings.TrimSpace(p.Type), "local") || p.SkipAutoConfig
@@ -469,13 +471,13 @@ func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byt
 		if err != nil {
 			return nil, err
 		}
-		body := readSubscriptionBodyCache(filepath.Join(root, "runtime", p.ID))
+		body := runtimecfg.ReadSubscriptionBodyCache(filepath.Join(root, "runtime", p.ID))
 		if len(body) == 0 {
 			return nil, errors.New("local profile has no cached config body")
 		}
 		return body, nil
 	}
-	body, _, err := fetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey)
+	body, _, err := runtimecfg.FetchSubscriptionBody(ctx, p.URL, p.AgeSecretKey, currentSubscriptionClient())
 	return body, err
 }
 

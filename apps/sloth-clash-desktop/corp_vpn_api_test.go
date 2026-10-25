@@ -3,6 +3,8 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 func TestParseCorpEnvelope_CertTrustIsNotError(t *testing.T) {
@@ -42,27 +44,27 @@ func TestCorpSplitFromStatus(t *testing.T) {
 	cases := []struct {
 		name string
 		in   CorpVpnStatus
-		want corpVpnSplit
+		want runtimecfg.CorpVpnSplit
 	}{
 		{
 			name: "connected split",
 			in:   CorpVpnStatus{Connected: true, Routes: []string{"10.0.0.0/8"}, DNSServers: []string{"10.16.32.100"}, DNSDomains: []string{"corp"}},
-			want: corpVpnSplit{Routes: []string{"10.0.0.0/8"}, DNSServers: []string{"10.16.32.100"}, DNSDomains: []string{"corp"}},
+			want: runtimecfg.CorpVpnSplit{Routes: []string{"10.0.0.0/8"}, DNSServers: []string{"10.16.32.100"}, DNSDomains: []string{"corp"}},
 		},
 		{
 			name: "full tunnel → inactive",
 			in:   CorpVpnStatus{Connected: true, FullTunnel: true, Routes: []string{"0.0.0.0/0"}},
-			want: corpVpnSplit{},
+			want: runtimecfg.CorpVpnSplit{},
 		},
 		{
 			name: "cert pending → inactive",
 			in:   CorpVpnStatus{NeedsCertTrust: true, Routes: []string{"10.0.0.0/8"}},
-			want: corpVpnSplit{},
+			want: runtimecfg.CorpVpnSplit{},
 		},
 		{
 			name: "disconnected → inactive",
 			in:   CorpVpnStatus{Connected: false, Routes: []string{"10.0.0.0/8"}},
-			want: corpVpnSplit{},
+			want: runtimecfg.CorpVpnSplit{},
 		},
 	}
 	for _, tc := range cases {
@@ -71,7 +73,7 @@ func TestCorpSplitFromStatus(t *testing.T) {
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %#v want %#v", got, tc.want)
 			}
-			if got.active() != (len(tc.want.Routes) > 0) {
+			if got.Active() != (len(tc.want.Routes) > 0) {
 				t.Fatalf("active() mismatch for %#v", got)
 			}
 		})

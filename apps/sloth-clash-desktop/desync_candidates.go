@@ -8,73 +8,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
-
-type desyncCandidate struct {
-	ID, TLSRec, Split string
-	TTL, Repeats      int
-	UDP               bool
-}
-
-func (c desyncCandidate) name(route string) string { return route + "-" + c.ID }
-func desyncCandidates(service string) []desyncCandidate {
-	var out []desyncCandidate
-	if service == "youtube" {
-		for _, n := range []int{3, 1, 2, 4, 8} {
-			out = append(out, desyncCandidate{ID: fmt.Sprintf("r%d", n), TLSRec: fmt.Sprintf("%d+s", n)})
-		}
-		return append(out, desyncCandidate{ID: "split", Split: "1+s"})
-	}
-	ttls := []int{4, 5, 3, 6, 2, 7, 8, 10, 12, 16, 24, 32}
-	for ttl := 1; ttl <= 32; ttl++ {
-		seen := false
-		for _, v := range ttls {
-			if v == ttl {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			ttls = append(ttls, ttl)
-		}
-	}
-	for _, ttl := range ttls {
-		c := desyncCandidate{ID: fmt.Sprintf("f%d", ttl), TLSRec: "1+s", TTL: ttl}
-		if service == "voice" {
-			c.UDP = true
-			c.TLSRec = ""
-			c.Repeats = 1
-		}
-		out = append(out, c)
-	}
-	if service == "voice" {
-		for _, ttl := range []int{4, 5, 3, 6, 8, 10, 12} {
-			out = append(out, desyncCandidate{ID: fmt.Sprintf("f%d-r2", ttl), UDP: true, TTL: ttl, Repeats: 2})
-		}
-	} else {
-		out = append(out, desyncCandidate{ID: "record", TLSRec: "1+s"}, desyncCandidate{ID: "split", Split: "1+s"})
-	}
-	return out
-}
-func (c desyncCandidate) proxy(route string) map[string]any {
-	opts := map[string]any{"dns-fallback": true}
-	if !c.UDP {
-		opts["reject-quic"] = true
-	}
-	if c.TLSRec != "" {
-		opts["tlsrec"] = c.TLSRec
-	}
-	if c.Split != "" {
-		opts["split"] = c.Split
-		opts["split-delay-ms"] = 5
-	}
-	if c.UDP {
-		opts["udp"] = map[string]any{"ttl": c.TTL, "repeats": c.Repeats, "packets": 3, "stable-binding": true}
-	} else if c.TTL > 0 {
-		opts["fake"] = map[string]any{"ttl": c.TTL, "prefix": -1}
-	}
-	return map[string]any{"name": c.name(route), "type": "direct", desyncManagedKey: true, "desync": opts}
-}
 
 type DesyncNetworkCache struct {
 	Network string `json:"network"`
@@ -109,22 +45,24 @@ func desyncNetworkKey() string {
 	sum := sha256.Sum256(append([]byte("desync-auto-v1\n"+strings.Join(parts, "\n")), build...))
 	return hex.EncodeToString(sum[:12])
 }
-func desyncCachedSelection(network, service string) string {
-	for _, c := range currentDesktopPrefs().DesyncCache {
-		if c.Network != network || time.Now().Unix()-c.Updated > 86400 {
-			continue
-		}
-		switch service {
-		case "youtube":
-			return c.YouTube
-		case "discord":
-			return c.Discord
-		case "voice":
-			return c.Voice
-		}
+
+// desyncCacheEntries converts the persisted winner cache to the catalog's type
+// (same fields; DesyncNetworkCache only adds the JSON tags).
+func desyncCacheEntries(cache []DesyncNetworkCache) []desync.CacheEntry {
+	if len(cache) == 0 {
+		return nil
 	}
-	return ""
+	out := make([]desync.CacheEntry, len(cache))
+	for i, c := range cache {
+		out[i] = desync.CacheEntry(c)
+	}
+	return out
 }
+
+func desyncCachedSelection(network, service string) string {
+	return desync.CachedSelection(desyncCacheEntries(currentDesktopPrefs().DesyncCache), network, service)
+}
+
 func saveDesyncSelection(network, service, id string) {
 	prefsMu.Lock()
 	defer prefsMu.Unlock()
@@ -154,106 +92,4 @@ func saveDesyncSelection(network, service, id string) {
 	}
 	prefsCurrent.DesyncCache = filtered
 	savePrefsBestEffort(prefsCurrent)
-}
-func orderedDesyncCandidates(service, cached string) []desyncCandidate {
-	candidates := desyncCandidates(service)
-	for i, c := range candidates {
-		if c.ID == cached {
-			return append([]desyncCandidate{c}, append(candidates[:i:i], candidates[i+1:]...)...)
-		}
-	}
-	return candidates
-}
-
-func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings) {
-	// Also removes r1-r4 generated entries when migrating or disabling.
-	managedRules := map[string]bool{}
-	managedRules["AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe)),"+desyncDiscordUDPRoute] = true // r3-r5 migration
-	for _, r := range append(desyncRules(desyncYouTubeDomains, desyncYouTubeRoute), desyncRules(desyncDiscordDomains, desyncDiscordRoute)...) {
-		managedRules[r] = true
-		if strings.Contains(r, "DST-PORT,443") {
-			managedRules[r[:strings.LastIndex(r, ",")]+",REJECT"] = true // r1-r8 migration
-		}
-	}
-	for _, r := range desyncDiscordUDPRules() {
-		managedRules[r] = true
-	}
-	removed := false
-	for _, key := range []string{"proxies", "proxy-groups"} {
-		entries := []any{}
-		for _, v := range desyncSlice(m[key]) {
-			if p, ok := v.(map[string]any); ok && p[desyncManagedKey] == true {
-				removed = true
-				continue
-			}
-			entries = append(entries, v)
-		}
-		if _, ok := m[key]; ok {
-			if key == "proxy-groups" && len(entries) == 0 {
-				delete(m, key)
-			} else {
-				m[key] = entries
-			}
-		}
-	}
-	var rules []any
-	for _, r := range desyncSlice(m["rules"]) {
-		if text, ok := r.(string); ok && managedRules[text] {
-			removed = true
-			continue
-		}
-		rules = append(rules, r)
-	}
-	if !s.Enabled {
-		if removed {
-			m["rules"] = rules
-		}
-		return
-	}
-	proxies := desyncSlice(m["proxies"])
-	groups := desyncSlice(m["proxy-groups"])
-	generated := []any{}
-	network := desyncNetworkKey()
-	for _, service := range []string{"voice", "youtube", "discord"} {
-		route := ""
-		var domains []string
-		switch service {
-		case "voice":
-			if !s.DiscordUDP {
-				continue
-			}
-			route = desyncDiscordUDPRoute
-		case "youtube":
-			if !s.YouTube {
-				continue
-			}
-			route = desyncYouTubeRoute
-			domains = desyncYouTubeDomains
-		case "discord":
-			if !s.Discord {
-				continue
-			}
-			route = desyncDiscordRoute
-			domains = desyncDiscordDomains
-		}
-		names := []string{}
-		for _, c := range orderedDesyncCandidates(service, desyncCachedSelection(network, service)) {
-			proxies = append(proxies, c.proxy(route))
-			names = append(names, c.name(route))
-		}
-		names = append(names, "PASS")
-		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": names[0], desyncManagedKey: true})
-		if service == "voice" {
-			for _, r := range desyncDiscordUDPRules() {
-				generated = append(generated, r)
-			}
-		} else {
-			for _, r := range desyncRules(domains, route) {
-				generated = append(generated, r)
-			}
-		}
-	}
-	m["proxies"] = proxies
-	m["proxy-groups"] = groups
-	m["rules"] = append(generated, rules...)
 }

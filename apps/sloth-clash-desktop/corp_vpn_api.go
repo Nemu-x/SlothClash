@@ -9,7 +9,10 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -98,11 +101,11 @@ func corpStatusFromWire(d *corpVpnDataWire) CorpVpnStatus {
 // corpSplitFromStatus derives the config overlay from a connected status. A
 // disconnected, cert-pending, or full-tunnel status yields an empty (inactive)
 // split — there is nothing to exclude. Pure.
-func corpSplitFromStatus(s CorpVpnStatus) corpVpnSplit {
+func corpSplitFromStatus(s CorpVpnStatus) runtimecfg.CorpVpnSplit {
 	if !s.Connected || s.NeedsCertTrust || s.FullTunnel || len(s.Routes) == 0 {
-		return corpVpnSplit{}
+		return runtimecfg.CorpVpnSplit{}
 	}
-	return corpVpnSplit{
+	return runtimecfg.CorpVpnSplit{
 		Routes:     append([]string(nil), s.Routes...),
 		DNSServers: append([]string(nil), s.DNSServers...),
 		DNSDomains: append([]string(nil), s.DNSDomains...),
@@ -243,7 +246,7 @@ func (a *App) StopCorpVpn() error {
 	// Clear the split and reload regardless of the stop result: a failed stop
 	// still means we should not keep excluding corp routes the sidecar may no
 	// longer serve.
-	a.applyCorpSplitAndReload(corpVpnSplit{})
+	a.applyCorpSplitAndReload(runtimecfg.CorpVpnSplit{})
 	if err != nil {
 		return fmt.Errorf("stop corp vpn service: %w", err)
 	}
@@ -317,8 +320,8 @@ func (a *App) GetCorpVpnStatus() (CorpVpnStatus, error) {
 	// which would otherwise make the whole corp domain (incl. the gateway)
 	// unresolvable and block the next connect. Fires once per drop: after the
 	// clear, currentCorpVpnSplit is inactive.
-	if perr == nil && !status.Connected && !status.NeedsCertTrust && currentCorpVpnSplit().active() {
-		a.applyCorpSplitAndReload(corpVpnSplit{})
+	if perr == nil && !status.Connected && !status.NeedsCertTrust && currentCorpVpnSplit().Active() {
+		a.applyCorpSplitAndReload(runtimecfg.CorpVpnSplit{})
 	}
 	return status, perr
 }
@@ -334,7 +337,7 @@ func (a *App) GetCorpVpnStatus() (CorpVpnStatus, error) {
 // each time, so the terminal (fresh sockets) worked while the browser (reused
 // sockets) appeared dead. A corp connect/disconnect is not a routing-policy
 // change that needs live traffic torn down.
-func (a *App) applyCorpSplitAndReload(split corpVpnSplit) {
+func (a *App) applyCorpSplitAndReload(split runtimecfg.CorpVpnSplit) {
 	setCorpVpnSplit(split)
 	a.mu.RLock()
 	activeID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
@@ -424,4 +427,27 @@ func (a *App) ensureCorpComponent(ctx context.Context, spec componentSpec) (stri
 		}
 	}
 	return "", err
+}
+
+var (
+	corpVpnStateMu sync.RWMutex
+	corpVpnState   runtimecfg.CorpVpnSplit
+)
+
+// setCorpVpnSplit records the split the running corp sidecar reported (called by
+// the lifecycle orchestration on connect; cleared on disconnect). The next
+// config reload picks it up via currentCorpVpnSplit.
+func setCorpVpnSplit(s runtimecfg.CorpVpnSplit) {
+	corpVpnStateMu.Lock()
+	corpVpnState = s
+	corpVpnStateMu.Unlock()
+}
+
+// currentCorpVpnSplit returns the active corp split (empty when the sidecar is
+// down), captured into the generation env on every reload
+// (currentRuntimeConfigEnv).
+func currentCorpVpnSplit() runtimecfg.CorpVpnSplit {
+	corpVpnStateMu.RLock()
+	defer corpVpnStateMu.RUnlock()
+	return corpVpnState
 }

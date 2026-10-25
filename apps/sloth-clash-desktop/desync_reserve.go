@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 const desyncProfileSelection = "PASS"
@@ -190,7 +192,7 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 			return
 		}
 		if recovery.observe(time.Now(), winner.ID, err == nil) {
-			if a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.name(route)) == nil {
+			if a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.Name(route)) == nil {
 				saveDesyncSelection(network, service, winner.ID)
 				reserve = false
 				a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: winner.ID, OK: true, Code: "desync_restored"})
@@ -250,7 +252,7 @@ func (a *App) tryDesyncVoiceReserve(ctx context.Context, lease uint64, endpoint,
 		return false
 	}
 	for peer := range verified {
-		if a.confirmDesyncProfile(ctx, lease, endpoint, secret, "voice", desyncDiscordUDPRoute, peer) != nil {
+		if a.confirmDesyncProfile(ctx, lease, endpoint, secret, "voice", desync.DiscordUDPRoute, peer) != nil {
 			return false
 		}
 	}
@@ -266,7 +268,7 @@ func (a *App) tryDesyncVoiceReserve(ctx context.Context, lease uint64, endpoint,
 	if err != nil || !desyncAllPeersStillStalled(time.Now(), overview.Connections, activity) {
 		return false
 	}
-	if a.applyDesyncCandidate(ctx, lease, endpoint, secret, desyncDiscordUDPRoute, desyncProfileSelection) != nil {
+	if a.applyDesyncCandidate(ctx, lease, endpoint, secret, desync.DiscordUDPRoute, desyncProfileSelection) != nil {
 		return false
 	}
 	a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: "profile", OK: true, Code: "fallback_applied"})
@@ -286,7 +288,7 @@ func desyncProfileVoiceTarget(connections []ConnectionItem) (target string, acti
 		// Eligibility, public endpoint and high-port checks stay identical to the
 		// Desync monitor; only the synthetic ownership marker differs here.
 		copy := c
-		copy.Chains = []string{desyncDiscordUDPRoute}
+		copy.Chains = []string{desync.DiscordUDPRoute}
 		if peer := desyncVoiceTarget([]ConnectionItem{copy}); peer != "" {
 			target = peer
 			active = true
@@ -303,7 +305,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 	lastProgress := time.Now()
 	previous := map[string]int64{}
 	nextProbe := time.Now()
-	candidates := orderedDesyncCandidates("voice", desyncCachedSelection(network, "voice"))
+	candidates := desync.Ordered("voice", desyncCachedSelection(network, "voice"))
 	nextCandidate := 0
 	for ctx.Err() == nil {
 		var overview struct {
@@ -312,7 +314,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 		var group desyncUDPProxy
 		err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/connections", nil, &overview)
 		if err == nil {
-			err = autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group)
+			err = autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group)
 		}
 		if err != nil {
 			lastProgress = time.Now() // an observation gap never establishes idleness
@@ -341,7 +343,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 		if target != "" && time.Now().After(nextProbe) {
 			var result desyncUDPProbe
 			start := time.Now()
-			err = autoCoreJSON(ctx, endpoint, secret, http.MethodPost, "/proxies/"+candidate.name(desyncDiscordUDPRoute)+"/desync/udp-probe", map[string]string{"target": target}, &result)
+			err = autoCoreJSON(ctx, endpoint, secret, http.MethodPost, "/proxies/"+candidate.Name(desync.DiscordUDPRoute)+"/desync/udp-probe", map[string]string{"target": target}, &result)
 			passed := err == nil && result.passed()
 			code := desyncErrorCode(err)
 			if err == nil && !passed {
@@ -355,7 +357,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 			nextProbe = time.Now().Add(time.Minute)
 		}
 		if recovery.ready(time.Now()) && time.Since(lastProgress) >= 60*time.Second {
-			if a.applyDesyncCandidate(ctx, lease, endpoint, secret, desyncDiscordUDPRoute, candidate.name(desyncDiscordUDPRoute)) == nil {
+			if a.applyDesyncCandidate(ctx, lease, endpoint, secret, desync.DiscordUDPRoute, candidate.Name(desync.DiscordUDPRoute)) == nil {
 				a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: candidate.ID, OK: true, Code: "desync_restored_idle"})
 				return
 			}

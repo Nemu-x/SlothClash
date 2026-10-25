@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 const (
@@ -44,15 +46,17 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 		return a.GetAppState(), errors.New("profile has no subscription url")
 	}
 
+	// One client snapshot for both requests of this refresh (peek + body).
+	client := currentSubscriptionClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	peek, err := peekSubscription(ctx, target.URL)
+	peek, err := peekSubscription(ctx, target.URL, client)
 	if err != nil {
 		return a.GetAppState(), err
 	}
 
 	// Also refresh the on-disk subscription body cache. Connect now reads
-	// from this cache synchronously (cache-first policy in
+	// from this cache synchronously (cache-first policy in runtimecfg's
 	// tryWriteMergedFullProfile), so if we don't update it here the
 	// reconnect triggered below would come up on the OLD body even though
 	// the user just clicked "Refresh subscription". Fetch failure is
@@ -73,7 +77,7 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 	if root, derr := slothDataRoot(); derr == nil {
 		dataDir := filepath.Join(root, "runtime", profileID)
 		bodyCtx, bodyCancel := context.WithTimeout(context.Background(), 40*time.Second)
-		if err := runSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey); isReadLimitError(err) {
+		if err := runtimecfg.RunSubscriptionFetchOnce(bodyCtx, dataDir, target.URL, target.AgeSecretKey, client); isReadLimitError(err) {
 			bodyErr = err
 		}
 		bodyCancel()

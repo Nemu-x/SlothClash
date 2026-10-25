@@ -1,0 +1,163 @@
+.pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.segment {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+
+.btnCompact {
+  padding: 5px 11px;
+  font-size: var(--font-size-sm);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.selectInline {
+  font-size: var(--font-size-sm);
+  padding: 8px 10px;
+}
+
+.banner {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 193, 7, 0.12);
+  color: #ffe7a3;
+}
+
+/* Status banner with a close button (auto-retires after a few seconds too). */
+.bannerDismissable {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.bannerDismissable > span {
+  flex: 1 1 auto;
+}
+
+.bannerClose {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.bannerClose:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.error {
+  margin-top: 10px;
+  color: #ff8d8d;
+}
+
+.panel {
+  max-width: 900px;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.btn {
+  border: 0;
+  border-radius: 11px;
+  padding: 8px 12px;
+  background: #3d3834;
+  color: #f2efe8;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #524b45;
+}
+
+.btn.primary {
+  background: #b9955a;
+  color: #1a1612;
+}
+
+.btn.ghost {
+  background: #3d2c3e;
+}
+
+.collapsibleCard {
+  padding: 8px 12px;
+}
+
+.collapsibleCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.collapsibleCardToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.collapsibleCardChevron {
+  display: inline-block;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  color: var(--text-muted);
+  transform: rotate(0deg);
+  transition: transform 140ms ease;
+  width: 12px;
+  text-align: center;
+}
+
+.collapsibleCardChevron.open {
+  transform: rotate(90deg);
+}
+
+.collapsibleCardActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.collapsibleCardBody {
+  margin-top: 8px;
+}

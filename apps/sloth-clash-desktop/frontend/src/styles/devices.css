@@ -1,0 +1,288 @@
+/* ── LAN companion (Remote / Devices) ───────────────────────────── */
+.devices .devicesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.devicesPair {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel-deep);
+}
+.devicesPair h3,
+.devicesList h3,
+.devicesControl h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.devicesPairRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+.devicesPairRow .input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.devicesPairRow select.input {
+  flex: 1 1 180px;
+}
+.devicesBody {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  align-items: start;
+}
+.devicesList,
+.devicesControl {
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--panel-deep);
+}
+.devicesRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  color: #f2efe8;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+.devicesRow:hover {
+  border-color: var(--hairline-strong);
+}
+.devicesRowSelected {
+  border-color: var(--accent-muted);
+  background: var(--accent-dim);
+}
+.devicesRowName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.devicesRowMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.devicesRowMeta .pill {
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+}
+.devicesGroupLabel {
+  margin: var(--space-3) 0 var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.devicesStatusRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.devicesActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.devicesUnpair {
+  margin-top: var(--space-2);
+  color: #e6a39a;
+}
+/* Remote buttons of a paired device (DeviceRemote) */
+.deviceRemoteHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.deviceRemoteSummary {
+  margin: 0 0 var(--space-3);
+}
+.deviceStream {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+}
+.deviceStream-open {
+  border-color: rgba(90, 184, 120, 0.55);
+}
+.deviceStream-down,
+.deviceStream-revoked {
+  border-color: var(--danger);
+}
+.deviceTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+  margin: var(--space-3) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.deviceTab {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.deviceTab.active {
+  color: inherit;
+  border-bottom-color: var(--accent-muted);
+}
+.deviceTabBody {
+  margin-bottom: var(--space-3);
+}
+.deviceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.deviceGroup,
+.deviceItem {
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+.deviceItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.deviceItem.active {
+  border-color: var(--accent-muted);
+}
+.deviceItemMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.deviceItemActions,
+.deviceGroupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.deviceGroupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.deviceGroupActions {
+  margin-left: auto;
+}
+.deviceGroupHead .pill,
+.deviceItemActions .pill {
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+}
+.deviceNodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.deviceNode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+.deviceNode.active {
+  border-color: rgba(90, 184, 120, 0.55);
+  background: rgba(90, 184, 120, 0.12);
+}
+.deviceNodeName,
+.deviceNodeDelay {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.deviceNodeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deviceNodeName:disabled {
+  cursor: default;
+}
+.deviceNodeDelay {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+}
+.deviceSetting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.deviceSetting select.input {
+  max-width: 220px;
+}
+.deviceTrafficChart {
+  width: 100%;
+  height: 80px;
+}
+.deviceTrafficChart polyline {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.deviceTrafficDown {
+  stroke: rgba(90, 184, 120, 0.9);
+}
+.deviceTrafficUp {
+  stroke: var(--accent-muted);
+}
+.deviceLogLines {
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .devicesBody {
+    grid-template-columns: 1fr;
+  }
+}

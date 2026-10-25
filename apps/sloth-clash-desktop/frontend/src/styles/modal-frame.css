@@ -1,0 +1,75 @@
+.shell[data-theme="light"] .input,
+.shell[data-theme="light"] .selectModern {
+  background: #fdf9f0;
+  color: var(--text);
+  border-color: var(--hairline-strong);
+}
+
+.shell[data-theme="light"] .mono {
+  background: #f0ebe4;
+  color: #2a2622;
+}
+
+.selectModern {
+  /* Full-width like .input so form fields are a consistent size project-wide.
+     Context-specific widths (Proxies focus group, Home compact pickers) keep
+     their own narrower overrides. */
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline-strong);
+  background: rgba(12, 11, 10, 0.75);
+  color: #f2efe8;
+  padding: 7px 32px 7px 11px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+}
+
+.selectModern option {
+  font-family: var(--font-sans);
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 18, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 55;
+  padding: 20px;
+}
+
+.modalCard {
+  width: min(520px, 100%);
+  border-radius: 18px;
+  padding: 20px 22px;
+  background: linear-gradient(165deg, #2c2926, #1c1a18);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.modalCardWide {
+  width: min(1040px, 100%);
+}
+
+.yamlModalCard {
+  max-height: min(calc(90vh / var(--ui-zoom, 1)), 720px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modalCardFullscreen {
+  width: min(calc(96vw / var(--ui-zoom, 1)), 1400px);
+  max-height: calc(96vh / var(--ui-zoom, 1));
+  min-height: calc(88vh / var(--ui-zoom, 1));
+  overflow: auto;
+}
+
+.modalCardVisualTall {
+  max-height: calc(94vh / var(--ui-zoom, 1));
+  min-height: min(calc(84vh / var(--ui-zoom, 1)), 760px);
+  overflow: auto;
+}

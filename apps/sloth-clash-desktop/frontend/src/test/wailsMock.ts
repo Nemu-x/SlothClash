@@ -11,8 +11,9 @@ import { type Mock, vi } from 'vitest'
  *
  * App methods are created lazily as `vi.fn`s. A method a test did not stub
  * rejects with a descriptive error, so an unexpected backend call fails loudly
- * instead of silently resolving `undefined`. Runtime functions are no-ops
- * (EventsOn* return an unsubscribe no-op) since no test drives Wails events.
+ * instead of silently resolving `undefined`. Runtime functions are no-ops,
+ * except the event bus: EventsOn* register the listener with `wailsEvents`
+ * (and return a working unsubscribe) so a test can emit backend events.
  */
 export type WailsAppMock = {
   /** Stub `App.<name>` with `impl` (sync return values are wrapped in a Promise). */
@@ -48,16 +49,45 @@ const appProxy = new Proxy(
   },
 )
 
+type EventListener = (...data: unknown[]) => void
+
+const eventListeners = new Map<string, Set<EventListener>>()
+
+// EventsOn / EventsOnce / EventsOnMultiple(name, callback, maxCallbacks).
+function eventsOn(name: string, callback: EventListener): () => void {
+  let set = eventListeners.get(name)
+  if (!set) {
+    set = new Set()
+    eventListeners.set(name, set)
+  }
+  set.add(callback)
+  return () => {
+    eventListeners.get(name)?.delete(callback)
+  }
+}
+
 const runtimeProxy = new Proxy(
   {},
   {
     get: (_target, prop) => {
       if (typeof prop !== 'string') return undefined
-      if (prop.startsWith('EventsOn')) return () => () => {}
+      if (prop.startsWith('EventsOn')) return eventsOn
       return () => undefined
     },
   },
 )
+
+/** The Wails event bus as the runtime mock sees it. */
+export const wailsEvents = {
+  /** Deliver `data` to every current listener of `name`. */
+  emit: (name: string, ...data: unknown[]) => {
+    for (const cb of [...(eventListeners.get(name) ?? [])]) cb(...data)
+  },
+  /** Number of live subscriptions for `name`. */
+  listenerCount: (name: string) => eventListeners.get(name)?.size ?? 0,
+  /** Drop every listener (between tests). */
+  reset: () => eventListeners.clear(),
+}
 
 export const wailsApp: WailsAppMock = {
   stub: (name, impl) => {

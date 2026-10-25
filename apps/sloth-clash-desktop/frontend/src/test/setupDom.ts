@@ -6,7 +6,7 @@ import { afterEach } from 'vitest'
 
 import i18n from '../i18n'
 
-import { installWailsMock, wailsApp } from './wailsMock'
+import { installWailsMock, wailsApp, wailsEvents } from './wailsMock'
 
 installWailsMock()
 
@@ -16,4 +16,5 @@ await i18n.changeLanguage('en')
 afterEach(() => {
   cleanup()
   wailsApp.reset()
+  wailsEvents.reset()
 })

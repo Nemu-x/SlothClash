@@ -282,12 +282,12 @@ func (h *lifecycleHarness) assertEndpointGone(listen, secret string) {
 }
 
 // coreExitWatcherFrame matches a stack frame of the cmd.Wait goroutine that
-// startEmbeddedCore spawns per launched core — its only `go func()` closure.
+// startEmbeddedCore spawns per launched core (watchEmbeddedCoreExit).
 // That goroutine is what turns a core exit into state (crash -> ConnError +
 // auto-restart, intentional stop -> nothing) and closes core.log afterwards.
 // Frames are qualified by the module path ("SlothClashDesktop."), not "main.",
 // so match any qualifier; the "created by" line never starts a match.
-var coreExitWatcherFrame = regexp.MustCompile(`(?m)^[\w./-]+\.\(\*App\)\.startEmbeddedCore\.func\d+\(`)
+var coreExitWatcherFrame = regexp.MustCompile(`(?m)^[\w./-]+\.\(\*App\)\.watchEmbeddedCoreExit\(`)
 
 // coreExitWatchers returns the IDs of the live core exit-watcher goroutines.
 func coreExitWatchers() map[string]bool {

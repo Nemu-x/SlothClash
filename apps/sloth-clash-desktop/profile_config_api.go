@@ -227,7 +227,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 		}
 	}
 	traffic := strings.TrimSpace(a.state.Traffic)
-	secret := strings.TrimSpace(a.coreSecret)
+	secret := strings.TrimSpace(a.core.secret)
 	a.mu.RUnlock()
 	if !found {
 		return errors.New("profile not found")
@@ -511,9 +511,9 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 	}
 
 	a.mu.RLock()
-	secret := strings.TrimSpace(a.coreSecret)
+	secret := strings.TrimSpace(a.core.secret)
 	listen := a.effectiveCoreEndpointLocked()
-	coreProfileID := strings.TrimSpace(a.coreActiveProfileID)
+	coreProfileID := strings.TrimSpace(a.core.activeProfileID)
 	mixedPort := a.state.Core.MixedPort
 	a.mu.RUnlock()
 	if secret == "" {
@@ -615,7 +615,7 @@ func (a *App) applyRuntimeConfigWithGen(profile Profile, traffic string, enableT
 		}
 		a.mu.RLock()
 		relisten := a.effectiveCoreEndpointLocked()
-		resecret := strings.TrimSpace(a.coreSecret)
+		resecret := strings.TrimSpace(a.core.secret)
 		a.mu.RUnlock()
 		if strings.TrimSpace(relisten) == "" {
 			return errors.New("reload fallback: core endpoint is unavailable after restart")

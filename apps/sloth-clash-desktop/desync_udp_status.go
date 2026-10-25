@@ -92,7 +92,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 		return out
 	}
 	a.mu.RLock()
-	endpoint, secret := a.effectiveCoreEndpointLocked(), a.coreSecret
+	endpoint, secret := a.effectiveCoreEndpointLocked(), a.core.secret
 	a.mu.RUnlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -147,7 +147,7 @@ func (a *App) ReconnectDiscordUDP() (int, error) {
 		return 0, fmt.Errorf("Discord UDP reconnect: %s", overview.LastError)
 	}
 	a.mu.RLock()
-	endpoint, secret := a.effectiveCoreEndpointLocked(), a.coreSecret
+	endpoint, secret := a.effectiveCoreEndpointLocked(), a.core.secret
 	a.mu.RUnlock()
 	closed := 0
 	parent := a.ctx

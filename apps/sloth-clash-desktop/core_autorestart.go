@@ -24,8 +24,8 @@ var coreAutoRestartBackoffs = []time.Duration{
 // has already been set to "error".
 //
 // It bails (no further attempts) when:
-//   - the user clicked Disconnect (coreStopIntentional flips to true);
-//   - the user activated a different profile (coreActiveProfileID rotates);
+//   - the user clicked Disconnect (core.stopIntentional flips to true);
+//   - the user activated a different profile (core.activeProfileID rotates);
 //   - the profile was deleted between attempts.
 //
 // On the first attempt we move Connection.Status from "error" to
@@ -58,7 +58,7 @@ func (a *App) attemptCoreAutoRestart(profileID, traffic string) {
 		// have clicked Disconnect, switched profile, or relaunched Connect
 		// themselves while we were sleeping.
 		a.mu.Lock()
-		if a.coreStopIntentional {
+		if a.core.stopIntentional {
 			a.mu.Unlock()
 			return
 		}

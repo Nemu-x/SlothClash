@@ -80,9 +80,9 @@ func TestDesyncUDPProbeDoesNotRewardFirstThreeReplies(t *testing.T) {
 	}
 }
 func TestDesyncReportDoesNotSerializeSecretsAndProfiles(t *testing.T) {
-	a := &App{coreSecret: "test-controller-secret"}
+	a := &App{core: coreProcess{secret: "test-controller-secret"}}
 	a.state.Connection.LastError = "https://private.example/subscription-token"
-	a.coreActiveProfileID = "secret-profile-id"
+	a.core.activeProfileID = "secret-profile-id"
 	a.desyncAuto.status.Attempts = []DesyncAutoAttempt{{Service: "voice", Candidate: "f4", Code: "udp_stalled"}}
 	report := a.GetDesyncDiagnosticReport()
 	for _, secret := range []string{"test-controller-secret", "private.example", "subscription-token", "secret-profile-id"} {
@@ -109,7 +109,7 @@ func TestDesyncConnectedReportAnonymizesUDPEndpoints(t *testing.T) {
 		fmt.Fprint(w, `{"desyncUDP":{"counters":{"packets":100,"fakePackets":3},"activity":[{"endpoint":"104.29.2.2:19330","txPackets":100,"rxPackets":80}],"binding":{"enabled":true,"nativeSockets":2,"handovers":13,"queuedBytes":0,"ssrc":"private-session-id","address":"private-binding-address","process":"private-process"}}}`)
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://"), coreSecret: "private-controller-token"}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://"), secret: "private-controller-token"}}
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	text := a.GetDesyncDiagnosticReport()
@@ -196,14 +196,14 @@ func TestDesyncCalibrationAppliesOnlyVerifiedCandidateAndCachesIt(t *testing.T) 
 		}
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
 	network := desyncNetworkKey()
 	a.desyncAuto.epoch = 1
 	a.desyncAuto.status.Network = network
-	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desync.DiscordRoute)
+	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.core.listen, "", "discord", desync.DiscordRoute)
 	if err != nil || selected != desync.DiscordRoute+"-f5" || checks != 5 || desyncCachedSelection(network, "discord") != "f5" {
 		t.Fatalf("calibration not applied: %q checks=%d err=%v", selected, checks, err)
 	}
@@ -254,18 +254,18 @@ func TestDesyncCalibrationResumesAfterInterruptedBudget(t *testing.T) {
 		fmt.Fprint(w, `{"type":"Selector","all":["candidate"]}`)
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
 	a.desyncAuto.epoch = 1
 	network := desyncNetworkKey()
 	a.desyncAuto.status.Network = network
-	if err := a.calibrateDesyncTCP(firstCtx, 1, network, a.coreListen, "", "discord", desync.DiscordRoute); err == nil {
+	if err := a.calibrateDesyncTCP(firstCtx, 1, network, a.core.listen, "", "discord", desync.DiscordRoute); err == nil {
 		t.Fatal("interrupted calibration succeeded")
 	}
 	firstPass.Store(false)
-	if err := a.calibrateDesyncTCP(context.Background(), 1, network, a.coreListen, "", "discord", desync.DiscordRoute); err != nil {
+	if err := a.calibrateDesyncTCP(context.Background(), 1, network, a.core.listen, "", "discord", desync.DiscordRoute); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -305,7 +305,7 @@ func TestDesyncKeepsWorkingApplicationTrafficWithoutSeparateProbe(t *testing.T) 
 		fmt.Fprintf(w, `{"desyncUDP":{"activity":[{"endpoint":"104.29.2.2:19330","firstMS":%d,"lastTXMS":%d,"lastRXMS":%d,"txPackets":%d,"rxPackets":%d,"txBytes":%d,"rxBytes":%d,"mediaTX":%d,"mediaRX":%d}]}}`, now-60000, now, now, n*20, n*20, n*1000, n*1000, n*10, n*10)
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.state.Mode.Current = "rule"
@@ -316,7 +316,7 @@ func TestDesyncKeepsWorkingApplicationTrafficWithoutSeparateProbe(t *testing.T) 
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		a.runDesyncAutoSession(ctx, 1, desyncNetworkKey(), a.coreListen, "", DesyncStatus{Settings: currentDesyncSettings(), Traffic: "tun"})
+		a.runDesyncAutoSession(ctx, 1, desyncNetworkKey(), a.core.listen, "", DesyncStatus{Settings: currentDesyncSettings(), Traffic: "tun"})
 	}()
 	deadline := time.After(12 * time.Second)
 	ticker := time.NewTicker(20 * time.Millisecond)

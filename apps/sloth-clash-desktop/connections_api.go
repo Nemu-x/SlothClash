@@ -47,7 +47,7 @@ func (a *App) FetchConnectionsOverview() ConnectionsOverview {
 	conn := strings.TrimSpace(a.state.Connection.Status)
 	running := a.state.Core.Running
 	ep := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 
 	if ep == "" || (conn != "connected" && !running) {
@@ -155,7 +155,7 @@ func (a *App) FetchConnectionsOverview() ConnectionsOverview {
 func (a *App) CloseAllConnections() error {
 	a.mu.RLock()
 	ep := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 	if strings.TrimSpace(ep) == "" {
 		return errors.New("core controller is unavailable")

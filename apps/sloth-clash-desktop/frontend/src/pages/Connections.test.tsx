@@ -77,7 +77,7 @@ describe('ConnectionsPage with a large connection list', () => {
     const rows = bodyRows(container)
     // [id, host, process, rule, node, traffic]; index 0 is DIRECT (no chain).
     expect(cellTexts(rows[0]).slice(0, 5)).toEqual([
-      'conn-000',
+      '00000000',
       'site-0.example.com:443',
       'chrome.exe',
       'private',
@@ -85,11 +85,14 @@ describe('ConnectionsPage with a large connection list', () => {
     ])
     const last = cellTexts(rows[CONN_COUNT - 1])
     expect(last.slice(0, 4)).toEqual([
-      'conn-000',
+      String(CONN_COUNT - 1).padStart(8, '0'),
       `site-${CONN_COUNT - 1}.example.com:443`,
       'discord.exe',
       `site-${CONN_COUNT - 1}.example.com`,
     ])
+    // The id cell shows the first 8 chars; each row must render its own id.
+    const ids = new Set([...rows].map((r) => r.cells[0]?.textContent))
+    expect(ids.size).toBe(CONN_COUNT)
     // Exit node is chains[0]; the tooltip reads entry group -> exit node.
     const chip = rows[CONN_COUNT - 1]?.querySelector('.connNodeChip')
     expect(chip).toHaveAttribute('title', 'Proxy → 🇩🇪 Germany 01')

@@ -631,7 +631,7 @@ func (a *App) Disconnect() AppState {
 				debugLog(
 					"gen-"+strconv.FormatUint(disconnectGen, 10),
 					"H1",
-					"app.go:disconnect-reload",
+					"app_connect.go:disconnect-reload",
 					"failed to apply disconnected YAML; next Connect will override",
 					map[string]any{"error": err.Error()},
 				)

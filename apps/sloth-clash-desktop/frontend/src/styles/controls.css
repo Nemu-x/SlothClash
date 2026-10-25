@@ -4,13 +4,6 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.segment {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 16px;
-  padding: 12px;
-}
-
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;

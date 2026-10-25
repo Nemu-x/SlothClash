@@ -30,7 +30,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 		EnableTun:              true,
 		Env:                    testEnv(),
 	}, nil); err != nil {
-		t.Fatalf("writeRuntimeConfig(tun, enableTun=true) failed: %v", err)
+		t.Fatalf("Write(tun, enableTun=true) failed: %v", err)
 	}
 	tunCfg := runtimecfgtest.ReadYAMLMap(t, filepath.Join(tunDir, "config.yaml"))
 	tunBlock, ok := tunCfg["tun"].(map[string]any)
@@ -70,7 +70,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 		EnableTun:              false,
 		Env:                    testEnv(),
 	}, nil); err != nil {
-		t.Fatalf("writeRuntimeConfig(tun, enableTun=false) failed: %v", err)
+		t.Fatalf("Write(tun, enableTun=false) failed: %v", err)
 	}
 	idleCfg := runtimecfgtest.ReadYAMLMap(t, filepath.Join(idleDir, "config.yaml"))
 	idleTun, _ := idleCfg["tun"].(map[string]any)
@@ -93,7 +93,7 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 		EnableTun:              false,
 		Env:                    testEnv(),
 	}, nil); err != nil {
-		t.Fatalf("writeRuntimeConfig(proxy) failed: %v", err)
+		t.Fatalf("Write(proxy) failed: %v", err)
 	}
 	proxyCfg := runtimecfgtest.ReadYAMLMap(t, filepath.Join(proxyDir, "config.yaml"))
 	proxyTun, ok := proxyCfg["tun"].(map[string]any)
@@ -136,7 +136,7 @@ append:
 		EnableTun:              true,
 		Env:                    testEnv(),
 	}, nil); err != nil {
-		t.Fatalf("writeRuntimeConfig with templates failed: %v", err)
+		t.Fatalf("Write with templates failed: %v", err)
 	}
 	cfg := runtimecfgtest.ReadYAMLMap(t, filepath.Join(dir, "config.yaml"))
 

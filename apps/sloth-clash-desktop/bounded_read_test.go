@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -85,5 +87,91 @@ func TestFetchReleaseAssetsAtAndOverLimit(t *testing.T) {
 	body = padJSON(t, doc, githubReleaseMaxJSONBytes+1)
 	if _, err := fetchReleaseAssets(); err == nil || err.Error() != "GitHub API response exceeds the 8 MiB limit" {
 		t.Fatalf("oversized body: %v", err)
+	}
+}
+
+// stubGitHubHTTP serves routes (keyed by URL path) through githubAPIHTTPClient
+// for the duration of the test.
+func stubGitHubHTTP(t *testing.T, status int, routes map[string][]byte) {
+	t.Helper()
+	prev := githubAPIHTTPClient
+	githubAPIHTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, ok := routes[r.URL.Path]
+		if !ok {
+			t.Errorf("unexpected request %s", r.URL)
+			return &http.Response{StatusCode: 404, Status: "404 Not Found", Body: io.NopCloser(bytes.NewReader(nil)), Request: r}, nil
+		}
+		return &http.Response{StatusCode: status, Status: strconv.Itoa(status) + " " + http.StatusText(status), Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+	})}
+	t.Cleanup(func() { githubAPIHTTPClient = prev })
+}
+
+func TestFetchLatestGitHubReleaseAtAndOverLimit(t *testing.T) {
+	const path = "/repos/" + githubOwner + "/" + githubRepo + "/releases/latest"
+	doc := []byte(`{"tag_name":"v1.0.0","html_url":"https://example.test/r","body":"notes"}`)
+
+	stubGitHubHTTP(t, 200, map[string][]byte{path: padJSON(t, doc, githubReleaseMaxJSONBytes)})
+	tag, htmlURL, notes, _, _, err := fetchLatestGitHubRelease()
+	if err != nil || tag != "v1.0.0" || htmlURL != "https://example.test/r" || notes != "notes" {
+		t.Fatalf("at limit: %q %q %q %v", tag, htmlURL, notes, err)
+	}
+
+	stubGitHubHTTP(t, 200, map[string][]byte{path: padJSON(t, doc, githubReleaseMaxJSONBytes+1)})
+	if _, _, _, _, _, err := fetchLatestGitHubRelease(); err == nil || err.Error() != "GitHub API response exceeds the 8 MiB limit" {
+		t.Fatalf("oversized body: %v", err)
+	}
+
+	// Error bodies are only quoted: an oversized one still reports the status.
+	stubGitHubHTTP(t, 403, map[string][]byte{path: bytes.Repeat([]byte("e"), githubReleaseMaxJSONBytes+10)})
+	want := "GitHub API 403 Forbidden: " + strings.Repeat("e", 200)
+	if _, _, _, _, _, err := fetchLatestGitHubRelease(); err == nil || err.Error() != want {
+		t.Fatalf("oversized error body: %v", err)
+	}
+}
+
+func TestDownloadAssetBytesAtAndOverLimit(t *testing.T) {
+	const limit = 64 * 1024
+	at := bytes.Repeat([]byte("a"), limit)
+	stubGitHubHTTP(t, 200, map[string][]byte{"/at": at, "/over": append(at, 'a')})
+	got, err := downloadAssetBytes("https://example.test/at", limit)
+	if err != nil || !bytes.Equal(got, at) {
+		t.Fatalf("at limit: %d bytes, %v", len(got), err)
+	}
+	got, err = downloadAssetBytes("https://example.test/over", limit)
+	if err == nil || got != nil || err.Error() != "release asset response exceeds the 64 KiB limit" {
+		t.Fatalf("oversized asset: %d bytes, %v", len(got), err)
+	}
+}
+
+// An oversized checksums file or signature is refused before signature
+// verification instead of being verified (or parsed) truncated.
+func TestResolveInstallerDigestRefusesOversizedAssets(t *testing.T) {
+	const releasePath = "/repos/" + githubOwner + "/" + githubRepo + "/releases/latest"
+	release := []byte(`{"assets":[` +
+		`{"name":"SHA256SUMS","browser_download_url":"https://example.test/SHA256SUMS"},` +
+		`{"name":"SHA256SUMS.minisig","browser_download_url":"https://example.test/SHA256SUMS.minisig"}]}`)
+	checksums := []byte(strings.Repeat("0", 64) + "  SlothClash-amd64-installer.exe\n")
+
+	cases := []struct {
+		name      string
+		checksums []byte
+		signature []byte
+		want      string
+	}{
+		{"checksums", padJSON(t, checksums, 1*1024*1024+1), []byte("sig"), "download checksums: release asset response exceeds the 1 MiB limit"},
+		{"signature", checksums, bytes.Repeat([]byte("s"), 64*1024+1), "download signature: release asset response exceeds the 64 KiB limit"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stubGitHubHTTP(t, 200, map[string][]byte{
+				releasePath:           release,
+				"/SHA256SUMS":         tc.checksums,
+				"/SHA256SUMS.minisig": tc.signature,
+			})
+			digest, verified, err := (&App{}).resolveInstallerDigest("SlothClash-amd64-installer.exe")
+			if err == nil || err.Error() != tc.want || digest != "" || verified {
+				t.Fatalf("got %q %v %v, want error %q", digest, verified, err, tc.want)
+			}
+		})
 	}
 }

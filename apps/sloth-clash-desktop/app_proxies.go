@@ -36,7 +36,7 @@ func (a *App) SelectProxyGroup(name string) (AppState, error) {
 				debugLog(
 					"select-proxy-group",
 					"H5",
-					"app.go:SelectProxyGroup",
+					"app_proxies.go:SelectProxyGroup",
 					"failed to persist sticky pick",
 					map[string]any{"error": err.Error(), "group": name},
 				)
@@ -87,7 +87,7 @@ func (a *App) restoreStickyGroupLocked() {
 			debugLog(
 				"sticky-restore",
 				"H5",
-				"app.go:restoreStickyGroupLocked",
+				"app_proxies.go:restoreStickyGroupLocked",
 				"restored sticky pick",
 				map[string]any{
 					"group":       g.Name,

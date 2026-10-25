@@ -1,0 +1,1323 @@
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index 8b01f88..a5274e1 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"net"
+ 	"sync/atomic"
+ 
+ 	"github.com/Nemu-x/desync"
+@@ -23,6 +24,7 @@ type Direct struct {
+ 	desyncDNSFallback  bool
+ 	desyncDNSFallbacks atomic.Uint64
+ 	desyncActivity     *directUDPActivity
++	desyncBindings     *desyncBindingPool
+ }
+ 
+ type DirectOption struct {
+@@ -68,6 +70,35 @@ func (d *Direct) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
+ 	if err := d.ResolveUDP(ctx, metadata); err != nil {
+ 		return nil, err
+ 	}
++	if d.desyncBindings != nil {
++		if owner, ok := d.bindingOwner(metadata); ok {
++			if err := ctx.Err(); err != nil {
++				return nil, err
++			}
++			target, opts := metadata.AddrPort(), d.DialOptions()
++			if owner.iface != "" {
++				opts = append(opts, dialer.WithInterface(owner.iface))
++			}
++			pc, err := d.desyncBindings.newSession(owner, func(ctx context.Context) (net.PacketConn, error) {
++				native, err := dialer.NewDialer(opts...).ListenPacket(ctx, "udp4", "", target)
++				if err != nil {
++					return nil, err
++				}
++				wrapped, err := desync.WrapPacketConn(native, *d.desyncUDP)
++				if err != nil {
++					_ = native.Close()
++					return nil, err
++				}
++				// Register the real socket with loopback detection, not the
++				// unbound logical association's placeholder local address.
++				return d.loopBack.NewPacketConn(NewPacketConn(&directDesyncPacketConn{PacketConn: wrapped}, d)), nil
++			})
++			if err != nil {
++				return nil, err
++			}
++			return NewPacketConn(&observedDesyncPacketConn{PacketConn: pc, activity: d.desyncActivity}, d), nil
++		}
++	}
+ 	pc, err := dialer.NewDialer(d.DialOptions()...).ListenPacket(ctx, "udp", "", metadata.AddrPort())
+ 	if err != nil {
+ 		return nil, err
+@@ -152,3 +183,10 @@ func NewCompatible() *Direct {
+ 		loopBack: loopback.NewDetector(),
+ 	}
+ }
++
++func (d *Direct) Close() error {
++	if d.desyncBindings != nil {
++		return d.desyncBindings.Close()
++	}
++	return nil
++}
+diff --git a/adapter/outbound/direct_desync.go b/adapter/outbound/direct_desync.go
+index b818af7..d9b65a8 100644
+--- a/adapter/outbound/direct_desync.go
++++ b/adapter/outbound/direct_desync.go
+@@ -22,9 +22,10 @@ type DirectDesyncOption struct {
+ }
+ 
+ type DirectDesyncUDPOption struct {
+-	TTL     int `proxy:"ttl"`
+-	Repeats int `proxy:"repeats,omitempty"`
+-	Packets int `proxy:"packets,omitempty"`
++	TTL           int  `proxy:"ttl"`
++	Repeats       int  `proxy:"repeats,omitempty"`
++	Packets       int  `proxy:"packets,omitempty"`
++	StableBinding bool `proxy:"stable-binding,omitempty"`
+ }
+ 
+ type DirectDesyncFakeOption struct {
+@@ -46,6 +47,9 @@ func (d *Direct) MarshalJSON() ([]byte, error) {
+ 	if d.desyncUDP != nil {
+ 		result["desyncUDP"] = map[string]any{"ttl": d.desyncUDP.TTL, "repeats": d.desyncUDP.Repeats, "packets": d.desyncUDP.Packets, "counters": d.desyncUDP.Counters.Snapshot()}
+ 		result["desyncUDP"].(map[string]any)["activity"] = d.desyncActivity.snapshot()
++		if d.desyncBindings != nil {
++			result["desyncUDP"].(map[string]any)["binding"] = d.desyncBindings.snapshot()
++		}
+ 	}
+ 	return json.Marshal(result)
+ }
+@@ -124,6 +128,9 @@ func NewDirectWithDesyncOption(option DirectOption) (*Direct, error) {
+ 		}
+ 		direct.desyncUDP = &udpOptions
+ 		direct.desyncActivity = &directUDPActivity{}
++		if udp.StableBinding {
++			direct.desyncBindings = newDesyncBindingPool()
++		}
+ 	}
+ 	return direct, nil
+ }
+diff --git a/adapter/outbound/direct_desync_binding.go b/adapter/outbound/direct_desync_binding.go
+new file mode 100644
+index 0000000..17d80a1
+--- /dev/null
++++ b/adapter/outbound/direct_desync_binding.go
+@@ -0,0 +1,639 @@
++package outbound
++
++import (
++	"context"
++	"encoding/binary"
++	"errors"
++	"fmt"
++	"net"
++	"net/netip"
++	"os"
++	"path"
++	"sort"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/component/dialer"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++const (
++	desyncBindingMaxGroups   = 64
++	desyncBindingMaxSessions = 256
++	desyncBindingMaxMembers  = 8
++	desyncBindingQueue       = 64
++	desyncBindingMaxBytes    = 8 << 20
++	desyncBindingIdle        = 90 * time.Second
++)
++
++var errDesyncBindingLimit = errors.New("desync UDP binding limit reached")
++
++// Port is intentionally absent: a Discord association may replace its local
++// port. Discovery SSRC separates simultaneous calls/streams at the same server.
++// These identities remain in memory and are never exposed by diagnostics.
++type desyncBindingOwner struct {
++	source                  netip.Addr
++	target                  netip.AddrPort
++	process, inbound, route string
++	iface                   string
++	uid                     uint32
++}
++
++func (d *Direct) bindingOwner(m *C.Metadata) (desyncBindingOwner, bool) {
++	target := m.AddrPort()
++	process := strings.ReplaceAll(m.Process, `\`, "/")
++	if m.Type != C.TUN || m.NetWork != C.UDP || !strings.EqualFold(path.Base(process), "Discord.exe") || !m.SrcIP.IsValid() || m.SrcIP.IsUnspecified() || m.SrcPort == 0 || !target.IsValid() || !target.Addr().Is4() || !target.Addr().IsGlobalUnicast() || target.Addr().IsPrivate() || target.Port() < 1024 || netip.MustParsePrefix("100.64.0.0/10").Contains(target.Addr()) {
++		return desyncBindingOwner{}, false
++	}
++	if m.ProcessPath != "" {
++		process = strings.ReplaceAll(m.ProcessPath, `\`, "/")
++	}
++	ifaceName := d.iface
++	if ifaceName == "" {
++		ifaceName = dialer.DefaultInterface.Load()
++	}
++	if ifaceName == "" {
++		if finder := dialer.DefaultInterfaceFinder.Load(); finder != nil {
++			ifaceName = finder.FindInterfaceName(target.Addr())
++		}
++	}
++	var addresses []string
++	if ifaceName != "" {
++		if iface, err := net.InterfaceByName(ifaceName); err == nil {
++			if addrs, err := iface.Addrs(); err == nil {
++				for _, a := range addrs {
++					addresses = append(addresses, a.String())
++				}
++			}
++		}
++	}
++	sort.Strings(addresses)
++	return desyncBindingOwner{source: m.SrcIP.Unmap(), target: target, process: strings.ToLower(process), uid: m.Uid, iface: ifaceName,
++		// TUN has no listening port: sing may derive InAddr from a packet
++		// writer. Keep the listener/user identity, not its changing port.
++		inbound: fmt.Sprintf("%d|%s|%s", m.Type, m.InName, m.InUser),
++		route:   fmt.Sprintf("%s|%d|%d|%s", ifaceName, d.rmark, dialer.DefaultRoutingMark.Load(), strings.Join(addresses, ","))}, true
++}
++
++type desyncBindingKey struct {
++	owner   desyncBindingOwner
++	ssrc    uint32
++	private uint64 // non-discovery traffic never shares another association
++}
++
++type desyncBindingStats struct {
++	Enabled        bool   `json:"enabled"`
++	NativeSockets  uint64 `json:"nativeSockets"`
++	ActiveSockets  int    `json:"activeSockets"`
++	Sessions       uint64 `json:"sessions"`
++	ActiveSessions int    `json:"activeSessions"`
++	Reuses         uint64 `json:"reuses"`
++	Handovers      uint64 `json:"handovers"`
++	Dropped        uint64 `json:"dropped"`
++	Errors         uint64 `json:"errors"`
++	QueuedBytes    int    `json:"queuedBytes"`
++}
++
++type desyncBindingPool struct {
++	mu       sync.Mutex // owns all group/session state, never held for packet I/O
++	groups   map[desyncBindingKey]*desyncBindingGroup
++	sessions map[*desyncBindingSession]struct{}
++	stats    desyncBindingStats
++	idle     time.Duration
++	closed   bool
++	done     chan struct{}
++	start    sync.Once
++	wg       sync.WaitGroup
++}
++
++type desyncBindingGroup struct {
++	key       desyncBindingKey
++	pc        net.PacketConn
++	ready     chan struct{}
++	cancel    context.CancelFunc
++	writeGate chan struct{}
++	members   map[*desyncBindingSession]struct{}
++	pending   map[*desyncBindingSession]time.Time
++	active    *desyncBindingSession
++	writing   *desyncBindingSession
++	lastUsed  time.Time
++	detached  time.Time
++	closed    bool
++	err       error
++}
++
++type desyncBindingSession struct {
++	pool          *desyncBindingPool
++	owner         desyncBindingOwner
++	factory       func(context.Context) (net.PacketConn, error)
++	id            uint64
++	group         *desyncBindingGroup
++	queue         chan []byte
++	done          chan struct{}
++	changed       chan struct{}
++	writeChanged  chan struct{}
++	created       time.Time
++	readDeadline  time.Time
++	writeDeadline time.Time
++	closed        bool
++	err           error
++}
++
++func newDesyncBindingPool() *desyncBindingPool {
++	return &desyncBindingPool{groups: make(map[desyncBindingKey]*desyncBindingGroup), sessions: make(map[*desyncBindingSession]struct{}), idle: desyncBindingIdle, done: make(chan struct{})}
++}
++
++func (p *desyncBindingPool) newSession(owner desyncBindingOwner, factory func(context.Context) (net.PacketConn, error)) (net.PacketConn, error) {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if p.closed {
++		return nil, net.ErrClosed
++	}
++	if len(p.sessions) >= desyncBindingMaxSessions {
++		return nil, errDesyncBindingLimit
++	}
++	p.stats.Sessions++
++	s := &desyncBindingSession{pool: p, owner: owner, factory: factory, id: p.stats.Sessions, queue: make(chan []byte, desyncBindingQueue), done: make(chan struct{}), changed: make(chan struct{}), writeChanged: make(chan struct{}), created: time.Now()}
++	p.sessions[s] = struct{}{}
++	p.start.Do(func() { p.wg.Add(1); go p.janitor() })
++	return s, nil
++}
++
++// Discord IP discovery is a 74-byte request/response; only its transient
++// correlation identifier is needed. Payloads are neither changed nor logged.
++func desyncDiscovery(data []byte, kind uint16) (uint32, bool) {
++	if len(data) != 74 || binary.BigEndian.Uint16(data[:2]) != kind || binary.BigEndian.Uint16(data[2:4]) != 70 {
++		return 0, false
++	}
++	return binary.BigEndian.Uint32(data[4:8]), true
++}
++
++func (s *desyncBindingSession) attach(first []byte) (*desyncBindingGroup, error) {
++	p := s.pool
++	p.mu.Lock()
++	if s.closed {
++		err := s.err
++		p.mu.Unlock()
++		return nil, err
++	}
++	if s.group != nil {
++		g := s.group
++		p.mu.Unlock()
++		return g, nil
++	}
++	key := desyncBindingKey{owner: s.owner}
++	if ssrc, ok := desyncDiscovery(first, 1); ok {
++		key.ssrc = ssrc
++	} else {
++		key.private = s.id
++	}
++	g, exists := p.groups[key]
++	if !exists && len(p.groups) >= desyncBindingMaxGroups || exists && len(g.members) >= desyncBindingMaxMembers {
++		p.mu.Unlock()
++		return nil, errDesyncBindingLimit
++	}
++	var ctx context.Context
++	if !exists {
++		deadline := time.Now().Add(5 * time.Second)
++		if !s.writeDeadline.IsZero() && s.writeDeadline.Before(deadline) {
++			deadline = s.writeDeadline
++		}
++		var cancel context.CancelFunc
++		ctx, cancel = context.WithDeadline(context.Background(), deadline)
++		g = &desyncBindingGroup{key: key, ready: make(chan struct{}), writeGate: make(chan struct{}, 1), cancel: cancel, members: make(map[*desyncBindingSession]struct{}), pending: make(map[*desyncBindingSession]time.Time), lastUsed: time.Now()}
++		g.writeGate <- struct{}{}
++		p.groups[key] = g
++		p.wg.Add(1) // include in-flight creation in adapter shutdown
++	} else {
++		p.stats.Reuses++
++	}
++	g.members[s] = struct{}{}
++	g.detached = time.Time{}
++	s.group = g
++	p.mu.Unlock()
++	if exists {
++		return g, nil
++	}
++	defer p.wg.Done()
++	pc, err := s.factory(ctx)
++	g.cancel()
++	p.mu.Lock()
++	if err == nil && pc == nil {
++		err = errors.New("desync UDP binding missing socket")
++	}
++	if err == nil && (p.closed || g.closed) {
++		err = net.ErrClosed
++	}
++	if err == nil {
++		g.pc = pc
++		p.stats.NativeSockets++
++		p.wg.Add(1)
++		go p.receive(g)
++	} else {
++		p.stats.Errors++
++		p.dropGroupLocked(g, err)
++	}
++	close(g.ready)
++	p.mu.Unlock()
++	if err != nil {
++		if pc != nil {
++			_ = pc.Close()
++		}
++		return nil, err
++	}
++	return g, nil
++}
++
++func (s *desyncBindingSession) WriteTo(data []byte, addr net.Addr) (int, error) {
++	if desyncAddrPort(addr) != s.owner.target {
++		return 0, errors.New("desync UDP binding destination changed")
++	}
++	p := s.pool
++	p.mu.Lock()
++	err := s.writeErrorLocked()
++	p.mu.Unlock()
++	if err != nil {
++		return 0, err
++	}
++	g, err := s.attach(data)
++	if err != nil {
++		return 0, err
++	}
++	if err := s.waitWrite(g.ready); err != nil {
++		return 0, err
++	}
++	if err := s.waitWrite(g.writeGate); err != nil {
++		return 0, err
++	}
++	defer func() { g.writeGate <- struct{}{} }()
++	p.mu.Lock()
++	if err := s.writeErrorLocked(); err != nil {
++		p.mu.Unlock()
++		return 0, err
++	}
++	if g.closed {
++		err := g.err
++		p.mu.Unlock()
++		return 0, err
++	}
++	previous := g.active
++	ssrc, discovery := desyncDiscovery(data, 1)
++	if discovery && g.key.private == 0 && ssrc != g.key.ssrc {
++		p.mu.Unlock()
++		return 0, errors.New("desync UDP discovery session changed")
++	}
++	if discovery {
++		g.pending[s] = time.Now().Add(5 * time.Second)
++	} else if previous == nil || s.id > previous.id {
++		g.active = s
++	}
++	g.writing = s
++	deadline := s.writeDeadline
++	if deadline.IsZero() {
++		deadline = time.Now().Add(5 * time.Second)
++	}
++	_ = g.pc.SetWriteDeadline(deadline)
++	p.mu.Unlock()
++	n, err := g.pc.WriteTo(data, net.UDPAddrFromAddrPort(s.owner.target))
++	p.mu.Lock()
++	g.writing = nil
++	if err == nil {
++		g.lastUsed = time.Now()
++		if !discovery && previous != nil && previous != s && g.active == s {
++			p.stats.Handovers++
++		}
++	} else {
++		p.stats.Errors++
++		if discovery {
++			delete(g.pending, s)
++		} else if g.active == s && previous != s {
++			g.active = nil
++			if previous != nil && !previous.closed {
++				g.active = previous
++			}
++		}
++	}
++	p.mu.Unlock()
++	return n, err
++}
++
++func (s *desyncBindingSession) writeErrorLocked() error {
++	if s.closed {
++		return s.err
++	}
++	if !s.writeDeadline.IsZero() && !time.Now().Before(s.writeDeadline) {
++		return os.ErrDeadlineExceeded
++	}
++	return nil
++}
++
++func (s *desyncBindingSession) waitWrite(ready <-chan struct{}) error {
++	for {
++		s.pool.mu.Lock()
++		err, deadline, changed := s.writeErrorLocked(), s.writeDeadline, s.writeChanged
++		s.pool.mu.Unlock()
++		if err != nil {
++			return err
++		}
++		var timer *time.Timer
++		var expires <-chan time.Time
++		if !deadline.IsZero() {
++			timer = time.NewTimer(time.Until(deadline))
++			expires = timer.C
++		}
++		select {
++		case <-ready:
++			if timer != nil {
++				timer.Stop()
++			}
++			return nil
++		case <-s.done:
++		case <-changed:
++		case <-expires:
++		}
++		if timer != nil {
++			timer.Stop()
++		}
++	}
++}
++
++func desyncAddrPort(addr net.Addr) netip.AddrPort {
++	if udp, ok := addr.(*net.UDPAddr); ok && udp != nil {
++		ap := udp.AddrPort()
++		return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
++	}
++	if addr == nil {
++		return netip.AddrPort{}
++	}
++	ap, _ := netip.ParseAddrPort(addr.String())
++	return ap
++}
++
++func (p *desyncBindingPool) receive(g *desyncBindingGroup) {
++	defer p.wg.Done()
++	buffer := make([]byte, 65535)
++	for {
++		n, from, err := g.pc.ReadFrom(buffer)
++		if err != nil {
++			p.mu.Lock()
++			if !g.closed {
++				p.stats.Errors++
++			}
++			p.mu.Unlock()
++			p.fail(g, err)
++			return
++		}
++		p.mu.Lock()
++		if g.closed {
++			p.mu.Unlock()
++			return
++		}
++		if desyncAddrPort(from) != g.key.owner.target {
++			p.stats.Dropped++
++			p.mu.Unlock()
++			continue
++		}
++		g.lastUsed = time.Now()
++		if ssrc, discovery := desyncDiscovery(buffer[:n], 2); discovery {
++			// A shared native address is valid for each waiting owner of this
++			// SSRC. Discovery never steals the current media recipient.
++			if g.key.private != 0 || ssrc == g.key.ssrc {
++				for s, expires := range g.pending {
++					delete(g.pending, s)
++					if time.Now().Before(expires) {
++						p.enqueueLocked(s, buffer[:n])
++					}
++				}
++			}
++		} else if g.active != nil {
++			p.enqueueLocked(g.active, buffer[:n])
++		}
++		p.mu.Unlock()
++	}
++}
++
++func (p *desyncBindingPool) enqueueLocked(s *desyncBindingSession, data []byte) {
++	if s.closed || len(s.queue) == cap(s.queue) || p.stats.QueuedBytes+len(data) > desyncBindingMaxBytes {
++		p.stats.Dropped++
++		return
++	}
++	payload := append([]byte(nil), data...)
++	p.stats.QueuedBytes += len(payload)
++	s.queue <- payload
++}
++
++func (s *desyncBindingSession) ReadFrom(buffer []byte) (int, net.Addr, error) {
++	for {
++		p := s.pool
++		p.mu.Lock()
++		closed, err, deadline, changed := s.closed, s.err, s.readDeadline, s.changed
++		p.mu.Unlock()
++		if closed {
++			return 0, nil, err
++		}
++		var timer *time.Timer
++		var expires <-chan time.Time
++		if !deadline.IsZero() {
++			if !time.Now().Before(deadline) {
++				return 0, nil, os.ErrDeadlineExceeded
++			}
++			timer = time.NewTimer(time.Until(deadline))
++			expires = timer.C
++		}
++		select {
++		case data := <-s.queue:
++			if timer != nil {
++				timer.Stop()
++			}
++			p.mu.Lock()
++			p.stats.QueuedBytes -= len(data)
++			closed, err = s.closed, s.err
++			p.mu.Unlock()
++			if closed {
++				return 0, nil, err
++			}
++			return copy(buffer, data), net.UDPAddrFromAddrPort(s.owner.target), nil
++		case <-s.done:
++		case <-changed:
++		case <-expires:
++		}
++		if timer != nil {
++			timer.Stop()
++		}
++	}
++}
++
++func (s *desyncBindingSession) LocalAddr() net.Addr {
++	s.pool.mu.Lock()
++	defer s.pool.mu.Unlock()
++	if s.group != nil && s.group.pc != nil {
++		return s.group.pc.LocalAddr()
++	}
++	return &net.UDPAddr{IP: net.IPv4zero}
++}
++
++func (s *desyncBindingSession) SetDeadline(t time.Time) error { return s.setDeadline(t, true, true) }
++func (s *desyncBindingSession) SetReadDeadline(t time.Time) error {
++	return s.setDeadline(t, true, false)
++}
++func (s *desyncBindingSession) SetWriteDeadline(t time.Time) error {
++	return s.setDeadline(t, false, true)
++}
++func (s *desyncBindingSession) setDeadline(t time.Time, read, write bool) error {
++	p := s.pool
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if s.closed {
++		return s.err
++	}
++	if read {
++		s.readDeadline = t
++		close(s.changed)
++		s.changed = make(chan struct{})
++	}
++	if write {
++		s.writeDeadline = t
++		close(s.writeChanged)
++		s.writeChanged = make(chan struct{})
++		if g := s.group; g != nil && g.writing == s {
++			return g.pc.SetWriteDeadline(t)
++		}
++	}
++	return nil
++}
++
++func (s *desyncBindingSession) Close() error {
++	s.pool.mu.Lock()
++	defer s.pool.mu.Unlock()
++	s.pool.closeSessionLocked(s, net.ErrClosed)
++	return nil
++}
++
++func (p *desyncBindingPool) closeSessionLocked(s *desyncBindingSession, err error) {
++	if s.closed {
++		return
++	}
++	s.closed, s.err = true, err
++	close(s.done)
++	delete(p.sessions, s)
++	for {
++		select {
++		case data := <-s.queue:
++			p.stats.QueuedBytes -= len(data)
++		default:
++			goto drained
++		}
++	}
++drained:
++	if g := s.group; g != nil {
++		delete(g.members, s)
++		delete(g.pending, s)
++		if g.active == s {
++			g.active = nil
++		}
++		if g.writing == s && g.pc != nil {
++			_ = g.pc.SetWriteDeadline(time.Now())
++		}
++		if len(g.members) == 0 {
++			g.detached = time.Now()
++		}
++	}
++}
++
++func (p *desyncBindingPool) dropGroupLocked(g *desyncBindingGroup, err error) net.PacketConn {
++	if g.closed {
++		return nil
++	}
++	g.closed, g.err = true, err
++	g.cancel()
++	if p.groups[g.key] == g {
++		delete(p.groups, g.key)
++	}
++	for s := range g.members {
++		p.closeSessionLocked(s, err)
++	}
++	return g.pc
++}
++
++func (p *desyncBindingPool) fail(g *desyncBindingGroup, err error) {
++	p.mu.Lock()
++	pc := p.dropGroupLocked(g, err)
++	p.mu.Unlock()
++	if pc != nil {
++		_ = pc.Close()
++	}
++}
++
++func (p *desyncBindingPool) sweep(now time.Time) {
++	var sockets []net.PacketConn
++	p.mu.Lock()
++	for _, g := range p.groups {
++		if (!g.detached.IsZero() && now.Sub(g.detached) > p.idle) || now.Sub(g.lastUsed) > 2*p.idle {
++			if pc := p.dropGroupLocked(g, net.ErrClosed); pc != nil {
++				sockets = append(sockets, pc)
++			}
++		}
++	}
++	for s := range p.sessions {
++		if s.group == nil && now.Sub(s.created) > p.idle {
++			p.closeSessionLocked(s, net.ErrClosed)
++		}
++	}
++	p.mu.Unlock()
++	for _, pc := range sockets {
++		_ = pc.Close()
++	}
++}
++
++func (p *desyncBindingPool) janitor() {
++	defer p.wg.Done()
++	ticker := time.NewTicker(15 * time.Second)
++	defer ticker.Stop()
++	for {
++		select {
++		case <-p.done:
++			return
++		case now := <-ticker.C:
++			p.sweep(now)
++		}
++	}
++}
++
++func (p *desyncBindingPool) snapshot() desyncBindingStats {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	out := p.stats
++	out.Enabled, out.ActiveSessions = true, len(p.sessions)
++	for _, g := range p.groups {
++		if g.pc != nil && !g.closed {
++			out.ActiveSockets++
++		}
++	}
++	return out
++}
++
++func (p *desyncBindingPool) Close() error {
++	p.mu.Lock()
++	if !p.closed {
++		p.closed = true
++		close(p.done)
++		var sockets []net.PacketConn
++		for _, g := range p.groups {
++			if pc := p.dropGroupLocked(g, net.ErrClosed); pc != nil {
++				sockets = append(sockets, pc)
++			}
++		}
++		for s := range p.sessions {
++			p.closeSessionLocked(s, net.ErrClosed)
++		}
++		p.mu.Unlock()
++		for _, pc := range sockets {
++			_ = pc.Close()
++		}
++	} else {
++		p.mu.Unlock()
++	}
++	p.wg.Wait()
++	return nil
++}
+diff --git a/adapter/outbound/direct_desync_binding_test.go b/adapter/outbound/direct_desync_binding_test.go
+new file mode 100644
+index 0000000..0443f8c
+--- /dev/null
++++ b/adapter/outbound/direct_desync_binding_test.go
+@@ -0,0 +1,567 @@
++package outbound
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"encoding/json"
++	"errors"
++	"net"
++	"net/netip"
++	"os"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/Nemu-x/desync"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++func bindingTestServer(t *testing.T) (*net.UDPConn, desyncBindingOwner, func(context.Context) (net.PacketConn, error)) {
++	t.Helper()
++	server, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = server.Close() })
++	go func() {
++		buf := make([]byte, 65535)
++		for {
++			n, from, err := server.ReadFromUDP(buf)
++			if err != nil {
++				return
++			}
++			packet := append([]byte(nil), buf[:n]...)
++			// Library fake datagrams expire before a real remote server; on
++			// loopback this fixture must discard their 64-byte dummy payload.
++			if len(packet) == 64 {
++				continue
++			}
++			if _, ok := desyncDiscovery(packet, 1); ok {
++				binary.BigEndian.PutUint16(packet[:2], 2)
++			}
++			_, _ = server.WriteToUDP(packet, from)
++		}
++	}()
++	owner := desyncBindingOwner{source: netip.MustParseAddr("192.168.20.2"), target: server.LocalAddr().(*net.UDPAddr).AddrPort(), process: "private/Discord.exe", inbound: "tun", route: "interface-A"}
++	factory := func(ctx context.Context) (net.PacketConn, error) {
++		return (&net.ListenConfig{}).ListenPacket(ctx, "udp4", "127.0.0.1:0")
++	}
++	return server, owner, factory
++}
++func bindingDiscovery(id uint32) []byte {
++	p := make([]byte, 74)
++	binary.BigEndian.PutUint16(p[:2], 1)
++	binary.BigEndian.PutUint16(p[2:4], 70)
++	binary.BigEndian.PutUint32(p[4:8], id)
++	return p
++}
++func bindingSession(t *testing.T, p *desyncBindingPool, o desyncBindingOwner, f func(context.Context) (net.PacketConn, error)) *desyncBindingSession {
++	t.Helper()
++	c, e := p.newSession(o, f)
++	if e != nil {
++		t.Fatal(e)
++	}
++	t.Cleanup(func() { _ = c.Close() })
++	return c.(*desyncBindingSession)
++}
++func bindingRoundtrip(t *testing.T, c net.PacketConn, target netip.AddrPort, data []byte) {
++	t.Helper()
++	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
++	if _, e := c.WriteTo(data, net.UDPAddrFromAddrPort(target)); e != nil {
++		t.Fatal(e)
++	}
++	buf := make([]byte, 65535)
++	n, from, e := c.ReadFrom(buf)
++	if e != nil {
++		t.Fatal(e)
++	}
++	expected := append([]byte(nil), data...)
++	if _, ok := desyncDiscovery(expected, 1); ok {
++		binary.BigEndian.PutUint16(expected[:2], 2)
++	}
++	if !bytes.Equal(buf[:n], expected) || desyncAddrPort(from) != target {
++		t.Fatalf("datagram changed: n=%d", n)
++	}
++	_ = c.SetReadDeadline(time.Time{})
++}
++func bindingNative(c *desyncBindingSession) netip.AddrPort { return desyncAddrPort(c.LocalAddr()) }
++
++func TestDesyncBindingHandoverKeepsNativeSocketAndSeparatesDiscovery(t *testing.T) {
++	server, owner, factory := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	old := bindingSession(t, p, owner, factory)
++	bindingRoundtrip(t, old, owner.target, bindingDiscovery(1234))
++	bindingRoundtrip(t, old, owner.target, []byte("initial video feedback"))
++	native := bindingNative(old)
++	next := bindingSession(t, p, owner, factory)
++	bindingRoundtrip(t, next, owner.target, bindingDiscovery(1234))
++	if bindingNative(next) != native {
++		t.Fatal("discovery replaced external socket")
++	}
++	_, _ = server.WriteToUDP([]byte("old recipient until media handover"), net.UDPAddrFromAddrPort(native))
++	_ = old.SetReadDeadline(time.Now().Add(time.Second))
++	b := make([]byte, 100)
++	n, _, err := old.ReadFrom(b)
++	if err != nil || string(b[:n]) != "old recipient until media handover" {
++		t.Fatal("discovery stole media", err)
++	}
++	bindingRoundtrip(t, next, owner.target, []byte("new recipient"))
++	// Late packets from an older association must not steal return traffic.
++	_, _ = old.WriteTo([]byte("late control"), net.UDPAddrFromAddrPort(owner.target))
++	_ = next.SetReadDeadline(time.Now().Add(time.Second))
++	n, _, err = next.ReadFrom(b)
++	if err != nil || string(b[:n]) != "late control" {
++		t.Fatal("old control stole new recipient", err)
++	}
++	_ = old.Close()
++	bindingRoundtrip(t, next, owner.target, []byte("after old closes"))
++	if bindingNative(next) != native {
++		t.Fatal("old close replaced native port")
++	}
++	stats := p.snapshot()
++	if stats.NativeSockets != 1 || stats.Reuses != 1 || stats.Handovers != 1 || stats.Errors != 0 {
++		t.Fatalf("unexpected binding counters: %+v", stats)
++	}
++}
++
++func TestDesyncBindingIsolatesSSRCSourceProcessAndInbound(t *testing.T) {
++	_, owner, factory := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	seen := map[netip.AddrPort]bool{}
++	for i := 0; i < 6; i++ {
++		o := owner
++		id := uint32(111)
++		switch i {
++		case 1:
++			id = 222
++		case 2:
++			o.source = netip.MustParseAddr("192.168.20.3")
++		case 3:
++			o.process = "another/Discord.exe"
++		case 4:
++			o.inbound = "other tun"
++		case 5:
++			o.route = "interface-B"
++		}
++		c := bindingSession(t, p, o, factory)
++		bindingRoundtrip(t, c, o.target, bindingDiscovery(id))
++		bindingRoundtrip(t, c, o.target, []byte{byte(i)})
++		addr := bindingNative(c)
++		if seen[addr] {
++			t.Fatal("different identities share native socket")
++		}
++		seen[addr] = true
++	}
++	if p.snapshot().NativeSockets != 6 {
++		t.Fatal(p.snapshot())
++	}
++}
++
++func TestDesyncBindingNonDiscoveryRemainsPrivateAndChecksDestination(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	a, b := bindingSession(t, p, o, f), bindingSession(t, p, o, f)
++	bindingRoundtrip(t, a, o.target, []byte("no discovery A"))
++	bindingRoundtrip(t, b, o.target, []byte("no discovery B"))
++	if bindingNative(a) == bindingNative(b) {
++		t.Fatal("unidentified sessions were merged")
++	}
++	if _, err := a.WriteTo([]byte("x"), net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:1"))); err == nil {
++		t.Fatal("accepted a different destination")
++	}
++}
++
++func TestDesyncBindingLogicalDeadlinesDoNotAffectOtherSessions(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	a, b := bindingSession(t, p, o, f), bindingSession(t, p, o, f)
++	bindingRoundtrip(t, a, o.target, bindingDiscovery(3))
++	bindingRoundtrip(t, b, o.target, bindingDiscovery(3))
++	bindingRoundtrip(t, b, o.target, []byte("new active"))
++	result := make(chan error, 1)
++	go func() { _, _, e := a.ReadFrom(make([]byte, 20)); result <- e }()
++	time.Sleep(10 * time.Millisecond)
++	_ = a.SetReadDeadline(time.Now().Add(15 * time.Millisecond))
++	select {
++	case e := <-result:
++		if !errors.Is(e, os.ErrDeadlineExceeded) {
++			t.Fatal(e)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("changed read deadline did not interrupt read")
++	}
++	_ = a.SetWriteDeadline(time.Now().Add(-time.Second))
++	if _, err := a.WriteTo([]byte("expired"), net.UDPAddrFromAddrPort(o.target)); !errors.Is(err, os.ErrDeadlineExceeded) {
++		t.Fatal(err)
++	}
++	bindingRoundtrip(t, b, o.target, []byte("other still live"))
++	_ = a.Close()
++	bindingRoundtrip(t, b, o.target, []byte("old timeout isolated"))
++}
++
++func TestDesyncBindingCloseExpiryAndNativeFailure(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	a := bindingSession(t, p, o, f)
++	bindingRoundtrip(t, a, o.target, bindingDiscovery(5))
++	_ = a.Close()
++	p.sweep(time.Now().Add(desyncBindingIdle + time.Second))
++	if p.snapshot().ActiveSockets != 0 {
++		t.Fatal("closed associations leaked native socket")
++	}
++	b := bindingSession(t, p, o, f)
++	bindingRoundtrip(t, b, o.target, bindingDiscovery(5))
++	if p.snapshot().NativeSockets != 2 {
++		t.Fatal("idle entry was reused")
++	}
++	p.mu.Lock()
++	native := b.group.pc
++	p.mu.Unlock()
++	_ = native.Close()
++	deadline := time.Now().Add(time.Second)
++	for time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++		p.mu.Lock()
++		closed := b.closed
++		p.mu.Unlock()
++		if closed {
++			break
++		}
++	}
++	if err := p.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if p.snapshot().QueuedBytes != 0 {
++		t.Fatal("payload buffers retained after Close")
++	}
++	if _, err := p.newSession(o, f); !errors.Is(err, net.ErrClosed) {
++		t.Fatal(err)
++	}
++}
++
++func TestDesyncBindingShutdownCancelsInflightCreation(t *testing.T) {
++	p := newDesyncBindingPool()
++	entered := make(chan struct{})
++	c := bindingSession(t, p, desyncBindingOwner{target: netip.MustParseAddrPort("127.0.0.1:12345")}, func(ctx context.Context) (net.PacketConn, error) { close(entered); <-ctx.Done(); return nil, ctx.Err() })
++	written := make(chan error, 1)
++	go func() { _, e := c.WriteTo(bindingDiscovery(1), net.UDPAddrFromAddrPort(c.owner.target)); written <- e }()
++	<-entered
++	closed := make(chan struct{})
++	go func() { _ = p.Close(); close(closed) }()
++	select {
++	case <-closed:
++	case <-time.After(time.Second):
++		t.Fatal("adapter close blocked on creation")
++	}
++	if <-written == nil {
++		t.Fatal("closed creation succeeded")
++	}
++}
++
++func TestDesyncBindingMemoryAndMemberBounds(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	members := make([]*desyncBindingSession, 0, 9)
++	for i := 0; i < 9; i++ {
++		c := bindingSession(t, p, o, f)
++		members = append(members, c)
++		if i < 8 {
++			bindingRoundtrip(t, c, o.target, bindingDiscovery(8))
++		} else {
++			if _, err := c.WriteTo(bindingDiscovery(8), net.UDPAddrFromAddrPort(o.target)); !errors.Is(err, errDesyncBindingLimit) {
++				t.Fatal(err)
++			}
++		}
++	}
++	p.mu.Lock()
++	packet := make([]byte, 65500)
++	for _, c := range members {
++		for i := 0; i < 64; i++ {
++			p.enqueueLocked(c, packet)
++		}
++	}
++	queued := p.stats.QueuedBytes
++	p.mu.Unlock()
++	if queued > desyncBindingMaxBytes {
++		t.Fatal("queue budget exceeded")
++	}
++	if p.snapshot().Dropped == 0 {
++		t.Fatal("overflow not observed")
++	}
++	_ = p.Close()
++	if p.snapshot().QueuedBytes != 0 {
++		t.Fatal("close did not free queues")
++	}
++}
++
++func TestDesyncBindingFactoryFailureIsSafeForConcurrentAssociations(t *testing.T) {
++	p := newDesyncBindingPool()
++	defer p.Close()
++	owner := desyncBindingOwner{target: netip.MustParseAddrPort("127.0.0.1:12345")}
++	entered, release := make(chan struct{}), make(chan struct{})
++	factory := func(context.Context) (net.PacketConn, error) {
++		close(entered)
++		<-release
++		return nil, errors.New("synthetic bind failure")
++	}
++	a, b := bindingSession(t, p, owner, factory), bindingSession(t, p, owner, factory)
++	var wg sync.WaitGroup
++	wg.Add(2)
++	errs := make(chan error, 2)
++	go func() {
++		defer wg.Done()
++		_, e := a.WriteTo(bindingDiscovery(2), net.UDPAddrFromAddrPort(owner.target))
++		errs <- e
++	}()
++	<-entered
++	go func() {
++		defer wg.Done()
++		_, e := b.WriteTo(bindingDiscovery(2), net.UDPAddrFromAddrPort(owner.target))
++		errs <- e
++	}()
++	until := time.Now().Add(time.Second)
++	for {
++		p.mu.Lock()
++		attached := b.group != nil
++		p.mu.Unlock()
++		if attached {
++			break
++		}
++		if time.Now().After(until) {
++			t.Fatal("second association not attached")
++		}
++		time.Sleep(time.Millisecond)
++	}
++	close(release)
++	wg.Wait()
++	close(errs)
++	for e := range errs {
++		if e == nil {
++			t.Fatal("failed bind accepted")
++		}
++	}
++}
++
++func TestDesyncBindingOnlyEligibleDiscordTraffic(t *testing.T) {
++	d := NewDirect()
++	m := C.Metadata{NetWork: C.UDP, Type: C.TUN, Process: "Discord.exe", ProcessPath: `C:\private\Discord.exe`, SrcIP: netip.MustParseAddr("192.168.1.2"), SrcPort: 45000, DstIP: netip.MustParseAddr("1.1.1.1"), DstPort: 19330}
++	if _, ok := d.bindingOwner(&m); !ok {
++		t.Fatal("eligible Discord rejected")
++	}
++	a, _ := d.bindingOwner(&m)
++	replacement := m
++	replacement.SrcPort++
++	replacement.InPort++
++	b, _ := d.bindingOwner(&replacement)
++	if a != b {
++		t.Fatal("TUN writer/source port prevented handover reuse")
++	}
++	for _, mutate := range []func(*C.Metadata){func(m *C.Metadata) { m.Type = C.INNER }, func(m *C.Metadata) { m.Type = C.SOCKS5 }, func(m *C.Metadata) { m.NetWork = C.TCP }, func(m *C.Metadata) { m.Process = "Other.exe" }, func(m *C.Metadata) { m.DstPort = 443 }, func(m *C.Metadata) { m.DstIP = netip.MustParseAddr("192.168.1.1") }, func(m *C.Metadata) { m.DstIP = netip.MustParseAddr("100.64.1.1") }, func(m *C.Metadata) { m.DstIP = netip.MustParseAddr("::1") }, func(m *C.Metadata) { m.SrcIP = netip.Addr{} }} {
++		copy := m
++		mutate(&copy)
++		if _, ok := d.bindingOwner(&copy); ok {
++			t.Fatal("out-of-scope flow eligible")
++		}
++	}
++}
++
++func TestDesyncBindingExplicitOptionAndCanceledListen(t *testing.T) {
++	d, err := NewDirectWithDesyncOption(DirectOption{Name: "test-binding", Desync: &DirectDesyncOption{UDP: &DirectDesyncUDPOption{TTL: 4, Repeats: 1, Packets: 3, StableBinding: true}}})
++	if err != nil {
++		t.Skip(err)
++	}
++	defer d.Close()
++	if d.desyncBindings == nil {
++		t.Fatal("option not enabled")
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	metadata := &C.Metadata{NetWork: C.UDP, Type: C.TUN, Process: "Discord.exe", SrcIP: netip.MustParseAddr("192.168.20.2"), SrcPort: 12345, DstIP: netip.MustParseAddr("1.1.1.1"), DstPort: 19330}
++	if _, err := d.ListenPacketContext(ctx, metadata); !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	if d.desyncBindings.snapshot().NativeSockets != 0 {
++		t.Fatal("canceled listen created a native socket")
++	}
++	encoded, err := d.MarshalJSON()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Contains(encoded, []byte(`"binding"`)) {
++		t.Fatal("binding diagnostics absent")
++	}
++	ordinary := NewDirect()
++	if ordinary.desyncBindings != nil {
++		t.Fatal("ordinary DIRECT enabled pooling")
++	}
++}
++
++func TestDesyncBindingLibraryWindowDoesNotRestartOnHandover(t *testing.T) {
++	_, o, factory := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	counters := &desync.UDPCounters{}
++	opts := desync.UDPOptions{TTL: 4, Repeats: 1, Packets: 3, Counters: counters}
++	if err := opts.Validate(); err != nil {
++		t.Skip(err)
++	}
++	wrapped := func(ctx context.Context) (net.PacketConn, error) {
++		pc, e := factory(ctx)
++		if e != nil {
++			return nil, e
++		}
++		c, e := desync.WrapPacketConn(pc, opts)
++		if e != nil {
++			_ = pc.Close()
++		}
++		return c, e
++	}
++	a, b := bindingSession(t, p, o, wrapped), bindingSession(t, p, o, wrapped)
++	bindingRoundtrip(t, a, o.target, bindingDiscovery(91))
++	bindingRoundtrip(t, a, o.target, []byte("first"))
++	bindingRoundtrip(t, b, o.target, bindingDiscovery(91))
++	_ = a.Close()
++	bindingRoundtrip(t, b, o.target, []byte("new"))
++	if got := counters.Snapshot(); got.FakePackets != 3 || got.FakeErrors != 0 {
++		t.Fatalf("fake window restarted: %+v", got)
++	}
++	encoded, _ := json.Marshal(p.snapshot())
++	if strings.Contains(string(encoded), o.source.String()) || strings.Contains(string(encoded), o.process) || strings.Contains(string(encoded), "ssrc") {
++		t.Fatal("binding diagnostics leak identities")
++	}
++}
++
++func TestDesyncBindingDeadlineBroadcastWakesConcurrentReaders(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	c := bindingSession(t, p, o, f)
++	bindingRoundtrip(t, c, o.target, bindingDiscovery(7))
++	results := make(chan error, 2)
++	for i := 0; i < 2; i++ {
++		go func() { _, _, e := c.ReadFrom(make([]byte, 10)); results <- e }()
++	}
++	time.Sleep(10 * time.Millisecond)
++	_ = c.SetReadDeadline(time.Now().Add(-time.Second))
++	for i := 0; i < 2; i++ {
++		select {
++		case e := <-results:
++			if !errors.Is(e, os.ErrDeadlineExceeded) {
++				t.Fatal(e)
++			}
++		case <-time.After(time.Second):
++			t.Fatal("deadline did not wake every reader")
++		}
++	}
++}
++
++type bindingHeldWriter struct {
++	net.PacketConn
++	entered, release chan struct{}
++}
++
++func (c *bindingHeldWriter) WriteTo(p []byte, a net.Addr) (int, error) {
++	if string(p) == "hold" {
++		close(c.entered)
++		<-c.release
++	}
++	return c.PacketConn.WriteTo(p, a)
++}
++func TestDesyncBindingWriteQueueHonorsIndependentDeadline(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	entered, release := make(chan struct{}), make(chan struct{})
++	factory := func(ctx context.Context) (net.PacketConn, error) {
++		c, e := f(ctx)
++		return &bindingHeldWriter{PacketConn: c, entered: entered, release: release}, e
++	}
++	a, b := bindingSession(t, p, o, factory), bindingSession(t, p, o, factory)
++	bindingRoundtrip(t, a, o.target, bindingDiscovery(4))
++	bindingRoundtrip(t, b, o.target, bindingDiscovery(4))
++	done := make(chan error, 1)
++	go func() { _, e := a.WriteTo([]byte("hold"), net.UDPAddrFromAddrPort(o.target)); done <- e }()
++	<-entered
++	_ = b.SetWriteDeadline(time.Now().Add(20 * time.Millisecond))
++	_, err := b.WriteTo([]byte("deadline"), net.UDPAddrFromAddrPort(o.target))
++	close(release)
++	if !errors.Is(err, os.ErrDeadlineExceeded) {
++		t.Fatal(err)
++	}
++	if e := <-done; e != nil {
++		t.Fatal(e)
++	}
++}
++
++func TestDesyncBindingNativeGroupLimit(t *testing.T) {
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	for i := 0; i <= desyncBindingMaxGroups; i++ {
++		owner := o
++		owner.uid = uint32(i)
++		c := bindingSession(t, p, owner, f)
++		_, err := c.WriteTo(bindingDiscovery(6), net.UDPAddrFromAddrPort(o.target))
++		if i < desyncBindingMaxGroups && err != nil {
++			t.Fatal(err)
++		}
++		if i == desyncBindingMaxGroups && !errors.Is(err, errDesyncBindingLimit) {
++			t.Fatal(err)
++		}
++	}
++	if p.snapshot().NativeSockets != desyncBindingMaxGroups {
++		t.Fatal(p.snapshot())
++	}
++}
++
++func TestDesyncBindingSustainedCorePacketConn(t *testing.T) {
++	if testing.Short() {
++		t.Skip("75-second native transport test runs in complete core validation")
++	}
++	_, o, f := bindingTestServer(t)
++	p := newDesyncBindingPool()
++	defer p.Close()
++	d := NewDirect()
++	factory := func(ctx context.Context) (net.PacketConn, error) {
++		pc, e := f(ctx)
++		if e != nil {
++			return nil, e
++		}
++		return d.loopBack.NewPacketConn(NewPacketConn(&directDesyncPacketConn{PacketConn: pc}, d)), nil
++	}
++	c := bindingSession(t, p, o, factory)
++	bindingRoundtrip(t, c, o.target, bindingDiscovery(999))
++	bindingRoundtrip(t, c, o.target, []byte("initial"))
++	native := c.LocalAddr().String()
++	started := time.Now()
++	switched := false
++	packets := 0
++	for time.Since(started) < 75*time.Second {
++		if !switched && time.Since(started) > 60*time.Second {
++			next := bindingSession(t, p, o, factory)
++			bindingRoundtrip(t, next, o.target, bindingDiscovery(999))
++			bindingRoundtrip(t, next, o.target, []byte("handover"))
++			_ = c.Close()
++			c = next
++			switched = true
++			if c.LocalAddr().String() != native {
++				t.Fatal("native address changed at minute boundary")
++			}
++		}
++		bindingRoundtrip(t, c, o.target, bytes.Repeat([]byte{byte(packets)}, 1024))
++		packets++
++		time.Sleep(20 * time.Millisecond)
++	}
++	if !switched || p.snapshot().NativeSockets != 1 || p.snapshot().Handovers != 1 || packets < 2000 {
++		t.Fatalf("sustained path not exercised: packets=%d stats=%+v", packets, p.snapshot())
++	}
++	t.Logf("one native socket, %d unchanged datagrams, handover after60s, total=%s", packets, time.Since(started))
++}

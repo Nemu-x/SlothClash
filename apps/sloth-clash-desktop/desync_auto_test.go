@@ -104,7 +104,7 @@ func TestDesyncConnectedReportAnonymizesUDPEndpoints(t *testing.T) {
 			fmt.Fprintf(w, `{"now":%q}`, desyncDiscordUDPRoute+"-f4")
 			return
 		}
-		fmt.Fprint(w, `{"desyncUDP":{"counters":{"packets":100,"fakePackets":3},"activity":[{"endpoint":"104.29.2.2:19330","txPackets":100,"rxPackets":80}]}}`)
+		fmt.Fprint(w, `{"desyncUDP":{"counters":{"packets":100,"fakePackets":3},"activity":[{"endpoint":"104.29.2.2:19330","txPackets":100,"rxPackets":80}],"binding":{"enabled":true,"nativeSockets":2,"handovers":13,"queuedBytes":0,"ssrc":"private-session-id","address":"private-binding-address","process":"private-process"}}}`)
 	}))
 	defer server.Close()
 	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://"), coreSecret: "private-controller-token"}
@@ -120,6 +120,26 @@ func TestDesyncConnectedReportAnonymizesUDPEndpoints(t *testing.T) {
 	}
 	if report["udp"] == nil || !strings.Contains(text, `"packets": 100`) {
 		t.Fatalf("transport evidence missing: %s", text)
+	}
+	if !strings.Contains(text, `"handovers": 13`) || strings.Contains(text, "private-session-id") || strings.Contains(text, "private-binding-address") || strings.Contains(text, "private-process") {
+		t.Fatal("binding counters missing or private binding fields leaked")
+	}
+}
+
+func TestDesyncStableBindingOnlyGeneratedForDiscordUDP(t *testing.T) {
+	for _, service := range []string{"youtube", "discord", "voice"} {
+		for _, candidate := range desyncCandidates(service) {
+			proxy := candidate.proxy("test-route")
+			opts := proxy["desync"].(map[string]any)
+			udp, present := opts["udp"].(map[string]any)
+			if service == "voice" {
+				if !present || udp["stable-binding"] != true {
+					t.Fatal("Discord UDP candidate lost binding continuity")
+				}
+			} else if present {
+				t.Fatal("TCP candidate received UDP pooling")
+			}
+		}
 	}
 }
 func TestDesyncVoiceTargetSkipsUnrelatedQUICAndOtherApplications(t *testing.T) {

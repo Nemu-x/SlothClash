@@ -374,9 +374,24 @@ type desyncUDPActivity struct {
 type desyncUDPProxy struct {
 	Now string `json:"now"`
 	UDP *struct {
-		Counters DesyncUDPCounters   `json:"counters"`
-		Activity []desyncUDPActivity `json:"activity"`
+		Counters DesyncUDPCounters         `json:"counters"`
+		Activity []desyncUDPActivity       `json:"activity"`
+		Binding  *DesyncUDPBindingCounters `json:"binding,omitempty"`
 	} `json:"desyncUDP"`
+}
+
+// Explicit numeric allowlist: no endpoint, SSRC, local address or process path.
+type DesyncUDPBindingCounters struct {
+	Enabled        bool   `json:"enabled"`
+	NativeSockets  uint64 `json:"nativeSockets"`
+	ActiveSockets  int    `json:"activeSockets"`
+	Sessions       uint64 `json:"sessions"`
+	ActiveSessions int    `json:"activeSessions"`
+	Reuses         uint64 `json:"reuses"`
+	Handovers      uint64 `json:"handovers"`
+	Dropped        uint64 `json:"dropped"`
+	Errors         uint64 `json:"errors"`
+	QueuedBytes    int    `json:"queuedBytes"`
 }
 type desyncUDPProbe struct {
 	Sent               int   `json:"sent"`

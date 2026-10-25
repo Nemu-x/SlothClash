@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.33 + 16 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.33 + 21 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -293,6 +293,8 @@ Patch `0019-desync-dns-udp.patch` adds explicit DNS fallback for named Desync ou
 Patch `0020-desync-auto-diagnostics.patch` provides the `desync-auto` capability used by automatic client calibration. Its authenticated UDP probe is limited to an owned candidate and an active public Discord UDP endpoint, sends a bounded discovery sequence, and validates complete replies. Separate bounded application-only activity counters distinguish discovery from RTP-shaped traffic without storing payloads; internal probes do not populate them. Controller request cancellation stops pending probes, and explicit expected HTTP status ranges are enforced for HTTPS tests. Tests cover endpoint scope, mismatched replies, initial-only response loss, cancellation, telemetry bounds and error-page rejection. Candidate selection, network caching and recovery policy live in the client rather than the transport library.
 
 Patch `0018-probe-error-details.patch` preserves URL-test error messages in controller responses and writes failed manual delay tests to the core warning log with the outbound name. It covers dial/TLS failures, timeouts, zero-delay failures and successful responses with deterministic HTTP-handler tests. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
+
+Patch `0021-desync-stable-udp-binding.patch` adds the explicit `desync.udp.stable-binding` option. It reuses a native socket only for the same Discord TUN source/process/inbound/interface/server/discovery-session identity, across local port replacement. Discovery replies and logical deadlines remain independent; private socket starts, other traffic and inner probes are excluded from sharing. Buffers, memberships and idle lifetime are bounded, and adapter shutdown owns cleanup. Private diagnostics expose aggregate counts only. Regression coverage includes concurrent sessions, handover/old-close behavior, native library fake-window continuity, deadlines, bounds, shutdown and a 75-second native core PacketConn test. Remove this patch when upstream offers equivalent scoped association continuity and lifecycle guarantees; no upstream issue is claimed.
 
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 

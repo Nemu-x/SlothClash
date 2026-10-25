@@ -40,6 +40,7 @@ export default defineConfig([
     files: [
       'vite.config.mts',
       'apps/sloth-clash-desktop/frontend/vite.config.ts',
+      'apps/sloth-clash-desktop/frontend/vitest.config.ts',
     ],
     plugins: {
       js: eslintJS,
@@ -67,6 +68,7 @@ export default defineConfig([
       'tests/required/**/*.mjs',
       'vite.config.mts',
       'apps/sloth-clash-desktop/frontend/vite.config.ts',
+      'apps/sloth-clash-desktop/frontend/vitest.config.ts',
     ],
 
     plugins: {

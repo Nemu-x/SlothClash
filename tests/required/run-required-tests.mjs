@@ -224,6 +224,12 @@ async function main() {
     ],
     repoRoot,
   )
+  await step(
+    'Frontend unit/render tests',
+    pnpmBin,
+    ['--dir', 'apps/sloth-clash-desktop/frontend', 'test'],
+    repoRoot,
+  )
   console.log('\nPASS: required test gate')
 }
 

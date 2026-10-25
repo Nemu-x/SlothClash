@@ -750,7 +750,10 @@
       "receiving": "Receiving media",
       "partial": "One media connection stalled; other connections are working",
       "interrupted": "UDP traffic interrupted; waiting for recovery",
-      "failed": "No working strategy found · retrying automatically",
+      "failed": "Desync and reserve unavailable · retrying automatically",
+      "checking": "Confirming a connection failure",
+      "profile": "Using subscription reserve",
+      "profile_failed": "Subscription reserve unavailable · retrying",
       "queued": "Waiting for a check"
     },
     "copyFailed": "Could not copy diagnostics"

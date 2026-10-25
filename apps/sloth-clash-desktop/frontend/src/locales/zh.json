@@ -749,7 +749,10 @@
       "receiving": "正在接收媒体流量",
       "partial": "一个媒体连接已停滞，其他连接仍在工作",
       "interrupted": "UDP 通信中断，正在等待恢复",
-      "failed": "未找到可用策略，将自动重试",
+      "failed": "Desync 和备用线路不可用 · 将自动重试",
+      "checking": "正在确认连接故障",
+      "profile": "使用订阅备用线路",
+      "profile_failed": "订阅备用线路不可用 · 正在重试",
       "queued": "等待检测"
     },
     "copyFailed": "无法复制诊断信息"

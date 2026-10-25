@@ -38,9 +38,13 @@ describe('ProfilesPage update status badge', () => {
       },
     ])
     const badge = screen.getByText('Update failed')
-    expect(badge.getAttribute('title')).toBe(
-      'The last subscription update failed (5m ago)\nsubscription HTTP 403: forbidden',
-    )
+    const label =
+      'The last subscription update failed (5m ago)\nsubscription HTTP 403: forbidden'
+    expect(badge.getAttribute('title')).toBe(label)
+    expect(badge.getAttribute('aria-label')).toBe(label)
+    // Not a live region: a list of failing cards must not announce each one.
+    expect(badge.getAttribute('role')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
     // "updated X ago" keeps showing the last real update, not the attempt.
     expect(screen.getByText('3h ago')).toBeTruthy()
   })

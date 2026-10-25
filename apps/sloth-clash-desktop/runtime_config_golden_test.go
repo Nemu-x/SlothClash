@@ -22,7 +22,7 @@ import (
 // Golden snapshots of the generated runtime config.
 //
 // Every profile of the test corpora goes through the production entry point
-// (writeRuntimeConfig: fetch -> parse -> merge templates ->
+// (runtimecfg.Write: fetch -> parse -> merge templates ->
 // finalize -> marshal -> config.yaml) for both traffic modes and a few key
 // desktop-prefs combinations, and the resulting config.yaml is compared byte
 // for byte with testdata/golden/runtime-config/. The point is to make any
@@ -124,7 +124,7 @@ append:
 )
 
 // goldenBareNodeList is not a full profile, so it takes the bare fallback
-// writer in writeRuntimeConfig (provider-based config).
+// writer in runtimecfg.Write (provider-based config).
 var goldenBareNodeList = []byte("proxies:\n  - {name: n1, type: ss, server: s.example.com, port: 443, cipher: aes-128-gcm, password: pw}\n")
 
 func loadGoldenProfiles(t *testing.T) []goldenProfile {
@@ -264,7 +264,7 @@ func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer,
 		EnableTun:              enableTun,
 		Env:                    currentRuntimeConfigEnv(),
 	}, &res); err != nil {
-		t.Fatalf("writeRuntimeConfig: %v", err)
+		t.Fatalf("runtimecfg.Write: %v", err)
 	}
 	if p.script != "" && !res.Applied {
 		t.Fatalf("script was not applied: %+v", res)

@@ -106,6 +106,9 @@ func (a *App) clearSystemProxyLocked() {
 // Some Windows builds briefly lag registry reads after writes; clash-verge-rev also toggles
 // system proxy when mixed-port changes — we only re-apply the same desired state here.
 func ensureWindowsUserProxy(server string, enable bool) error {
+	if !osSystemProxyWritesAllowed() {
+		return nil
+	}
 	want := strings.TrimSpace(server)
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {
@@ -282,6 +285,9 @@ func setWindowsUserProxy(server string, enable bool) error {
 }
 
 func clearStaleLoopbackUserProxy() error {
+	if !osSystemProxyWritesAllowed() {
+		return nil
+	}
 	const keyPath = `Software\Microsoft\Windows\CurrentVersion\Internet Settings`
 	k, err := registry.OpenKey(registry.CURRENT_USER, keyPath, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {

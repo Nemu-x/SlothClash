@@ -1,0 +1,61 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: true
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-redir: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: true
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - https://1.1.1.1/dns-query
+        - tls://8.8.8.8:853
+    proxy-server-nameserver:
+        - 1.1.1.1
+        - 8.8.8.8
+    respect-rules: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxy-groups:
+    - name: Main
+      proxies:
+        - DIRECT
+        - REJECT
+      type: select
+rules:
+    - GEOIP,private,DIRECT,no-resolve
+    - MATCH,Main

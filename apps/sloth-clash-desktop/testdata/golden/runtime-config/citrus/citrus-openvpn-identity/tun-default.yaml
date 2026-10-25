@@ -1,0 +1,85 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: true
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: true
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    proxy-server-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - ca: |
+        -----BEGIN CERTIFICATE-----
+        MIIBljCCAT2gAwIBAgIUfYpCJ2palKDa1WjUXjEUIdP3mXcwCgYIKoZIzj0EAwIw
+        IDEeMBwGA1UEAwwVY2l0cnVzLWNvbXBhdCB0ZXN0IENBMCAXDTI2MTAyMDIxMTA1
+        NVoYDzIxMjYwOTI2MjExMDU1WjAgMR4wHAYDVQQDDBVjaXRydXMtY29tcGF0IHRl
+        c3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASTmwMocy3+Ym20lmwQvkNS
+        fBO7gXOzgCO7GI97UqaK85wrRcR/7XnHteVi4/7wSx+eQYH8u24GO50Ejj+PA4Co
+        o1MwUTAdBgNVHQ4EFgQUMZi5pUNR2qPydO9G170nYwBmaMswHwYDVR0jBBgwFoAU
+        MZi5pUNR2qPydO9G170nYwBmaMswDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQD
+        AgNHADBEAiBRIxYOknnKO7E6vu5Qx74r5mQC8qNKeKP6e/IbfvBO2QIgEwVS0XY9
+        d2FxsHBEuqbMNm/pMccJAGcwDhsikHBPfyg=
+        -----END CERTIFICATE-----
+      name: openvpn
+      password: pass
+      port: 1194
+      proto: udp
+      server: vpn.example.com
+      tls-version-min: "1.3"
+      type: openvpn
+      udp: true
+      username: user
+      verify-server-name: true
+      verify-x509-name: server_abc123
+      verify-x509-type: name
+proxy-groups:
+    - name: GLOBAL
+      proxies:
+        - openvpn
+      type: select
+rules:
+    - MATCH,GLOBAL

@@ -6,6 +6,7 @@ import { DesyncSettingsCard } from '../components/DesyncSettingsCard'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
 import { useCoreBuild } from '../hooks/queries/useCoreBuild'
+import type { DesktopPrefs } from '../hooks/useDesktopPrefs'
 import type { CompactSettings } from '../types/app'
 import {
   STOCK_ACCENTS,
@@ -297,36 +298,16 @@ export function SettingsPage({
   accent,
   onSetAccent,
   lang,
-  settings,
-  settingsBusy,
-  trayAvailable,
-  trayIconStyle,
-  onSetTrayIconStyle,
-  tunStackValue,
-  tunPrefs,
-  trafficPrefs,
+  prefs,
   tunBanner,
   onDismissBanner,
-  allowLan,
-  onSetAllowLan,
-  dnsIpv6,
-  onSetDnsIpv6,
-  smartDns,
-  onSetSmartDns,
-  mixedPort,
   runningMixedPort,
-  onSetMixedPort,
-  realityPrefs,
-  onSetReality,
   state,
   updateSnap,
   error,
   onBrowserOpen,
   onSetTheme,
   onSetLang,
-  onSetSetting,
-  onSetUiPref,
-  onSetLaunchOnStartup,
   onInstallService,
   serviceInfo,
   onEnsureTun,
@@ -339,38 +320,15 @@ export function SettingsPage({
   onCheckUpdates,
   onApplyUpdate,
   updateProgress,
-  appUpdateEnabled,
-  onToggleAppUpdate,
-  corpVpnEnabled,
-  onToggleCorpVpn,
 }: {
   theme: ThemeMode
   lang: Lang
-  settings: CompactSettings
-  settingsBusy: boolean
-  trayAvailable: boolean
-  // Backend-owned (prefs.json): '' = platform default, 'colorful' | 'mono'.
-  trayIconStyle: string
-  onSetTrayIconStyle: (style: string) => void
-  tunStackValue: string
-  tunPrefs: main.TunSettings
-  trafficPrefs: main.TrafficSettings
+  // Compact settings + backend-owned prefs.json sections (useDesktopPrefs).
+  prefs: DesktopPrefs
   tunBanner: string
   onDismissBanner: () => void
-  // Backend-owned (prefs.json): opens the local proxy to the LAN.
-  allowLan: boolean
-  onSetAllowLan: (next: boolean) => void
-  dnsIpv6: boolean
-  onSetDnsIpv6: (next: boolean) => void
-  smartDns: boolean
-  onSetSmartDns: (next: boolean) => void
-  // Fixed mixed-port ("lock port"): 0 = auto/random, 1–65535 = pinned.
-  mixedPort: number
+  // The port the running core listens on (seeds "lock port").
   runningMixedPort: number
-  onSetMixedPort: (next: number) => void
-  // Backend-owned (prefs.json): REALITY key-share mode + client version.
-  realityPrefs: main.RealitySettings
-  onSetReality: (patch: Partial<main.RealitySettings>) => void
   state: any
   updateSnap: any
   error: string | null
@@ -380,17 +338,6 @@ export function SettingsPage({
   accent: string | null
   onSetAccent: (hex: string | null) => void
   onSetLang: (lang: Lang) => void
-  onSetSetting: <K extends keyof CompactSettings>(
-    key: K,
-    value: CompactSettings[K],
-  ) => void
-  // Backend-owned (prefs.json) startup/window toggles — written atomically
-  // by Go rather than cached in localStorage.
-  onSetUiPref: (
-    key: 'startMinimized' | 'autoConnectOnStartup' | 'closeToTray',
-    value: boolean,
-  ) => void
-  onSetLaunchOnStartup: (next: boolean) => void
   onInstallService: () => void
   serviceInfo: main.ServiceRuntimeInfo | null
   onEnsureTun: () => void
@@ -403,13 +350,47 @@ export function SettingsPage({
   onCheckUpdates: () => void
   onApplyUpdate: () => void
   updateProgress: { downloaded: number; total: number; pct: number } | null
-  appUpdateEnabled: boolean
-  onToggleAppUpdate: (next: boolean) => void
-  corpVpnEnabled: boolean
-  onToggleCorpVpn: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   const coreBuild = useCoreBuild()
+  // Prefs fields under the names the cards below were written against.
+  const {
+    settings,
+    settingsBusy,
+    trayAvailable,
+    trayIconStyle,
+    tunPrefs,
+    trafficPrefs,
+    realityPrefs,
+    appUpdateEnabled,
+    corpVpnEnabled,
+    connectionPrefs,
+  } = prefs
+  const onSetTrayIconStyle = prefs.commitTrayIconStyle
+  const tunStackValue: string = tunPrefs.stack ?? ''
+  // Backend-owned (prefs.json): opens the local proxy to the LAN.
+  const allowLan = connectionPrefs.allowLan === true
+  const onSetAllowLan = (next: boolean) =>
+    void prefs.commitConnectionPrefs({ allowLan: next })
+  const dnsIpv6 = connectionPrefs.dnsIpv6 !== false
+  const onSetDnsIpv6 = (next: boolean) =>
+    void prefs.commitConnectionPrefs({ dnsIpv6: next })
+  const smartDns = connectionPrefs.smartDns === true
+  const onSetSmartDns = (next: boolean) =>
+    void prefs.commitConnectionPrefs({ smartDns: next })
+  // Fixed mixed-port ("lock port"): 0 = auto/random, 1–65535 = pinned.
+  const mixedPort = connectionPrefs.mixedPort ?? 0
+  const onSetMixedPort = (next: number) =>
+    void prefs.commitConnectionPrefs({ mixedPort: next })
+  const onSetReality = (patch: Partial<main.RealitySettings>) =>
+    void prefs.commitRealityPrefs(patch)
+  const onSetSetting = prefs.setSetting
+  // Backend-owned (prefs.json) startup/window toggles — written atomically
+  // by Go rather than cached in localStorage.
+  const onSetUiPref = prefs.setUiPref
+  const onSetLaunchOnStartup = prefs.setLaunchOnStartup
+  const onToggleAppUpdate = prefs.toggleAppUpdate
+  const onToggleCorpVpn = prefs.toggleCorpVpn
   return (
     <div className="panel settingsPanel">
       <div className="settingsTopBar">

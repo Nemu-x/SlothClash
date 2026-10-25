@@ -1,43 +1,38 @@
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
-
-type TunDrafts = { dnsHijack?: string; mtu?: string; device?: string }
+import type { DesktopPrefs, TunDrafts } from '../hooks/useDesktopPrefs'
 
 export function TunSettingsModal({
   open,
-  tunPrefs,
-  trafficPrefs,
-  tunDnsHijackDraft,
-  tunMtuDraft,
-  tunDeviceDraft,
-  tunPrefsSaving,
-  onTunDnsHijackDraftChange,
-  onTunMtuDraftChange,
-  onTunDeviceDraftChange,
-  onCommitTunPrefs,
-  onCommitTrafficPrefs,
+  prefs,
   onClose,
 }: {
   open: boolean
-  tunPrefs: main.TunSettings
-  trafficPrefs: main.TrafficSettings
-  tunDnsHijackDraft: string
-  tunMtuDraft: string
-  tunDeviceDraft: string
-  tunPrefsSaving: boolean
-  onTunDnsHijackDraftChange: (next: string) => void
-  onTunMtuDraftChange: (next: string) => void
-  onTunDeviceDraftChange: (next: string) => void
-  onCommitTunPrefs: (
-    patch: Partial<main.TunSettings>,
-    drafts?: TunDrafts,
-  ) => void
-  onCommitTrafficPrefs: (patch: Partial<main.TrafficSettings>) => void
+  // TUN / traffic prefs, drafts and their commits (useDesktopPrefs).
+  prefs: DesktopPrefs
   onClose: () => void
 }) {
   const { t } = useTranslation()
   if (!open) return null
+
+  const {
+    tunPrefs,
+    trafficPrefs,
+    tunDnsHijackDraft,
+    tunMtuDraft,
+    tunDeviceDraft,
+    tunPrefsSaving,
+  } = prefs
+  const onTunDnsHijackDraftChange = prefs.setTunDnsHijackDraft
+  const onTunMtuDraftChange = prefs.setTunMtuDraft
+  const onTunDeviceDraftChange = prefs.setTunDeviceDraft
+  const onCommitTunPrefs = (
+    patch: Partial<main.TunSettings>,
+    drafts?: TunDrafts,
+  ) => void prefs.commitTunPrefs(patch, drafts)
+  const onCommitTrafficPrefs = (patch: Partial<main.TrafficSettings>) =>
+    void prefs.commitTrafficPrefs(patch)
 
   const tunStackValue = tunPrefs.stack ?? ''
   const findProcessModeValue: string = trafficPrefs.findProcessMode ?? ''

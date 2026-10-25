@@ -123,7 +123,7 @@ func (a *App) SetProxyNode(groupName, proxyName string) (AppState, error) {
 		a.mu.Unlock()
 		return a.GetAppState(), errors.New("core not running")
 	}
-	secret = a.coreSecret
+	secret = a.core.secret
 	a.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -148,7 +148,7 @@ func (a *App) FetchRulesOverview() RulesOverview {
 	conn := strings.TrimSpace(a.state.Connection.Status)
 	running := a.state.Core.Running
 	ep := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 	// Do not require Core.Running: it can lag in the UI; "connected" + controller endpoint is enough (Verge-style).
 	if ep != "" && (conn == "connected" || running) {

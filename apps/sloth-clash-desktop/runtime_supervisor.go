@@ -97,10 +97,10 @@ func (a *App) runCoreHealthWatch(consecutiveFails int, restartInProgress *atomic
 	gen := a.connectGen.Load()
 	a.mu.RLock()
 	monitoring := strings.TrimSpace(a.state.Connection.Status) == ConnConnected &&
-		!a.coreStopIntentional && a.state.Core.Running
+		!a.core.stopIntentional && a.state.Core.Running
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
-	profileID := strings.TrimSpace(a.coreActiveProfileID)
+	secret := a.core.secret
+	profileID := strings.TrimSpace(a.core.activeProfileID)
 	traffic := strings.TrimSpace(a.state.Traffic)
 	a.mu.RUnlock()
 
@@ -151,9 +151,9 @@ func (a *App) runNetworkResumePass(restartInProgress *atomic.Bool) {
 		return
 	}
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	traffic := strings.TrimSpace(a.state.Traffic)
-	profileID := strings.TrimSpace(a.coreActiveProfileID)
+	profileID := strings.TrimSpace(a.core.activeProfileID)
 	a.mu.RUnlock()
 	if strings.TrimSpace(listen) == "" {
 		return

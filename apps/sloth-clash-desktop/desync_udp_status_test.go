@@ -42,7 +42,7 @@ func TestDiscordUDPStatusAndResetScope(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
 	status := a.GetDesyncUDPStatus()
 	if status.LastError != "" || status.DirectFlows != 1 || status.ProfileFlows != 1 || status.Download != 300 || !status.CountersAvailable || status.Counters.FakePackets != 18 || !reflect.DeepEqual(status.ProfileRoutes, []string{"test-node"}) {

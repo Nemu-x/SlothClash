@@ -23,7 +23,7 @@ func (a *App) TestProxyDelay(name string) (int, error) {
 	conn := strings.TrimSpace(a.state.Connection.Status)
 	running := a.state.Core.Running
 	ep := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 
 	if ep == "" || (conn != "connected" && !running) {

@@ -165,7 +165,6 @@
   background: transparent;
 }
 
-.shell[data-theme="light"] .segment,
 .shell[data-theme="light"] .statusCard,
 .shell[data-theme="light"] .homeCard,
 .shell[data-theme="light"] .profileCard {

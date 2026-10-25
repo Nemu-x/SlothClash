@@ -69,12 +69,6 @@
   display: none;
 }
 
-.brand {
-  font-weight: 700;
-  font-size: var(--font-size-lg);
-  margin-bottom: 16px;
-}
-
 .navItem {
   position: relative;
   width: 100%;

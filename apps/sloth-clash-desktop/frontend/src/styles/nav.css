@@ -100,6 +100,19 @@
   color: #ffffff;
 }
 
+.shell[data-theme="light"] .nav {
+  border-right-color: var(--hairline-strong);
+}
+
+.shell[data-theme="light"] .navItem {
+  color: #45423d;
+}
+
+.shell[data-theme="light"] .navItem.active {
+  background: var(--accent-dim);
+  color: #2a2215;
+}
+
 .content {
   grid-area: content;
   padding: 22px 26px;

@@ -27,14 +27,6 @@
   gap: 12px;
 }
 
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  margin: 0 0 6px;
-}
-
 .homeTitleWithAlert {
   display: flex;
   align-items: center;

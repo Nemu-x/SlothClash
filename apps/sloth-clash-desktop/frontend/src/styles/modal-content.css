@@ -191,6 +191,30 @@
   cursor: not-allowed;
 }
 
+.shell[data-theme="light"] .modalCard {
+  background: linear-gradient(165deg, #f7f0e3, #e9ddc8);
+  border-color: var(--hairline-strong);
+}
+
+.shell[data-theme="light"] .ctxMenu {
+  background: #f5ecdb;
+  border-color: var(--hairline-strong);
+  box-shadow: 0 16px 40px rgba(60, 45, 25, 0.22);
+}
+
+.shell[data-theme="light"] .ctxTitle {
+  color: #2b2317;
+  border-bottom-color: var(--hairline);
+}
+
+.shell[data-theme="light"] .ctxItem {
+  color: #3a3120;
+}
+
+.shell[data-theme="light"] .ctxItem:hover:not(:disabled) {
+  background: rgba(74, 55, 30, 0.08);
+}
+
 .ctxSection {
   padding: 8px 14px 4px;
   font-size: var(--font-size-xs);
@@ -201,4 +225,12 @@
 
 .ctxItemSub {
   padding-left: 24px;
+}
+
+.modalAgeSection {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--panel-deep);
 }

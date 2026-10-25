@@ -1,27 +1,64 @@
-.profileBadge {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: #f2efe8;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.shell[data-theme="light"] .homeSupportHeaderBtn {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent-muted);
+  color: #7a5828;
 }
 
-.profileCardFoot .profileBadge {
-  padding: 3px 8px;
-  font-size: var(--font-size-xs);
+/* Light theme: dark popups / washed-out accent text → readable on cream. */
+.shell[data-theme="light"] .statusNodeMenuList {
+  background: rgba(247, 240, 228, 0.98);
+  border-color: var(--hairline-strong);
+  box-shadow: 0 14px 42px rgba(60, 45, 25, 0.22);
 }
 
-.profileCardFoot .profileClickHint {
-  font-size: var(--font-size-xs);
+.shell[data-theme="light"] .pillOpt {
+  color: #45423d;
 }
 
-.profileClickHint {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
+.shell[data-theme="light"] .trafficKnob {
+  color: #45423d;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Light theme: subtle/ghost-ish buttons used white washes that vanish on the
+   cream surface — give them a visible warm fill + readable text. */
+.shell[data-theme="light"] .btn.subtle {
+  background: rgba(70, 52, 28, 0.06);
+  border-color: var(--hairline-strong);
+  color: #3c3320;
+}
+
+.shell[data-theme="light"] .btn.subtle:hover {
+  background: rgba(70, 52, 28, 0.1);
+}
+
+/* Light theme: base buttons were dark (#3d3834 / ghost #3d2c3e) and read as
+   heavy dark blobs on the cream surface. Make them soft warm chips with dark
+   text; .primary keeps the bronze fill, .subtle keeps its own override above. */
+.shell[data-theme="light"] .btn {
+  background: rgba(74, 55, 30, 0.08);
+  color: #3a3120;
+}
+
+.shell[data-theme="light"] .btn:hover {
+  background: rgba(74, 55, 30, 0.14);
+}
+
+.shell[data-theme="light"] .btn.ghost {
+  background: rgba(74, 55, 30, 0.05);
+}
+
+.shell[data-theme="light"] .btn.ghost:hover {
+  background: rgba(74, 55, 30, 0.1);
+}
+
+.shell[data-theme="light"] .btn.primary {
+  background: #b9955a;
+  color: #2a2012;
+}
+
+.shell[data-theme="light"] .btn.primary:hover {
+  background: #c5a062;
 }
 
 .mono {

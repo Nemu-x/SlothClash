@@ -313,3 +313,7 @@
 .proxyDelaySlow {
   color: var(--danger);
 }
+
+.proxyDelayBoxReadonly {
+  justify-content: flex-end;
+}

@@ -1,3 +1,15 @@
+.shell[data-theme="light"] .input,
+.shell[data-theme="light"] .selectModern {
+  background: #fdf9f0;
+  color: var(--text);
+  border-color: var(--hairline-strong);
+}
+
+.shell[data-theme="light"] .mono {
+  background: #f0ebe4;
+  color: #2a2622;
+}
+
 .selectModern {
   /* Full-width like .input so form fields are a consistent size project-wide.
      Context-specific widths (Proxies focus group, Home compact pickers) keep

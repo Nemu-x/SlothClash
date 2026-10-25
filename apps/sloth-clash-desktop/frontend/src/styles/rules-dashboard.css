@@ -163,10 +163,6 @@
   animation: profileRefreshSpin 0.75s linear infinite;
 }
 
-.proxyDelayBoxReadonly {
-  justify-content: flex-end;
-}
-
 .rulesTable {
   width: 100%;
   border-collapse: collapse;
@@ -206,6 +202,10 @@
 .rulesPolicyProxy {
   color: #5eead4;
   font-weight: 600;
+}
+
+.shell[data-theme="light"] .rulesPolicyProxy {
+  color: #0f766e;
 }
 
 /* Rules dashboard enable/disable toggle column. */

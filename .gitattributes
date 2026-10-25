@@ -3,3 +3,6 @@ Changelog.md merge=union
 
 # Core patch series: byte-exact on every OS (hashed in core/mihomo/manifest.json, applied with git apply).
 core/patches/** -text
+
+# Runtime config golden snapshots: compared byte for byte, keep LF on every OS.
+apps/sloth-clash-desktop/testdata/golden/** -text

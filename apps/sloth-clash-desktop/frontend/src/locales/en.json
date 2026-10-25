@@ -551,6 +551,7 @@
       "match": "Match",
       "policy": "Policy",
       "noParsed": "Connect on Home first, then press Refresh to load rules.",
+      "empty": "The core returned no rules. Refresh to check again.",
       "toggleCol": "On",
       "toggleEnable": "Enable this rule",
       "toggleDisable": "Disable this rule",
@@ -724,5 +725,37 @@
     "warning": "A website can open this kind of link. Never add a subscription you did not request.",
     "confirm": "Add subscription",
     "adding": "Adding…"
+  },
+  "desync": {
+    "title": "Desync",
+    "enabled": "Enable Desync",
+    "unsupportedCore": "This build does not include a compatible core.",
+    "voice": "Discord voice",
+    "retry": "Check again",
+    "copy": "Copy diagnostics",
+    "copying": "Preparing report…",
+    "copied": "Copied",
+    "loading": "Loading settings…",
+    "phase": {
+      "disabled": "Off",
+      "connect": "Connect on Home",
+      "rule": "Select Rule mode",
+      "needs_tun": "Enable TUN for voice",
+      "waiting": "Waiting for a Discord voice connection",
+      "testing": "Finding a strategy · {{attempt}}/{{total}}",
+      "ready": "HTTPS available · automatic",
+      "observing": "Checking voice traffic · rejoin the channel if needed",
+      "transport": "UDP exchange detected",
+      "media": "Media traffic in both directions",
+      "receiving": "Receiving media",
+      "partial": "One media connection stalled; other connections are working",
+      "interrupted": "UDP traffic interrupted; waiting for recovery",
+      "failed": "Desync and reserve unavailable · retrying automatically",
+      "checking": "Confirming a connection failure",
+      "profile": "Using subscription reserve",
+      "profile_failed": "Subscription reserve unavailable · retrying",
+      "queued": "Waiting for a check"
+    },
+    "copyFailed": "Could not copy diagnostics"
   }
 }

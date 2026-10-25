@@ -6072,6 +6072,36 @@
 }
 
 /* "JS" badge on a profile card whose script failed on the last generation. */
+.desyncTTLRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.desyncUDPStatus {
+  border-left: 2px solid var(--border-strong);
+  margin: 12px 0;
+  padding-left: 12px;
+}
+.desyncUDPStatus p {
+  margin: 6px 0;
+}
+.desyncTTLRow input {
+  width: 84px;
+}
+.desyncResults {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.desyncResults li {
+  margin-bottom: 8px;
+}
+.desyncResults li > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .profileScriptBadge {
   flex: 0 0 auto;
   align-self: center;

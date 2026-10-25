@@ -103,6 +103,8 @@ type DesktopPrefs struct {
 	Traffic      TrafficSettings      `json:"traffic"`
 	Connection   ConnectionSettings   `json:"connection"`
 	Reality      RealitySettings      `json:"reality"`
+	Desync       DesyncSettings       `json:"desync"`
+	DesyncCache  []DesyncNetworkCache `json:"desyncCache,omitempty"`
 	Privacy      PrivacySettings      `json:"privacy"`
 	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
 	Experimental ExperimentalSettings `json:"experimental"`

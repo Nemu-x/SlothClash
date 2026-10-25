@@ -1,0 +1,684 @@
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index a5274e1..a1fd9df 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -25,6 +25,7 @@ type Direct struct {
+ 	desyncDNSFallbacks atomic.Uint64
+ 	desyncActivity     *directUDPActivity
+ 	desyncBindings     *desyncBindingPool
++	desyncRejectQUIC   bool
+ }
+ 
+ type DirectOption struct {
+@@ -64,6 +65,9 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
+ 
+ // ListenPacketContext implements C.ProxyAdapter
+ func (d *Direct) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
++	if d.desyncRejectQUIC && metadata.DstPort == 443 {
++		return NewReject().ListenPacketContext(ctx, metadata)
++	}
+ 	if err := d.loopBack.CheckPacketConn(metadata); err != nil {
+ 		return nil, err
+ 	}
+diff --git a/adapter/outbound/direct_desync.go b/adapter/outbound/direct_desync.go
+index d9b65a8..a6b1b20 100644
+--- a/adapter/outbound/direct_desync.go
++++ b/adapter/outbound/direct_desync.go
+@@ -19,6 +19,7 @@ type DirectDesyncOption struct {
+ 	Fake         *DirectDesyncFakeOption `proxy:"fake,omitempty"`
+ 	UDP          *DirectDesyncUDPOption  `proxy:"udp,omitempty"`
+ 	DNSFallback  bool                    `proxy:"dns-fallback,omitempty"`
++	RejectQUIC   bool                    `proxy:"reject-quic,omitempty"`
+ }
+ 
+ type DirectDesyncUDPOption struct {
+@@ -115,6 +116,7 @@ func NewDirectWithDesyncOption(option DirectOption) (*Direct, error) {
+ 		direct.desync = &opts
+ 	}
+ 	direct.desyncDNSFallback = option.Desync.DNSFallback
++	direct.desyncRejectQUIC = option.Desync.RejectQUIC
+ 	if udp := option.Desync.UDP; udp != nil {
+ 		udpOptions := desync.UDPOptions{TTL: udp.TTL, Repeats: udp.Repeats, Packets: udp.Packets, Counters: &desync.UDPCounters{}}
+ 		if err := udpOptions.Validate(); err != nil {
+diff --git a/adapter/outbound/direct_desync_reserve_test.go b/adapter/outbound/direct_desync_reserve_test.go
+new file mode 100644
+index 0000000..37686b4
+--- /dev/null
++++ b/adapter/outbound/direct_desync_reserve_test.go
+@@ -0,0 +1,34 @@
++package outbound
++
++import (
++	"context"
++	"io"
++	"testing"
++
++	C "github.com/metacubex/mihomo/constant"
++)
++
++func TestDesyncRejectQUICIsOptInAndPrecedesDNSAndSocket(t *testing.T) {
++	d, err := NewDirectWithDesyncOption(DirectOption{Name: "test", Desync: &DirectDesyncOption{TLSRec: "1+s", RejectQUIC: true}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer d.Close()
++	m := &C.Metadata{NetWork: C.UDP, Host: "must-not-resolve.invalid", DstPort: 443}
++	pc, err := d.ListenPacketContext(context.Background(), m)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer pc.Close()
++	if _, _, err = pc.ReadFrom(make([]byte, 1)); err != io.EOF {
++		t.Fatal("targeted QUIC was not rejected")
++	}
++	ordinary := NewDirect()
++	defer ordinary.Close()
++	if ordinary.desyncRejectQUIC {
++		t.Fatal("ordinary DIRECT behavior changed")
++	}
++	if m.Host != "must-not-resolve.invalid" {
++		t.Fatal("metadata host changed")
++	}
++}
+diff --git a/hub/route/desync_profile.go b/hub/route/desync_profile.go
+new file mode 100644
+index 0000000..36ff06d
+--- /dev/null
++++ b/hub/route/desync_profile.go
+@@ -0,0 +1,208 @@
++package route
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net"
++	"net/netip"
++	"net/url"
++	"path"
++	"strings"
++	"time"
++
++	"github.com/metacubex/chi/render"
++	"github.com/metacubex/http"
++	"github.com/metacubex/mihomo/component/ca"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/tunnel"
++	"github.com/metacubex/mihomo/tunnel/statistic"
++)
++
++var desyncProfileProbeSlots = make(chan struct{}, 2)
++
++type desyncProfileProbeResult struct {
++	OK                    bool   `json:"ok"`
++	Route                 string `json:"route"`
++	Code                  string `json:"code,omitempty"`
++	DurationMS            int64  `json:"durationMS"`
++	*desyncUDPProbeResult `json:",omitempty"`
++}
++
++func observedDiscordMetadata(target netip.AddrPort, allowProfile bool) *C.Metadata {
++	if !target.IsValid() || !target.Addr().IsGlobalUnicast() || target.Addr().IsPrivate() || netip.MustParsePrefix("100.64.0.0/10").Contains(target.Addr()) || target.Port() < 1024 {
++		return nil
++	}
++	var found *C.Metadata
++	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
++		info := c.Info()
++		m := info.Metadata
++		if m == nil || m.NetWork != C.UDP || !strings.EqualFold(path.Base(strings.ReplaceAll(m.Process, `\`, "/")), "Discord.exe") || m.DstIP.Unmap() != target.Addr().Unmap() || m.DstPort != target.Port() {
++			return true
++		}
++		owned := allowProfile
++		for _, name := range info.Chain {
++			if name == "SLOTH-DESYNC-DISCORD-UDP" {
++				owned = true
++			}
++		}
++		if owned {
++			copy := *m
++			found = &copy
++			return false
++		}
++		return true
++	})
++	return found
++}
++
++// Return a privacy-safe category. A DIRECT/REJECT rule is never described as
++// a working VPN. UDP support must be present at each selected group/leaf.
++func desyncProfileKind(p C.Proxy, m *C.Metadata) string {
++	seen := map[string]bool{}
++	for depth := 0; p != nil && depth < 16; depth++ {
++		if seen[p.Name()] {
++			return "unavailable"
++		}
++		seen[p.Name()] = true
++		if m.NetWork == C.UDP && !p.SupportUDP() {
++			return "no_udp"
++		}
++		switch p.Type() {
++		case C.Direct, C.Compatible:
++			return "direct"
++		case C.Reject, C.RejectDrop, C.Pass, C.PassRule, C.Rematch, C.Dns:
++			return "blocked"
++		}
++		next := p.Unwrap(m, false)
++		if next == nil {
++			return "remote"
++		}
++		p = next
++	}
++	return "unavailable"
++}
++
++func probeDesyncProfile(w http.ResponseWriter, r *http.Request) {
++	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
++	var req struct {
++		Target string `json:"target,omitempty"`
++	}
++	d := json.NewDecoder(io.LimitReader(r.Body, 1024))
++	d.DisallowUnknownFields()
++	err := d.Decode(&req)
++	var extra any
++	trailing := d.Decode(&extra)
++	name := proxy.Name()
++	if err != nil || trailing != io.EOF || proxy.Type() != C.Selector || (name != "SLOTH-DESYNC-YOUTUBE" && name != "SLOTH-DESYNC-DISCORD" && name != "SLOTH-DESYNC-DISCORD-UDP") || (name != "SLOTH-DESYNC-DISCORD-UDP" && req.Target != "") {
++		render.Status(r, http.StatusBadRequest)
++		render.JSON(w, r, newError("expected an owned service selector"))
++		return
++	}
++	select {
++	case desyncProfileProbeSlots <- struct{}{}:
++		defer func() { <-desyncProfileProbeSlots }()
++	default:
++		render.Status(r, 429)
++		render.JSON(w, r, newError("profile probe busy"))
++		return
++	}
++	ctx, cancel := context.WithTimeout(r.Context(), 16*time.Second)
++	defer cancel()
++	start := time.Now()
++	out := desyncProfileProbeResult{Route: "unavailable"}
++	defer func() { out.DurationMS = time.Since(start).Milliseconds(); render.JSON(w, r, out) }()
++	if name == "SLOTH-DESYNC-DISCORD-UDP" {
++		target, err := netip.ParseAddrPort(req.Target)
++		if err != nil {
++			out.Code = "endpoint_changed"
++			return
++		}
++		m := observedDiscordMetadata(target, true)
++		if m == nil {
++			out.Code = "endpoint_changed"
++			return
++		}
++		p, err := tunnel.ResolveDesyncProfile(ctx, m)
++		if err != nil {
++			out.Code = "profile_unavailable"
++			return
++		}
++		out.Route = desyncProfileKind(p, m)
++		if out.Route != "remote" {
++			out.Code = "reserve_" + out.Route
++			return
++		}
++		if !desyncUDPProbeBusy.CompareAndSwap(false, true) {
++			out.Code = "busy"
++			return
++		}
++		defer desyncUDPProbeBusy.Store(false)
++		m.Type = C.INNER // synthetic discovery never enters application telemetry
++		pc, err := p.ListenPacketContext(ctx, m)
++		if err != nil {
++			out.Code = "reserve_socket"
++			return
++		}
++		defer pc.Close()
++		result, err := runDesyncUDPProbe(ctx, pc, target)
++		out.desyncUDPProbeResult = &result
++		out.OK = err == nil && result.Sent == 12 && result.Received >= 10 && result.MaxConsecutiveLoss <= 1 && result.DurationMS >= 1500
++		if !out.OK {
++			out.Code = "reserve_udp_loss"
++		}
++		return
++	}
++	targets := []string{"https://www.youtube.com/generate_204"}
++	if name == "SLOTH-DESYNC-DISCORD" {
++		targets = []string{"https://discord.com/api/v10/gateway", "https://cdn.discordapp.com/embed/avatars/0.png"}
++	}
++	for _, target := range targets {
++		u, _ := url.Parse(target)
++		m := &C.Metadata{NetWork: C.TCP, Type: C.INNER, Host: u.Hostname(), DstPort: 443}
++		if name == "SLOTH-DESYNC-DISCORD" {
++			m.Process = "Discord.exe"
++		}
++		p, err := tunnel.ResolveDesyncProfile(ctx, m)
++		if err != nil {
++			out.Code = "profile_unavailable"
++			return
++		}
++		out.Route = desyncProfileKind(p, m)
++		if out.Route != "remote" {
++			out.Code = "reserve_" + out.Route
++			return
++		}
++		one, cancel := context.WithTimeout(ctx, 6*time.Second)
++		err = desyncProfileHTTPS(one, p, m, target)
++		cancel()
++		if err != nil {
++			out.Code = "reserve_https"
++			return
++		}
++	}
++	out.OK = true
++}
++
++func desyncProfileHTTPS(ctx context.Context, p C.Proxy, m *C.Metadata, target string) error {
++	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
++	if err != nil {
++		return err
++	}
++	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { copy := *m; return p.DialContext(ctx, &copy) }, TLSClientConfig: tlsConfig, DisableKeepAlives: true, TLSHandshakeTimeout: 5 * time.Second}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
++	if err != nil {
++		return err
++	}
++	resp, err := client.Do(req)
++	if err != nil {
++		return err
++	}
++	defer resp.Body.Close()
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		return io.ErrUnexpectedEOF
++	}
++	return nil
++}
+diff --git a/hub/route/desync_profile_test.go b/hub/route/desync_profile_test.go
+new file mode 100644
+index 0000000..8e3b59b
+--- /dev/null
++++ b/hub/route/desync_profile_test.go
+@@ -0,0 +1,163 @@
++package route
++
++import (
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/json"
++	"encoding/pem"
++	"math/big"
++	"net"
++	"net/netip"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/http/httptest"
++	"github.com/metacubex/mihomo/adapter"
++	"github.com/metacubex/mihomo/adapter/outbound"
++	"github.com/metacubex/mihomo/component/ca"
++	C "github.com/metacubex/mihomo/constant"
++	R "github.com/metacubex/mihomo/rules"
++	"github.com/metacubex/mihomo/tunnel"
++	"github.com/metacubex/mihomo/tunnel/statistic"
++	"github.com/metacubex/tls"
++)
++
++type reserveTestProxy struct {
++	C.Proxy
++	name    string
++	kind    C.AdapterType
++	udp     bool
++	leaf    C.Proxy
++	address string
++}
++
++func (p *reserveTestProxy) Name() string                     { return p.name }
++func (p *reserveTestProxy) Type() C.AdapterType              { return p.kind }
++func (p *reserveTestProxy) Addr() string                     { return p.address }
++func (p *reserveTestProxy) ProxyInfo() C.ProxyInfo           { return C.ProxyInfo{} }
++func (p *reserveTestProxy) SupportUDP() bool                 { return p.udp }
++func (p *reserveTestProxy) Unwrap(*C.Metadata, bool) C.Proxy { return p.leaf }
++func (p *reserveTestProxy) DialContext(ctx context.Context, m *C.Metadata) (C.Conn, error) {
++	c, err := (&net.Dialer{}).DialContext(ctx, "tcp", p.address)
++	if err != nil {
++		return nil, err
++	}
++	return outbound.NewConn(c, p), nil
++}
++
++func TestDesyncProfileProbeVerifiesFixedHTTPSWithoutMutatingSelector(t *testing.T) {
++	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	cert := &x509.Certificate{SerialNumber: big.NewInt(42), Subject: pkix.Name{CommonName: "local-reserve-test"}, DNSNames: []string{"www.youtube.com", "discord.com", "cdn.discordapp.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true, IsCA: true}
++	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err = ca.AddCertificate(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))); err != nil {
++		t.Fatal(err)
++	}
++	defer ca.ResetCertificate()
++	status := 204
++	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
++	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
++	server.StartTLS()
++	defer server.Close()
++	remote := &reserveTestProxy{name: "private-subscription-name", kind: C.Socks5, udp: true, address: server.Listener.Addr().String()}
++	group := &reserveTestProxy{name: "SLOTH-DESYNC-YOUTUBE", kind: C.Selector, udp: true, leaf: adapter.NewProxy(outbound.NewDirect())}
++	oldProxies, oldRules, oldMode := tunnel.Proxies(), tunnel.Rules(), tunnel.Mode()
++	defer func() {
++		tunnel.UpdateProxies(oldProxies, nil)
++		tunnel.UpdateRules(oldRules, nil, nil)
++		tunnel.SetMode(oldMode)
++	}()
++	match, _ := R.ParseRule("MATCH", "", remote.Name(), nil, nil)
++	tunnel.UpdateProxies(map[string]C.Proxy{group.Name(): group, remote.Name(): remote}, nil)
++	tunnel.UpdateRules([]C.Rule{match}, nil, nil)
++	tunnel.SetMode(tunnel.Rule)
++	call := func(body string) desyncProfileProbeResult {
++		t.Helper()
++		req := httptest.NewRequest("POST", "/", strings.NewReader(body))
++		req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, group))
++		w := httptest.NewRecorder()
++		probeDesyncProfile(w, req)
++		if w.Code != 200 {
++			t.Fatalf("HTTP %d: %s", w.Code, w.Body.String())
++		}
++		if strings.Contains(w.Body.String(), remote.Name()) {
++			t.Fatal("subscription name leaked")
++		}
++		var out desyncProfileProbeResult
++		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
++			t.Fatal(err)
++		}
++		return out
++	}
++	if out := call(`{}`); !out.OK || out.Route != "remote" {
++		t.Fatalf("working reserve rejected: %+v", out)
++	}
++	if group.leaf.Type() != C.Direct {
++		t.Fatal("prospective probe selected the reserve")
++	}
++	status = 503
++	if out := call(`{}`); out.OK || out.Code != "reserve_https" {
++		t.Fatal("HTTP error counted as success")
++	}
++	remote.kind = C.Direct
++	if out := call(`{}`); out.OK || out.Code != "reserve_direct" {
++		t.Fatal("DIRECT advertised as VPN")
++	}
++}
++
++func TestDesyncReserveRejectsUnknownTargetsAndUnsuitableUDP(t *testing.T) {
++	m := &C.Metadata{NetWork: C.UDP}
++	for _, test := range []struct {
++		p    *reserveTestProxy
++		kind string
++	}{
++		{&reserveTestProxy{name: "direct", kind: C.Direct, udp: true}, "direct"},
++		{&reserveTestProxy{name: "reject", kind: C.Reject, udp: true}, "blocked"},
++		{&reserveTestProxy{name: "tcp-only", kind: C.Socks5}, "no_udp"},
++	} {
++		if got := desyncProfileKind(test.p, m); got != test.kind {
++			t.Fatalf("got %s", got)
++		}
++	}
++	for _, target := range []string{"127.0.0.1:19330", "100.64.1.1:19330", "104.29.1.1:19330", "104.29.1.1:443"} {
++		if observedDiscordMetadata(netip.MustParseAddrPort(target), true) != nil {
++			t.Fatal("unobserved/private target accepted")
++		}
++	}
++	group := &reserveTestProxy{name: "SLOTH-DESYNC-YOUTUBE", kind: C.Selector}
++	for _, body := range []string{`{"target":"https://private.test"}`, `{"url":"https://private.test"}`, `{} {}`, `[]`} {
++		req := httptest.NewRequest("POST", "/", strings.NewReader(body))
++		req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, group))
++		w := httptest.NewRecorder()
++		probeDesyncProfile(w, req)
++		if w.Code != 400 {
++			t.Fatal("arbitrary target/body accepted")
++		}
++	}
++}
++
++func TestDesyncRecoveryProbeAcceptsProfileEndpointOnlyDuringReserve(t *testing.T) {
++	old := tunnel.Proxies()
++	defer tunnel.UpdateProxies(old, nil)
++	group := &reserveTestProxy{name: "SLOTH-DESYNC-DISCORD-UDP", kind: C.Selector, leaf: adapter.NewProxy(outbound.NewDirect())}
++	tunnel.UpdateProxies(map[string]C.Proxy{group.Name(): group}, nil)
++	target := netip.MustParseAddrPort("104.29.2.2:19330")
++	tracker := &observedDiscordTracker{info: &statistic.TrackerInfo{Metadata: &C.Metadata{NetWork: C.UDP, Process: "Discord.exe", DstIP: target.Addr(), DstPort: target.Port()}, Chain: C.Chain{"profile"}}}
++	statistic.DefaultManager.Join(tracker)
++	defer statistic.DefaultManager.Leave(tracker)
++	if allowedDiscordEndpoint(target) {
++		t.Fatal("profile endpoint accepted outside reserve")
++	}
++	group.leaf = adapter.NewProxy(outbound.NewPass())
++	if !allowedDiscordEndpoint(target) {
++		t.Fatal("active profile endpoint unavailable to recovery")
++	}
++}
+diff --git a/hub/route/desync_udp.go b/hub/route/desync_udp.go
+index 51723dc..1950884 100644
+--- a/hub/route/desync_udp.go
++++ b/hub/route/desync_udp.go
+@@ -10,7 +10,6 @@ import (
+ 	"io"
+ 	"net"
+ 	"net/netip"
+-	"path"
+ 	"strings"
+ 	"sync/atomic"
+ 	"time"
+@@ -18,7 +17,7 @@ import (
+ 	"github.com/metacubex/chi/render"
+ 	"github.com/metacubex/http"
+ 	C "github.com/metacubex/mihomo/constant"
+-	"github.com/metacubex/mihomo/tunnel/statistic"
++	"github.com/metacubex/mihomo/tunnel"
+ )
+ 
+ var desyncUDPProbeBusy atomic.Bool
+@@ -31,24 +30,15 @@ type desyncUDPProbeResult struct {
+ }
+ 
+ func allowedDiscordEndpoint(target netip.AddrPort) bool {
+-	if !target.IsValid() || !target.Addr().IsGlobalUnicast() || target.Addr().IsPrivate() || target.Port() < 1024 || target.Port() == 443 {
+-		return false
+-	}
+-	found := false
+-	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+-		info := c.Info()
+-		m := info.Metadata
+-		if m != nil && m.NetWork == C.UDP && strings.EqualFold(path.Base(strings.ReplaceAll(m.Process, `\`, "/")), "Discord.exe") && m.DstIP.Unmap() == target.Addr().Unmap() && m.DstPort == target.Port() {
+-			for _, chain := range info.Chain {
+-				if chain == "SLOTH-DESYNC-DISCORD-UDP" {
+-					found = true
+-					return false
+-				}
+-			}
++	// Recovery probes may observe an ordinary profile flow only while the exact
++	// generated selector is in reserve. Other profile endpoints remain ineligible.
++	allowProfile := false
++	if group := tunnel.Proxies()["SLOTH-DESYNC-DISCORD-UDP"]; group != nil && group.Type() == C.Selector {
++		if leaf := group.Unwrap(&C.Metadata{NetWork: C.UDP}, false); leaf != nil && leaf.Type() == C.Pass {
++			allowProfile = true
+ 		}
+-		return true
+-	})
+-	return found
++	}
++	return observedDiscordMetadata(target, allowProfile) != nil
+ }
+ 
+ // The normal controller authentication applies. Limit to an explicitly owned
+diff --git a/hub/route/proxies.go b/hub/route/proxies.go
+index 882abcf..1f711a3 100644
+--- a/hub/route/proxies.go
++++ b/hub/route/proxies.go
+@@ -31,6 +31,7 @@ func proxyRouter() http.Handler {
+ 		r.Get("/", getProxy)
+ 		r.Get("/delay", getProxyDelay)
+ 		r.Post("/desync/udp-probe", probeDesyncUDP)
++		r.Post("/desync/profile-probe", probeDesyncProfile)
+ 		r.Put("/", updateProxy)
+ 		r.Delete("/", unfixedProxy)
+ 	})
+diff --git a/tunnel/desync_profile.go b/tunnel/desync_profile.go
+new file mode 100644
+index 0000000..48916fa
+--- /dev/null
++++ b/tunnel/desync_profile.go
+@@ -0,0 +1,43 @@
++package tunnel
++
++import (
++	"context"
++	"fmt"
++
++	"github.com/metacubex/mihomo/component/resolver"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++func desyncOverlayRoute(name string) bool {
++	return name == "SLOTH-DESYNC-YOUTUBE" || name == "SLOTH-DESYNC-DISCORD" || name == "SLOTH-DESYNC-DISCORD-UDP"
++}
++
++// ResolveDesyncProfile is prospective: it never changes a selector. Only the
++// generated overlay targets are skipped; rule providers, process/IP rules,
++// nested PASS and corporate/inbound rules keep the normal matcher semantics.
++// The caller supplies synthetic service metadata or a copy of observed UDP
++// metadata. Never look up the probe socket's own process as the application.
++func ResolveDesyncProfile(ctx context.Context, metadata *C.Metadata) (C.Proxy, error) {
++	if Mode() != Rule || metadata.SpecialProxy != "" {
++		return nil, fmt.Errorf("profile reserve requires rule mode")
++	}
++	helper := C.RuleMatchHelper{
++		ResolveIP: func() {
++			if metadata.Host != "" && !metadata.Resolved() && ctx.Err() == nil {
++				if ip, err := resolver.ResolveIP(ctx, metadata.Host); err == nil {
++					metadata.DstIP = ip
++				}
++			}
++		},
++		CheckPassRule: func(name string) bool {
++			for p, depth := proxies[name], 0; p != nil && depth < 16; p, depth = p.Unwrap(metadata, false), depth+1 {
++				if p.Type() == C.PassRule {
++					return true
++				}
++			}
++			return false
++		},
++	}
++	p, _, err := matchRules(metadata, helper, true)
++	return p, err
++}
+diff --git a/tunnel/desync_profile_test.go b/tunnel/desync_profile_test.go
+new file mode 100644
+index 0000000..2f810ec
+--- /dev/null
++++ b/tunnel/desync_profile_test.go
+@@ -0,0 +1,73 @@
++package tunnel
++
++import (
++	"context"
++	"net/netip"
++	"testing"
++
++	C "github.com/metacubex/mihomo/constant"
++	R "github.com/metacubex/mihomo/rules"
++)
++
++type desyncRuleProxy struct {
++	C.Proxy
++	name string
++	kind C.AdapterType
++	leaf C.Proxy
++}
++
++func (p *desyncRuleProxy) Name() string                     { return p.name }
++func (p *desyncRuleProxy) Type() C.AdapterType              { return p.kind }
++func (p *desyncRuleProxy) SupportUDP() bool                 { return true }
++func (p *desyncRuleProxy) Unwrap(*C.Metadata, bool) C.Proxy { return p.leaf }
++
++func TestDesyncProfileUsesFullOriginalRuleOrderAndPASS(t *testing.T) {
++	oldProxies, oldRules, oldSub, oldMode := proxies, rules, subRules, mode
++	defer func() { proxies = oldProxies; rules = oldRules; subRules = oldSub; mode = oldMode }()
++	pass := &desyncRuleProxy{name: "PASS", kind: C.Pass}
++	direct := &desyncRuleProxy{name: "DIRECT", kind: C.Direct}
++	reject := &desyncRuleProxy{name: "REJECT", kind: C.Reject}
++	selector := &desyncRuleProxy{name: "SLOTH-DESYNC-DISCORD-UDP", kind: C.Selector, leaf: direct}
++	proxies = map[string]C.Proxy{"DIRECT": direct, "REJECT": reject, "PASS": pass, selector.Name(): selector}
++	mode = Rule
++	parse := func(tp, payload, target string) C.Rule {
++		r, err := R.ParseRule(tp, payload, target, nil, nil)
++		if err != nil {
++			t.Fatal(err)
++		}
++		return r
++	}
++	rules = []C.Rule{parse("IN-NAME", "corporate", "REJECT"), parse("NETWORK", "udp", selector.Name()), parse("PROCESS-NAME", "Discord.exe", "REJECT"), parse("MATCH", "", "DIRECT")}
++	m := &C.Metadata{Type: C.TUN, NetWork: C.UDP, Process: "Discord.exe", DstIP: netip.MustParseAddr("104.29.1.1"), DstPort: 19299}
++	p, _, err := match(m, C.RuleMatchHelper{})
++	if err != nil || p.Name() != selector.Name() {
++		t.Fatal("normal Desync route changed")
++	}
++	p, err = ResolveDesyncProfile(context.Background(), m.Clone())
++	if err != nil || p.Type() != C.Reject {
++		t.Fatalf("original process rule was lost: %v %v", p, err)
++	}
++	if selector.leaf != direct {
++		t.Fatal("prospective probe mutated selection")
++	}
++	selector.leaf = pass
++	p, _, err = match(m, C.RuleMatchHelper{})
++	if err != nil || p.Type() != C.Reject {
++		t.Fatal("PASS did not restore original profile matching")
++	}
++	m.InName = "corporate"
++	p, err = ResolveDesyncProfile(context.Background(), m.Clone())
++	if err != nil || p.Type() != C.Reject {
++		t.Fatal("corporate precedence lost")
++	}
++	m.InName = ""
++	m.Process = "Other.exe"
++	p, err = ResolveDesyncProfile(context.Background(), m.Clone())
++	if err != nil || p.Type() != C.Direct {
++		t.Fatal("ordinary direct profile was not retained")
++	}
++	mode = Global
++	if _, err = ResolveDesyncProfile(context.Background(), m); err == nil {
++		t.Fatal("global mode accepted")
++	}
++}
+diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
+index be897aa..e78d206 100644
+--- a/tunnel/tunnel.go
++++ b/tunnel/tunnel.go
+@@ -652,6 +652,10 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
+ }
+ 
+ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, error) {
++	return matchRules(metadata, helper, false)
++}
++
++func matchRules(metadata *C.Metadata, helper C.RuleMatchHelper, skipDesync bool) (C.Proxy, C.Rule, error) {
+ 	configMux.RLock()
+ 	defer configMux.RUnlock()
+ 
+@@ -662,6 +666,9 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
+ 	GetRules:
+ 		for _, rule := range getRules(metadata) {
+ 			if matched, ada := rule.Match(metadata, helper); matched {
++				if skipDesync && desyncOverlayRoute(ada) {
++					continue
++				}
+ 				adapter, ok := proxies[ada]
+ 				if !ok {
+ 					continue

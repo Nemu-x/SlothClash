@@ -84,6 +84,10 @@ export function RulesPage({
   const failedProviders = providers.filter((p) =>
     Boolean(providerErrMap[p.name]),
   ).length
+  const rulesError =
+    connectionStatus === 'connected' || rulesOverview?.controller
+      ? rulesOverview?.lastError
+      : null
   return (
     <div className="panel rulesPanel">
       <div className="rulesPanelHead">
@@ -116,9 +120,7 @@ export function RulesPage({
           </button>
         </div>
       </div>
-      {connectionStatus === 'connected' && rulesOverview?.lastError ? (
-        <p className="error tight">{rulesOverview.lastError}</p>
-      ) : null}
+      {rulesError ? <p className="error tight">{rulesError}</p> : null}
       {rulesRows.length > 0 ? (
         <>
           <div className="rulesFilterRow">
@@ -250,9 +252,17 @@ export function RulesPage({
             </table>
           </div>
         </>
-      ) : (
-        <p className="muted small tight">{t('ui.rules.noParsed')}</p>
-      )}
+      ) : rulesBusy ? (
+        <p className="muted small tight">{t('ui.rules.refreshing')}</p>
+      ) : !rulesError ? (
+        <p className="muted small tight">
+          {t(
+            rulesOverview?.reachable || connectionStatus === 'connected'
+              ? 'ui.rules.empty'
+              : 'ui.rules.noParsed',
+          )}
+        </p>
+      ) : null}
       {error ? <p className="error">{friendlyErrorMessage(error)}</p> : null}
 
       <RuleProvidersModal

@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.33 + 16 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.33 + 21 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -255,6 +255,12 @@ Delete together with 0004, or when XDrive drops local storage.
   selectable, with the hop the last health check failed at.
 - **`tcp-connect-timeout`** has its place in the generated layout next to the other TCP keys.
 
+## Direct TCP desynchronization
+
+Patch **0017** links the separately published `github.com/Nemu-x/desync` library at an exact version and checksum. An optional `desync` mapping on a named `direct` outbound wraps the TCP socket before its first TLS write; the ordinary DIRECT route and UDP behaviour remain unchanged. The parser validates settings, rejects unsupported native fake platforms and disallows TFO/MPTCP for these outbounds. Tests verify configuration decoding and that the core's buffered copy path retains the transformation.
+
+The client injects service-specific routes only when explicitly enabled in Settings. See [Desync](desync.md) for controls, production-subscription testing and rollback. Windows patch tests also execute the standalone library's native tests.
+
 ## Citrus compatibility suite
 
 `apps/sloth-clash-desktop/citrus_compat_test.go` runs Citrus' own client-side examples through the
@@ -279,6 +285,18 @@ format), 1 deferred (TrustTunnel timers); `skip-host-key-check` is ignored and h
 first time found two app bugs, fixed with it: a subscription's own url-test group named `Auto` that
 another group uses was pruned as if it were the app's synthetic fallback group, and `SUB-RULE` targets
 were checked against proxies instead of `sub-rules`.
+
+## Controller diagnostics
+
+Patch `0019-desync-dns-udp.patch` adds explicit DNS fallback for named Desync outbounds when direct DNS returns no IP, plus a validated Windows UDP fake option with per-outbound counters. The ordinary direct route and subscription resolvers are retained. Tests cover cold empty resolution, retry scope/cancellation, UDP configuration, native datagram integrity and the core wrapper path. Desktop media routing is enabled independently in Settings; live network success remains an owner-run measurement.
+
+Patch `0020-desync-auto-diagnostics.patch` provides the `desync-auto` capability used by automatic client calibration. Its authenticated UDP probe is limited to an owned candidate and an active public Discord UDP endpoint, sends a bounded discovery sequence, and validates complete replies. Separate bounded application-only activity counters distinguish discovery from RTP-shaped traffic without storing payloads; internal probes do not populate them. Controller request cancellation stops pending probes, and explicit expected HTTP status ranges are enforced for HTTPS tests. Tests cover endpoint scope, mismatched replies, initial-only response loss, cancellation, telemetry bounds and error-page rejection. Candidate selection, network caching and recovery policy live in the client rather than the transport library.
+
+Patch `0018-probe-error-details.patch` preserves URL-test error messages in controller responses and writes failed manual delay tests to the core warning log with the outbound name. It covers dial/TLS failures, timeouts, zero-delay failures and successful responses with deterministic HTTP-handler tests. Warning assertions wait for the matching event under one fixed deadline and explicitly tolerate unrelated asynchronous log events. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
+
+Patch `0021-desync-stable-udp-binding.patch` adds the explicit `desync.udp.stable-binding` option. It reuses a native socket only for the same Discord TUN source/process/inbound/interface/server/discovery-session identity, across local port replacement. Discovery replies and logical deadlines remain independent; private socket starts, other traffic and inner probes are excluded from sharing. Buffers, memberships and idle lifetime are bounded, and adapter shutdown owns cleanup. Private diagnostics expose aggregate counts only. Regression coverage includes concurrent sessions, handover/old-close behavior, native library fake-window continuity, deadlines, bounds, shutdown and a 75-second native core PacketConn test. Remove this patch when upstream offers equivalent scoped association continuity and lifecycle guarantees; no upstream issue is claimed.
+
+Patch `0022-desync-profile-reserve.patch` adds bounded authenticated prospective reserve probes for the three generated service selectors. Fixed HTTPS targets or actually observed Discord UDP endpoints are evaluated through the original full rule engine with only generated overlay targets skipped. Probes never change live selectors; results contain availability/error categories without subscription node names. DIRECT/REJECT and unsupported UDP do not qualify as remote reserve. `desync.reject-quic` rejects UDP/443 only inside explicitly configured Desync candidates, allowing selector PASS to restore the profile's QUIC policy as well as TCP rules. Tests cover full rule order, process/corporate precedence, PASS, local HTTPS success/error validation, strict request scope, endpoint ownership and UDP capability. Client hysteresis and sticky recovery remain outside the transport library.
 
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 

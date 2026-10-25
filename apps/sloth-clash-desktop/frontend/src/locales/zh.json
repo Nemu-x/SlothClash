@@ -550,6 +550,7 @@
       "match": "匹配",
       "policy": "策略",
       "noParsed": "请先在首页连接，然后点击刷新以加载规则。",
+      "empty": "核心返回的规则列表为空。请刷新重试。",
       "toggleCol": "启用",
       "toggleEnable": "启用此规则",
       "toggleDisable": "停用此规则",
@@ -723,5 +724,37 @@
     "warning": "任何网站都可以打开此类链接。请勿添加您未主动请求的订阅。",
     "confirm": "添加订阅",
     "adding": "正在添加…"
+  },
+  "desync": {
+    "title": "Desync",
+    "enabled": "启用 Desync",
+    "unsupportedCore": "此版本未包含兼容的内核。",
+    "voice": "Discord 语音",
+    "retry": "重新检测",
+    "copy": "复制诊断",
+    "copying": "正在生成报告…",
+    "copied": "已复制",
+    "loading": "正在加载设置…",
+    "phase": {
+      "disabled": "已关闭",
+      "connect": "请先在首页连接",
+      "rule": "请选择规则模式",
+      "needs_tun": "语音需要启用 TUN",
+      "waiting": "等待 Discord 语音连接",
+      "testing": "正在选择策略 · {{attempt}}/{{total}}",
+      "ready": "HTTPS 可用 · 自动",
+      "observing": "正在检查语音流量，必要时重新加入频道",
+      "transport": "检测到 UDP 双向通信",
+      "media": "检测到双向媒体流量",
+      "receiving": "正在接收媒体流量",
+      "partial": "一个媒体连接已停滞，其他连接仍在工作",
+      "interrupted": "UDP 通信中断，正在等待恢复",
+      "failed": "Desync 和备用线路不可用 · 将自动重试",
+      "checking": "正在确认连接故障",
+      "profile": "使用订阅备用线路",
+      "profile_failed": "订阅备用线路不可用 · 正在重试",
+      "queued": "等待检测"
+    },
+    "copyFailed": "无法复制诊断信息"
   }
 }

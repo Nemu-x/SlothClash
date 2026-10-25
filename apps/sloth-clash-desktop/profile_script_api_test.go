@@ -162,9 +162,18 @@ func TestPreviewReflectsTheRealPipeline(t *testing.T) {
 
 	dir := t.TempDir()
 	var res scriptResult
-	if err := a.writeRuntimeConfigWithScript(
-		dir, p.URL, "", "", "", "", script, 0, 7890, "preview", "proxy", false, false, &res,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 p.URL,
+		Script:                 script,
+		CtrlPort:               0,
+		MixedPort:              7890,
+		Secret:                 "preview",
+		WithExternalController: false,
+		Traffic:                "proxy",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, &res); err != nil {
 		t.Fatalf("real generation failed: %v", err)
 	}
 	applied, err := os.ReadFile(filepath.Join(dir, "config.yaml"))

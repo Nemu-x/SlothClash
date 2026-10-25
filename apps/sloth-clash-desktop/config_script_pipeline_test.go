@@ -270,7 +270,17 @@ rules:
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	if _, err := tryWriteMergedFullProfile(tmp, srv.URL, "", "", "", "", 9090, 7890, "secret", "tun", true, true); err != nil {
+	if _, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                tmp,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("pipeline: %v", err)
 	}
 	b, err := os.ReadFile(filepath.Join(tmp, "config.yaml"))

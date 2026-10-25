@@ -587,24 +587,16 @@ func tunBlockForTraffic(enable bool) string {
 `
 }
 
-// writeRuntimeConfig generates this profile's runtime config with no script.
-// Kept as the narrow entry point for callers that have no profile in hand
-// (and for the parity/e2e suites, which assert un-scripted generation).
-func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
-	return a.writeRuntimeConfigWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil)
-}
+// writeRuntimeConfig generates the runtime config.yaml for in: the merged full
+// profile when the subscription is one, the bare provider profile otherwise.
+// The profile's JavaScript override (in.Script, may be empty) is threaded
+// through exactly like the declarative templates beside it. scriptOut, when
+// non-nil, receives what the script did.
+func writeRuntimeConfig(in runtimeConfigInput, scriptOut *scriptResult) error {
+	_ = os.MkdirAll(filepath.Join(in.DataDir, "providers"), 0o755)
+	_ = os.MkdirAll(filepath.Join(in.DataDir, "ruleset"), 0o755)
 
-// writeRuntimeConfigWithScript is the same generation with the profile's
-// JavaScript override threaded through, exactly like the declarative templates
-// beside it. scriptOut, when non-nil, receives what the script did.
-func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, script string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool, scriptOut *scriptResult) error {
-	// The one prefs read of this generation; everything below works off p.
-	p := currentRuntimeConfigPrefs()
-
-	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
-	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
-
-	outcome, err := tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, scriptOut, p)
+	outcome, err := tryWriteMergedFullProfile(in, scriptOut)
 	if outcome == pipelineOK {
 		return nil
 	}
@@ -615,21 +607,21 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	// fall through to write the bare provider profile below.
 	_ = outcome.useBareFallback() // anchor for readers — see pipelineOutcome.
 
-	geoDir := filepath.Join(dataDir, "geo")
+	geoDir := filepath.Join(in.DataDir, "geo")
 	geoIP := filepath.Join(geoDir, "geoip.dat")
 	geoSite := filepath.Join(geoDir, "geosite.dat")
 
 	var cfg strings.Builder
-	fmt.Fprintf(&cfg, "mixed-port: %d\n", mixedPort)
+	fmt.Fprintf(&cfg, "mixed-port: %d\n", in.MixedPort)
 	fmt.Fprintf(&cfg, "socks-port: 0\n")
 	fmt.Fprintf(&cfg, "port: 0\n")
-	if withExternalController && ctrlPort > 0 {
-		fmt.Fprintf(&cfg, "external-controller: 127.0.0.1:%d\n", ctrlPort)
+	if in.WithExternalController && in.CtrlPort > 0 {
+		fmt.Fprintf(&cfg, "external-controller: 127.0.0.1:%d\n", in.CtrlPort)
 	}
-	fmt.Fprintf(&cfg, "secret: %q\n", secret)
+	fmt.Fprintf(&cfg, "secret: %q\n", in.Secret)
 	// Same user pref as the subscription path (default off = localhost only);
 	// the wildcard bind keeps LAN clients able to reach us when it is on.
-	if p.AllowLan {
+	if in.Prefs.AllowLan {
 		fmt.Fprintf(&cfg, "allow-lan: true\n")
 		fmt.Fprintf(&cfg, "bind-address: \"*\"\n")
 	} else {
@@ -640,7 +632,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	// Top-level ipv6 must agree with dns.ipv6 below (the subscription path
 	// force-aligns them for the same reason): a machine with no working IPv6
 	// route that gets AAAA records dials v6 and fails.
-	fmt.Fprintf(&cfg, "ipv6: %t\n\n", p.DNSIPv6)
+	fmt.Fprintf(&cfg, "ipv6: %t\n\n", in.Prefs.DNSIPv6)
 
 	// profile.store-selected mirrors clash-verge-rev's `use_clash` defaults:
 	// preserves per-group node selections across hot reloads (we reload on
@@ -649,9 +641,9 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	// fake-IPs do not have to renegotiate after reconnect.
 	fmt.Fprintf(&cfg, "profile:\n")
 	fmt.Fprintf(&cfg, "  store-selected: true\n")
-	fmt.Fprintf(&cfg, "  store-fake-ip: %t\n\n", enableTun)
+	fmt.Fprintf(&cfg, "  store-fake-ip: %t\n\n", in.EnableTun)
 
-	if enableTun {
+	if in.EnableTun {
 		// Match enhance::tun::use_tun: fake-ip DNS block goes in only when TUN
 		// is actually being brought up. Without it, TUN + strict-route gives
 		// "connected" apps but no working resolution / routing.
@@ -662,7 +654,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
   listen: ":1053"
   ipv6: %t
   respect-rules: %t
-  enhanced-mode: fake-ip`, p.DNSIPv6, p.SmartDNS)
+  enhanced-mode: fake-ip`, in.Prefs.DNSIPv6, in.Prefs.SmartDNS)
 		cfg.WriteString(`
   fake-ip-range: 198.18.0.1/16
   # Required whenever fake-ip runs with ipv6:true — without a v6 pool AAAA
@@ -697,7 +689,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	fmt.Fprintf(&cfg, "proxy-providers:\n")
 	fmt.Fprintf(&cfg, "  sub1:\n")
 	fmt.Fprintf(&cfg, "    type: http\n")
-	fmt.Fprintf(&cfg, "    url: %q\n", subURL)
+	fmt.Fprintf(&cfg, "    url: %q\n", in.SubURL)
 	fmt.Fprintf(&cfg, "    interval: 3600\n")
 	fmt.Fprintf(&cfg, "    path: ./providers/sub1.yaml\n")
 	fmt.Fprintf(&cfg, "    health-check:\n")
@@ -730,19 +722,19 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 
 	fmt.Fprintf(&cfg, "rules:\n")
 	fmt.Fprintf(&cfg, "  - MATCH,Manual\n\n")
-	cfg.WriteString(tunBlockForTraffic(enableTun))
+	cfg.WriteString(tunBlockForTraffic(in.EnableTun))
 
 	var m map[string]any
 	if err := yaml.Unmarshal([]byte(cfg.String()), &m); err != nil {
 		return err
 	}
-	if err := applyProfileMergeTemplate(m, extendTemplate); err != nil {
+	if err := applyProfileMergeTemplate(m, in.ExtendTemplate); err != nil {
 		return err
 	}
-	if err := applyProfileMergeTemplate(m, proxyTemplate); err != nil {
+	if err := applyProfileMergeTemplate(m, in.ProxyTemplate); err != nil {
 		return err
 	}
-	if err := applyProfileMergeTemplate(m, rulesTemplate); err != nil {
+	if err := applyProfileMergeTemplate(m, in.RulesTemplate); err != nil {
 		return err
 	}
 	// The bare-provider fallback runs the script too: the user's declarative
@@ -750,16 +742,16 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	// the script would be the surprising half-measure.
 	if err := finalizeRuntimeConfigPipelineWithScript(
 		m,
-		dataDir,
-		mixedPort,
-		ctrlPort,
-		secret,
-		traffic,
-		withExternalController,
-		enableTun,
-		script,
+		in.DataDir,
+		in.MixedPort,
+		in.CtrlPort,
+		in.Secret,
+		in.Traffic,
+		in.WithExternalController,
+		in.EnableTun,
+		in.Script,
 		scriptOut,
-		p,
+		in.Prefs,
 	); err != nil {
 		return err
 	}
@@ -768,7 +760,7 @@ func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey
 	if err != nil {
 		return err
 	}
-	cfgPath := filepath.Join(dataDir, "config.yaml")
+	cfgPath := filepath.Join(in.DataDir, "config.yaml")
 	return atomicWriteFile(cfgPath, out, 0o644)
 }
 
@@ -829,22 +821,22 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 		}
 	}
 	var scriptRes scriptResult
-	if err := a.writeRuntimeConfigWithScript(
-		dataDir,
-		profile.URL,
-		profile.AgeSecretKey,
-		profile.MergeTemplate,
-		profile.ProxyTemplate,
-		profile.RulesTemplate,
-		profile.ScriptOverride,
-		ctrlPort,
-		mixedPort,
-		secret,
-		traffic,
-		withEC,
-		enableTun,
-		&scriptRes,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                dataDir,
+		SubURL:                 profile.URL,
+		AgeKey:                 profile.AgeSecretKey,
+		ExtendTemplate:         profile.MergeTemplate,
+		ProxyTemplate:          profile.ProxyTemplate,
+		RulesTemplate:          profile.RulesTemplate,
+		Script:                 profile.ScriptOverride,
+		CtrlPort:               ctrlPort,
+		MixedPort:              mixedPort,
+		Secret:                 secret,
+		WithExternalController: withEC,
+		Traffic:                traffic,
+		EnableTun:              enableTun,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, &scriptRes); err != nil {
 		return err
 	}
 	// Record BEFORE preflight: if a script failure is followed by a preflight

@@ -91,9 +91,17 @@ rules:
 	defer srv.Close()
 
 	dir := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		dir, srv.URL, "", "", "", "", 9090, 7890, "secret", "tun", true, true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile failed: %v", err)
 	}

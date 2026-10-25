@@ -1,7 +1,6 @@
 package main
 
 import (
-	"embed"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,28 +26,23 @@ func readYAMLMapForTest(t *testing.T, p string) map[string]any {
 
 func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	t.Parallel()
-	var b embed.FS
-	a := NewApp(b)
 
 	// Verge-rev alignment: the YAML reflects the enableTun argument verbatim.
 	// Writing a tun profile with enableTun=true must produce tun.enable=true in
 	// the emitted file so PUT /configs?force=true can bring wintun up without
 	// a follow-up PATCH.
 	tunDir := t.TempDir()
-	if err := a.writeRuntimeConfig(
-		tunDir,
-		"https://example.com/sub",
-		"", // ageKey: plain subscription
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                tunDir,
+		SubURL:                 "https://example.com/sub",
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("writeRuntimeConfig(tun, enableTun=true) failed: %v", err)
 	}
 	tunCfg := readYAMLMapForTest(t, filepath.Join(tunDir, "config.yaml"))
@@ -78,20 +72,17 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	// Same profile but simulating "disconnected + traffic=tun": YAML must
 	// have tun.enable=false so Mihomo boots idle, without thrashing wintun.
 	idleDir := t.TempDir()
-	if err := a.writeRuntimeConfig(
-		idleDir,
-		"https://example.com/sub",
-		"", // ageKey: plain subscription
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		false,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                idleDir,
+		SubURL:                 "https://example.com/sub",
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("writeRuntimeConfig(tun, enableTun=false) failed: %v", err)
 	}
 	idleCfg := readYAMLMapForTest(t, filepath.Join(idleDir, "config.yaml"))
@@ -104,20 +95,17 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 	}
 
 	proxyDir := t.TempDir()
-	if err := a.writeRuntimeConfig(
-		proxyDir,
-		"https://example.com/sub",
-		"", // ageKey: plain subscription
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"proxy",
-		true,
-		false,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                proxyDir,
+		SubURL:                 "https://example.com/sub",
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "proxy",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("writeRuntimeConfig(proxy) failed: %v", err)
 	}
 	proxyCfg := readYAMLMapForTest(t, filepath.Join(proxyDir, "config.yaml"))
@@ -133,8 +121,6 @@ func TestE2EWriteRuntimeConfigTunAndProxyModes(t *testing.T) {
 
 func TestE2EWriteRuntimeConfigAppliesRulesAndProxyTemplates(t *testing.T) {
 	t.Parallel()
-	var b embed.FS
-	a := NewApp(b)
 
 	proxyTemplate := `
 append:
@@ -150,20 +136,19 @@ append:
     - DOMAIN,example.com,Custom
 `
 	dir := t.TempDir()
-	if err := a.writeRuntimeConfig(
-		dir,
-		"https://example.com/sub",
-		"", // ageKey: plain subscription
-		"",
-		proxyTemplate,
-		rulesTemplate,
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 "https://example.com/sub",
+		ProxyTemplate:          proxyTemplate,
+		RulesTemplate:          rulesTemplate,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("writeRuntimeConfig with templates failed: %v", err)
 	}
 	cfg := readYAMLMapForTest(t, filepath.Join(dir, "config.yaml"))
@@ -269,20 +254,17 @@ rules:
 	defer srv.Close()
 
 	dir := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		dir,
-		srv.URL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile(tun profile) failed: %v", err)
 	}
@@ -338,20 +320,17 @@ rules:
 	defer srv.Close()
 
 	dir := t.TempDir()
-	outcome, err := tryWriteMergedFullProfile(
-		dir,
-		srv.URL,
-		"", // ageKey: plain
-		"",
-		"",
-		"",
-		9090,
-		7890,
-		"secret",
-		"tun",
-		true,
-		true,
-	)
+	outcome, err := tryWriteMergedFullProfile(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 srv.URL,
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: true,
+		Traffic:                "tun",
+		EnableTun:              true,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("tryWriteMergedFullProfile with broken refs should self-heal, got: %v", err)
 	}

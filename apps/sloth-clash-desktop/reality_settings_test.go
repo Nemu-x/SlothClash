@@ -1,7 +1,6 @@
 package main
 
 import (
-	"embed"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,10 +94,18 @@ func TestRealityKeysReachTheCore(t *testing.T) {
 	prefsCurrent.Reality = RealitySettings{MLKEM: "always", ClientVersion: "1.9.0"}
 	prefsMu.Unlock()
 
-	var b embed.FS
-	a := NewApp(b)
 	dir := t.TempDir()
-	if err := a.writeRuntimeConfig(dir, "https://example.com/sub", "", "", "", "", 9090, 7890, "secret", "rule", false, false); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigInput{
+		DataDir:                dir,
+		SubURL:                 "https://example.com/sub",
+		CtrlPort:               9090,
+		MixedPort:              7890,
+		Secret:                 "secret",
+		WithExternalController: false,
+		Traffic:                "rule",
+		EnableTun:              false,
+		Prefs:                  currentRuntimeConfigPrefs(),
+	}, nil); err != nil {
 		t.Fatalf("writeRuntimeConfig: %v", err)
 	}
 	cfg := readYAMLMapForTest(t, filepath.Join(dir, "config.yaml"))

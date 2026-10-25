@@ -38,18 +38,18 @@ func TestReadCoreJSONRefusesInsteadOfTruncating(t *testing.T) {
 	const limit = 1024
 	doc := []byte(`{"ok":true}`)
 	for _, size := range []int{len(doc), limit - 1, limit} {
-		got, err := readCoreJSON(bytes.NewReader(padJSON(t, doc, size)), "GET /x", limit)
+		got, err := readBounded(bytes.NewReader(padJSON(t, doc, size)), "GET /x", limit)
 		var v struct{ OK bool }
 		if err != nil || len(got) != size || json.Unmarshal(got, &v) != nil || !v.OK {
 			t.Fatalf("size %d: %d bytes, %v", size, len(got), err)
 		}
 	}
-	_, err := readCoreJSON(bytes.NewReader(padJSON(t, doc, limit+1)), "GET /x", limit)
+	_, err := readBounded(bytes.NewReader(padJSON(t, doc, limit+1)), "GET /x", limit)
 	if err == nil || err.Error() != "GET /x response exceeds the 1 KiB limit" {
 		t.Fatalf("oversized body: %v", err)
 	}
 	var v any
-	if err := decodeCoreJSON(strings.NewReader(`{"a":`), "GET /x", limit, &v); err == nil {
+	if err := decodeBoundedJSON(strings.NewReader(`{"a":`), "GET /x", limit, &v); err == nil {
 		t.Fatal("accepted incomplete JSON")
 	}
 }

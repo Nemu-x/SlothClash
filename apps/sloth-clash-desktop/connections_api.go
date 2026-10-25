@@ -82,7 +82,7 @@ func (a *App) FetchConnectionsOverview() ConnectionsOverview {
 		out.LastError = "GET /connections: HTTP " + resp.Status
 		return out
 	}
-	body, err := readCoreJSON(resp.Body, "GET /connections", coreConnectionsMaxJSONBytes)
+	body, err := readBounded(resp.Body, "GET /connections", coreConnectionsMaxJSONBytes)
 	if err != nil {
 		out.LastError = err.Error()
 		return out

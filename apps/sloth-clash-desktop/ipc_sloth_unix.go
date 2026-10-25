@@ -74,7 +74,7 @@ func ipcSlothDoWith(cli *http.Client, ctx context.Context, method, path string, 
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	b, err := readSlothIPCBody(resp, method, path)
 	return resp.StatusCode, b, err
 }
 

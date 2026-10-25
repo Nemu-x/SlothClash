@@ -110,7 +110,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 			Counters DesyncUDPCounters `json:"counters"`
 		} `json:"desyncUDP"`
 	}
-	if err := decodeCoreJSON(response.Body, "GET /proxies/"+desyncDiscordUDPRoute, coreDefaultMaxJSONBytes, &body); err != nil {
+	if err := decodeBoundedJSON(response.Body, "GET /proxies/"+desyncDiscordUDPRoute, coreDefaultMaxJSONBytes, &body); err != nil {
 		out.LastError = err.Error()
 		return out
 	}
@@ -125,7 +125,7 @@ func (a *App) GetDesyncUDPStatus() DesyncUDPStatus {
 			out.LastError = "selected UDP counters unavailable"
 			return out
 		}
-		if err = decodeCoreJSON(selected.Body, "GET /proxies/"+body.Now, coreDefaultMaxJSONBytes, &body); err != nil {
+		if err = decodeBoundedJSON(selected.Body, "GET /proxies/"+body.Now, coreDefaultMaxJSONBytes, &body); err != nil {
 			out.LastError = err.Error()
 			return out
 		}

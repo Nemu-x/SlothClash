@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -29,7 +30,7 @@ func TestRefreshProfileSubscriptionSuccessClearsUpdateError(t *testing.T) {
 	const id = "profile-update-ok"
 	a := &App{profiles: []Profile{{
 		ID: id, Name: "ok", Type: "subscription", URL: subURL,
-		LastUpdated: 1000, LastUpdateAttempt: 2000, LastUpdateError: "subscription HTTP 403: forbidden",
+		LastUpdated: 1000, LastUpdateAttempt: 2000, LastUpdateError: "dial tcp: i/o timeout", LastUpdateErrorTransient: true,
 	}}}
 	before := time.Now().Unix()
 	state, err := a.refreshProfileSubscription(id, false)
@@ -37,8 +38,8 @@ func TestRefreshProfileSubscriptionSuccessClearsUpdateError(t *testing.T) {
 		t.Fatalf("refresh: %v", err)
 	}
 	got := state.Profile.Profiles[0]
-	if got.LastUpdateError != "" {
-		t.Fatalf("LastUpdateError = %q, want cleared", got.LastUpdateError)
+	if got.LastUpdateError != "" || got.LastUpdateErrorTransient {
+		t.Fatalf("LastUpdateError = %q transient=%v, want cleared", got.LastUpdateError, got.LastUpdateErrorTransient)
 	}
 	if got.LastUpdated < before || got.LastUpdateAttempt < before {
 		t.Fatalf("LastUpdated=%d LastUpdateAttempt=%d, want >= %d", got.LastUpdated, got.LastUpdateAttempt, before)
@@ -89,6 +90,9 @@ func TestRefreshProfileSubscriptionRecordsHTTPFailure(t *testing.T) {
 	if got.LastUpdated != 1000 || got.LastUpdateAttempt <= 1000 || !strings.Contains(got.LastUpdateError, "403") {
 		t.Fatalf("updated=%d attempt=%d error=%q", got.LastUpdated, got.LastUpdateAttempt, got.LastUpdateError)
 	}
+	if got.LastUpdateErrorTransient {
+		t.Fatal("an HTTP 403 is recorded as a transient failure")
+	}
 	if ids := a.dueProfileIDs(got.LastUpdateAttempt + 60); len(ids) != 0 {
 		t.Fatalf("a just-failed profile is due again a minute later: %v", ids)
 	}
@@ -113,6 +117,9 @@ func TestRefreshProfileSubscriptionErrorIsRedacted(t *testing.T) {
 	msg := state.Profile.Profiles[0].LastUpdateError
 	if msg == "" {
 		t.Fatal("no error recorded")
+	}
+	if !state.Profile.Profiles[0].LastUpdateErrorTransient {
+		t.Fatalf("a refused connection is not recorded as transient: %s", msg)
 	}
 	for _, leak := range []string{secret, "qtok", "user:pw", "pw@"} {
 		if strings.Contains(msg, leak) {
@@ -198,6 +205,65 @@ func TestDueProfileIDsCountsFromLastAttempt(t *testing.T) {
 	check(t0+1800+3600, "legacy", "failing", "never") // failing: due one interval after the attempt
 }
 
+// A transient failure is retried min(interval, profileTransientRetryMinutes)
+// after the attempt; a deterministic one, and a profile saved before the flag
+// existed, keep the full interval. Nothing is retried every tick.
+func TestDueProfileIDsRetriesTransientFailureSooner(t *testing.T) {
+	const t0 = int64(1_000_000)
+	const retry = int64(profileTransientRetryMinutes) * 60
+	sub := func(id string, interval int, transient bool) Profile {
+		return Profile{
+			ID: id, URL: "https://x/" + id, AutoUpdateEnabled: true, AutoUpdateIntervalMinutes: interval,
+			LastUpdated: t0 - 3600, LastUpdateAttempt: t0, LastUpdateError: "boom", LastUpdateErrorTransient: transient,
+		}
+	}
+	a := &App{profiles: []Profile{
+		sub("transient", 360, true),
+		sub("deterministic", 360, false), // also what a legacy failed profile looks like
+		sub("short", 10, true),           // its own interval is shorter than the retry
+		sub("default", 0, true),          // 0 => default interval
+		{ID: "cleared", URL: "https://x/c", AutoUpdateEnabled: true, AutoUpdateIntervalMinutes: 360, LastUpdated: t0, LastUpdateErrorTransient: true},
+	}}
+	check := func(now int64, want ...string) {
+		t.Helper()
+		got := a.dueProfileIDs(now)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("due at t0+%d = %v, want %v", now-t0, got, want)
+		}
+	}
+	check(t0 + 60)
+	check(t0 + 600 - 1)
+	check(t0+600, "short")
+	check(t0+retry-1, "short")
+	check(t0+retry, "transient", "short", "default")
+	check(t0+360*60-1, "transient", "short", "default")
+	check(t0+360*60, "transient", "deterministic", "short", "default", "cleared")
+}
+
+// Profiles saved before the flag existed decode as non-transient, and the
+// flag stays out of the JSON when false.
+func TestLastUpdateErrorTransientJSON(t *testing.T) {
+	var p Profile
+	if err := json.Unmarshal([]byte(`{"id":"x","lastUpdateAttempt":5,"lastUpdateError":"boom"}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.LastUpdateErrorTransient {
+		t.Fatal("legacy profile decoded as transient")
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "lastUpdateErrorTransient") {
+		t.Fatalf("false flag serialized: %s", b)
+	}
+	p.LastUpdateErrorTransient = true
+	b, _ = json.Marshal(p)
+	if !strings.Contains(string(b), `"lastUpdateErrorTransient":true`) {
+		t.Fatalf("flag missing: %s", b)
+	}
+}
+
 // The pipeline's own fetches (first-Connect cache miss, background refresh)
 // record deterministic failures, ignore transient network ones, and clear the
 // error on success without moving the schedule anchors.
@@ -211,26 +277,29 @@ func TestRecordPipelineBodyFetch(t *testing.T) {
 	dataDir := filepath.Join(root, "runtime", id)
 	a := &App{profiles: []Profile{
 		{ID: "other", URL: "https://x/o"},
-		{ID: id, URL: "https://x/p", LastUpdated: 1000},
+		{ID: id, URL: "https://x/p", LastUpdated: 1000, LastUpdateError: "dial tcp: i/o timeout", LastUpdateErrorTransient: true},
 	}}
 	p := func() Profile { return a.profiles[1] }
 
 	a.recordPipelineBodyFetch(dataDir, &url.Error{Op: "Get", URL: "https://x/p", Err: errors.New("connection refused")})
-	if p().LastUpdateError != "" || p().LastUpdateAttempt != 0 {
+	if p().LastUpdateError != "dial tcp: i/o timeout" || p().LastUpdateAttempt != 0 {
 		t.Fatalf("transient failure recorded: %+v", p())
 	}
 
 	a.recordPipelineBodyFetch(dataDir, errors.New("subscription HTTP 404: gone"))
-	if p().LastUpdateError != "subscription HTTP 404: gone" || p().LastUpdateAttempt == 0 || p().LastUpdated != 1000 {
+	if p().LastUpdateError != "subscription HTTP 404: gone" || p().LastUpdateErrorTransient || p().LastUpdateAttempt == 0 || p().LastUpdated != 1000 {
 		t.Fatalf("deterministic failure: %+v", p())
 	}
 	if a.profiles[0].LastUpdateError != "" {
 		t.Fatal("recorded on the wrong profile")
 	}
 
+	// A scheduled attempt failed on the network since; a pipeline fetch then
+	// succeeds and clears it, flag included.
+	a.profiles[1].LastUpdateError, a.profiles[1].LastUpdateErrorTransient = "dial tcp: i/o timeout", true
 	attempt := p().LastUpdateAttempt
 	a.recordPipelineBodyFetch(dataDir, nil)
-	if p().LastUpdateError != "" || p().LastUpdated != 1000 || p().LastUpdateAttempt != attempt {
+	if p().LastUpdateError != "" || p().LastUpdateErrorTransient || p().LastUpdated != 1000 || p().LastUpdateAttempt != attempt {
 		t.Fatalf("success: %+v", p())
 	}
 }
@@ -281,19 +350,19 @@ func TestProfileSourceEditResetsUpdateStatus(t *testing.T) {
 	failed := func() *App {
 		return &App{profiles: []Profile{{
 			ID: id, Name: "n", Type: "subscription", URL: oldURL, AgeSecretKey: key1,
-			LastUpdated: 1000, LastUpdateAttempt: 2000, LastUpdateError: "subscription HTTP 403: forbidden",
+			LastUpdated: 1000, LastUpdateAttempt: 2000, LastUpdateError: "dial tcp: i/o timeout", LastUpdateErrorTransient: true,
 		}}}
 	}
 	kept := func(t *testing.T, p Profile) {
 		t.Helper()
-		if p.LastUpdateError == "" || p.LastUpdateAttempt != 2000 {
+		if p.LastUpdateError == "" || !p.LastUpdateErrorTransient || p.LastUpdateAttempt != 2000 {
 			t.Fatalf("unchanged source cleared the status: %+v", p)
 		}
 	}
 	cleared := func(t *testing.T, p Profile) {
 		t.Helper()
-		if p.LastUpdateError != "" || p.LastUpdateAttempt != 0 {
-			t.Fatalf("changed source kept the status: attempt=%d error=%q", p.LastUpdateAttempt, p.LastUpdateError)
+		if p.LastUpdateError != "" || p.LastUpdateErrorTransient || p.LastUpdateAttempt != 0 {
+			t.Fatalf("changed source kept the status: attempt=%d error=%q transient=%v", p.LastUpdateAttempt, p.LastUpdateError, p.LastUpdateErrorTransient)
 		}
 		if p.LastUpdated <= 1000 {
 			t.Fatalf("LastUpdated = %d, an edit moves it", p.LastUpdated)

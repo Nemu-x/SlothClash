@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -200,7 +199,8 @@ func fetchReleaseAssets() ([]githubAsset, error) {
 	return rel.Assets, nil
 }
 
-// downloadAssetBytes fetches a (small) release asset into memory.
+// downloadAssetBytes fetches a (small) release asset into memory, refusing one
+// larger than limit instead of truncating it.
 func downloadAssetBytes(url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -215,7 +215,7 @@ func downloadAssetBytes(url string, limit int64) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("download failed: %s", resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, limit))
+	return readBounded(resp.Body, "release asset", limit)
 }
 
 // pickSignatureAsset locates the minisign signature published for the checksums
@@ -312,19 +312,16 @@ func fetchLatestGitHubRelease() (tag, htmlURL, notes, assetName, assetURL string
 		return "", "", "", "", "", err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", "", "", "", err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := string(body)
-		if len(snippet) > 200 {
-			snippet = snippet[:200]
+		// Error bodies are only quoted, so a short prefix is all that is read.
+		snippet, err := io.ReadAll(io.LimitReader(resp.Body, 200))
+		if err != nil {
+			return "", "", "", "", "", err
 		}
-		return "", "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(snippet))
+		return "", "", "", "", "", fmt.Errorf("GitHub API %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 	var rel githubRelease
-	if err := json.Unmarshal(body, &rel); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GitHub API", githubReleaseMaxJSONBytes, &rel); err != nil {
 		return "", "", "", "", "", err
 	}
 	tag = strings.TrimSpace(rel.TagName)

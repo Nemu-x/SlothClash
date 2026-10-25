@@ -56,7 +56,7 @@ import {
   SetProfileAutoUpdate,
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
-import { BrowserOpenURL, EventsOn } from './api/runtime'
+import { BrowserOpenURL } from './api/runtime'
 import {
   GetServiceInfo,
   InstallService,
@@ -85,6 +85,7 @@ import { useBranding } from './hooks/queries/useBranding'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
+import { useBackendEvents } from './hooks/useBackendEvents'
 import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useProfileModals } from './hooks/useProfileModals'
@@ -277,7 +278,6 @@ function App() {
   const [operatorModalOpen, setOperatorModalOpen] = useState(false)
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const refreshQueuedRef = useRef(false)
-  const stateEventTimerRef = useRef<number | null>(null)
   const connectBusySinceRef = useRef<number | null>(null)
   // sawConnectingRef gates the connectBusy auto-clear effect so it can only
   // fire on a *transition* into a terminal state, not on the stale
@@ -451,95 +451,20 @@ function App() {
     }
   }, [corpVpnEnabled])
 
-  useEffect(() => {
-    const off = EventsOn('app:state', () => {
-      if (isAnyEditorModalOpen) return
-      if (stateEventTimerRef.current !== null) return
-      stateEventTimerRef.current = window.setTimeout(() => {
-        stateEventTimerRef.current = null
-        void refresh()
-      }, 120)
-    })
-    return () => {
-      off()
-      if (stateEventTimerRef.current !== null) {
-        window.clearTimeout(stateEventTimerRef.current)
-        stateEventTimerRef.current = null
-      }
-    }
-  }, [refresh, isAnyEditorModalOpen])
-
-  useEffect(() => {
-    const off = EventsOn('app:update', () => {
-      invalidateUpdateState()
-    })
-    return () => off()
-  }, [invalidateUpdateState])
-
-  useEffect(() => {
-    const off = EventsOn('app:update:progress', (payload: unknown) => {
-      const p = payload as
-        | { downloaded?: number; total?: number; pct?: number }
-        | undefined
-      if (!p) return
-      setUpdateProgress({
-        downloaded: Number(p.downloaded ?? 0),
-        total: Number(p.total ?? 0),
-        pct: Number(p.pct ?? -1),
-      })
-    })
-    return () => off()
-  }, [])
+  useBackendEvents({
+    refresh,
+    isAnyEditorModalOpen,
+    invalidateUpdateState,
+    setUpdateProgress,
+    setScreen,
+    setError,
+    pushToast,
+  })
 
   useEffect(() => {
     if (!spotlightOpen) return
     setScreen('home')
   }, [spotlightOpen])
-
-  useEffect(() => {
-    const off = EventsOn('app:navigate', (payload: unknown) => {
-      const p = payload as { screen?: string } | undefined
-      const id = String(p?.screen ?? '').trim() as Screen
-      const allowed: Screen[] = [
-        'home',
-        'proxies',
-        'profiles',
-        'rules',
-        'advanced',
-        'settings',
-      ]
-      if (!allowed.includes(id)) return
-      setScreen(id)
-      void refresh()
-    })
-    return () => off()
-  }, [refresh])
-
-  useEffect(() => {
-    const off = EventsOn('app:install-config', (payload: unknown) => {
-      void refresh()
-      setScreen('home')
-      const p = payload as {
-        success?: boolean
-        message?: string
-        profileName?: string
-      }
-      if (p?.success) {
-        setError('')
-        const n = p.profileName
-          ? t('ui.toasts.profileAddedFromLink', { name: p.profileName })
-          : t('ui.toasts.subAddedFromLink')
-        pushToast({ kind: 'success', message: n })
-      } else {
-        pushToast({
-          kind: 'error',
-          message: String(p?.message ?? t('ui.toasts.subAddFromLinkFailed')),
-          durationMs: 0,
-        })
-      }
-    })
-    return () => off()
-  }, [refresh, pushToast])
 
   // Background event surfacing: when Mihomo dies and the auto-restart loop
   // walks its backoffs, the user sees "reconnecting" toasts and a clear

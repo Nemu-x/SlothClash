@@ -1,12 +1,4 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import './App.css'
@@ -18,10 +10,6 @@ import {
   GetTunStatus,
   SetMode,
   SetTrafficMode,
-  SetTrafficSettings,
-  SetConnectionSettings,
-  SetRealitySettings,
-  SetTunSettings,
 } from './api/core'
 import { GetCorpVpnStatus } from './api/corp'
 import {
@@ -34,17 +22,8 @@ import {
 } from './api/diagnostics'
 import { main } from './api/models'
 import {
-  GetDesktopPrefs,
-  GetLaunchOnStartupPreference,
   GetPreferredLanguage,
-  GetTrayAvailability,
   OnWindowBecameVisible,
-  SetAppAutoUpdateEnabled,
-  SetCloseToTrayPreference,
-  SetExperimentalSettings,
-  SetHwidEnabled,
-  SetLaunchOnStartupPreference,
-  SetTraySettings,
   SetUISettings,
   SetUiLanguage,
 } from './api/prefs'
@@ -56,7 +35,7 @@ import {
   SetProfileAutoUpdate,
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
-import { BrowserOpenURL, EventsOn } from './api/runtime'
+import { BrowserOpenURL } from './api/runtime'
 import {
   GetServiceInfo,
   InstallService,
@@ -85,8 +64,11 @@ import { useBranding } from './hooks/queries/useBranding'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
+import { useBackendEvents } from './hooks/useBackendEvents'
 import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
+import { useDesktopPrefs } from './hooks/useDesktopPrefs'
+import { useHomeViewModel } from './hooks/useHomeViewModel'
 import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
 import { useRulesView } from './hooks/useRulesView'
@@ -120,14 +102,9 @@ const SettingsPage = lazy(() =>
 )
 import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
-import type { CompactSettings, ImportModalReason, Screen } from './types/app'
+import type { ImportModalReason, Screen } from './types/app'
 import { deriveAccentVars, normalizeHex, resolveAccent } from './utils/accent'
-import { decodeUnicodeEscapes, extractNodeFlagIso } from './utils/proxyNames'
-import {
-  applyUiScale,
-  DEFAULT_SETTINGS,
-  loadCompactSettings,
-} from './utils/settings'
+import { DEFAULT_SETTINGS } from './utils/settings'
 
 function App() {
   const { t } = useTranslation()
@@ -187,37 +164,9 @@ function App() {
   // Session-dismiss for the app-wide "update the helper service" banner. It
   // reappears next launch while the service is still outdated.
   const [serviceBannerDismissed, setServiceBannerDismissed] = useState(false)
-  const [settings, setSettings] = useState<CompactSettings>(() =>
-    loadCompactSettings(),
-  )
-  const [settingsBusy, setSettingsBusy] = useState(false)
-  const [trayAvailable, setTrayAvailable] = useState(false)
   const [showBuiltinProxyGroups, setShowBuiltinProxyGroups] = useState(false)
   const [homeActiveNodeOpen, setHomeActiveNodeOpen] = useState(false)
   const homeActiveNodeRef = useRef<HTMLDivElement | null>(null)
-  const [tunPrefs, setTunPrefs] = useState<main.TunSettings>(
-    () => new main.TunSettings({}),
-  )
-  const [trafficPrefs, setTrafficPrefs] = useState<main.TrafficSettings>(
-    () => new main.TrafficSettings({}),
-  )
-  // Backend-owned (prefs.json), not localStorage: allow-lan changes what the
-  // core binds to, so the Go side must be the source of truth.
-  const [connectionPrefs, setConnectionPrefs] =
-    useState<main.ConnectionSettings>(() => new main.ConnectionSettings({}))
-  // Backend-owned (prefs.json): REALITY key-share mode + client version, written
-  // into the core config (core patch series).
-  const [realityPrefs, setRealityPrefs] = useState<main.RealitySettings>(
-    () => new main.RealitySettings({}),
-  )
-  // HWID is enabled by default; the prefs.json field uses an optional bool so
-  // a fresh install (or any pre-0.4.1 prefs file lacking `privacy`) lands on
-  // `true` here. Setting this to false omits the x-hwid header on subscription
-  // import / refresh — other identity headers remain.
-  const [hwidEnabled, setHwidEnabled] = useState<boolean>(true)
-  const [appUpdateEnabled, setAppUpdateEnabled] = useState<boolean>(true)
-  // Experimental: Corporate VPN (OpenConnect) tab is opt-in, hidden by default.
-  const [corpVpnEnabled, setCorpVpnEnabled] = useState<boolean>(false)
   // Live corp-VPN connection state, for the nav dot + Home indicator.
   const [corpConnected, setCorpConnected] = useState<boolean>(false)
   const [updateProgress, setUpdateProgress] = useState<{
@@ -225,14 +174,6 @@ function App() {
     total: number
     pct: number
   } | null>(null)
-  const [hwidSaving, setHwidSaving] = useState(false)
-  // Tray icon look, backend-owned (prefs.json): '' = platform default,
-  // 'colorful' | 'mono'. The native tray reads it directly; we only mirror it.
-  const [trayIconStyle, setTrayIconStyle] = useState<string>('')
-  const [tunDnsHijackDraft, setTunDnsHijackDraft] = useState<string>('')
-  const [tunMtuDraft, setTunMtuDraft] = useState<string>('')
-  const [tunDeviceDraft, setTunDeviceDraft] = useState<string>('')
-  const [tunPrefsSaving, setTunPrefsSaving] = useState(false)
   const [showTunModal, setShowTunModal] = useState(false)
   const [settingsResetModal, setSettingsResetModal] = useState<
     'keep_profiles' | 'with_profiles' | null
@@ -277,7 +218,6 @@ function App() {
   const [operatorModalOpen, setOperatorModalOpen] = useState(false)
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const refreshQueuedRef = useRef(false)
-  const stateEventTimerRef = useRef<number | null>(null)
   const connectBusySinceRef = useRef<number | null>(null)
   // sawConnectingRef gates the connectBusy auto-clear effect so it can only
   // fire on a *transition* into a terminal state, not on the stale
@@ -356,76 +296,15 @@ function App() {
     }
   }, [refresh])
 
-  // Sync the persisted autostart state with the OS-level registry on mount.
-  // "Start minimized" is honoured natively by Go (StartHidden from prefs.json)
-  // before the window exists — the old WindowHide() here fired after the window
-  // had already flashed, and depended on localStorage having survived.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const actual = await GetLaunchOnStartupPreference()
-        setSetting('launchOnStartup', Boolean(actual))
-      } catch {
-        /* ignore: registry not available (non-Windows / permission denied) */
-      }
-      try {
-        const prefs = await GetDesktopPrefs()
-        // Startup / window toggles are backend-owned (prefs.json). A build that
-        // never wrote the section reports every field null: migrate the
-        // localStorage values once, after which prefs.json is the only source
-        // and localStorage is just a stale cache.
-        const ui = (prefs as any)?.ui
-        const uiIsSet =
-          ui &&
-          (ui.startMinimized != null ||
-            ui.autoConnectOnStartup != null ||
-            ui.closeToTray != null)
-        if (uiIsSet) {
-          applyUiPrefs(ui)
-        } else {
-          try {
-            const migrated = await SetUISettings(
-              new main.UISettings({
-                startMinimized: settings.startMinimized,
-                autoConnectOnStartup: settings.autoConnectOnStartup,
-                closeToTray: settings.closeToTray,
-              }),
-            )
-            applyUiPrefs((migrated as any)?.ui)
-          } catch {
-            /* keep the localStorage values for this session; retried next launch */
-          }
-        }
-        const nextTun = new main.TunSettings(prefs?.tun ?? {})
-        const nextTraffic = new main.TrafficSettings(prefs?.traffic ?? {})
-        setTunPrefs(nextTun)
-        setTrafficPrefs(nextTraffic)
-        setConnectionPrefs(new main.ConnectionSettings(prefs?.connection ?? {}))
-        setRealityPrefs(new main.RealitySettings(prefs?.reality ?? {}))
-        setTunDnsHijackDraft((nextTun.dnsHijack ?? []).join(', '))
-        setTunMtuDraft(nextTun.mtu ? String(nextTun.mtu) : '')
-        setTunDeviceDraft(nextTun.device ?? '')
-        // Privacy.hwidEnabled is *bool on the Go side: undefined/null on the
-        // wire means "default → on". Only an explicit `false` should flip the
-        // toggle off.
-        const rawHwid = prefs?.privacy?.hwidEnabled
-        setHwidEnabled(rawHwid === false ? false : true)
-        setTrayIconStyle(String((prefs as any)?.tray?.iconStyle ?? ''))
-        // AppUpdate.autoCheckEnabled is *bool too: undefined/null → default on.
-        const rawAppUpd = (prefs as any)?.appUpdate?.autoCheckEnabled
-        setAppUpdateEnabled(rawAppUpd === false ? false : true)
-        // Experimental.corpVpnEnabled is opt-in: only an explicit true shows it.
-        const rawCorp = (prefs as any)?.experimental?.corpVpnEnabled
-        const corpOn = rawCorp === true
-        setCorpVpnEnabled(corpOn)
-        // If it was disabled while the tab was open, fall back to Home so the
-        // user isn't stranded on a now-hidden screen.
-        if (!corpOn) setScreen((s) => (s === 'corp' ? 'home' : s))
-      } catch {
-        /* ignore: prefs API unavailable */
-      }
-    })()
-  }, [])
+  // Prefs: localStorage compact settings + the backend-owned prefs.json
+  // sections, loaded once on mount.
+  const prefs = useDesktopPrefs({
+    setError,
+    pushToast,
+    onCorpVpnDisabled: () => setScreen((s) => (s === 'corp' ? 'home' : s)),
+  })
+  const { settings, setSettings, settingsBusy, setSettingsBusy } = prefs
+  const corpVpnEnabled = prefs.corpVpnEnabled
 
   // Poll corp-VPN status (only when the feature is on) to drive the nav dot and
   // the Home indicator. Cheap: one call every few seconds, and nothing at all
@@ -451,95 +330,20 @@ function App() {
     }
   }, [corpVpnEnabled])
 
-  useEffect(() => {
-    const off = EventsOn('app:state', () => {
-      if (isAnyEditorModalOpen) return
-      if (stateEventTimerRef.current !== null) return
-      stateEventTimerRef.current = window.setTimeout(() => {
-        stateEventTimerRef.current = null
-        void refresh()
-      }, 120)
-    })
-    return () => {
-      off()
-      if (stateEventTimerRef.current !== null) {
-        window.clearTimeout(stateEventTimerRef.current)
-        stateEventTimerRef.current = null
-      }
-    }
-  }, [refresh, isAnyEditorModalOpen])
-
-  useEffect(() => {
-    const off = EventsOn('app:update', () => {
-      invalidateUpdateState()
-    })
-    return () => off()
-  }, [invalidateUpdateState])
-
-  useEffect(() => {
-    const off = EventsOn('app:update:progress', (payload: unknown) => {
-      const p = payload as
-        | { downloaded?: number; total?: number; pct?: number }
-        | undefined
-      if (!p) return
-      setUpdateProgress({
-        downloaded: Number(p.downloaded ?? 0),
-        total: Number(p.total ?? 0),
-        pct: Number(p.pct ?? -1),
-      })
-    })
-    return () => off()
-  }, [])
+  useBackendEvents({
+    refresh,
+    isAnyEditorModalOpen,
+    invalidateUpdateState,
+    setUpdateProgress,
+    setScreen,
+    setError,
+    pushToast,
+  })
 
   useEffect(() => {
     if (!spotlightOpen) return
     setScreen('home')
   }, [spotlightOpen])
-
-  useEffect(() => {
-    const off = EventsOn('app:navigate', (payload: unknown) => {
-      const p = payload as { screen?: string } | undefined
-      const id = String(p?.screen ?? '').trim() as Screen
-      const allowed: Screen[] = [
-        'home',
-        'proxies',
-        'profiles',
-        'rules',
-        'advanced',
-        'settings',
-      ]
-      if (!allowed.includes(id)) return
-      setScreen(id)
-      void refresh()
-    })
-    return () => off()
-  }, [refresh])
-
-  useEffect(() => {
-    const off = EventsOn('app:install-config', (payload: unknown) => {
-      void refresh()
-      setScreen('home')
-      const p = payload as {
-        success?: boolean
-        message?: string
-        profileName?: string
-      }
-      if (p?.success) {
-        setError('')
-        const n = p.profileName
-          ? t('ui.toasts.profileAddedFromLink', { name: p.profileName })
-          : t('ui.toasts.subAddedFromLink')
-        pushToast({ kind: 'success', message: n })
-      } else {
-        pushToast({
-          kind: 'error',
-          message: String(p?.message ?? t('ui.toasts.subAddFromLinkFailed')),
-          durationMs: 0,
-        })
-      }
-    })
-    return () => off()
-  }, [refresh, pushToast])
 
   // Background event surfacing: when Mihomo dies and the auto-restart loop
   // walks its backoffs, the user sees "reconnecting" toasts and a clear
@@ -835,45 +639,6 @@ function App() {
     void SetUiLanguage(lang).catch(() => {})
   }, [lang])
 
-  useEffect(() => {
-    localStorage.setItem(LS_SETTINGS, JSON.stringify(settings))
-  }, [settings])
-
-  useEffect(() => {
-    applyUiScale(settings.uiScale)
-  }, [settings.uiScale])
-
-  useEffect(() => {
-    let cancelled = false
-    let ticks = 0
-    const refreshTray = async () => {
-      try {
-        const ok = await GetTrayAvailability()
-        if (!cancelled) setTrayAvailable(Boolean(ok))
-      } catch {
-        if (!cancelled) setTrayAvailable(false)
-      }
-    }
-    void (async () => {
-      await refreshTray()
-    })()
-    const id = window.setInterval(() => {
-      ticks += 1
-      void refreshTray()
-      if (ticks >= 20) window.clearInterval(id)
-    }, 500)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [])
-
-  useEffect(() => {
-    void SetCloseToTrayPreference(
-      Boolean(settings.closeToTray && trayAvailable),
-    )
-  }, [settings.closeToTray, trayAvailable])
-
   const run = async (action: () => Promise<any>) => {
     setError('')
     try {
@@ -883,142 +648,6 @@ function App() {
     }
     await refresh()
   }
-
-  const setSetting = <K extends keyof CompactSettings>(
-    key: K,
-    value: CompactSettings[K],
-  ) => {
-    setSettings((prev) => ({ ...prev, [key]: value }))
-  }
-
-  // Mirror the backend-owned startup/window toggles into `settings` so every
-  // consumer (auto-connect effect, close-to-tray push, Settings page) keeps
-  // reading one object. Go normalizes nulls to defaults on write, so a
-  // missing field here only happens before migration.
-  const applyUiPrefs = (ui: any) => {
-    if (!ui) return
-    setSettings((prev) => ({
-      ...prev,
-      startMinimized: ui.startMinimized === true,
-      autoConnectOnStartup: ui.autoConnectOnStartup === true,
-      closeToTray: ui.closeToTray !== false,
-    }))
-  }
-
-  // Toggle one of the backend-owned startup/window prefs: optimistic flip,
-  // then the backend's echo is authoritative; rolled back with a toast on
-  // error. The write is atomic on the Go side, which is the whole point —
-  // localStorage could silently lose these on an abrupt shutdown.
-  const setUiPref = (
-    key: 'startMinimized' | 'autoConnectOnStartup' | 'closeToTray',
-    value: boolean,
-  ) => {
-    const prevValue = settings[key]
-    setSetting(key, value)
-    const next = {
-      startMinimized: settings.startMinimized,
-      autoConnectOnStartup: settings.autoConnectOnStartup,
-      closeToTray: settings.closeToTray,
-      [key]: value,
-    }
-    void SetUISettings(new main.UISettings(next))
-      .then((prefs) => applyUiPrefs((prefs as any)?.ui))
-      .catch((e) => {
-        setSetting(key, prevValue)
-        pushToast({ kind: 'error', message: String(e) })
-      })
-  }
-
-  const commitTunPrefs = async (
-    patch: Partial<main.TunSettings>,
-    drafts?: {
-      dnsHijack?: string
-      mtu?: string
-      device?: string
-    },
-  ) => {
-    if (tunPrefsSaving) return
-    setTunPrefsSaving(true)
-    try {
-      const dnsHijackRaw = drafts?.dnsHijack ?? tunDnsHijackDraft
-      const dnsHijack = dnsHijackRaw
-        .split(/[,\n;\r]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-      const mtuRaw = drafts?.mtu ?? tunMtuDraft
-      const mtu = mtuRaw.trim() === '' ? 0 : Math.max(0, Number(mtuRaw) || 0)
-      const device = (drafts?.device ?? tunDeviceDraft).trim()
-      const next: main.TunSettings = new main.TunSettings({
-        ...tunPrefs,
-        ...patch,
-        dnsHijack: dnsHijack.length > 0 ? dnsHijack : undefined,
-        mtu: mtu > 0 ? mtu : undefined,
-        device: device !== '' ? device : undefined,
-      })
-      const updated = await SetTunSettings(next)
-      const updatedTun = new main.TunSettings(updated?.tun ?? {})
-      setTunPrefs(updatedTun)
-      setTunDnsHijackDraft((updatedTun.dnsHijack ?? []).join(', '))
-      setTunMtuDraft(updatedTun.mtu ? String(updatedTun.mtu) : '')
-      setTunDeviceDraft(updatedTun.device ?? '')
-    } catch (e: any) {
-      setError(String(e))
-    } finally {
-      setTunPrefsSaving(false)
-    }
-  }
-
-  const commitConnectionPrefs = async (
-    patch: Partial<main.ConnectionSettings>,
-  ) => {
-    if (tunPrefsSaving) return
-    setTunPrefsSaving(true)
-    try {
-      const next: main.ConnectionSettings = new main.ConnectionSettings({
-        ...connectionPrefs,
-        ...patch,
-      })
-      const updated = await SetConnectionSettings(next)
-      setConnectionPrefs(new main.ConnectionSettings(updated?.connection ?? {}))
-    } catch (e: any) {
-      setError(String(e))
-    } finally {
-      setTunPrefsSaving(false)
-    }
-  }
-
-  // Invalid input is rejected by Go (the card validates first); on error the
-  // card resyncs to the last saved value.
-  const commitRealityPrefs = async (patch: Partial<main.RealitySettings>) => {
-    try {
-      const updated = await SetRealitySettings(
-        new main.RealitySettings({ ...realityPrefs, ...patch }),
-      )
-      setRealityPrefs(new main.RealitySettings(updated?.reality ?? {}))
-    } catch (e: any) {
-      pushToast({ kind: 'error', message: String(e) })
-    }
-  }
-
-  const commitTrafficPrefs = async (patch: Partial<main.TrafficSettings>) => {
-    if (tunPrefsSaving) return
-    setTunPrefsSaving(true)
-    try {
-      const next: main.TrafficSettings = new main.TrafficSettings({
-        ...trafficPrefs,
-        ...patch,
-      })
-      const updated = await SetTrafficSettings(next)
-      setTrafficPrefs(new main.TrafficSettings(updated?.traffic ?? {}))
-    } catch (e: any) {
-      setError(String(e))
-    } finally {
-      setTunPrefsSaving(false)
-    }
-  }
-
-  // Tun stack / sniffer summary value still consumed by SettingsPage card.
-  const tunStackValue: string = tunPrefs.stack ?? ''
 
   const refreshAllSubscriptions = async () => {
     if (settingsBusy) return
@@ -1165,155 +794,15 @@ function App() {
     }
   }
 
-  const hasAnyProfile = useMemo(
-    () => (state?.profile?.profiles?.length ?? 0) > 0,
-    [state],
-  )
-
-  const hasActiveProfile = useMemo(
-    () => Boolean(state?.profile?.activeProfileId),
-    [state],
-  )
-
-  const activeProfile = useMemo(() => {
-    const id = state?.profile?.activeProfileId
-    return state?.profile?.profiles?.find((p: any) => p.id === id)
-  }, [state])
-
-  const displayMode = optimisticMode ?? String(state?.mode?.current ?? 'rule')
-  const displayTraffic = optimisticTraffic ?? String(state?.traffic ?? 'proxy')
-
-  const connectionLabel = useMemo(() => {
-    const s = state?.connection?.status
-    const health = String(state?.connection?.health ?? '').trim()
-    if (connectBusy || s === 'connecting') return t('ui.home.connecting')
-    if (s === 'connected') {
-      // Only "broken" is shown as a problem; warming/degraded are still connected for users.
-      if (health === 'broken') return t('ui.home.brokenConnection')
-      return t('ui.home.protected')
-    }
-    if (s === 'disconnecting') return t('ui.home.disconnecting')
-    if (s === 'error') return t('ui.home.problem')
-    return t('ui.home.notConnected')
-  }, [state, connectBusy, t])
-
-  const connectVisual = useMemo(() => {
-    if (connectBusy) return 'connecting'
-    const s = state?.connection?.status
-    const health = String(state?.connection?.health ?? '').trim()
-    if (s === 'error') return 'error'
-    if (s === 'connected') {
-      if (health === 'broken') return 'broken'
-      return 'connected'
-    }
-    return 'idle'
-  }, [connectBusy, state?.connection?.status, state?.connection?.health])
-
-  const showProtectedBadge = useMemo(() => {
-    const health = String(state?.connection?.health ?? '').trim()
-    return state?.connection?.status === 'connected' && health !== 'broken'
-  }, [state?.connection?.status, state?.connection?.health])
-
-  const homeTrafficHealthSubtitle = useMemo(() => {
-    if (state?.connection?.status !== 'connected') return ''
-    const tr = displayTraffic === 'tun' ? 'TUN' : t('ui.common.proxy')
-    const h = String(state?.connection?.health ?? '').trim()
-    const hk =
-      h === 'broken' ? t('ui.home.healthBroken') : t('ui.home.healthReady')
-    return t('ui.home.trafficHealthLine', { traffic: tr, health: hk })
-  }, [state?.connection?.status, state?.connection?.health, displayTraffic, t])
-
-  const activeNode = useMemo(() => {
-    const groups = (state?.proxy?.groups ?? []) as any[]
-    const activeGroup = String(state?.proxy?.activeGroup ?? '').trim()
-    if (!activeGroup || groups.length === 0) return ''
-    const g = groups.find((x) => String(x?.name ?? '') === activeGroup)
-    if (!g) return ''
-    const selected = String(g?.selected ?? '').trim()
-    if (!selected) return ''
-    if (activeGroup === 'GLOBAL') {
-      const sub = groups.find((x) => String(x?.name ?? '') === selected)
-      const leaf = String(sub?.selected ?? '').trim()
-      return leaf ? `${selected} -> ${leaf}` : selected
-    }
-    return selected
-  }, [state?.proxy?.activeGroup, state?.proxy?.groups])
-
-  const activeNodeVisual = useMemo(() => {
-    const raw = decodeUnicodeEscapes(String(activeNode ?? '')).trim()
-    if (!raw) return { iso: '', text: '' as string }
-    const tail = raw.includes(' -> ')
-      ? (raw.split(' -> ').pop() ?? '').trim()
-      : raw
-    const piece = tail || raw
-    return {
-      iso: extractNodeFlagIso(piece),
-      text: piece,
-    }
-  }, [activeNode])
-
-  /** Group whose `proxies` list we let the user change from Home (GLOBAL → nested group). */
-  const nodePickerGroup = useMemo(() => {
-    const groups = (state?.proxy?.groups ?? []) as any[]
-    const activeGroup = String(state?.proxy?.activeGroup ?? '').trim()
-    if (!activeGroup || groups.length === 0) return null
-    // A chain's hops are its definition, not a choice (core patch 0006).
-    const isChain = (x: any) => String(x?.type ?? '').toLowerCase() === 'chain'
-    const g = groups.find((x) => String(x?.name ?? '') === activeGroup)
-    if (!g || isChain(g)) return null
-    if (activeGroup === 'GLOBAL') {
-      const subName = String(g?.selected ?? '').trim()
-      if (!subName) return null
-      const sub = groups.find((x) => String(x?.name ?? '') === subName)
-      if (
-        !sub ||
-        isChain(sub) ||
-        !Array.isArray(sub.proxies) ||
-        (sub.proxies as string[]).length === 0
-      ) {
-        return null
-      }
-      return sub
-    }
-    if (!Array.isArray(g.proxies) || (g.proxies as string[]).length === 0) {
-      return null
-    }
-    return g
-  }, [state?.proxy?.activeGroup, state?.proxy?.groups])
-
-  const homeAlertTooltip = useMemo(() => {
-    const parts: string[] = []
-    // tunBanner is a general status line ("URL copied", "service installed",
-    // "cache cleared" …) — informational, not an alert. Feeding it here made
-    // routine successes raise the warning badge on Home, which read as
-    // "something is wrong". Only genuine connection problems belong below.
-    if (state?.connection?.status === 'connected') {
-      const health = String(state?.connection?.health ?? '').trim()
-      if (health === 'degraded') {
-        parts.push(t('ui.home.healthDegradedHint'))
-      }
-      if (health === 'broken') {
-        parts.push(t('ui.home.healthBrokenHint'))
-      }
-      if (state?.connection?.lastWarning) {
-        parts.push(String(state.connection.lastWarning).trim())
-      }
-    }
-    return parts.join('\n\n')
-  }, [
-    t,
-    state?.connection?.status,
-    state?.connection?.health,
-    state?.connection?.lastWarning,
-  ])
-
-  const homeUpdateTooltip = useMemo(() => {
-    if (!updateSnap?.hasUpdate) return ''
-    const version = String(updateSnap?.latestVersion ?? '').trim()
-    return version
-      ? t('ui.home.updateAvailableVersion', { version })
-      : t('ui.home.updateAvailable')
-  }, [t, updateSnap?.hasUpdate, updateSnap?.latestVersion])
+  // Home screen derivations (status label, active node, tooltips …).
+  const homeVm = useHomeViewModel({
+    state,
+    connectBusy,
+    optimisticMode,
+    optimisticTraffic,
+    updateSnap,
+  })
+  const { hasAnyProfile, hasActiveProfile, activeProfile, displayMode } = homeVm
 
   const handleOpenUpdate = useCallback(async () => {
     const assetURL = String(updateSnap?.assetDownloadUrl ?? '').trim()
@@ -1654,7 +1143,7 @@ function App() {
           {screen === 'home' ? (
             <HomePage
               state={state}
-              activeProfile={activeProfile}
+              vm={homeVm}
               hideGlobalMode={brandManifest?.hideGlobalMode}
               hideProxyMode={brandManifest?.hideProxyMode}
               brandName={brandManifest?.name}
@@ -1664,21 +1153,9 @@ function App() {
               linkToast={linkToast}
               error={error}
               updateSnap={updateSnap}
-              homeUpdateTooltip={homeUpdateTooltip}
-              homeAlertTooltip={homeAlertTooltip}
-              hasAnyProfile={hasAnyProfile}
-              displayMode={displayMode}
-              displayTraffic={displayTraffic}
               connectBusy={connectBusy}
-              connectVisual={connectVisual}
-              connectionLabel={connectionLabel}
-              showProtectedBadge={showProtectedBadge}
-              homeTrafficHealthSubtitle={homeTrafficHealthSubtitle}
-              nodePickerGroup={nodePickerGroup}
               homeActiveNodeOpen={homeActiveNodeOpen}
               homeActiveNodeRef={homeActiveNodeRef}
-              activeNode={activeNode}
-              activeNodeVisual={activeNodeVisual}
               showBuiltinProxyGroups={showBuiltinProxyGroups}
               onOpenImport={(reason) => openImportModal(reason)}
               onOpenSupport={(url) => void BrowserOpenURL(url)}
@@ -1921,25 +1398,9 @@ function App() {
                     () => setError('Clipboard unavailable'),
                   )
                 }}
-                hwidEnabled={hwidEnabled}
-                hwidSaving={hwidSaving}
-                onToggleHwid={(next) => {
-                  if (hwidSaving) return
-                  setHwidSaving(true)
-                  // Optimistic flip so the toggle reflects user intent
-                  // immediately; rolled back on backend error.
-                  setHwidEnabled(next)
-                  void SetHwidEnabled(next)
-                    .then((prefs) => {
-                      const raw = prefs?.privacy?.hwidEnabled
-                      setHwidEnabled(raw === false ? false : true)
-                    })
-                    .catch((e) => {
-                      setHwidEnabled(!next)
-                      pushToast({ kind: 'error', message: String(e) })
-                    })
-                    .finally(() => setHwidSaving(false))
-                }}
+                hwidEnabled={prefs.hwidEnabled}
+                hwidSaving={prefs.hwidSaving}
+                onToggleHwid={prefs.toggleHwid}
               />
             </Suspense>
           ) : null}
@@ -1951,48 +1412,8 @@ function App() {
                 accent={customAccent}
                 onSetAccent={setCustomAccent}
                 lang={lang}
-                settings={settings}
-                settingsBusy={settingsBusy}
-                trayAvailable={trayAvailable}
-                trayIconStyle={trayIconStyle}
-                onSetTrayIconStyle={(next) => {
-                  // Optimistic; the backend echoes the normalized value back
-                  // and the native tray re-reads prefs on its next tick.
-                  setTrayIconStyle(next)
-                  void SetTraySettings(
-                    new main.TraySettings({ iconStyle: next }),
-                  )
-                    .then((prefs) => {
-                      setTrayIconStyle(
-                        String((prefs as any)?.tray?.iconStyle ?? ''),
-                      )
-                    })
-                    .catch((e) => {
-                      pushToast({ kind: 'error', message: String(e) })
-                    })
-                }}
-                tunStackValue={tunStackValue}
-                tunPrefs={tunPrefs}
-                trafficPrefs={trafficPrefs}
-                allowLan={connectionPrefs.allowLan === true}
-                onSetAllowLan={(next) =>
-                  void commitConnectionPrefs({ allowLan: next })
-                }
-                dnsIpv6={connectionPrefs.dnsIpv6 !== false}
-                onSetDnsIpv6={(next) =>
-                  void commitConnectionPrefs({ dnsIpv6: next })
-                }
-                smartDns={connectionPrefs.smartDns === true}
-                onSetSmartDns={(next) =>
-                  void commitConnectionPrefs({ smartDns: next })
-                }
-                mixedPort={connectionPrefs.mixedPort ?? 0}
+                prefs={prefs}
                 runningMixedPort={Number(state?.core?.mixedPort) || 0}
-                onSetMixedPort={(next) =>
-                  void commitConnectionPrefs({ mixedPort: next })
-                }
-                realityPrefs={realityPrefs}
-                onSetReality={(patch) => void commitRealityPrefs(patch)}
                 tunBanner={tunBanner}
                 onDismissBanner={() => setTunBanner('')}
                 state={state}
@@ -2001,19 +1422,6 @@ function App() {
                 onBrowserOpen={(url) => BrowserOpenURL(url)}
                 onSetTheme={setTheme}
                 onSetLang={setLang}
-                onSetSetting={setSetting}
-                onSetUiPref={setUiPref}
-                onSetLaunchOnStartup={(next) => {
-                  setSetting('launchOnStartup', next)
-                  void (async () => {
-                    try {
-                      await SetLaunchOnStartupPreference(next)
-                    } catch (e: any) {
-                      setError(String(e))
-                      setSetting('launchOnStartup', !next)
-                    }
-                  })()
-                }}
                 onInstallService={installService}
                 serviceInfo={serviceInfo}
                 onEnsureTun={ensureTun}
@@ -2056,27 +1464,6 @@ function App() {
                   })()
                 }
                 updateProgress={updateProgress}
-                appUpdateEnabled={appUpdateEnabled}
-                onToggleAppUpdate={(next: boolean) => {
-                  setAppUpdateEnabled(next)
-                  void SetAppAutoUpdateEnabled(next)
-                    .then((prefs: any) => {
-                      const raw = prefs?.appUpdate?.autoCheckEnabled
-                      setAppUpdateEnabled(raw === false ? false : true)
-                    })
-                    .catch(() => setAppUpdateEnabled(!next))
-                }}
-                corpVpnEnabled={corpVpnEnabled}
-                onToggleCorpVpn={(next: boolean) => {
-                  setCorpVpnEnabled(next)
-                  void SetExperimentalSettings({ corpVpnEnabled: next } as any)
-                    .then((prefs: any) => {
-                      setCorpVpnEnabled(
-                        prefs?.experimental?.corpVpnEnabled === true,
-                      )
-                    })
-                    .catch(() => setCorpVpnEnabled(!next))
-                }}
               />
             </Suspense>
           ) : null}
@@ -2120,17 +1507,7 @@ function App() {
 
       <TunSettingsModal
         open={showTunModal}
-        tunPrefs={tunPrefs}
-        trafficPrefs={trafficPrefs}
-        tunDnsHijackDraft={tunDnsHijackDraft}
-        tunMtuDraft={tunMtuDraft}
-        tunDeviceDraft={tunDeviceDraft}
-        tunPrefsSaving={tunPrefsSaving}
-        onTunDnsHijackDraftChange={setTunDnsHijackDraft}
-        onTunMtuDraftChange={setTunMtuDraft}
-        onTunDeviceDraftChange={setTunDeviceDraft}
-        onCommitTunPrefs={(patch, drafts) => void commitTunPrefs(patch, drafts)}
-        onCommitTrafficPrefs={(patch) => void commitTrafficPrefs(patch)}
+        prefs={prefs}
         onClose={() => setShowTunModal(false)}
       />
 

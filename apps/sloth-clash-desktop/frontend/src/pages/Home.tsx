@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { CopyTunDiagnostics } from '../api/diagnostics'
 import type { main } from '../api/models'
 import { FlagMark } from '../components/FlagMark'
+import type { HomeViewModel } from '../hooks/useHomeViewModel'
 import { formatSpeedKbps } from '../utils/format'
 import {
   decodeSubscriptionAnnouncementDisplay,
@@ -39,30 +40,16 @@ function SubscriptionAnnouncement({ text }: { text: string }) {
 
 export type HomeUpdateSnap = { hasUpdate?: boolean }
 
-export type HomeActiveNodeVisual = { iso: string; text: string }
-
 export function HomePage({
   state,
-  activeProfile,
+  vm,
   service,
   linkToast,
   error,
   updateSnap,
-  homeUpdateTooltip,
-  homeAlertTooltip,
-  hasAnyProfile,
-  displayMode,
-  displayTraffic,
   connectBusy,
-  connectVisual,
-  connectionLabel,
-  showProtectedBadge,
-  homeTrafficHealthSubtitle,
-  nodePickerGroup,
   homeActiveNodeOpen,
   homeActiveNodeRef,
-  activeNode,
-  activeNodeVisual,
   showBuiltinProxyGroups,
   hideGlobalMode,
   hideProxyMode,
@@ -84,26 +71,15 @@ export function HomePage({
   onToggleActiveNodeOpen,
 }: {
   state: any
-  activeProfile: any
+  // Derived from `state` (useHomeViewModel).
+  vm: HomeViewModel
   service: main.ServiceState | null | undefined
   linkToast: string
   error: string | null
   updateSnap: HomeUpdateSnap | null | undefined
-  homeUpdateTooltip: string
-  homeAlertTooltip: string
-  hasAnyProfile: boolean
-  displayMode: string
-  displayTraffic: string
   connectBusy: boolean
-  connectVisual: string
-  connectionLabel: string
-  showProtectedBadge: boolean
-  homeTrafficHealthSubtitle: string
-  nodePickerGroup: any
   homeActiveNodeOpen: boolean
   homeActiveNodeRef: Ref<HTMLDivElement>
-  activeNode: string
-  activeNodeVisual: HomeActiveNodeVisual
   showBuiltinProxyGroups: boolean
   // Brand hide flags (presentation-only; see brand-headers-protocol).
   hideGlobalMode?: boolean
@@ -129,6 +105,21 @@ export function HomePage({
   onToggleActiveNodeOpen: () => void
 }) {
   const { t } = useTranslation()
+  const {
+    activeProfile,
+    homeUpdateTooltip,
+    homeAlertTooltip,
+    hasAnyProfile,
+    displayMode,
+    displayTraffic,
+    connectVisual,
+    connectionLabel,
+    showProtectedBadge,
+    homeTrafficHealthSubtitle,
+    nodePickerGroup,
+    activeNode,
+    activeNodeVisual,
+  } = vm
   const [diagCopied, setDiagCopied] = useState(false)
   const onCopyDiagnostics = async () => {
     try {

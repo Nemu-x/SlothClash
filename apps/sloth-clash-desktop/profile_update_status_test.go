@@ -260,3 +260,64 @@ func TestPipelineBodyFetchHookIsWired(t *testing.T) {
 		t.Fatalf("LastUpdateError = %q, want the 404", got)
 	}
 }
+
+// Changing the subscription URL or the age secret key clears the stored
+// update status (the failure described the old source); saving the same value
+// again, which the edit dialog does on every save, keeps it. Neither edit
+// counts as a body refresh: the edit moves LastUpdated like any other edit,
+// and nothing claims a successful attempt.
+func TestProfileSourceEditResetsUpdateStatus(t *testing.T) {
+	isolateAppDataRoot(t)
+	_, key1, err := runtimecfg.GenerateAgeKeyPair("x25519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, key2, err := runtimecfg.GenerateAgeKeyPair("x25519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "profile-edit"
+	const oldURL = "https://sub.example.com/old"
+	failed := func() *App {
+		return &App{profiles: []Profile{{
+			ID: id, Name: "n", Type: "subscription", URL: oldURL, AgeSecretKey: key1,
+			LastUpdated: 1000, LastUpdateAttempt: 2000, LastUpdateError: "subscription HTTP 403: forbidden",
+		}}}
+	}
+	kept := func(t *testing.T, p Profile) {
+		t.Helper()
+		if p.LastUpdateError == "" || p.LastUpdateAttempt != 2000 {
+			t.Fatalf("unchanged source cleared the status: %+v", p)
+		}
+	}
+	cleared := func(t *testing.T, p Profile) {
+		t.Helper()
+		if p.LastUpdateError != "" || p.LastUpdateAttempt != 0 {
+			t.Fatalf("changed source kept the status: attempt=%d error=%q", p.LastUpdateAttempt, p.LastUpdateError)
+		}
+		if p.LastUpdated <= 1000 {
+			t.Fatalf("LastUpdated = %d, an edit moves it", p.LastUpdated)
+		}
+	}
+	cases := []struct {
+		name  string
+		edit  func(a *App) (AppState, error)
+		check func(*testing.T, Profile)
+	}{
+		{"same url", func(a *App) (AppState, error) { return a.UpdateProfileInfo(id, "renamed", oldURL) }, kept},
+		{"empty url keeps the old one", func(a *App) (AppState, error) { return a.UpdateProfileInfo(id, "renamed", "") }, kept},
+		{"new url", func(a *App) (AppState, error) { return a.UpdateProfileInfo(id, "n", "https://sub.example.com/new") }, cleared},
+		{"same key", func(a *App) (AppState, error) { return a.SetProfileAgeSecretKey(id, key1) }, kept},
+		{"new key", func(a *App) (AppState, error) { return a.SetProfileAgeSecretKey(id, key2) }, cleared},
+		{"key removed", func(a *App) (AppState, error) { return a.SetProfileAgeSecretKey(id, "") }, cleared},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := tc.edit(failed())
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, st.Profile.Profiles[0])
+		})
+	}
+}

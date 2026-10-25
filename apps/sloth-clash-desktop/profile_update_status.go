@@ -100,6 +100,18 @@ func applyProfileUpdateOutcomeLocked(p *Profile, now int64, err error) {
 	p.LastUpdateError = ""
 }
 
+// resetProfileUpdateStatusLocked forgets the last refresh attempt and its
+// failure. Called when the subscription URL or the age secret key actually
+// changes: the stored failure described the old source, so the badge must not
+// outlive the user's fix. It is not a refresh: nothing was fetched, the cached
+// body is still the old one, and LastUpdated is left to the caller (an edit
+// moves it like any other edit, see the Profile struct). The next attempt
+// records a fresh outcome. Caller holds a.mu for writing.
+func resetProfileUpdateStatusLocked(p *Profile) {
+	p.LastUpdateAttempt = 0
+	p.LastUpdateError = ""
+}
+
 // profileRefreshAnchor is the moment the auto-update schedule counts the
 // interval from: the later of the last success and the last attempt, so a
 // failing profile is retried at its normal interval rather than on every tick.

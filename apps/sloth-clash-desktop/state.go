@@ -68,7 +68,9 @@ type Profile struct {
 	// and LastUpdated (profileRefreshAnchor), so a failing profile retries at
 	// its normal interval. LastUpdateError is that attempt's failure, cleared
 	// on the next successful body fetch, so the UI can badge a profile stuck
-	// on its last-known-good body. Same precedent as ScriptError below.
+	// on its last-known-good body. Same precedent as ScriptError below. A
+	// change of URL or AgeSecretKey forgets both (resetProfileUpdateStatusLocked):
+	// the failure described the old source, and the edit is not a refresh.
 	LastUpdateAttempt         int64  `json:"lastUpdateAttempt,omitempty"`
 	LastUpdateError           string `json:"lastUpdateError,omitempty"`
 	AutoUpdateEnabled         bool   `json:"autoUpdateEnabled,omitempty"`         // periodically refresh subscription metadata/content

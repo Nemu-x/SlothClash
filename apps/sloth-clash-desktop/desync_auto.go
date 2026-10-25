@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,7 @@ type DesyncAutoAttempt struct {
 	Network    string `json:"network,omitempty"`
 	Service    string `json:"service"`
 	Candidate  string `json:"candidate"`
+	Target     string `json:"target,omitempty"`
 	OK         bool   `json:"ok"`
 	Code       string `json:"code,omitempty"`
 	DurationMS int64  `json:"durationMS"`
@@ -98,6 +100,10 @@ func (a *App) desyncAttempt(lease uint64, attempt DesyncAutoAttempt) {
 	}
 	attempt.At = time.Now().Unix()
 	attempt.Network = a.desyncAuto.status.Network
+	if attempt.Target != "" {
+		sum := sha256.Sum256([]byte(attempt.Network + attempt.Target))
+		attempt.Target = hex.EncodeToString(sum[:6])
+	}
 	history := append(a.desyncAuto.status.Attempts, attempt)
 	if len(history) > 128 {
 		history = history[len(history)-128:]
@@ -159,6 +165,10 @@ func desyncErrorCode(err error) string {
 	if err == nil {
 		return ""
 	}
+	var controller *desyncControllerError
+	if errors.As(err, &controller) && controller.Code != "" {
+		return controller.Code
+	}
 	s := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(s, "canceled"):
@@ -176,6 +186,15 @@ func desyncErrorCode(err error) string {
 	default:
 		return "transport"
 	}
+}
+
+type desyncControllerError struct {
+	Status int
+	Code   string
+}
+
+func (e *desyncControllerError) Error() string {
+	return fmt.Sprintf("core HTTP %d %s", e.Status, e.Code)
 }
 func autoCoreJSON(ctx context.Context, endpoint, secret, method, route string, payload any, dest any) error {
 	var reader io.Reader
@@ -202,12 +221,14 @@ func autoCoreJSON(ctx context.Context, endpoint, secret, method, route string, p
 		switch {
 		case strings.Contains(failure.Message, "UDP candidate socket failed"):
 			code = "native_socket"
+		case strings.Contains(failure.Message, "UDP probe canceled or socket failed"):
+			code = "probe_socket"
 		case strings.Contains(failure.Message, "active public Discord"):
 			code = "endpoint_changed"
 		case response.StatusCode == 429:
 			code = "busy"
 		}
-		return fmt.Errorf("core HTTP %d %s", response.StatusCode, code)
+		return &desyncControllerError{Status: response.StatusCode, Code: code}
 	}
 	if dest == nil {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
@@ -336,6 +357,7 @@ func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, end
 }
 
 type desyncUDPActivity struct {
+	Candidate   string `json:"-"`
 	Endpoint    string `json:"endpoint"`
 	FirstMS     int64  `json:"firstMS"`
 	LastTXMS    int64  `json:"lastTXMS"`
@@ -439,21 +461,36 @@ func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, end
 		if err == nil && !passed {
 			code = "udp_loss"
 		}
-		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: c.ID, OK: passed, Code: code, DurationMS: time.Since(start).Milliseconds(), Sent: result.Sent, Received: result.Received})
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: c.ID, Target: target, OK: passed, Code: code, DurationMS: time.Since(start).Milliseconds(), Sent: result.Sent, Received: result.Received})
 		if trial.Err() != nil {
 			return "", false, trial.Err()
 		}
-		if err != nil && strings.Contains(err.Error(), "HTTP 400") {
-			return "", false, err
+		if err != nil {
+			var controller *desyncControllerError
+			if errors.As(err, &controller) && (controller.Status == 400 || controller.Code == "busy" || controller.Code == "native_socket" || controller.Code == "probe_socket") {
+				return "", false, err
+			}
 		}
 		if !passed {
 			rejected[c.ID] = true
 			continue
 		}
+		// Application traffic may have recovered during the bounded trial.
+		// Never replace a live call/stream because a synthetic probe passed.
+		var current desyncUDPProxy
+		if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(group.Now), nil, &current); err != nil {
+			return "", false, err
+		}
+		if current.UDP != nil {
+			for _, p := range current.UDP.Activity {
+				if time.Now().UnixMilli()-p.LastRXMS < 10000 && p.RXPackets > p.DiscoveryRX+2 {
+					return group.Now, false, nil
+				}
+			}
+		}
 		if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, desyncDiscordUDPRoute, c.name(desyncDiscordUDPRoute)); err != nil {
 			return "", false, err
 		}
-		saveDesyncSelection(network, "voice", c.ID)
 		return c.name(desyncDiscordUDPRoute), group.Now != c.name(desyncDiscordUDPRoute), nil
 	}
 	return "", false, fmt.Errorf("no UDP candidate passed")
@@ -497,128 +534,10 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 	} else if status.Traffic != "tun" {
 		a.desyncService(lease, "voice", DesyncAutoService{Phase: "needs_tun"})
 	}
-	target := ""
-	selected := ""
-	rejected := map[string]bool{}
-	var retryAt, graceUntil time.Time
-	var previous desyncUDPActivity
-	stableSamples := 0
-	mediaSamples := 0
-	validatedID := ""
-	ticker := time.NewTicker(4 * time.Second)
-	defer ticker.Stop()
-	for {
-		if status.Settings.DiscordUDP && status.Traffic == "tun" {
-			var overview struct {
-				Connections []ConnectionItem `json:"connections"`
-			}
-			if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/connections", nil, &overview); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				a.desyncService(lease, "voice", DesyncAutoService{Phase: "failed", Code: "controller"})
-			} else {
-				current := desyncVoiceTarget(overview.Connections)
-				if current == "" {
-					a.desyncService(lease, "voice", DesyncAutoService{Phase: "waiting"})
-					target = ""
-					stableSamples = 0
-					mediaSamples = 0
-				} else {
-					if current != target {
-						target = current
-						selected = ""
-						rejected = map[string]bool{}
-						retryAt = time.Time{}
-						previous = desyncUDPActivity{}
-						stableSamples = 0
-						mediaSamples = 0
-						validatedID = ""
-					}
-					if selected == "" && time.Now().After(retryAt) {
-						if !retryAt.IsZero() && len(rejected) >= len(desyncCandidates("voice")) {
-							rejected = map[string]bool{}
-						}
-						// Observe the application's current route first. A separate
-						// discovery socket must not override a working call.
-						var group desyncUDPProxy
-						if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group) == nil {
-							for _, candidate := range desyncCandidates("voice") {
-								if group.Now == candidate.name(desyncDiscordUDPRoute) && !rejected[candidate.ID] {
-									selected = group.Now
-									a.desyncService(lease, "voice", DesyncAutoService{Phase: "observing", Candidate: candidate.ID})
-									break
-								}
-							}
-						}
-					}
-					if selected == "" && time.Now().After(retryAt) {
-						chosen, changed, err := a.calibrateDesyncUDP(ctx, lease, network, endpoint, secret, target, rejected)
-						if ctx.Err() != nil {
-							return
-						}
-						if err != nil {
-							a.desyncService(lease, "voice", DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
-							retryAt = time.Now().Add(time.Minute)
-						} else {
-							selected = chosen
-							graceUntil = time.Time{}
-							if changed {
-								closeStaleDesyncVoice(ctx, endpoint, secret, target, selected, overview.Connections)
-								graceUntil = time.Now().Add(75 * time.Second)
-							}
-							a.desyncService(lease, "voice", DesyncAutoService{Phase: "observing", Candidate: strings.TrimPrefix(selected, desyncDiscordUDPRoute+"-")})
-						}
-					}
-					if selected != "" {
-						var proxy desyncUDPProxy
-						if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(selected), nil, &proxy); err == nil && proxy.UDP != nil {
-							for _, p := range proxy.UDP.Activity {
-								if p.Endpoint != target {
-									continue
-								}
-								if p.RXPackets > previous.RXPackets && p.TXPackets > previous.TXPackets {
-									stableSamples++
-								} else if time.Now().UnixMilli()-p.LastRXMS > 15000 {
-									stableSamples = 0
-								}
-								if p.MediaRX > previous.MediaRX && p.MediaTX > previous.MediaTX {
-									mediaSamples++
-								} else {
-									mediaSamples = 0
-								}
-								previous = p
-								phase := desyncVoiceHealth(time.Now(), p, stableSamples, mediaSamples, graceUntil)
-								id := strings.TrimPrefix(selected, desyncDiscordUDPRoute+"-")
-								if (phase == "transport" || phase == "media") && validatedID != id {
-									validatedID = id
-									if desyncCachedSelection(network, "voice") != id {
-										saveDesyncSelection(network, "voice", id)
-									}
-									a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: id, OK: true, Code: "application_traffic"})
-								}
-								if phase == "stalled" {
-									rejected[id] = true
-									selected = ""
-									stableSamples = 0
-									mediaSamples = 0
-									validatedID = ""
-									retryAt = time.Time{}
-									a.desyncAttempt(lease, DesyncAutoAttempt{Service: "voice", Candidate: id, Code: "udp_stalled"})
-								} else {
-									a.desyncService(lease, "voice", DesyncAutoService{Phase: phase, Candidate: id})
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+	if status.Settings.DiscordUDP && status.Traffic == "tun" {
+		a.runDesyncVoiceService(ctx, lease, network, endpoint, secret)
+	} else {
+		<-ctx.Done()
 	}
 }
 
@@ -640,6 +559,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		}
 	}
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
+	report["controllerRevision"] = 2
 	if build, ok := debug.ReadBuildInfo(); ok {
 		report["goVersion"] = build.GoVersion
 		for _, s := range build.Settings {
@@ -656,6 +576,29 @@ func (a *App) GetDesyncDiagnosticReport() string {
 	if status.Connected && status.Settings.DiscordUDP {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
+		var overview struct {
+			Connections []ConnectionItem `json:"connections"`
+		}
+		if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/connections", nil, &overview) == nil {
+			flows := []map[string]any{}
+			for _, c := range overview.Connections {
+				if !isDiscordUDPConnection(c) || len(flows) >= 64 {
+					continue
+				}
+				sum := sha256.Sum256([]byte(auto.Network + netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)))
+				route, candidate := "profile", ""
+				for _, name := range c.Chains {
+					if name == desyncDiscordUDPRoute {
+						route = "desync"
+					}
+					if knownDesyncVoiceCandidate(name) {
+						candidate = strings.TrimPrefix(name, desyncDiscordUDPRoute+"-")
+					}
+				}
+				flows = append(flows, map[string]any{"endpoint": hex.EncodeToString(sum[:6]), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
+			}
+			report["udpFlows"] = flows
+		}
 		var group desyncUDPProxy
 		if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group) == nil && strings.HasPrefix(group.Now, desyncDiscordUDPRoute+"-") {
 			var proxy desyncUDPProxy

@@ -746,6 +746,9 @@
       "observing": "正在检查语音流量，必要时重新加入频道",
       "transport": "检测到 UDP 双向通信",
       "media": "检测到双向媒体流量",
+      "receiving": "正在接收媒体流量",
+      "partial": "一个媒体连接已停滞，其他连接仍在工作",
+      "interrupted": "UDP 通信中断，正在等待恢复",
       "failed": "未找到可用策略，将自动重试",
       "queued": "等待检测"
     },

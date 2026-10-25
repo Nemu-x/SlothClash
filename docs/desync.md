@@ -4,7 +4,7 @@ Desync connects selected services directly using automatically tested strategies
 
 ## Use
 
-Open **Settings → Desync**, enable it and select YouTube, Discord, or Discord voice. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer exposed.
+Open **Settings → Desync**, enable it and select YouTube or Discord. The Discord control enables its web and voice paths together in one settings update; their health is still reported separately. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer exposed. Previously saved partial selections remain readable; toggling Discord off/on, or enabling Desync with Discord selected, enables the combined behavior.
 
 Selection runs in the background even when Settings is closed. The panel shows progress and one of these outcomes:
 
@@ -13,9 +13,12 @@ Selection runs in the background even when Settings is closed. The panel shows p
 - **Checking voice traffic**: the current route is being observed; sustained application traffic is not established yet. Rejoining the channel can accelerate renegotiation after a strategy change.
 - **UDP exchange detected**: the actual application has sustained incoming and outgoing UDP traffic.
 - **Media traffic in both directions**: RTP-shaped packets are progressing in both directions across multiple observations. This does not inspect, decrypt or certify audible audio.
+- **Receiving media**: sustained receive-only media is progressing, as expected when watching a stream without sending video.
+- **One media connection stalled**: another active connection is still receiving traffic; the controller retains the working strategy rather than treating one stream as a failure of all Discord UDP.
+- **UDP traffic interrupted**: repeated observations show missing inbound progress. Established connections receive an additional recovery grace before a whole-service strategy trial.
 - **No working strategy found**: the bounded search failed; the controller backs off and tries again. **Check again** restarts calibration immediately.
 
-**Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
+**Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Targets are hashed consistently between attempts and flow observations. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
 
 ## Selection and recovery
 
@@ -27,13 +30,15 @@ Successful candidate IDs are cached for up to six network/build digests, expire 
 
 Voice calibration waits for an endpoint actually used by `Discord.exe`. An authenticated core API probe sends at most twelve independent IP-discovery requests through a candidate, validates the reply address/type/length/SSRC, and rejects sequences that only answer the first few requests. No cached voice server, account credentials or captured call packets are used. These diagnostic requests are excluded from the real application activity counters.
 
-Actual application traffic takes priority: an already working call is observed and retained rather than being invalidated by a separate discovery socket. Initial discovery or one good ping never establishes media success. Ongoing sends with no incoming progress trigger candidate probing and reselection after a grace period. An idle or silent channel is not itself a failure. If a selector changes, only stale Desync voice UDP flows for that endpoint are closed; other applications, Discord TCP and subscription selections are retained. Discord may need time to renegotiate, or the user can rejoin the voice channel.
+Actual application traffic takes priority: an already working call is observed and retained rather than being invalidated by a separate discovery socket. Initial discovery or one good ping never establishes media success. Each active endpoint has independent progress history; a new stream endpoint does not reset the voice call's history. Receive-only streams are valid media connections. Ongoing sends with no incoming progress must persist across separated observations; previously established traffic receives an additional 60-second grace. A strategy search starts only when all relevant active endpoints are persistently stalled and none is receiving traffic. A missing observation, idle endpoint or silent channel is not itself a failure. Before applying a successful probe, the controller checks again for recovered application traffic. Synthetic probe success alone is not saved as a confirmed voice strategy.
 
-There is no automatic fallback to remote subscription nodes. Disable only the voice service and rejoin to return to the subscription's normal voice rule. A call working through a subscription node does not validate direct Desync voice.
+If a selector changes, only stale Desync voice UDP flows for that endpoint are closed; other applications, Discord TCP and subscription selections are retained. Discord may need time to renegotiate, or the user can rejoin the voice channel. Protecting healthy calls from global strategy churn does not establish the cause of a stopped stream or guarantee its recovery; sustained playback still requires a live test.
+
+There is no automatic fallback to remote subscription nodes. Disable Discord and restart it to return to the subscription's normal Discord rules. A call working through a subscription node does not validate direct Desync voice.
 
 ## Routing and DNS
 
-The YouTube overlay includes the site/API, `googlevideo.com`, `ytimg.com` and `yt3.ggpht.com`. Selected service TCP rules precede subscription service rules; targeted UDP/443 is rejected for TCP fallback, except desktop Discord UDP when explicitly enabled. Corporate VPN coexistence retains its priority. Browser voice is outside the desktop process rule.
+The YouTube overlay includes the site/API, `googlevideo.com`, `ytimg.com` and `yt3.ggpht.com`. Selected service TCP rules precede subscription service rules; targeted UDP/443 is rejected for TCP fallback. Desktop Discord voice transforms apply only to high-port UDP from `Discord.exe`, excluding QUIC/CDN on UDP/443 and low-port traffic. Migration removes the exact earlier all-UDP process rule. Corporate VPN coexistence retains its priority. Browser voice is outside the desktop process rule.
 
 Named Desync outbounds retry empty direct DNS resolution once through the profile's normal resolver. Ordinary DIRECT, subscription DNS configuration, canceled requests and TLS/connect errors retain their behavior. The core reports resolution fallbacks and exact probe failures; HTTP test error pages do not count as successful availability.
 

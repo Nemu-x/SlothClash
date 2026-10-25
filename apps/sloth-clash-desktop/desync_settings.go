@@ -165,7 +165,7 @@ func desyncRules(domains []string, route string) []string {
 }
 
 func desyncDiscordUDPRules() []string {
-	return []string{"AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe))," + desyncDiscordUDPRoute}
+	return []string{"AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe),(DST-PORT,1024-65535))," + desyncDiscordUDPRoute}
 }
 
 // The profile body is never edited. Only generated runtime entries are

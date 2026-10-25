@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"SlothClashDesktop/internal/desync"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,8 +45,8 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 	userProxy := map[string]any{"name": "subscription-node", "type": "socks5", "server": "example.test", "port": 1080}
 	doc := map[string]any{"proxies": []any{userProxy}, "rules": []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}, "mode": "rule"}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
-	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
-	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
+	applyDesyncOverlay(doc, settings, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
+	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
 		t.Fatalf("unexpected proxies: %v", doc["proxies"])
 	}
 	if !reflect.DeepEqual(doc["proxies"].([]any)[0], userProxy) {
@@ -64,12 +66,12 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 		}
 	}
 	first, _ := json.Marshal(doc)
-	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, settings, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	second, _ := json.Marshal(doc)
 	if string(first) != string(second) {
 		t.Fatal("overlay is not idempotent")
 	}
-	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, DesyncSettings{}, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	if !reflect.DeepEqual(doc["proxies"], []any{userProxy}) || !reflect.DeepEqual(doc["rules"], []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}) {
 		t.Fatalf("disable failed to restore profile routes: %v", doc)
 	}
@@ -77,7 +79,7 @@ func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.
 
 func TestDesyncOverlayDisabledDoesNotCreateKeys(t *testing.T) {
 	doc := map[string]any{"mode": "rule"}
-	applyDesyncOverlay(doc, DesyncSettings{}, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, DesyncSettings{}, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	if len(doc) != 1 {
 		t.Fatalf("disabled overlay created entries: %v", doc)
 	}
@@ -104,11 +106,11 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 	}
 	managed := 0
 	for _, raw := range doc["proxies"].([]any) {
-		if entry, ok := raw.(map[string]any); ok && entry[desyncManagedKey] == true {
+		if entry, ok := raw.(map[string]any); ok && entry[desync.ManagedKey] == true {
 			managed++
 		}
 	}
-	if managed != len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
+	if managed != len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
 		t.Fatal("enabled routes were not restored through the complete script/finalization pipeline")
 	}
 	if doc["rules"].([]any)[len(doc["rules"].([]any))-1] != "MATCH,DIRECT" {
@@ -118,13 +120,13 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 
 func TestDesyncDiagnosticUsesExplicitNamedOutbound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/proxies/"+desyncDiscordRoute+"/delay" || r.URL.Query().Get("url") != "https://discord.com/api/v10/gateway" || r.Header.Get("Authorization") != "Bearer local-secret" || r.URL.Query().Get("expected") != "200-299" {
+		if r.URL.Path != "/proxies/"+desync.DiscordRoute+"/delay" || r.URL.Query().Get("url") != "https://discord.com/api/v10/gateway" || r.Header.Get("Authorization") != "Bearer local-secret" || r.URL.Query().Get("expected") != "200-299" {
 			t.Errorf("unexpected probe: %s %v", r.URL, r.Header)
 		}
 		_, _ = w.Write([]byte(`{"delay":12}`))
 	}))
 	defer server.Close()
-	delay, err := probeDesyncOutbound(context.Background(), strings.TrimPrefix(server.URL, "http://"), "local-secret", desyncDiscordRoute, "https://discord.com/api/v10/gateway")
+	delay, err := probeDesyncOutbound(context.Background(), strings.TrimPrefix(server.URL, "http://"), "local-secret", desync.DiscordRoute, "https://discord.com/api/v10/gateway")
 	if err != nil || delay != 12 {
 		t.Fatalf("probe: %d %v", delay, err)
 	}
@@ -137,7 +139,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 	}
 	doc := map[string]any{"mode": "rule", "rules": []any{"MATCH,DIRECT"}, "proxies": []any{}}
 	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDP: runtime.GOOS == "windows", DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
-	applyDesyncOverlay(doc, settings, currentDesktopPrefs().DesyncCache)
+	applyDesyncOverlay(doc, settings, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
 	data, err := yaml.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -154,8 +156,8 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	doc := map[string]any{"rules": []any{"PROCESS-NAME,Discord.exe,subscription-node", "MATCH,subscription-node"}, "proxies": []any{map[string]any{"name": "subscription-node", "type": "direct"}}}
 	s := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4, DiscordUDP: true, DiscordUDPTTL: 4, DiscordUDPRepeats: 6}
-	applyDesyncOverlay(doc, s, currentDesktopPrefs().DesyncCache)
-	if doc["rules"].([]any)[0] != desyncDiscordUDPRules()[0] {
+	applyDesyncOverlay(doc, s, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
+	if doc["rules"].([]any)[0] != desync.DiscordUDPRules()[0] {
 		t.Fatal("Discord UDP did not override only the intended desktop rule")
 	}
 	proxies := doc["proxies"].([]any)
@@ -163,9 +165,9 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	for _, raw := range proxies {
 		p := raw.(map[string]any)
 		switch p["name"] {
-		case desyncDiscordUDPRoute + "-f4":
+		case desync.DiscordUDPRoute + "-f4":
 			udp = p
-		case desyncYouTubeRoute + "-r3":
+		case desync.YouTubeRoute + "-r3":
 			youtube = p
 		}
 	}
@@ -179,16 +181,16 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 		t.Fatal("proven YouTube candidate lost")
 	}
 	groups := doc["proxy-groups"].([]any)
-	if len(groups) != 3 || groups[0].(map[string]any)["name"] != desyncDiscordUDPRoute || groups[0].(map[string]any)["hidden"] != true {
+	if len(groups) != 3 || groups[0].(map[string]any)["name"] != desync.DiscordUDPRoute || groups[0].(map[string]any)["hidden"] != true {
 		t.Fatal("missing hidden voice selector")
 	}
 	s.DiscordUDP = false
-	applyDesyncOverlay(doc, s, currentDesktopPrefs().DesyncCache)
-	if len(doc["proxies"].([]any)) != 1+len(desyncCandidates("youtube"))+len(desyncCandidates("discord")) {
+	applyDesyncOverlay(doc, s, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
+	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
 		t.Fatal("UDP disable removed or retained the wrong outbounds")
 	}
 	for _, rule := range doc["rules"].([]any) {
-		if strings.Contains(rule.(string), desyncDiscordUDPRoute) {
+		if strings.Contains(rule.(string), desync.DiscordUDPRoute) {
 			t.Fatal("UDP route survived disable")
 		}
 	}
@@ -237,7 +239,7 @@ func TestDesyncDiagnosticPreservesCoreFailure(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(body))
 		}))
-		_, err := probeDesyncOutbound(context.Background(), strings.TrimPrefix(server.URL, "http://"), "", desyncYouTubeRoute, "https://www.youtube.com/generate_204")
+		_, err := probeDesyncOutbound(context.Background(), strings.TrimPrefix(server.URL, "http://"), "", desync.YouTubeRoute, "https://www.youtube.com/generate_204")
 		server.Close()
 		if err == nil || !strings.Contains(err.Error(), "HTTP 503: TLS handshake failed") || strings.Contains(err.Error(), "private-test-token") {
 			t.Fatalf("lost failure detail or exposed a credential: %v", err)

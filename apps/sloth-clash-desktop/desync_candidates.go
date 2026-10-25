@@ -66,7 +66,7 @@ func (c desyncCandidate) proxy(route string) map[string]any {
 		opts["split-delay-ms"] = 5
 	}
 	if c.UDP {
-		opts["udp"] = map[string]any{"ttl": c.TTL, "repeats": c.Repeats, "packets": 3}
+		opts["udp"] = map[string]any{"ttl": c.TTL, "repeats": c.Repeats, "packets": 3, "stable-binding": true}
 	} else if c.TTL > 0 {
 		opts["fake"] = map[string]any{"ttl": c.TTL, "prefix": -1}
 	}

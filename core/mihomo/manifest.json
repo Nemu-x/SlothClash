@@ -91,6 +91,10 @@
       "file": "0020-desync-auto-diagnostics.patch",
       "sha256": "f8228def1cb7ecd7e9125dd4943db0870987846aa10a5146c9e029c4095f744b",
       "feature": "desync-auto"
+    },
+    {
+      "file": "0021-desync-stable-udp-binding.patch",
+      "sha256": "da96000d11841e3e79a5240f608c26061878e294d2891857ce02e0fe77473f76"
     }
   ],
   "assets": {

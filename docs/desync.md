@@ -36,6 +36,14 @@ If a selector changes, only stale Desync voice UDP flows for that endpoint are c
 
 There is no automatic fallback to remote subscription nodes. Disable Discord and restart it to return to the subscription's normal Discord rules. A call working through a subscription node does not validate direct Desync voice.
 
+## Discord UDP binding continuity
+
+Generated Discord UDP candidates enable `desync.udp.stable-binding`. In Windows TUN traffic from `Discord.exe`, the core preserves one native UDP socket when the application replaces its local socket within the same IP-discovery session. This keeps the server-facing UDP binding and the library's initial fake window together. There is no external helper or additional proxy route.
+
+Bindings are isolated by source address, process, inbound, interface policy, server endpoint and discovery SSRC. Different sessions at one server remain separate. Discovery replies return to waiting associations without moving the media recipient. A newer association takes over on application traffic; old associations cannot steal it or close its native socket. Non-discovery starts keep private sockets. Ordinary DIRECT, other processes, private/low-port endpoints and internal calibration probes keep their existing paths.
+
+Logical deadlines and closure are independent. Socket/session counts and queued bytes are bounded; detached bindings expire after 90 seconds and adapter shutdown closes sockets and pending readers. **Copy diagnostics** adds numeric `udp.binding` counters for socket creation/reuse, handovers, queue drops and errors. Session identifiers and native addresses are excluded. A positive discovery probe or a reused socket alone still does not certify playback; validate a sustained stream and two-way voice after installing the build.
+
 ## Routing and DNS
 
 The YouTube overlay includes the site/API, `googlevideo.com`, `ytimg.com` and `yt3.ggpht.com`. Selected service TCP rules precede subscription service rules; targeted UDP/443 is rejected for TCP fallback. Desktop Discord voice transforms apply only to high-port UDP from `Discord.exe`, excluding QUIC/CDN on UDP/443 and low-port traffic. Migration removes the exact earlier all-UDP process rule. Corporate VPN coexistence retains its priority. Browser voice is outside the desktop process rule.
@@ -51,4 +59,4 @@ Named Desync outbounds retry empty direct DNS resolution once through the profil
 5. Include cold startup, reconnect, a longer call and a different network where available. If something fails, press **Copy diagnostics** and send the report with what failed and when. **Check again** restarts the search.
 6. To compare subscription behavior, disable the relevant service and restart the application. Other subscription routes should retain their behavior.
 
-The library remains pinned to `github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e`. Core patches 0017/0019 provide native transformations and DNS fallback; 0020 adds scoped UDP probes, application-only activity telemetry, cancellation and strict HTTP probe status handling. Build validation applies and tests the entire patch series. Local mechanics and automated checks do not replace testing on each tester's network.
+The library remains pinned to `github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e`. Core patches 0017/0019 provide native transformations and DNS fallback; 0020 adds scoped UDP probes, application-only activity telemetry, cancellation and strict HTTP probe status handling. Patch 0021 adds opt-in Discord UDP binding continuity and private aggregate counters. Build validation applies and tests the entire patch series. Local mechanics and automated checks do not replace testing on each tester's network.

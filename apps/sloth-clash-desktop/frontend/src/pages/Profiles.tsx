@@ -107,12 +107,12 @@ export function ProfilesPage({
                       JS
                     </span>
                   ) : null}
+                  {/* No live-region role: every failing card would announce. */}
                   {updateError ? (
                     <span
                       className="profileScriptBadge"
                       title={updateErrorTitle}
                       aria-label={updateErrorTitle}
-                      role="status"
                     >
                       {t('ui.profiles.updateFailed.badge')}
                     </span>

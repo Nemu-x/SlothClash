@@ -105,10 +105,10 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
-import { useConnectionsOverview } from './hooks/queries/useConnectionsOverview'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
+import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useProxyDelay } from './hooks/useProxyDelay'
 import { useRulesView } from './hooks/useRulesView'
@@ -163,13 +163,9 @@ function App() {
   // Server-state queries. Each one drives a single screen's view, polls itself
   // while that screen is open, and exposes a `refresh()` for manual triggers
   // (rule-providers bulk update, the "Refresh" buttons in headers). The Rules
-  // query lives in useRulesView below.
-  const {
-    overview: connectionsOverview,
-    busy: connectionsBusy,
-    refresh: refreshConnections,
-    closeAll: closeAllConnections,
-  } = useConnectionsOverview(screen === 'connections')
+  // query lives in useRulesView below. Connections: snapshot + search, held
+  // here (not in ConnectionsPage) so the search survives leaving the screen.
+  const connectionsView = useConnectionsView(screen === 'connections')
   const { log: serviceLog, refresh: refreshRuntimeLog } = useServiceLog(
     screen === 'logs',
   )
@@ -218,7 +214,6 @@ function App() {
   const [importModalReason, setImportModalReason] =
     useState<ImportModalReason>('manual')
   const [importBusy, setImportBusy] = useState(false)
-  const [connectionsSearch, setConnectionsSearch] = useState('')
   const [profileMenu, setProfileMenu] = useState<{
     id: string
     name: string
@@ -1605,17 +1600,6 @@ function App() {
     profiles: state?.profile?.profiles,
     onError: (m) => setError(m),
   })
-  const filteredConnections = useMemo(() => {
-    const rows = connectionsOverview?.connections ?? []
-    const q = connectionsSearch.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((c) => {
-      const meta = c.metadata ?? {}
-      const hay =
-        `${c.id} ${meta.host ?? ''} ${meta.destinationIP ?? ''} ${meta.process ?? ''} ${c.rule ?? ''} ${c.rulePayload ?? ''}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [connectionsOverview?.connections, connectionsSearch])
 
   const dismissSpotlight = useCallback(() => {
     localStorage.setItem(LS_SPOTLIGHT, '1')
@@ -2051,13 +2035,8 @@ function App() {
           {screen === 'connections' ? (
             <Suspense fallback={<div className="panel" />}>
               <ConnectionsPage
-                overview={connectionsOverview}
-                filtered={filteredConnections}
-                busy={connectionsBusy}
-                search={connectionsSearch}
-                onSearchChange={setConnectionsSearch}
-                onRefresh={() => void refreshConnections()}
-                onCloseAll={() => run(closeAllConnections)}
+                view={connectionsView}
+                onCloseAll={() => run(connectionsView.closeAll)}
               />
             </Suspense>
           ) : null}

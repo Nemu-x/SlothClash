@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 // The editor-facing surface: save/clear, the recorded result, and the dry-run
@@ -161,8 +163,8 @@ func TestPreviewReflectsTheRealPipeline(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	var res scriptResult
-	if err := writeRuntimeConfig(runtimeConfigInput{
+	var res runtimecfg.ScriptResult
+	if err := runtimecfg.Write(runtimecfg.Input{
 		DataDir:                dir,
 		SubURL:                 p.URL,
 		Script:                 script,
@@ -172,7 +174,7 @@ func TestPreviewReflectsTheRealPipeline(t *testing.T) {
 		WithExternalController: false,
 		Traffic:                "proxy",
 		EnableTun:              false,
-		Prefs:                  currentRuntimeConfigPrefs(),
+		Env:                    currentRuntimeConfigEnv(),
 	}, &res); err != nil {
 		t.Fatalf("real generation failed: %v", err)
 	}
@@ -216,7 +218,7 @@ func TestSaveRejectsOversizedScript(t *testing.T) {
 	}
 	good := a.profiles[0].ScriptOverride
 
-	oversized := strings.Repeat("x", maxProfileScriptBytes+1)
+	oversized := strings.Repeat("x", runtimecfg.MaxScriptBytes+1)
 	_, err := a.SetProfileScriptOverride(p.ID, oversized)
 	if err == nil {
 		t.Fatalf("an oversized script must be refused")

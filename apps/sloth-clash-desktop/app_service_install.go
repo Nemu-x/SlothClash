@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"SlothClashDesktop/internal/runtimecfg"
+
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -369,7 +371,7 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 		if rerr != nil {
 			return ServiceLogPeek{Path: p, LastError: rerr.Error()}
 		}
-		return ServiceLogPeek{Path: p, Text: redactCredentialQuery(string(b))}
+		return ServiceLogPeek{Path: p, Text: runtimecfg.RedactCredentialQuery(string(b))}
 	}
 
 	if _, err := f.Seek(-int64(maxBytes), io.SeekEnd); err != nil {
@@ -379,7 +381,7 @@ func (a *App) ReadServiceLatestLog(maxBytes int) ServiceLogPeek {
 	if err != nil {
 		return ServiceLogPeek{Path: p, LastError: err.Error()}
 	}
-	return ServiceLogPeek{Path: p, Text: redactCredentialQuery(string(b)), Truncated: true}
+	return ServiceLogPeek{Path: p, Text: runtimecfg.RedactCredentialQuery(string(b)), Truncated: true}
 }
 
 // RefreshSlothServiceStatus runs a manual service/IPC status poll (UI "Retry").

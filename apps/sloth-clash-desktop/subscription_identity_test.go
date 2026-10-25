@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 func TestApplySubscriptionIdentityHeaders(t *testing.T) {
@@ -11,7 +13,7 @@ func TestApplySubscriptionIdentityHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applySubscriptionIdentityHeaders(req, currentDesktopPrefs().Privacy.IsHwidEnabled())
+	runtimecfg.ApplyIdentityHeaders(req, currentSubscriptionClient())
 	if got := req.Header.Get("x-hwid"); len(got) != 64 || !isHex(got) {
 		t.Fatalf("x-hwid: want 64 hex chars, got %q", got)
 	}
@@ -45,7 +47,7 @@ func TestApplySubscriptionIdentityHeadersHwidDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applySubscriptionIdentityHeaders(req, currentDesktopPrefs().Privacy.IsHwidEnabled())
+	runtimecfg.ApplyIdentityHeaders(req, currentSubscriptionClient())
 	if got := req.Header.Get("x-hwid"); got != "" {
 		t.Fatalf("x-hwid: want empty, got %q", got)
 	}

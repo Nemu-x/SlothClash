@@ -29,6 +29,12 @@ import (
 // errConnectAborted is returned when connect context is cancelled or a newer connect/disconnect superseded this attempt.
 var errConnectAborted = errors.New("connect aborted")
 
+// coreReadyTimeout is how long a freshly started core gets to answer /version
+// before startEmbeddedCore gives up. A var (not a const) only so the lifecycle
+// tests can exercise the "never ready" path without waiting 45 s; production
+// never reassigns it.
+var coreReadyTimeout = 45 * time.Second
+
 // runningUnderGoTest reports whether this binary is a `go test` binary.
 //
 // Detected from the executable name rather than by importing `testing`, which
@@ -1490,7 +1496,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
 		}
 
-		deadline := time.Now().Add(45 * time.Second)
+		deadline := time.Now().Add(coreReadyTimeout)
 		for time.Now().Before(deadline) {
 			select {
 			case <-parent.Done():
@@ -1635,7 +1641,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		}
 	}()
 
-	deadline := time.Now().Add(45 * time.Second)
+	deadline := time.Now().Add(coreReadyTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case <-parent.Done():

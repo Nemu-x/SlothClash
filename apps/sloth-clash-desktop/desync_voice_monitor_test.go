@@ -172,7 +172,7 @@ func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 	}))
 	defer server.Close()
 	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
-	a.desyncAuto.epoch = 1
+	a.desyncCtl.epoch = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	finished := make(chan struct{})

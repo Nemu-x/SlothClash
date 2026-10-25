@@ -138,7 +138,7 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 }
 
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
-	a.invalidateDesyncAuto()
+	a.desyncCtl.invalidate()
 	next, err := validateDesyncSettings(next, runtime.GOOS, desyncCoreSupported())
 	if err != nil {
 		return a.GetDesyncStatus(), err

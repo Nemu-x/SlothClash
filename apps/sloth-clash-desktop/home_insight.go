@@ -28,7 +28,7 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 	st := a.state.Connection.Status
 	mode := strings.TrimSpace(a.state.Mode.Current)
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	mixed := a.state.Core.MixedPort
 	groups := append([]ProxyGroup(nil), a.state.Proxy.Groups...)
 	ag := strings.TrimSpace(a.state.Proxy.ActiveGroup)

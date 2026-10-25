@@ -242,7 +242,7 @@ func (h *lifecycleHarness) waitFor(what string, timeout time.Duration, cond func
 func (h *lifecycleHarness) endpoint() (listen, secret string) {
 	h.app.mu.RLock()
 	defer h.app.mu.RUnlock()
-	return h.app.coreListen, h.app.coreSecret
+	return h.app.core.listen, h.app.core.secret
 }
 
 // waitConnectSettled waits for the whole Connect job: connected + warmup done
@@ -282,12 +282,12 @@ func (h *lifecycleHarness) assertEndpointGone(listen, secret string) {
 }
 
 // coreExitWatcherFrame matches a stack frame of the cmd.Wait goroutine that
-// startEmbeddedCore spawns per launched core — its only `go func()` closure.
+// startEmbeddedCore spawns per launched core (watchEmbeddedCoreExit).
 // That goroutine is what turns a core exit into state (crash -> ConnError +
 // auto-restart, intentional stop -> nothing) and closes core.log afterwards.
 // Frames are qualified by the module path ("SlothClashDesktop."), not "main.",
 // so match any qualifier; the "created by" line never starts a match.
-var coreExitWatcherFrame = regexp.MustCompile(`(?m)^[\w./-]+\.\(\*App\)\.startEmbeddedCore\.func\d+\(`)
+var coreExitWatcherFrame = regexp.MustCompile(`(?m)^[\w./-]+\.\(\*App\)\.watchEmbeddedCoreExit\(`)
 
 // coreExitWatchers returns the IDs of the live core exit-watcher goroutines.
 func coreExitWatchers() map[string]bool {
@@ -373,10 +373,10 @@ func TestCoreLifecycleStartReadyReuseStop(t *testing.T) {
 		t.Fatalf("core endpoints not published: %+v", st.Core)
 	}
 	a.mu.RLock()
-	activeID := a.coreActiveProfileID
+	activeID := a.core.activeProfileID
 	a.mu.RUnlock()
 	if activeID != p.ID {
-		t.Fatalf("coreActiveProfileID = %q, want %q", activeID, p.ID)
+		t.Fatalf("core.activeProfileID = %q, want %q", activeID, p.ID)
 	}
 	if h.countEvents(p, "preflight ok") != 1 || h.countEvents(p, "start ") != 1 {
 		t.Fatalf("want one preflight + one start, events=%q", h.events(p))
@@ -773,7 +773,7 @@ func TestApplyRuntimeConfigWithGen(t *testing.T) {
 		}
 		h.assertEndpointGone(oldListen, oldSecret)
 		h.app.mu.RLock()
-		active := h.app.coreActiveProfileID
+		active := h.app.core.activeProfileID
 		h.app.mu.RUnlock()
 		if active != p2.ID {
 			t.Fatalf("core bound to %q, want %q", active, p2.ID)

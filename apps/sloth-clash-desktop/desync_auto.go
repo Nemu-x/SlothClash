@@ -191,7 +191,7 @@ func (a *App) runDesyncAutoLoop(ctx context.Context) {
 		}
 		network := desyncNetworkKey()
 		a.mu.RLock()
-		endpoint, secret := a.effectiveCoreEndpointLocked(), a.coreSecret
+		endpoint, secret := a.effectiveCoreEndpointLocked(), a.core.secret
 		generation := a.connectGen.Load()
 		a.mu.RUnlock()
 		key := fmt.Sprintf("%d:%s:%s:%s:%t:%t:%t", generation, endpoint, network, status.Traffic, status.Settings.YouTube, status.Settings.Discord, status.Settings.DiscordUDP)
@@ -670,7 +670,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		}
 	}
 	a.mu.RLock()
-	endpoint, secret := a.effectiveCoreEndpointLocked(), a.coreSecret
+	endpoint, secret := a.effectiveCoreEndpointLocked(), a.core.secret
 	a.mu.RUnlock()
 	if status.Connected && status.Settings.DiscordUDP {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)

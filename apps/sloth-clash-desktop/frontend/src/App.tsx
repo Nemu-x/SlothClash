@@ -50,20 +50,10 @@ import {
 } from './api/prefs'
 import {
   ActivateProfile,
-  ConfirmInstallConfigFromLink,
   DeleteProfile,
-  DeriveAgePublicKey,
-  GenerateAgeKeyPair,
   GetProfilePaths,
-  ImportProfileFromText,
-  ImportProfileFromURL,
-  ReadProfileConfig,
   RefreshProfileSubscription,
-  SetProfileAgeSecretKey,
   SetProfileAutoUpdate,
-  SetProfileMergeTemplate,
-  UpdateProfileInfo,
-  WriteProfileConfig,
 } from './api/profile'
 import { RefreshProxies, SelectProxyGroup, SetProxyNode } from './api/proxy'
 import { BrowserOpenURL, EventsOn } from './api/runtime'
@@ -76,22 +66,9 @@ import {
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
-import { DeleteProfileModal } from './components/DeleteProfileModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import {
-  ImportProfileModal,
-  type ImportMode,
-} from './components/ImportProfileModal'
-import type { InstallConfigRequest } from './components/InstallConfigConfirmModal'
-import { InstallConfigConfirmModal } from './components/InstallConfigConfirmModal'
 import { OperatorModal } from './components/OperatorModal'
-import { ProfileContextMenu } from './components/ProfileContextMenu'
-import { ProfileEditInfoModal } from './components/ProfileEditInfoModal'
-import { ProfileFileModal } from './components/ProfileFileModal'
-import { ProfileMergeModal } from './components/ProfileMergeModal'
-import { ProfileProxyModal } from './components/ProfileProxyModal'
-import { ProfileRulesModal } from './components/ProfileRulesModal'
-import { ProfileScriptModal } from './components/ProfileScriptModal'
+import { ProfileModalsHost } from './components/ProfileModalsHost'
 import { SettingsResetModal } from './components/SettingsResetModal'
 import { SidebarNav } from './components/SidebarNav'
 import { ToastHub } from './components/ToastHub'
@@ -110,14 +87,11 @@ import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
 import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
+import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
 import { useRulesView } from './hooks/useRulesView'
 import { useToasts } from './hooks/useToasts'
 import i18n, { LS_LANG, readStoredLang } from './i18n'
-import {
-  DEFAULT_MERGE_TEMPLATE,
-  mergeTemplateFromProfile,
-} from './mergeTemplate'
 import { HomePage } from './pages/Home'
 import { ProfilesPage } from './pages/Profiles'
 import { ProxiesPage } from './pages/Proxies'
@@ -154,7 +128,6 @@ import {
   DEFAULT_SETTINGS,
   loadCompactSettings,
 } from './utils/settings'
-import { friendlyErrorMessage, yamlValidationError } from './utils/yaml'
 
 function App() {
   const { t } = useTranslation()
@@ -206,74 +179,9 @@ function App() {
   } = useConnectivityChecks()
   const [deviceIdentity, setDeviceIdentity] =
     useState<main.SubscriptionDeviceIdentityPublic | null>(null)
-  const [importName, setImportName] = useState('')
-  const [importUrl, setImportUrl] = useState('')
-  const [importMode, setImportMode] = useState<ImportMode>('url')
-  const [importContent, setImportContent] = useState('')
-  const [importModalOpen, setImportModalOpen] = useState(false)
-  const [importModalReason, setImportModalReason] =
-    useState<ImportModalReason>('manual')
-  const [importBusy, setImportBusy] = useState(false)
-  const [profileMenu, setProfileMenu] = useState<{
-    id: string
-    name: string
-    x: number
-    y: number
-  } | null>(null)
-  const [profileMergeModal, setProfileMergeModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [mergeTemplateDraft, setMergeTemplateDraft] = useState('')
-  const [mergeTemplateYamlErr, setMergeTemplateYamlErr] = useState<
-    string | null
-  >(null)
-  const [profileFileModal, setProfileFileModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileFileText, setProfileFileText] = useState('')
-  const [profileFileYamlErr, setProfileFileYamlErr] = useState<string | null>(
-    null,
-  )
-  const [profileFilePath, setProfileFilePath] = useState('')
-  const [profileFileLoadErr, setProfileFileLoadErr] = useState('')
-  const [profileProxyModal, setProfileProxyModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  // Proxy / Rules edit drafts now live inside ProfileProxyModal / ProfileRulesModal.
-  const [profileRulesModal, setProfileRulesModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileScriptModal, setProfileScriptModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [profileEditInfo, setProfileEditInfo] = useState<{
-    id: string
-    name: string
-    url: string
-  } | null>(null)
-  const [profileEditName, setProfileEditName] = useState('')
-  const [profileEditUrl, setProfileEditUrl] = useState('')
-  const [profileEditAutoEnabled, setProfileEditAutoEnabled] = useState(true)
-  const [profileEditAutoInterval, setProfileEditAutoInterval] = useState('360')
-  const [profileEditAgeKey, setProfileEditAgeKey] = useState('')
-  const isAnyEditorModalOpen = Boolean(
-    profileMergeModal ||
-      profileFileModal ||
-      profileProxyModal ||
-      profileRulesModal,
-  )
-  const [deleteProfileModal, setDeleteProfileModal] = useState<{
-    id: string
-    name: string
-  } | null>(null)
-  const [installConfigRequest, setInstallConfigRequest] =
-    useState<InstallConfigRequest | null>(null)
-  const [installConfigBusy, setInstallConfigBusy] = useState(false)
+  // Which profile dialog is open; their drafts live in ProfileModalsHost.
+  const profileModals = useProfileModals()
+  const isAnyEditorModalOpen = profileModals.isAnyEditorModalOpen
   const [serviceInfo, setServiceInfo] =
     useState<main.ServiceRuntimeInfo | null>(null)
   // Session-dismiss for the app-wide "update the helper service" banner. It
@@ -448,14 +356,6 @@ function App() {
     }
   }, [refresh])
 
-  useEffect(() => {
-    setMergeTemplateYamlErr(yamlValidationError(mergeTemplateDraft, true))
-  }, [mergeTemplateDraft])
-
-  useEffect(() => {
-    setProfileFileYamlErr(yamlValidationError(profileFileText, true))
-  }, [profileFileText])
-
   // Sync the persisted autostart state with the OS-level registry on mount.
   // "Start minimized" is honoured natively by Go (StartHidden from prefs.json)
   // before the window exists — the old WindowHide() here fired after the window
@@ -614,39 +514,6 @@ function App() {
     })
     return () => off()
   }, [refresh])
-
-  // A deep link never imports silently: the backend asks first (audit SEC1).
-  useEffect(() => {
-    const off = EventsOn('app:install-config-request', (payload: unknown) => {
-      const p = payload as { name?: string; url?: string; host?: string }
-      if (!p?.url) return
-      setInstallConfigRequest({
-        name: String(p.name ?? ''),
-        url: String(p.url),
-        host: String(p.host ?? p.url),
-      })
-    })
-    return () => off()
-  }, [])
-
-  const confirmInstallConfig = useCallback(
-    async (req: InstallConfigRequest) => {
-      setInstallConfigBusy(true)
-      try {
-        await ConfirmInstallConfigFromLink(req.name, req.url)
-      } catch (e) {
-        pushToast({
-          kind: 'error',
-          message: friendlyErrorMessage(String(e)),
-          durationMs: 0,
-        })
-      } finally {
-        setInstallConfigBusy(false)
-        setInstallConfigRequest(null)
-      }
-    },
-    [pushToast],
-  )
 
   useEffect(() => {
     const off = EventsOn('app:install-config', (payload: unknown) => {
@@ -1006,79 +873,6 @@ function App() {
       Boolean(settings.closeToTray && trayAvailable),
     )
   }, [settings.closeToTray, trayAvailable])
-
-  useEffect(() => {
-    if (!profileMenu) return
-    const close = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null
-      if (el?.closest?.('.ctxMenu')) return
-      setProfileMenu(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [profileMenu])
-
-  useEffect(() => {
-    if (!profileMergeModal) return
-    const raw = mergeTemplateFromProfile(
-      state?.profile?.profiles,
-      profileMergeModal.id,
-    )
-    setMergeTemplateDraft(raw.trim() ? raw : DEFAULT_MERGE_TEMPLATE)
-    // Intentionally only when opening the modal — avoid overwriting edits on refresh.
-  }, [profileMergeModal])
-
-  useEffect(() => {
-    if (!profileEditInfo) return
-    setProfileEditName(profileEditInfo.name)
-    setProfileEditUrl(profileEditInfo.url)
-    setProfileEditAgeKey(
-      String(
-        state?.profile?.profiles?.find((x: any) => x.id === profileEditInfo.id)
-          ?.ageSecretKey ?? '',
-      ),
-    )
-    const p = state?.profile?.profiles?.find(
-      (x: any) => x.id === profileEditInfo.id,
-    )
-    const interval = Number(p?.autoUpdateIntervalMinutes ?? 360)
-    setProfileEditAutoEnabled(p?.autoUpdateEnabled === false ? false : true)
-    setProfileEditAutoInterval(
-      String(Number.isFinite(interval) && interval > 0 ? interval : 360),
-    )
-  }, [profileEditInfo])
-
-  useEffect(() => {
-    if (!profileFileModal) return
-    let cancelled = false
-    void (async () => {
-      setProfileFileLoadErr('')
-      setProfileFilePath('')
-      setProfileFileText('')
-      try {
-        const peek = await ReadProfileConfig(profileFileModal.id)
-        if (cancelled) return
-        setProfileFilePath(peek.path ?? '')
-        if (peek.lastError) {
-          setProfileFileLoadErr(peek.lastError)
-          setProfileFileText(
-            `# config.yaml not found yet (${peek.lastError}).\n# Connect once to generate, then open again — or paste a full profile below.\n`,
-          )
-        } else {
-          setProfileFileText(peek.body ?? '')
-        }
-      } catch (e: any) {
-        if (cancelled) return
-        setProfileFileLoadErr(String(e))
-        setProfileFileText(
-          '# Could not load current config.yaml. Paste YAML below to overwrite.\n',
-        )
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [profileFileModal])
 
   const run = async (action: () => Promise<any>) => {
     setError('')
@@ -1607,49 +1401,8 @@ function App() {
   }, [])
 
   const openImportModal = (reason: ImportModalReason) => {
-    setImportModalReason(reason)
-    setImportModalOpen(true)
+    profileModals.openImport(reason)
     setError('')
-  }
-
-  const closeImportModal = () => {
-    setImportModalOpen(false)
-    setImportBusy(false)
-  }
-
-  const pasteFromClipboard = async () => {
-    setError('')
-    try {
-      const text = await navigator.clipboard.readText()
-      if (importMode === 'paste') setImportContent(text)
-      else setImportUrl(text.trim())
-    } catch {
-      setError(t('ui.toasts.clipboardReadFail'))
-    }
-  }
-
-  const performImportAndClose = async () => {
-    setError('')
-    setImportBusy(true)
-    try {
-      const name = importName.trim()
-      if (importMode === 'paste') {
-        await ImportProfileFromText(name, importContent.trim())
-      } else {
-        await ImportProfileFromURL(name, importUrl.trim())
-      }
-      await refresh()
-      dismissSpotlight()
-      setImportUrl('')
-      setImportName('')
-      setImportContent('')
-      closeImportModal()
-    } catch (e: any) {
-      setError(String(e))
-      await refresh()
-    } finally {
-      setImportBusy(false)
-    }
   }
 
   const ensureTun = async () => {
@@ -1837,23 +1590,6 @@ function App() {
   // (useRulesOverview, useConnectionsOverview, useServiceLog) — they fetch on
   // mount and refetch on the same screen-change semantics via their `enabled`.
 
-  const importModalTitle = () => {
-    if (importModalReason === 'connect') {
-      return t('ui.import.connectNeedsProfile')
-    }
-    if (importModalReason === 'beacon') {
-      return t('ui.import.addFirstSubscription')
-    }
-    return t('ui.import.importSubscription')
-  }
-
-  const importModalBlurb = () => {
-    if (importModalReason === 'connect') {
-      return t('ui.import.connectBlurb')
-    }
-    return t('ui.import.defaultBlurb')
-  }
-
   return (
     <div
       className={`shell ${navCollapsed ? 'navCollapsed' : ''}`}
@@ -2028,7 +1764,7 @@ function App() {
                   }
                 })()
               }}
-              onContextMenu={(target) => setProfileMenu(target)}
+              onContextMenu={(target) => profileModals.setMenu(target)}
             />
           ) : null}
 
@@ -2363,239 +2099,23 @@ function App() {
         onBrowserOpen={(url) => BrowserOpenURL(url)}
       />
 
-      <ImportProfileModal
-        open={importModalOpen}
-        title={importModalTitle()}
-        blurb={importModalBlurb()}
-        mode={importMode}
-        url={importUrl}
-        name={importName}
-        content={importContent}
-        busy={importBusy}
-        hidePaste={brandManifest?.hideLocalConfigs}
-        onModeChange={setImportMode}
-        onUrlChange={setImportUrl}
-        onNameChange={setImportName}
-        onContentChange={setImportContent}
-        onPasteFromClipboard={() => pasteFromClipboard()}
-        onClose={closeImportModal}
-        onSubmit={() => performImportAndClose()}
-      />
-
-      <ProfileMergeModal
-        target={profileMergeModal}
-        value={mergeTemplateDraft}
-        yamlError={mergeTemplateYamlErr}
-        onChange={setMergeTemplateDraft}
-        onResetScaffold={() => setMergeTemplateDraft(DEFAULT_MERGE_TEMPLATE)}
-        onClose={() => setProfileMergeModal(null)}
-        onSave={async (id) => {
-          if (mergeTemplateYamlErr) return
-          setError('')
-          try {
-            await SetProfileMergeTemplate(id, mergeTemplateDraft)
-            setProfileMergeModal(null)
-            setTunBanner(
-              'Merge template saved. Reconnect if you are already connected.',
-            )
-          } catch (e: any) {
-            setError(String(e))
-          }
-          await refresh()
-        }}
-      />
-
-      <ProfileFileModal
-        target={profileFileModal}
-        path={profileFilePath}
-        loadError={profileFileLoadErr}
-        value={profileFileText}
-        yamlError={profileFileYamlErr}
-        onChange={setProfileFileText}
-        onCopyPath={(path) => {
-          if (path) {
-            void navigator.clipboard.writeText(path)
-            setTunBanner(t('ui.toasts.configPathCopied'))
-          }
-        }}
-        onClose={() => setProfileFileModal(null)}
-        onSave={async (id) => {
-          if (profileFileYamlErr) return
-          setError('')
-          try {
-            await WriteProfileConfig(id, profileFileText)
-            setProfileFileModal(null)
-            setTunBanner(
-              'Config saved. Sloth reapplies ports and secret on connect.',
-            )
-          } catch (e: any) {
-            setError(String(e))
-          }
-          await refresh()
-        }}
-      />
-
-      <ProfileProxyModal
-        key={`pgm-${profileProxyModal?.id ?? 'closed'}`}
-        target={profileProxyModal}
-        profiles={state?.profile?.profiles}
-        onClose={() => setProfileProxyModal(null)}
-        onSaved={(banner) => {
-          setProfileProxyModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileRulesModal
-        key={`prm-${profileRulesModal?.id ?? 'closed'}`}
-        target={profileRulesModal}
+      <ProfileModalsHost
+        modals={profileModals}
         profiles={state?.profile?.profiles}
         proxyGroups={state?.proxy?.groups}
-        onClose={() => setProfileRulesModal(null)}
-        onSaved={(banner) => {
-          setProfileRulesModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileScriptModal
-        key={`psm-${profileScriptModal?.id ?? 'closed'}`}
-        target={profileScriptModal}
-        profiles={state?.profile?.profiles}
-        onClose={() => setProfileScriptModal(null)}
-        onSaved={(banner) => {
-          setProfileScriptModal(null)
-          setTunBanner(banner)
-          void refresh()
-        }}
-        onError={(msg) => setError(msg)}
-      />
-      <ProfileEditInfoModal
-        target={profileEditInfo}
-        name={profileEditName}
-        url={profileEditUrl}
-        autoEnabled={profileEditAutoEnabled}
-        autoInterval={profileEditAutoInterval}
-        ageKey={profileEditAgeKey}
-        onAgeKeyChange={setProfileEditAgeKey}
-        onGenerateAgeKeyPair={async (kind) => {
-          const pair = await GenerateAgeKeyPair(kind)
-          return {
-            publicKey: String(pair?.publicKey ?? ''),
-            secretKey: String(pair?.secretKey ?? ''),
-          }
-        }}
-        onDeriveAgePublicKey={async (secret) =>
-          String((await DeriveAgePublicKey(secret)) ?? '')
-        }
-        onNameChange={setProfileEditName}
-        onUrlChange={setProfileEditUrl}
-        onAutoEnabledToggle={() => setProfileEditAutoEnabled((v) => !v)}
-        onAutoIntervalChange={setProfileEditAutoInterval}
-        onCopyUrl={(url) => {
-          if (url) {
-            void navigator.clipboard.writeText(url)
-            setTunBanner(t('ui.toasts.urlCopied'))
-          }
-        }}
-        onCopyName={(name) => {
-          if (name) {
-            void navigator.clipboard.writeText(name)
-            setTunBanner(t('ui.toasts.nameCopied'))
-          }
-        }}
-        onClose={() => setProfileEditInfo(null)}
-        onSave={(id) => {
-          void run(async () => {
-            await UpdateProfileInfo(
-              id,
-              profileEditName.trim(),
-              profileEditUrl.trim(),
-            )
-            await SetProfileAgeSecretKey(id, profileEditAgeKey.trim())
-            const interval = Number(profileEditAutoInterval || '360')
-            await SetProfileAutoUpdate(
-              id,
-              profileEditAutoEnabled,
-              Number.isFinite(interval) && interval > 0 ? interval : 360,
-            )
-          })
-          setProfileEditInfo(null)
-        }}
-      />
-
-      <InstallConfigConfirmModal
-        request={installConfigRequest}
-        busy={installConfigBusy}
-        onCancel={() => setInstallConfigRequest(null)}
-        onConfirm={(req) => void confirmInstallConfig(req)}
-      />
-
-      <DeleteProfileModal
-        target={deleteProfileModal}
-        onClose={() => setDeleteProfileModal(null)}
-        onConfirm={(id) => {
-          setDeleteProfileModal(null)
-          void run(() => DeleteProfile(id))
-        }}
+        hidePaste={brandManifest?.hideLocalConfigs}
+        run={run}
+        refresh={refresh}
+        setError={setError}
+        setBanner={setTunBanner}
+        pushToast={pushToast}
+        onImported={dismissSpotlight}
       />
 
       <SettingsResetModal
         mode={settingsResetModal}
         onClose={() => setSettingsResetModal(null)}
         onConfirm={(withProfiles) => void resetAppSettings(withProfiles)}
-      />
-
-      <ProfileContextMenu
-        target={profileMenu}
-        profile={
-          profileMenu
-            ? (state?.profile?.profiles?.find(
-                (x: any) => x.id === profileMenu.id,
-              ) ?? null)
-            : null
-        }
-        onUpdate={(id) => {
-          setProfileMenu(null)
-          void run(() => RefreshProfileSubscription(id))
-        }}
-        onEditInfo={(id, name, url) => {
-          setProfileMenu(null)
-          setProfileEditInfo({ id, name, url })
-        }}
-        onCopyUrl={(url) => {
-          if (url) {
-            void navigator.clipboard.writeText(url)
-            setTunBanner(t('ui.toasts.urlCopied'))
-          }
-          setProfileMenu(null)
-        }}
-        onOpenRules={(id, name) => {
-          setProfileMenu(null)
-          setProfileRulesModal({ id, name })
-        }}
-        onDelete={(id, name) => {
-          setProfileMenu(null)
-          setDeleteProfileModal({ id, name })
-        }}
-        onOpenExtendConfig={(id, name) => {
-          setProfileMenu(null)
-          setProfileMergeModal({ id, name })
-        }}
-        onOpenProxyGroups={(id, name) => {
-          setProfileMenu(null)
-          setProfileProxyModal({ id, name })
-        }}
-        onOpenScript={(id, name) => {
-          setProfileMenu(null)
-          setProfileScriptModal({ id, name })
-        }}
-        onOpenEditFile={(id, name) => {
-          setProfileMenu(null)
-          setProfileFileModal({ id, name })
-        }}
       />
 
       <TunSettingsModal

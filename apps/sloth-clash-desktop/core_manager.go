@@ -153,9 +153,9 @@ func isUnixSocketEndpoint(addr string) bool {
 }
 
 // effectiveCoreEndpointLocked returns the mihomo API address (TCP host:port or \\.\pipe\...).
-// Caller must hold a.mu (Lock or RLock). Prefer coreListen; fall back to published Core.ControllerAddr.
+// Caller must hold a.mu (Lock or RLock). Prefer core.listen; fall back to published Core.ControllerAddr.
 func (a *App) effectiveCoreEndpointLocked() string {
-	if s := strings.TrimSpace(a.coreListen); s != "" {
+	if s := strings.TrimSpace(a.core.listen); s != "" {
 		return s
 	}
 	return strings.TrimSpace(a.state.Core.ControllerAddr)
@@ -682,7 +682,7 @@ func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string
 func (a *App) coreDo(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	a.mu.RLock()
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 	return coreDoWithEndpoint(ctx, listen, secret, method, path, body)
 }
@@ -715,28 +715,28 @@ func (a *App) coreFetchVersion(ctx context.Context) (string, error) {
 func (a *App) stopCoreLocked() {
 	a.clearSystemProxyLocked()
 	a.restoreTakenOverTunServicesLocked()
-	a.coreStopIntentional = true
-	a.coreProcToken++
+	a.core.stopIntentional = true
+	a.core.procToken++
 	a.state.Core.Lifecycle = "stopping"
-	if a.coreCancel != nil {
-		a.coreCancel()
+	if a.core.cancel != nil {
+		a.core.cancel()
 	}
-	if a.coreOverPipe {
+	if a.core.overPipe {
 		sctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		_ = ipcSlothStopCore(sctx)
 		cancel()
 	} else {
-		cmd := a.coreCmd
+		cmd := a.core.cmd
 		if cmd != nil && cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
 	}
-	a.coreCmd = nil
-	a.coreCancel = nil
-	a.coreOverPipe = false
-	a.coreSecret = ""
-	a.coreListen = ""
-	a.coreActiveProfileID = ""
+	a.core.cmd = nil
+	a.core.cancel = nil
+	a.core.overPipe = false
+	a.core.secret = ""
+	a.core.listen = ""
+	a.core.activeProfileID = ""
 	a.state.Core.Running = false
 	a.state.Core.Lifecycle = "stopped"
 	a.state.Core.Version = ""
@@ -855,12 +855,12 @@ func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) 
 // coldStarted is true — mihomo already loaded the same YAML on startup, and
 // a second init would just stall behind the rule-provider download phase.
 func (a *App) ensureCoreForProfileEx(profile Profile, gen uint64, enableTun bool) (coldStarted bool, err error) {
-	a.coreLifecycleMu.Lock()
-	defer a.coreLifecycleMu.Unlock()
+	a.core.lifecycleMu.Lock()
+	defer a.core.lifecycleMu.Unlock()
 
 	a.mu.RLock()
-	running := a.state.Core.Running && strings.TrimSpace(a.coreListen) != ""
-	activeID := strings.TrimSpace(a.coreActiveProfileID)
+	running := a.state.Core.Running && strings.TrimSpace(a.core.listen) != ""
+	activeID := strings.TrimSpace(a.core.activeProfileID)
 	a.mu.RUnlock()
 
 	if running && activeID == strings.TrimSpace(profile.ID) {
@@ -898,7 +898,7 @@ func rotateCoreLogForNewRun(logPath string) {
 // reconcileOrphanServiceCoreOnStartup stops a mihomo core that the privileged
 // service is STILL managing from a previous app run. On a fresh process our
 // in-memory core state is empty, so stopCoreLocked() cannot see such a core
-// (it only tears down what `coreOverPipe`/`coreCmd` point at) and therefore
+// (it only tears down what `core.overPipe`/`core.cmd` point at) and therefore
 // never stops it. After an unclean exit (crash, Task-Manager kill) that orphan
 // keeps holding the wintun adapter and its old ports, and the first Connect
 // races it. Best-effort and idempotent: when nothing is running, the service
@@ -951,8 +951,8 @@ func (a *App) reconcileOrphanServiceCoreOnStartup() {
 // even when the current running core already belongs to the same profile.
 // Used as a controlled fallback after runtime reload failures.
 func (a *App) forceRestartCoreForProfile(profile Profile, gen uint64, enableTun bool) error {
-	a.coreLifecycleMu.Lock()
-	defer a.coreLifecycleMu.Unlock()
+	a.core.lifecycleMu.Lock()
+	defer a.core.lifecycleMu.Unlock()
 	if gen == 0 {
 		gen = a.connectGen.Add(1)
 	}
@@ -975,10 +975,10 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	var prevListen string
 	var prevSecret string
 	a.mu.Lock()
-	prevListen = a.coreListen
-	prevSecret = a.coreSecret
+	prevListen = a.core.listen
+	prevSecret = a.core.secret
 	a.stopCoreLocked()
-	a.coreStopIntentional = false
+	a.core.stopIntentional = false
 	traffic = strings.TrimSpace(a.state.Traffic)
 	if traffic != "tun" && traffic != "proxy" {
 		traffic = "proxy"
@@ -1141,14 +1141,14 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		tcpListen := fmt.Sprintf("127.0.0.1:%d", ctrlPort)
 		a.mu.Lock()
 		prevMixed := a.state.Core.MixedPort
-		// coreOverPipe stays true: it controls the *stop* path
+		// core.overPipe stays true: it controls the *stop* path
 		// (stopCoreLocked → ipcSlothStopCore vs cmd.Kill). The HTTP API
-		// transport is decided by coreListen, which now points at TCP.
-		a.coreOverPipe = true
-		a.coreCmd = nil
-		a.coreCancel = nil
-		a.coreSecret = secret
-		a.coreListen = tcpListen
+		// transport is decided by core.listen, which now points at TCP.
+		a.core.overPipe = true
+		a.core.cmd = nil
+		a.core.cancel = nil
+		a.core.secret = secret
+		a.core.listen = tcpListen
 		a.state.Core.ControllerAddr = tcpListen
 		a.state.Core.MixedPort = mixedPort
 		a.state.Core.Running = true
@@ -1183,7 +1183,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 				a.state.Core.Version = v
 				a.state.Core.LastError = ""
 				a.state.Core.Lifecycle = "running"
-				a.coreActiveProfileID = profile.ID
+				a.core.activeProfileID = profile.ID
 				a.state.UpdatedAt = time.Now().Unix()
 				a.mu.Unlock()
 				return nil
@@ -1238,22 +1238,22 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 
 	a.mu.Lock()
 	prevMixed := a.state.Core.MixedPort
-	a.coreOverPipe = false
-	a.coreCmd = cmd
-	a.coreCancel = cancel
-	a.coreProcToken++
-	a.coreSecret = secret
-	a.coreListen = fmt.Sprintf("127.0.0.1:%d", ctrlPort)
-	a.state.Core.ControllerAddr = a.coreListen
+	a.core.overPipe = false
+	a.core.cmd = cmd
+	a.core.cancel = cancel
+	a.core.procToken++
+	a.core.secret = secret
+	a.core.listen = fmt.Sprintf("127.0.0.1:%d", ctrlPort)
+	a.state.Core.ControllerAddr = a.core.listen
 	a.state.Core.MixedPort = mixedPort
 	a.state.Core.Running = true
 	a.state.Core.Lifecycle = "running"
 	a.state.Core.LastError = ""
 
-	listenCopy := a.coreListen
-	secretCopy := a.coreSecret
+	listenCopy := a.core.listen
+	secretCopy := a.core.secret
 	waitCmd := cmd
-	waitToken := a.coreProcToken
+	waitToken := a.core.procToken
 	a.mu.Unlock()
 	if runtime.GOOS == "windows" {
 		go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
@@ -1263,11 +1263,11 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 		waitErr := waitCmd.Wait()
 		_ = lf.Close()
 		a.mu.Lock()
-		if waitToken != a.coreProcToken || a.coreCmd != waitCmd {
+		if waitToken != a.core.procToken || a.core.cmd != waitCmd {
 			a.mu.Unlock()
 			return
 		}
-		if a.coreStopIntentional {
+		if a.core.stopIntentional {
 			a.mu.Unlock()
 			return
 		}
@@ -1288,7 +1288,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			// retry; the user will get fresh attempt on next Connect.
 			if prevStatus == "connected" {
 				shouldAutoRestart = true
-				restartProfileID = a.coreActiveProfileID
+				restartProfileID = a.core.activeProfileID
 				restartTraffic = strings.TrimSpace(a.state.Traffic)
 			}
 		}
@@ -1329,7 +1329,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			a.mu.Lock()
 			a.state.Core.Version = v
 			a.state.Core.LastError = ""
-			a.coreActiveProfileID = profile.ID
+			a.core.activeProfileID = profile.ID
 			a.state.UpdatedAt = time.Now().Unix()
 			a.mu.Unlock()
 			return nil
@@ -1423,7 +1423,7 @@ func (a *App) pullProxiesIntoState() error {
 		a.mu.Unlock()
 		return errors.New("core not running")
 	}
-	secret = a.coreSecret
+	secret = a.core.secret
 	a.mu.Unlock()
 
 	groups, err := pullProxyGroupsFromCore(listen, secret)

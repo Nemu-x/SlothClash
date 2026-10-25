@@ -179,7 +179,7 @@ func TestAutoCoreJSONUsesRouteLimits(t *testing.T) {
 }
 
 func TestCoreGetJSONRefusesOversizedBody(t *testing.T) {
-	a := &App{coreListen: coreJSONServer(t, map[string][]byte{"/version": padJSON(t, []byte(`{"version":"v1"}`), coreDefaultMaxJSONBytes+1)})}
+	a := &App{core: coreProcess{listen: coreJSONServer(t, map[string][]byte{"/version": padJSON(t, []byte(`{"version":"v1"}`), coreDefaultMaxJSONBytes+1)})}}
 	var v struct{ Version string }
 	if err := a.coreGetJSON(context.Background(), "/version", &v); err == nil || err.Error() != "GET /version response exceeds the 4 MiB limit" {
 		t.Fatalf("oversized /version: %v", err)

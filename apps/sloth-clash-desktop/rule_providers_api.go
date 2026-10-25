@@ -24,7 +24,7 @@ func (a *App) UpdateRuleProvider(name string) error {
 	conn := strings.TrimSpace(a.state.Connection.Status)
 	running := a.state.Core.Running
 	ep := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 
 	// Mirror FetchRulesOverview semantics: connected OR running with an endpoint

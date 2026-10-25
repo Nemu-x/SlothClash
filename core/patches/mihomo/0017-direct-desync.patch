@@ -1,0 +1,332 @@
+diff --git a/adapter/direct_desync_test.go b/adapter/direct_desync_test.go
+new file mode 100644
+index 0000000..90768c6
+--- /dev/null
++++ b/adapter/direct_desync_test.go
+@@ -0,0 +1,34 @@
++package adapter
++
++import (
++	"github.com/Nemu-x/desync"
++	"testing"
++)
++
++func TestDirectDesyncParser(t *testing.T) {
++	for _, mapping := range []map[string]any{
++		{"name": "ordinary", "type": "direct"},
++		{"name": "youtube", "type": "direct", "desync": map[string]any{"tlsrec": "3+s"}},
++	} {
++		if _, err := ParseProxy(mapping); err != nil {
++			t.Fatal(err)
++		}
++	}
++	fake := map[string]any{"name": "discord", "type": "direct", "desync": map[string]any{"tlsrec": "1+s", "fake": map[string]any{"ttl": 4, "prefix": -1}}}
++	_, err := ParseProxy(fake)
++	if desync.SupportsFake() && err != nil {
++		t.Fatal(err)
++	}
++	if !desync.SupportsFake() && err == nil {
++		t.Fatal("unsupported fake was accepted")
++	}
++	for _, invalid := range []map[string]any{
++		{"name": "empty", "type": "direct", "desync": map[string]any{}},
++		{"name": "position", "type": "direct", "desync": map[string]any{"tlsrec": "bad"}},
++		{"name": "ttl", "type": "direct", "desync": map[string]any{"fake": map[string]any{"ttl": 999}}},
++	} {
++		if _, err := ParseProxy(invalid); err == nil {
++			t.Fatalf("accepted invalid mapping: %v", invalid)
++		}
++	}
++}
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index 1e2b2ef..9f9face 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -4,6 +4,8 @@ import (
+ 	"context"
+ 	"fmt"
+ 
++	"github.com/Nemu-x/desync"
++
+ 	"github.com/metacubex/mihomo/component/dialer"
+ 	"github.com/metacubex/mihomo/component/loopback"
+ 	"github.com/metacubex/mihomo/component/resolver"
+@@ -13,11 +15,13 @@ import (
+ type Direct struct {
+ 	*Base
+ 	loopBack *loopback.Detector
++	desync   *desync.Options
+ }
+ 
+ type DirectOption struct {
+ 	BasicOption
+-	Name string `proxy:"name"`
++	Name   string              `proxy:"name"`
++	Desync *DirectDesyncOption `proxy:"desync,omitempty"`
+ }
+ 
+ // DialContext implements C.ProxyAdapter
+@@ -31,6 +35,11 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	if d.desync != nil {
++		// Keep the first-write transformation in the buffered relay path.
++		// Expose net.Conn only, so generic upstream/socket casts cannot skip it.
++		c = &directDesyncConn{Conn: desync.WrapConn(c, *d.desync)}
++	}
+ 	return d.loopBack.NewConn(NewConn(c, d)), nil
+ }
+ 
+diff --git a/adapter/outbound/direct_desync.go b/adapter/outbound/direct_desync.go
+new file mode 100644
+index 0000000..bc4da56
+--- /dev/null
++++ b/adapter/outbound/direct_desync.go
+@@ -0,0 +1,90 @@
++package outbound
++
++import (
++	"fmt"
++	"net"
++	"strings"
++	"time"
++
++	"github.com/Nemu-x/desync"
++)
++
++// DirectDesyncOption applies only to the first TLS record of this named
++// outbound. It does not change global DIRECT or provide a UDP transformation.
++type DirectDesyncOption struct {
++	TLSRec       string                  `proxy:"tlsrec,omitempty"`
++	Split        string                  `proxy:"split,omitempty"`
++	SplitDelayMS int                     `proxy:"split-delay-ms,omitempty"`
++	Fake         *DirectDesyncFakeOption `proxy:"fake,omitempty"`
++}
++
++type DirectDesyncFakeOption struct {
++	TTL       int `proxy:"ttl"`
++	Prefix    int `proxy:"prefix,omitempty"`
++	TimeoutMS int `proxy:"timeout-ms,omitempty"`
++}
++
++// directDesyncConn deliberately hides the underlying wrapper's NetConn method
++// from generic fast-path casts while retaining ordinary net.Conn deadlines.
++type directDesyncConn struct{ net.Conn }
++
++func parseDirectDesyncPositions(text string) ([]desync.Pos, error) {
++	if strings.TrimSpace(text) == "" {
++		return nil, nil
++	}
++	var positions []desync.Pos
++	for _, part := range strings.Split(text, ",") {
++		position, err := desync.ParsePos(part)
++		if err != nil {
++			return nil, err
++		}
++		positions = append(positions, position)
++	}
++	return positions, nil
++}
++
++func (o *DirectDesyncOption) options() (desync.Options, error) {
++	var result desync.Options
++	var err error
++	if o == nil {
++		return result, nil
++	}
++	if result.TLSRec, err = parseDirectDesyncPositions(o.TLSRec); err != nil {
++		return result, fmt.Errorf("desync tlsrec: %w", err)
++	}
++	if result.Split, err = parseDirectDesyncPositions(o.Split); err != nil {
++		return result, fmt.Errorf("desync split: %w", err)
++	}
++	if o.SplitDelayMS < 0 || o.SplitDelayMS > 1000 {
++		return result, fmt.Errorf("desync split-delay-ms must be between 0 and 1000")
++	}
++	result.SplitDelay = time.Duration(o.SplitDelayMS) * time.Millisecond
++	if o.Fake != nil {
++		if o.Fake.TimeoutMS < 0 || o.Fake.TimeoutMS > 60000 {
++			return result, fmt.Errorf("desync fake timeout-ms must be between 0 and 60000")
++		}
++		result.Fake = &desync.FakeOptions{TTL: o.Fake.TTL, Prefix: o.Fake.Prefix, Timeout: time.Duration(o.Fake.TimeoutMS) * time.Millisecond}
++	}
++	if !result.Enabled() {
++		return result, fmt.Errorf("desync requires at least one method")
++	}
++	return result, result.Validate()
++}
++
++// NewDirectWithDesyncOption validates optional transformations before the
++// configuration is accepted. Unsupported fake platforms fail explicitly.
++func NewDirectWithDesyncOption(option DirectOption) (*Direct, error) {
++	direct := NewDirectWithOption(option)
++	if option.Desync == nil {
++		return direct, nil
++	}
++	opts, err := option.Desync.options()
++	if err != nil {
++		return nil, err
++	}
++	if option.TFO || option.MPTCP {
++		return nil, fmt.Errorf("desync direct does not support tfo or mptcp")
++	}
++	direct.desync = &opts
++	return direct, nil
++}
+diff --git a/adapter/outbound/direct_desync_test.go b/adapter/outbound/direct_desync_test.go
+new file mode 100644
+index 0000000..734fd07
+--- /dev/null
++++ b/adapter/outbound/direct_desync_test.go
+@@ -0,0 +1,115 @@
++package outbound
++
++import (
++	"bytes"
++	"context"
++	"crypto/tls"
++	"encoding/binary"
++	"errors"
++	"io"
++	"net"
++	"net/netip"
++	"testing"
++	"time"
++
++	"github.com/Nemu-x/desync"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/sing/common/bufio"
++)
++
++func TestDirectDesyncValidation(t *testing.T) {
++	for _, opts := range []*DirectDesyncOption{
++		{}, {TLSRec: "bad"}, {Split: "1+x"}, {TLSRec: "1+s", SplitDelayMS: -1},
++		{Fake: &DirectDesyncFakeOption{TTL: 0}}, {Fake: &DirectDesyncFakeOption{TTL: 256}},
++		{Fake: &DirectDesyncFakeOption{TTL: 4, TimeoutMS: 60001}},
++	} {
++		if _, err := NewDirectWithDesyncOption(DirectOption{Name: "test", Desync: opts}); err == nil {
++			t.Fatalf("accepted invalid options: %+v", opts)
++		}
++	}
++	if _, err := NewDirectWithDesyncOption(DirectOption{Name: "plain"}); err != nil {
++		t.Fatal(err)
++	}
++	_, err := NewDirectWithDesyncOption(DirectOption{Name: "fake", Desync: &DirectDesyncOption{TLSRec: "1+s", Fake: &DirectDesyncFakeOption{TTL: 4, Prefix: -1}}})
++	if desync.SupportsFake() && err != nil {
++		t.Fatal(err)
++	}
++	if !desync.SupportsFake() && !errors.Is(err, desync.ErrFakeUnsupported) {
++		t.Fatalf("unsupported platform: %v", err)
++	}
++}
++
++func captureDirectDesyncHello(t *testing.T) []byte {
++	t.Helper()
++	client, server := net.Pipe()
++	defer server.Close()
++	go func() {
++		defer client.Close()
++		_ = tls.Client(client, &tls.Config{ServerName: "example.test"}).Handshake()
++	}()
++	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
++	header := make([]byte, 5)
++	if _, err := io.ReadFull(server, header); err != nil {
++		t.Fatal(err)
++	}
++	record := make([]byte, 5+int(binary.BigEndian.Uint16(header[3:])))
++	copy(record, header)
++	if _, err := io.ReadFull(server, record[5:]); err != nil {
++		t.Fatal(err)
++	}
++	return record
++}
++
++func TestDirectDesyncBufferedStream(t *testing.T) {
++	record := captureDirectDesyncHello(t)
++	for _, enabled := range []bool{false, true} {
++		t.Run(map[bool]string{false: "ordinary-direct", true: "tls-record-direct"}[enabled], func(t *testing.T) {
++			ln, err := net.Listen("tcp4", "127.0.0.1:0")
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer ln.Close()
++			options := DirectOption{Name: "measured"}
++			want := record
++			if enabled {
++				options.Desync = &DirectDesyncOption{TLSRec: "3+s"}
++				h, _ := desync.ParseHello(record)
++				want = desync.FragmentRecord(record, []int{h.SNIOffset + 3})
++			}
++			direct, err := NewDirectWithDesyncOption(options)
++			if err != nil {
++				t.Fatal(err)
++			}
++			serverErr := make(chan error, 1)
++			go func() {
++				peer, err := ln.Accept()
++				if err != nil {
++					serverErr <- err
++					return
++				}
++				defer peer.Close()
++				_ = peer.SetDeadline(time.Now().Add(3 * time.Second))
++				got := make([]byte, len(want))
++				_, err = io.ReadFull(peer, got)
++				if err == nil && !bytes.Equal(got, want) {
++					err = errors.New("buffered relay bypassed or corrupted desync")
++				}
++				serverErr <- err
++			}()
++			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++			defer cancel()
++			conn, err := direct.DialContext(ctx, &C.Metadata{NetWork: C.TCP, DstIP: netip.MustParseAddr("127.0.0.1"), DstPort: uint16(ln.Addr().(*net.TCPAddr).Port)})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
++			if _, err := bufio.Copy(conn, bytes.NewReader(record)); err != nil {
++				t.Fatal(err)
++			}
++			if err := <-serverErr; err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}
+diff --git a/adapter/parser.go b/adapter/parser.go
+index f7476cd..9a0d9c7 100644
+--- a/adapter/parser.go
++++ b/adapter/parser.go
+@@ -131,7 +131,7 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 		if err != nil {
+ 			break
+ 		}
+-		proxy = outbound.NewDirectWithOption(*directOption)
++		proxy, err = outbound.NewDirectWithDesyncOption(*directOption)
+ 	case "dns":
+ 		dnsOptions := &outbound.DnsOption{BasicOption: basicOption}
+ 		err = decoder.Decode(mapping, dnsOptions)
+diff --git a/go.mod b/go.mod
+index 24c0c29..85218a6 100644
+--- a/go.mod
++++ b/go.mod
+@@ -3,6 +3,7 @@ module github.com/metacubex/mihomo
+ go 1.20
+ 
+ require (
++	github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74
+ 	github.com/bahlo/generic-list-go v0.2.0
+ 	github.com/coreos/go-iptables v0.8.0
+ 	github.com/dlclark/regexp2 v1.12.0
+diff --git a/go.sum b/go.sum
+index 22175a6..f42640b 100644
+--- a/go.sum
++++ b/go.sum
+@@ -331,3 +331,5 @@ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8
+ gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+ gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+ software.sslmate.com/src/go-pkcs12 v0.4.0 h1:H2g08FrTvSFKUj+D309j1DPfk5APnIdAQAB8aEykJ5k=
++github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74 h1:5jEzEoI2rYOxEk2rzauD8+EbcA6P83M37SrDJKhzgnI=
++github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=

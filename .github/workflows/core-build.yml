@@ -35,8 +35,11 @@ jobs:
   # Applies the series to the pinned tag and runs the patches' own tests once;
   # the per-target builds below skip them.
   patches:
-    name: patches (apply + vet + tests)
-    runs-on: ubuntu-24.04
+    name: patches (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +47,7 @@ jobs:
       # v5 cannot read that file); the script also forces it via GOTOOLCHAIN.
       - name: Core Go version
         id: go
+        shell: bash
         run: echo "version=$(awk '$1 == "golang" { print $2 }' core/mihomo/.tool-versions)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5

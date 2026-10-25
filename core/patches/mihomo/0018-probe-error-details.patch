@@ -1,0 +1,142 @@
+diff --git a/hub/route/proxies.go b/hub/route/proxies.go
+index e8623b5..d90595a 100644
+--- a/hub/route/proxies.go
++++ b/hub/route/proxies.go
+@@ -10,6 +10,7 @@ import (
+ 	"github.com/metacubex/mihomo/common/utils"
+ 	"github.com/metacubex/mihomo/component/profile/cachefile"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
+ 	"github.com/metacubex/mihomo/tunnel"
+ 
+ 	"github.com/metacubex/chi"
+@@ -127,18 +128,23 @@ func getProxyDelay(w http.ResponseWriter, r *http.Request) {
+ 
+ 	delay, err := proxy.URLTest(ctx, url, expectedStatus)
+ 	if ctx.Err() != nil {
++		message := fmt.Sprintf("delay test timed out after %d ms", timeout)
++		if err != nil {
++			message += ": " + err.Error()
++		}
++		log.Warnln("Delay test for %s failed: %s", proxy.Name(), message)
+ 		render.Status(r, http.StatusGatewayTimeout)
+-		render.JSON(w, r, ErrRequestTimeout)
++		render.JSON(w, r, newError(message))
+ 		return
+ 	}
+ 
+ 	if err != nil || delay == 0 {
+-		render.Status(r, http.StatusServiceUnavailable)
+-		if err != nil && delay != 0 {
+-			render.JSON(w, r, err)
+-		} else {
+-			render.JSON(w, r, newError("An error occurred in the delay test"))
++		if err == nil {
++			err = fmt.Errorf("delay test returned zero latency")
+ 		}
++		log.Warnln("Delay test for %s failed: %v", proxy.Name(), err)
++		render.Status(r, http.StatusServiceUnavailable)
++		render.JSON(w, r, newError(err.Error()))
+ 		return
+ 	}
+ 
+diff --git a/hub/route/proxies_delay_test.go b/hub/route/proxies_delay_test.go
+new file mode 100644
+index 0000000..b64b138
+--- /dev/null
++++ b/hub/route/proxies_delay_test.go
+@@ -0,0 +1,94 @@
++package route
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/http/httptest"
++
++	"github.com/metacubex/mihomo/common/utils"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
++)
++
++type delayTestProxy struct {
++	C.Proxy
++	delay          uint16
++	err            error
++	waitForTimeout bool
++}
++
++func (*delayTestProxy) Name() string { return "SLOTH-DESYNC-YOUTUBE" }
++
++func (p *delayTestProxy) URLTest(ctx context.Context, _ string, _ utils.IntRanges[uint16]) (uint16, error) {
++	if p.waitForTimeout {
++		<-ctx.Done()
++		return 0, ctx.Err()
++	}
++	return p.delay, p.err
++}
++
++func TestProxyDelayPreservesFailureDetailsAndLogs(t *testing.T) {
++	for _, tc := range []struct {
++		name    string
++		proxy   *delayTestProxy
++		status  int
++		message string
++	}{
++		{"dial failure", &delayTestProxy{err: errors.New("dial tcp: network is unreachable")}, 503, "network is unreachable"},
++		{"TLS failure", &delayTestProxy{delay: 12, err: errors.New("remote error: tls: handshake failure")}, 503, "tls: handshake failure"},
++		{"timeout", &delayTestProxy{waitForTimeout: true}, 504, "context deadline exceeded"},
++		{"zero latency", &delayTestProxy{}, 503, "zero latency"},
++		{"success", &delayTestProxy{delay: 1}, 200, ""},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			sub := log.Subscribe()
++			defer log.UnSubscribe(sub)
++			timeout := "10000"
++			if tc.proxy.waitForTimeout {
++				timeout = "1"
++			}
++			req := httptest.NewRequest("GET", "/delay?url=https%3A%2F%2Fwww.youtube.com%2Fgenerate_204&timeout="+timeout, nil)
++			req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, C.Proxy(tc.proxy)))
++			response := httptest.NewRecorder()
++			// Log delivery is asynchronous: an unrelated event may arrive first.
++			log.Warnln("Unrelated warning from another controller operation")
++			getProxyDelay(response, req)
++			if response.Code != tc.status {
++				t.Fatalf("HTTP %d: %s", response.Code, response.Body.String())
++			}
++			var body struct {
++				Message string `json:"message"`
++				Delay   uint16 `json:"delay"`
++			}
++			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
++				t.Fatal(err)
++			}
++			if tc.status == 200 {
++				if body.Delay != 1 {
++					t.Fatalf("successful delay changed: %+v", body)
++				}
++				return
++			}
++			if !strings.Contains(body.Message, tc.message) {
++				t.Fatalf("failure detail lost: %+v", body)
++			}
++			deadline := time.NewTimer(time.Second)
++			defer deadline.Stop()
++			for {
++				select {
++				case event := <-sub:
++					if event.LogLevel == log.WARNING && strings.Contains(event.Payload, tc.proxy.Name()) && strings.Contains(event.Payload, tc.message) {
++						return
++					}
++				case <-deadline.C:
++					t.Fatalf("probe warning was not logged for %s: %s", tc.proxy.Name(), tc.message)
++				}
++			}
++		})
++	}
++}

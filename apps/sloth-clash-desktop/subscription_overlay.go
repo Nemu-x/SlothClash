@@ -44,6 +44,7 @@ const tunDefaultDNSYAML = `dns:
 //     shows "No internet" and may loop a captive-portal sign-in page;
 //   - NTP (time.*, ntp.*) → clock never syncs;
 //   - *.lan / *.local / *.arpa → local network + mDNS/rDNS lookups break.
+//
 // Most subscriptions ship their own list; we only fill it when absent.
 var defaultFakeIPFilter = []any{
 	"*.lan",
@@ -324,6 +325,7 @@ func applyCorpVpnSplitInvariant(m map[string]any, enableTun bool) {
 func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 	applyXDriveHardening(m)
+	applyDesyncOverlay(m, currentDesyncSettings())
 	applyCorpVpnSplitInvariant(m, enableTun)
 }
 
@@ -387,6 +389,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	applyUserTunOverlay(m, prefs.TUN)
 	applyUserTrafficOverlay(m, prefs.Traffic)
 	applyRealityOverlay(m, prefs.Reality)
+	applyDesyncOverlay(m, currentDesyncSettings())
 
 	// Corp-VPN coexistence LAST: corp route-exclude / split-DNS are mandatory for
 	// no-conflict and must survive any user/subscription overlay.

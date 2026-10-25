@@ -10,6 +10,7 @@ import {
   extractNodeFlagIso,
   filterProxyNodesForDisplay,
   isUnsafeGroupName,
+  isInternalDesyncName,
   proxyNodeLabelBesideFlag,
 } from '../utils/proxyNames'
 import { supportSubscriptionUrlKind } from '../utils/subscription'
@@ -518,7 +519,11 @@ export function HomePage({
                     {(state?.proxy?.groups ?? [])
                       .filter((g: any) => {
                         const name = String(g?.name ?? '')
-                        if (isUnsafeGroupName(name)) return false
+                        if (
+                          isUnsafeGroupName(name) ||
+                          isInternalDesyncName(name)
+                        )
+                          return false
                         // Same rule as the Proxies sidebar: GLOBAL is mihomo's
                         // catch-all selector used only in Global mode. In Rule
                         // mode it is dead weight and can confuse the user into

@@ -42,10 +42,10 @@ index e8623b5..d90595a 100644
  
 diff --git a/hub/route/proxies_delay_test.go b/hub/route/proxies_delay_test.go
 new file mode 100644
-index 0000000..c866aa2
+index 0000000..b64b138
 --- /dev/null
 +++ b/hub/route/proxies_delay_test.go
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,94 @@
 +package route
 +
 +import (
@@ -103,6 +103,8 @@ index 0000000..c866aa2
 +			req := httptest.NewRequest("GET", "/delay?url=https%3A%2F%2Fwww.youtube.com%2Fgenerate_204&timeout="+timeout, nil)
 +			req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, C.Proxy(tc.proxy)))
 +			response := httptest.NewRecorder()
++			// Log delivery is asynchronous: an unrelated event may arrive first.
++			log.Warnln("Unrelated warning from another controller operation")
 +			getProxyDelay(response, req)
 +			if response.Code != tc.status {
 +				t.Fatalf("HTTP %d: %s", response.Code, response.Body.String())
@@ -123,13 +125,17 @@ index 0000000..c866aa2
 +			if !strings.Contains(body.Message, tc.message) {
 +				t.Fatalf("failure detail lost: %+v", body)
 +			}
-+			select {
-+			case event := <-sub:
-+				if event.LogLevel != log.WARNING || !strings.Contains(event.Payload, tc.proxy.Name()) || !strings.Contains(event.Payload, tc.message) {
-+					t.Fatalf("missing useful warning: %+v", event)
++			deadline := time.NewTimer(time.Second)
++			defer deadline.Stop()
++			for {
++				select {
++				case event := <-sub:
++					if event.LogLevel == log.WARNING && strings.Contains(event.Payload, tc.proxy.Name()) && strings.Contains(event.Payload, tc.message) {
++						return
++					}
++				case <-deadline.C:
++					t.Fatalf("probe warning was not logged for %s: %s", tc.proxy.Name(), tc.message)
 +				}
-+			case <-time.After(time.Second):
-+				t.Fatal("probe failure was not logged")
 +			}
 +		})
 +	}

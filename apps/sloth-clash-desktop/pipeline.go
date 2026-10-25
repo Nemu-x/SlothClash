@@ -62,6 +62,10 @@ const (
 	pipelineValidateFail
 	// pipelineWriteFail — config.yaml could not be written to disk.
 	pipelineWriteFail
+	// pipelineBodyTooLarge — no cached body and the fetched subscription
+	// exceeds its size cap. Hard failure: the bare fallback would hide why the
+	// profile lost its groups and rules, and retrying cannot help.
+	pipelineBodyTooLarge
 )
 
 func (o pipelineOutcome) String() string {
@@ -80,6 +84,8 @@ func (o pipelineOutcome) String() string {
 		return "validate_fail"
 	case pipelineWriteFail:
 		return "write_fail"
+	case pipelineBodyTooLarge:
+		return "body_too_large"
 	default:
 		return "unknown(" + strconv.Itoa(int(o)) + ")"
 	}

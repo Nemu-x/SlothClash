@@ -80,7 +80,7 @@
     },
     {
       "file": "0018-probe-error-details.patch",
-      "sha256": "255570165ee305f14edca69ea9b889710e3b3f62e88ab45796faec3c6eb2abf2"
+      "sha256": "a465f539ac7e32cbba2dff87a5a68d2168942f405377d59834448555ff4c5176"
     },
     {
       "file": "0019-desync-dns-udp.patch",

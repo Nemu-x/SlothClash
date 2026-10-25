@@ -543,6 +543,8 @@
 }
 
 .navIcon {
+  /* Anchor for the corporate-VPN .navActiveDot indicator. */
+  position: relative;
   display: flex;
   flex-shrink: 0;
   opacity: 0.92;
@@ -5883,9 +5885,6 @@
 }
 
 /* Corporate VPN — live indicators + log view */
-.navIcon {
-  position: relative;
-}
 .navActiveDot {
   position: absolute;
   top: -2px;

@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -45,11 +46,31 @@ var (
 	fakeCoreErr  error
 )
 
+// TestMain is package-wide. Besides cleaning up the fake core build, it pins
+// the debug JSON log (debugLog / traceEvent) to a throwaway file before any
+// test runs. resolveDebugLogPath resolves os.UserConfigDir exactly once per
+// process, so without this every traced test — the lifecycle harness alone
+// writes hundreds of lines per run — appends to the developer's real
+// %APPDATA%/SlothClash/runtime/logs/debug-cb9690.log, interleaved with the
+// running app's own trace. Per-test env overrides (isolateAppDataRoot) cannot
+// help here: whichever call comes first wins the sync.Once.
 func TestMain(m *testing.M) {
+	logDir, err := os.MkdirTemp("", "sloth-test-debug-log-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "debug log temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	debugLogPathOnce.Do(func() { debugLogPath = filepath.Join(logDir, "debug-cb9690.log") })
+	if !strings.HasPrefix(resolveDebugLogPath(), logDir) {
+		fmt.Fprintf(os.Stderr, "debug log already resolved to %s before TestMain\n", resolveDebugLogPath())
+		os.Exit(1)
+	}
+
 	code := m.Run()
 	if fakeCoreDir != "" {
 		_ = os.RemoveAll(fakeCoreDir)
 	}
+	_ = os.RemoveAll(logDir)
 	os.Exit(code)
 }
 
@@ -112,7 +133,14 @@ type lifecycleHarness struct {
 // dir, control file and event log.
 func newLifecycleHarness(t *testing.T, ctl fakeCoreControl) (*lifecycleHarness, Profile) {
 	t.Helper()
+	// Build (or reuse) the fake before isolating: the build is a `go build`
+	// child, and isolateAppDataRoot repoints HOME, which on Linux/macOS would
+	// send it to an empty module and build cache.
 	t.Setenv("SLOTH_MIHOMO_PATH", fakeCoreBinary(t))
+	// Second belt on top of slothDataRoot's `go test` redirect: holds even
+	// under SLOTH_ALLOW_REAL_DATA_ROOT=1. Registered before h.shutdown, so its
+	// TempDir is removed only after the core is stopped (cleanups run LIFO).
+	isolateAppDataRoot(t)
 	h := &lifecycleHarness{t: t, app: NewApp(embed.FS{})}
 	p := h.addProfile(ctl)
 	h.app.mu.Lock()
@@ -251,16 +279,76 @@ func (h *lifecycleHarness) assertEndpointGone(listen, secret string) {
 	}
 }
 
+// coreExitWatcherFrame matches a stack frame of the cmd.Wait goroutine that
+// startEmbeddedCore spawns per launched core — its only `go func()` closure.
+// That goroutine is what turns a core exit into state (crash -> ConnError +
+// auto-restart, intentional stop -> nothing) and closes core.log afterwards.
+// Frames are qualified by the module path ("SlothClashDesktop."), not "main.",
+// so match any qualifier; the "created by" line never starts a match.
+var coreExitWatcherFrame = regexp.MustCompile(`(?m)^[\w./-]+\.\(\*App\)\.startEmbeddedCore\.func\d+\(`)
+
+// coreExitWatchers returns the IDs of the live core exit-watcher goroutines.
+func coreExitWatchers() map[string]bool {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	ids := map[string]bool{}
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if !coreExitWatcherFrame.MatchString(g) {
+			continue
+		}
+		// Header: "goroutine 123 [state]:".
+		if f := strings.Fields(g); len(f) >= 2 && f[0] == "goroutine" {
+			ids[f[1]] = true
+		}
+	}
+	return ids
+}
+
+// waitExitWatchersDone blocks until every goroutine in ids has returned, i.e.
+// each watched core's exit has been fully observed and acted on. This is the
+// deterministic replacement for "sleep and hope cmd.Wait has fired".
+func waitExitWatchersDone(ids map[string]bool, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		live := coreExitWatchers()
+		pending := 0
+		for id := range ids {
+			if live[id] {
+				pending++
+			}
+		}
+		if pending == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%d core exit watcher(s) still running after %s", pending, timeout)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // shutdown invalidates any in-flight job and kills the core, then waits for
-// the old endpoint to go quiet so no fake process outlives its test.
+// the old endpoint to go quiet and for the exit watchers to return, so no fake
+// process (or its core.log handle) outlives its test.
 func (h *lifecycleHarness) shutdown() {
 	h.app.connectGen.Add(1)
 	listen, secret := h.endpoint()
+	watchers := coreExitWatchers()
 	h.app.mu.Lock()
 	h.app.stopCoreLocked()
 	h.app.mu.Unlock()
 	if listen != "" {
 		_ = waitForCoreEndpointStop(context.Background(), "test", listen, secret, 5*time.Second)
+	}
+	if err := waitExitWatchersDone(watchers, 10*time.Second); err != nil {
+		h.t.Errorf("shutdown: %v", err)
 	}
 }
 
@@ -307,6 +395,10 @@ func TestCoreLifecycleStartReadyReuseStop(t *testing.T) {
 	// Intentional stop: process gone, state reset, and the exit is NOT
 	// reported as a crash (connection status untouched).
 	listen, secret := h.endpoint()
+	watchers := coreExitWatchers()
+	if len(watchers) == 0 {
+		t.Fatal("no core exit watcher goroutine found for the running core")
+	}
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.mu.Unlock()
@@ -315,7 +407,11 @@ func TestCoreLifecycleStartReadyReuseStop(t *testing.T) {
 	if st.Core.Running || st.Core.Lifecycle != "stopped" || st.Core.ControllerAddr != "" || st.Core.MixedPort != 0 {
 		t.Fatalf("core state after stop = %+v", st.Core)
 	}
-	time.Sleep(150 * time.Millisecond) // let the cmd.Wait goroutine observe the exit
+	// The exit watcher has seen the killed process and returned: whatever it
+	// was going to do to the state is done.
+	if err := waitExitWatchersDone(watchers, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
 	if s := a.GetAppState().Connection.Status; s != ConnDisconnected {
 		t.Fatalf("intentional stop flipped connection status to %q", s)
 	}

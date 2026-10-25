@@ -174,6 +174,9 @@ func darwinNetworkServices() ([]string, error) {
 }
 
 func runNetworksetup(args ...string) error {
+	if !osSystemProxyWritesAllowed() {
+		return nil
+	}
 	cmd := exec.Command("networksetup", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

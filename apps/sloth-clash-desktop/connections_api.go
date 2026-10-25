@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -79,13 +78,13 @@ func (a *App) FetchConnectionsOverview() ConnectionsOverview {
 		return out
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		out.LastError = err.Error()
-		return out
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		out.LastError = "GET /connections: HTTP " + resp.Status
+		return out
+	}
+	body, err := readBounded(resp.Body, "GET /connections", coreConnectionsMaxJSONBytes)
+	if err != nil {
+		out.LastError = err.Error()
 		return out
 	}
 

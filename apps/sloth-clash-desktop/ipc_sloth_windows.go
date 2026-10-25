@@ -60,7 +60,7 @@ func ipcSlothDo(ctx context.Context, method, path string, body []byte) (status i
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	b, err := readSlothIPCBody(resp, method, path)
 	return resp.StatusCode, b, err
 }
 
@@ -226,7 +226,7 @@ func ipcSlothStartCorpVpn(ctx context.Context, payload []byte) (int, []byte, err
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	b, err := readSlothIPCBody(resp, http.MethodPost, "/corp/start")
 	return resp.StatusCode, b, err
 }
 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/metacubex/age"
@@ -55,7 +54,10 @@ func decryptSubscriptionBodyIfAge(body []byte, secretKey string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("could not decrypt age-encrypted subscription (wrong key?): %w", err)
 	}
-	out, err := io.ReadAll(io.LimitReader(r, 6<<20))
+	out, err := readBounded(r, "decrypted subscription", subscriptionMaxBodyBytes)
+	if isReadLimitError(err) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("could not read decrypted subscription: %w", err)
 	}

@@ -1,14 +1,12 @@
 import { useTranslation } from 'react-i18next'
 
 import { FlagMark } from '../components/FlagMark'
-import type { ConnectionsOverview } from '../types/app'
+import type { ConnectionsView } from '../hooks/useConnectionsView'
 import { formatBytesSmart } from '../utils/format'
 import {
   extractNodeFlagIso,
   proxyNodeLabelBesideFlag,
 } from '../utils/proxyNames'
-
-type ConnectionRow = NonNullable<ConnectionsOverview['connections']>[number]
 
 // mihomo orders `chains` from the exit node (index 0) outward to the entry
 // group. The exit node — what the user actually connected THROUGH — is chains[0].
@@ -23,22 +21,15 @@ function chainPath(chains: string[] | undefined): string {
 }
 
 export function ConnectionsPage({
-  overview,
-  filtered,
-  busy,
-  search,
-  onSearchChange,
-  onRefresh,
+  view,
   onCloseAll,
 }: {
-  overview: ConnectionsOverview | null
-  filtered: ConnectionRow[]
-  busy: boolean
-  search: string
-  onSearchChange: (next: string) => void
-  onRefresh: () => void
+  // Snapshot + search (useConnectionsView, owned by App so the search
+  // survives leaving the screen).
+  view: ConnectionsView
   onCloseAll: () => void
 }) {
+  const { overview, filtered, busy, search, onSearchChange, onRefresh } = view
   const { t } = useTranslation()
   return (
     <div className="panel rulesPanel">

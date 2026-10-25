@@ -1,8 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { useMemo, useState } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { useConnectionsOverview } from '../hooks/queries/useConnectionsOverview'
+import { useConnectionsView } from '../hooks/useConnectionsView'
 import { connectionsOverview } from '../test/fixtures'
 import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
@@ -11,32 +10,10 @@ import { ConnectionsPage } from './Connections'
 
 const CONN_COUNT = 5_000
 
-// Mirrors the Connections wiring in App.tsx (query hook + search filter).
+// The Connections wiring from App.tsx: the real useConnectionsView.
 function ConnectionsScreen() {
-  const { overview, busy, refresh, closeAll } = useConnectionsOverview(true)
-  const [search, setSearch] = useState('')
-  const filtered = useMemo(() => {
-    const rows = overview?.connections ?? []
-    const q = search.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((c) => {
-      const meta = c.metadata ?? {}
-      const hay =
-        `${c.id} ${meta.host ?? ''} ${meta.destinationIP ?? ''} ${meta.process ?? ''} ${c.rule ?? ''} ${c.rulePayload ?? ''}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [overview?.connections, search])
-  return (
-    <ConnectionsPage
-      overview={overview}
-      filtered={filtered}
-      busy={busy}
-      search={search}
-      onSearchChange={setSearch}
-      onRefresh={refresh}
-      onCloseAll={() => void closeAll()}
-    />
-  )
+  const view = useConnectionsView(true)
+  return <ConnectionsPage view={view} onCloseAll={() => void view.closeAll()} />
 }
 
 function bodyRows(container: HTMLElement) {

@@ -1,3 +1,53 @@
+diff --git a/adapter/outbound/base.go b/adapter/outbound/base.go
+index d6942ba..aa7e0cd 100644
+--- a/adapter/outbound/base.go
++++ b/adapter/outbound/base.go
+@@ -376,6 +376,13 @@ type autoCloseProxyAdapter struct {
+ 	closeErr  error
+ }
+ 
++// Preserve the optional native UDP capability across the lifetime wrapper.
++// Unrelated adapters and ordinary Direct remain ineligible for probing.
++func (p *autoCloseProxyAdapter) DesyncUDPProbeEnabled() bool {
++	probe, ok := p.ProxyAdapter.(interface{ DesyncUDPProbeEnabled() bool })
++	return ok && probe.DesyncUDPProbeEnabled()
++}
++
+ func (p *autoCloseProxyAdapter) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
+ 	c, err := p.ProxyAdapter.DialContext(ctx, metadata)
+ 	if err != nil {
+diff --git a/adapter/outbound/desync_probe_wrapper_test.go b/adapter/outbound/desync_probe_wrapper_test.go
+new file mode 100644
+index 0000000..886d1c4
+--- /dev/null
++++ b/adapter/outbound/desync_probe_wrapper_test.go
+@@ -0,0 +1,26 @@
++package outbound
++
++import "testing"
++
++type probeCapabilityAdapter struct {
++	ProxyAdapter
++	enabled bool
++}
++
++func (p *probeCapabilityAdapter) DesyncUDPProbeEnabled() bool { return p.enabled }
++func (p *probeCapabilityAdapter) Name() string                { return "probe-capability-test" }
++func (p *probeCapabilityAdapter) Close() error                { return nil }
++
++func TestDesyncUDPProbeCapabilitySurvivesLifetimeWrapper(t *testing.T) {
++	for _, enabled := range []bool{false, true} {
++		wrapped := NewAutoCloseProxyAdapter(&probeCapabilityAdapter{enabled: enabled})
++		capability, ok := wrapped.(interface{ DesyncUDPProbeEnabled() bool })
++		if !ok || capability.DesyncUDPProbeEnabled() != enabled {
++			t.Fatalf("optional UDP capability lost: enabled=%v, forwarded=%v", enabled, ok)
++		}
++	}
++	plain := NewAutoCloseProxyAdapter(NewDirect())
++	if p, ok := plain.(interface{ DesyncUDPProbeEnabled() bool }); ok && p.DesyncUDPProbeEnabled() {
++		t.Fatal("ordinary Direct enabled UDP probing")
++	}
++}
 diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
 index 41103f3..8b01f88 100644
 --- a/adapter/outbound/direct.go
@@ -398,10 +448,10 @@ index 0000000..51723dc
 +}
 diff --git a/hub/route/desync_udp_test.go b/hub/route/desync_udp_test.go
 new file mode 100644
-index 0000000..45152bb
+index 0000000..dc3290c
 --- /dev/null
 +++ b/hub/route/desync_udp_test.go
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,153 @@
 +package route
 +
 +import (
@@ -409,9 +459,13 @@ index 0000000..45152bb
 +	"encoding/binary"
 +	"net"
 +	"net/netip"
++	"strings"
 +	"testing"
 +	"time"
 +
++	"github.com/Nemu-x/desync"
++	"github.com/metacubex/http/httptest"
++	"github.com/metacubex/mihomo/adapter"
 +	C "github.com/metacubex/mihomo/constant"
 +	"github.com/metacubex/mihomo/tunnel/statistic"
 +)
@@ -515,6 +569,40 @@ index 0000000..45152bb
 +		if allowedDiscordEndpoint(netip.MustParseAddrPort(target)) {
 +			t.Fatalf("accepted unobserved target: %s", target)
 +		}
++	}
++}
++
++// Exercise the actual parser/lifetime wrapper and handler together. The
++// canceled context prevents sending any requests to the public test target.
++func TestDesyncUDPProbeAcceptsParsedCandidateCapability(t *testing.T) {
++	if !desync.SupportsUDPFake() {
++		t.Skip("native UDP fake unavailable")
++	}
++	proxy, err := adapter.ParseProxy(map[string]any{
++		"name": "SLOTH-DESYNC-DISCORD-UDP-f4", "type": "direct",
++		"desync": map[string]any{"udp": map[string]any{"ttl": 4, "repeats": 1, "packets": 3}},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer proxy.Close()
++	target := netip.MustParseAddrPort("1.1.1.1:19299")
++	tracker := &observedDiscordTracker{info: &statistic.TrackerInfo{Metadata: &C.Metadata{
++		NetWork: C.UDP, Process: `C:\Apps\Discord\Discord.exe`, DstIP: target.Addr(), DstPort: target.Port(),
++	}, Chain: C.Chain{proxy.Name(), "SLOTH-DESYNC-DISCORD-UDP"}}}
++	statistic.DefaultManager.Join(tracker)
++	defer statistic.DefaultManager.Leave(tracker)
++	if !allowedDiscordEndpoint(target) {
++		t.Fatal("owned Windows process endpoint rejected")
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	req := httptest.NewRequest("POST", "/desync/udp-probe", strings.NewReader(`{"target":"1.1.1.1:19299"}`))
++	req = req.WithContext(context.WithValue(ctx, CtxKeyProxy, proxy))
++	response := httptest.NewRecorder()
++	probeDesyncUDP(response, req)
++	if response.Code != 503 {
++		t.Fatalf("parsed capability did not pass validation: HTTP %d %s", response.Code, response.Body.String())
 +	}
 +}
 diff --git a/hub/route/proxies.go b/hub/route/proxies.go

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -54,10 +55,17 @@ func TestRulesOverviewPreservesLargeJSON(t *testing.T) {
 }
 
 func TestRulesOverviewReportsInvalidAndOversizedResponses(t *testing.T) {
-	for _, body := range []string{`{"rules":[`, strings.Repeat(" ", rulesOverviewMaxJSONBytes+1)} {
-		if _, err := readRulesOverviewJSON(strings.NewReader(body)); err == nil {
-			t.Fatal("accepted incomplete or oversized JSON")
-		}
+	if _, err := readRulesOverviewJSON(strings.NewReader(`{"rules":[`)); err == nil || err.Error() != "core returned invalid rules JSON" {
+		t.Fatalf("incomplete JSON: %v", err)
+	}
+	// A VALID document at and past the cap: only the size check can reject the
+	// oversized one, so this fails if that check is broken.
+	doc := []byte(`{"rules":[{"type":"Match","payload":"","proxy":"DIRECT"}]}`)
+	if got, err := readRulesOverviewJSON(bytes.NewReader(padJSON(t, doc, rulesOverviewMaxJSONBytes))); err != nil || len(got) != rulesOverviewMaxJSONBytes {
+		t.Fatalf("at limit: %d bytes, %v", len(got), err)
+	}
+	if _, err := readRulesOverviewJSON(bytes.NewReader(padJSON(t, doc, rulesOverviewMaxJSONBytes+1))); err == nil || err.Error() != "rules response exceeds the 8 MiB limit" {
+		t.Fatalf("oversized valid JSON: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/rules" {

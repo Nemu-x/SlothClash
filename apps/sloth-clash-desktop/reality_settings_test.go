@@ -53,7 +53,7 @@ func TestRealityKeysReachTheCore(t *testing.T) {
 		EnableTun:              false,
 		Env:                    currentRuntimeConfigEnv(),
 	}, nil); err != nil {
-		t.Fatalf("writeRuntimeConfig: %v", err)
+		t.Fatalf("runtimecfg.Write: %v", err)
 	}
 	cfg := runtimecfgtest.ReadYAMLMap(t, filepath.Join(dir, "config.yaml"))
 	if cfg["reality-mlkem"] != "on" || cfg["reality-client-version"] != "1.9.0" {

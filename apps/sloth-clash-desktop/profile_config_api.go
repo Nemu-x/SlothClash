@@ -76,7 +76,7 @@ func (a *App) GetProfileRulesBaseline(profileID string) ProfileRulesBaseline {
 	isFull := runtimecfg.IsFullProfile(doc)
 	if !isFull {
 		// Non-full-profile subs provide only proxies; start from the same
-		// synthetic `rules: [MATCH,Manual]` base that writeRuntimeConfig seeds
+		// synthetic `rules: [MATCH,Manual]` base that runtimecfg.Write seeds
 		// so the baseline reflects what the generated YAML would contain.
 		// (Manual is a select group containing Auto + every provider entry,
 		// so default behaviour is still "pick the fastest" while manual node
@@ -151,7 +151,7 @@ func (a *App) GetProfileProxyGroupsBaseline(profileID string) ProfileProxyGroups
 	isFull := runtimecfg.IsFullProfile(doc)
 	if !isFull {
 		// Non-full-profile subs ship only proxies; start from the same
-		// synthetic Auto/Manual base that writeRuntimeConfig seeds so the
+		// synthetic Auto/Manual base that runtimecfg.Write seeds so the
 		// baseline reflects what the generated YAML would contain.
 		doc = map[string]any{
 			"proxy-groups": []any{

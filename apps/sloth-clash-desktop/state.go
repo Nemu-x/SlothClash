@@ -66,13 +66,22 @@ type Profile struct {
 	// LastUpdateAttempt (unix seconds) is the last subscription refresh
 	// attempt, successful or not; the schedule counts from the later of it
 	// and LastUpdated (profileRefreshAnchor), so a failing profile retries at
-	// its normal interval. LastUpdateError is that attempt's failure, cleared
+	// its normal interval (sooner after a transient failure, see
+	// LastUpdateErrorTransient). LastUpdateError is that attempt's failure, cleared
 	// on the next successful body fetch, so the UI can badge a profile stuck
 	// on its last-known-good body. Same precedent as ScriptError below. A
 	// change of URL or AgeSecretKey forgets both (resetProfileUpdateStatusLocked):
 	// the failure described the old source, and the edit is not a refresh.
-	LastUpdateAttempt         int64  `json:"lastUpdateAttempt,omitempty"`
-	LastUpdateError           string `json:"lastUpdateError,omitempty"`
+	LastUpdateAttempt int64  `json:"lastUpdateAttempt,omitempty"`
+	LastUpdateError   string `json:"lastUpdateError,omitempty"`
+	// LastUpdateErrorTransient marks LastUpdateError as a network failure
+	// (isTransientFetchError: DNS, dial, timeout, reset, cut-off body), e.g.
+	// the refresh ran before the network was up after a resume. Such a profile
+	// is retried profileTransientRetryMinutes after the attempt instead of a
+	// full interval later; a deterministic failure (HTTP status, bad body,
+	// wrong age key, certificate) keeps the full interval. Cleared with
+	// LastUpdateError; absent on profiles saved before it existed.
+	LastUpdateErrorTransient  bool   `json:"lastUpdateErrorTransient,omitempty"`
 	AutoUpdateEnabled         bool   `json:"autoUpdateEnabled,omitempty"`         // periodically refresh subscription metadata/content
 	AutoUpdateIntervalMinutes int    `json:"autoUpdateIntervalMinutes,omitempty"` // 0 => use default backend interval
 	MergeTemplate             string `json:"mergeTemplate,omitempty"`             // Extend config YAML

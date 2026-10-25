@@ -193,7 +193,8 @@ func (a *App) refreshDueProfiles() {
 }
 
 // dueProfileIDs lists the subscription profiles whose auto-update interval has
-// elapsed at now, counted from profileRefreshAnchor.
+// elapsed at now, counted from profileRefreshAnchor; a transient failure
+// shortens it (profileRefreshDelaySeconds).
 func (a *App) dueProfileIDs(now int64) []string {
 	dueIDs := make([]string, 0, 4)
 	a.mu.RLock()
@@ -214,7 +215,7 @@ func (a *App) dueProfileIDs(now int64) []string {
 			interval = defaultProfileAutoUpdateMinutes
 		}
 		anchor := profileRefreshAnchor(p)
-		if anchor <= 0 || (now-anchor) >= int64(interval)*60 {
+		if anchor <= 0 || (now-anchor) >= profileRefreshDelaySeconds(p, interval) {
 			dueIDs = append(dueIDs, p.ID)
 		}
 	}

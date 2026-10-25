@@ -94,10 +94,12 @@ func applyProfileUpdateOutcomeLocked(p *Profile, now int64, err error) {
 	p.LastUpdateAttempt = now
 	if err != nil {
 		p.LastUpdateError = profileUpdateErrorText(err)
+		p.LastUpdateErrorTransient = isTransientFetchError(err)
 		return
 	}
 	p.LastUpdated = now
 	p.LastUpdateError = ""
+	p.LastUpdateErrorTransient = false
 }
 
 // resetProfileUpdateStatusLocked forgets the last refresh attempt and its
@@ -110,17 +112,36 @@ func applyProfileUpdateOutcomeLocked(p *Profile, now int64, err error) {
 func resetProfileUpdateStatusLocked(p *Profile) {
 	p.LastUpdateAttempt = 0
 	p.LastUpdateError = ""
+	p.LastUpdateErrorTransient = false
 }
+
+// profileTransientRetryMinutes is how soon a profile whose last refresh failed
+// on the network is retried (bounded by its own interval, see
+// profileRefreshDelaySeconds). Long enough not to hammer a provider that is
+// down, short enough that a refresh lost to a resume before the network came
+// up is not postponed by the whole interval.
+const profileTransientRetryMinutes = 15
 
 // profileRefreshAnchor is the moment the auto-update schedule counts the
 // interval from: the later of the last success and the last attempt, so a
-// failing profile is retried at its normal interval rather than on every tick.
+// failing profile is retried at its normal interval (profileRefreshDelaySeconds
+// shortens it after a transient failure) rather than on every tick.
 // Profiles saved before LastUpdateAttempt existed schedule exactly as before.
 func profileRefreshAnchor(p Profile) int64 {
 	if p.LastUpdateAttempt > p.LastUpdated {
 		return p.LastUpdateAttempt
 	}
 	return p.LastUpdated
+}
+
+// profileRefreshDelaySeconds is how long after profileRefreshAnchor the
+// profile is due: its interval, or min(interval, profileTransientRetryMinutes)
+// while the last attempt failed transiently. intervalMinutes is > 0.
+func profileRefreshDelaySeconds(p Profile, intervalMinutes int) int64 {
+	if p.LastUpdateErrorTransient && p.LastUpdateError != "" {
+		intervalMinutes = min(intervalMinutes, profileTransientRetryMinutes)
+	}
+	return int64(intervalMinutes) * 60
 }
 
 // bodyFetchRecorder is the App that receives the generation pipeline's own
@@ -163,9 +184,11 @@ func (a *App) recordPipelineBodyFetch(dataDir string, err error) {
 		if err != nil {
 			p.LastUpdateAttempt = now
 			p.LastUpdateError = profileUpdateErrorText(err)
+			p.LastUpdateErrorTransient = false // transient ones returned above
 			changed = true
 		} else if p.LastUpdateError != "" {
 			p.LastUpdateError = ""
+			p.LastUpdateErrorTransient = false
 			changed = true
 		}
 		break

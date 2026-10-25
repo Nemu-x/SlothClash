@@ -222,17 +222,13 @@ func fetchMihomoDelayToURL(ctx context.Context, listen, secret, proxyName, testU
 		return 0, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return 0, err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("delay: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return 0, fmt.Errorf("delay: HTTP %d %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
 	var out struct {
 		Delay int `json:"delay"`
 	}
-	if err := json.Unmarshal(b, &out); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GET /proxies/<name>/delay", coreDelayMaxJSONBytes, &out); err != nil {
 		return 0, err
 	}
 	if out.Delay <= 0 {
@@ -327,7 +323,7 @@ func fetchProxyLastHistoryDelay(ctx context.Context, listen, secret, proxyName s
 	}
 	// A group detail lists every member in "all"; large subscriptions passed
 	// the former 256 KiB cap and the truncated body hid the history delay.
-	b, err := readCoreJSON(resp.Body, "GET "+path, coreDefaultMaxJSONBytes)
+	b, err := readBounded(resp.Body, "GET "+path, coreDefaultMaxJSONBytes)
 	if err != nil {
 		return 0, false
 	}

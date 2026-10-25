@@ -1017,7 +1017,7 @@ func (a *App) coreGetJSON(ctx context.Context, path string, out any) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
-	return decodeCoreJSON(resp.Body, "GET "+path, coreJSONLimitForRoute(path), out)
+	return decodeBoundedJSON(resp.Body, "GET "+path, coreJSONLimitForRoute(path), out)
 }
 
 func (a *App) coreFetchVersion(ctx context.Context) (string, error) {
@@ -1076,17 +1076,13 @@ func fetchVersionAt(listen, secret string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		return "", err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
 	var v struct {
 		Version string `json:"version"`
 	}
-	if err := json.Unmarshal(b, &v); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GET /version", coreVersionMaxJSONBytes, &v); err != nil {
 		return "", err
 	}
 	if v.Version == "" {
@@ -1693,7 +1689,7 @@ func pullProxyGroupsFromCore(listen, secret string) ([]ProxyGroup, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("GET /proxies: HTTP %d %s", resp.StatusCode, readCoreErrorBody(resp.Body))
 	}
-	if err := decodeCoreJSON(resp.Body, "GET /proxies", coreProxiesMaxJSONBytes, &raw); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GET /proxies", coreProxiesMaxJSONBytes, &raw); err != nil {
 		return nil, err
 	}
 	proxiesNode, ok := raw["proxies"]
@@ -1793,7 +1789,7 @@ func getCoreModeAt(ctx context.Context, listen, secret string) (string, error) {
 	var out struct {
 		Mode string `json:"mode"`
 	}
-	if err := decodeCoreJSON(resp.Body, "GET /configs", coreDefaultMaxJSONBytes, &out); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GET /configs", coreDefaultMaxJSONBytes, &out); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out.Mode), nil

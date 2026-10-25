@@ -172,6 +172,10 @@ func parseChecksumsFile(body []byte) map[string]string {
 	return out
 }
 
+// githubReleaseMaxJSONBytes caps the latest-release JSON. A release with a few
+// dozen assets and full notes is tens of KiB; the cap only bounds memory.
+const githubReleaseMaxJSONBytes = 8 << 20
+
 // fetchReleaseAssets returns the asset list of the latest GitHub release.
 func fetchReleaseAssets() ([]githubAsset, error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOwner, githubRepo)
@@ -186,15 +190,11 @@ func fetchReleaseAssets() ([]githubAsset, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
-	if err != nil {
-		return nil, err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("GitHub API %s", resp.Status)
 	}
 	var rel githubRelease
-	if err := json.Unmarshal(body, &rel); err != nil {
+	if err := decodeBoundedJSON(resp.Body, "GitHub API", githubReleaseMaxJSONBytes, &rel); err != nil {
 		return nil, err
 	}
 	return rel.Assets, nil

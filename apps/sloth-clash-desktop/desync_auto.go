@@ -242,7 +242,7 @@ func autoCoreJSON(ctx context.Context, endpoint, secret, method, route string, p
 		return nil
 	}
 	// /connections is polled here too; a busy TUN session outgrows 4 MiB.
-	return decodeCoreJSON(response.Body, method+" "+route, coreJSONLimitForRoute(route), dest)
+	return decodeBoundedJSON(response.Body, method+" "+route, coreJSONLimitForRoute(route), dest)
 }
 func (a *App) applyDesyncCandidate(ctx context.Context, lease uint64, endpoint, secret, route, name string) error {
 	// Serialize the selector mutation with cancellation. A late successful probe

@@ -153,9 +153,9 @@ func isUnixSocketEndpoint(addr string) bool {
 }
 
 // effectiveCoreEndpointLocked returns the mihomo API address (TCP host:port or \\.\pipe\...).
-// Caller must hold a.mu (Lock or RLock). Prefer coreListen; fall back to published Core.ControllerAddr.
+// Caller must hold a.mu (Lock or RLock). Prefer core.listen; fall back to published Core.ControllerAddr.
 func (a *App) effectiveCoreEndpointLocked() string {
-	if s := strings.TrimSpace(a.coreListen); s != "" {
+	if s := strings.TrimSpace(a.core.listen); s != "" {
 		return s
 	}
 	return strings.TrimSpace(a.state.Core.ControllerAddr)
@@ -682,7 +682,7 @@ func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string
 func (a *App) coreDo(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	a.mu.RLock()
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 	return coreDoWithEndpoint(ctx, listen, secret, method, path, body)
 }
@@ -715,28 +715,28 @@ func (a *App) coreFetchVersion(ctx context.Context) (string, error) {
 func (a *App) stopCoreLocked() {
 	a.clearSystemProxyLocked()
 	a.restoreTakenOverTunServicesLocked()
-	a.coreStopIntentional = true
-	a.coreProcToken++
+	a.core.stopIntentional = true
+	a.core.procToken++
 	a.state.Core.Lifecycle = "stopping"
-	if a.coreCancel != nil {
-		a.coreCancel()
+	if a.core.cancel != nil {
+		a.core.cancel()
 	}
-	if a.coreOverPipe {
+	if a.core.overPipe {
 		sctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		_ = ipcSlothStopCore(sctx)
 		cancel()
 	} else {
-		cmd := a.coreCmd
+		cmd := a.core.cmd
 		if cmd != nil && cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
 	}
-	a.coreCmd = nil
-	a.coreCancel = nil
-	a.coreOverPipe = false
-	a.coreSecret = ""
-	a.coreListen = ""
-	a.coreActiveProfileID = ""
+	a.core.cmd = nil
+	a.core.cancel = nil
+	a.core.overPipe = false
+	a.core.secret = ""
+	a.core.listen = ""
+	a.core.activeProfileID = ""
 	a.state.Core.Running = false
 	a.state.Core.Lifecycle = "stopped"
 	a.state.Core.Version = ""
@@ -855,12 +855,12 @@ func (a *App) ensureCoreForProfile(profile Profile, gen uint64, enableTun bool) 
 // coldStarted is true — mihomo already loaded the same YAML on startup, and
 // a second init would just stall behind the rule-provider download phase.
 func (a *App) ensureCoreForProfileEx(profile Profile, gen uint64, enableTun bool) (coldStarted bool, err error) {
-	a.coreLifecycleMu.Lock()
-	defer a.coreLifecycleMu.Unlock()
+	a.core.lifecycleMu.Lock()
+	defer a.core.lifecycleMu.Unlock()
 
 	a.mu.RLock()
-	running := a.state.Core.Running && strings.TrimSpace(a.coreListen) != ""
-	activeID := strings.TrimSpace(a.coreActiveProfileID)
+	running := a.state.Core.Running && strings.TrimSpace(a.core.listen) != ""
+	activeID := strings.TrimSpace(a.core.activeProfileID)
 	a.mu.RUnlock()
 
 	if running && activeID == strings.TrimSpace(profile.ID) {
@@ -898,7 +898,7 @@ func rotateCoreLogForNewRun(logPath string) {
 // reconcileOrphanServiceCoreOnStartup stops a mihomo core that the privileged
 // service is STILL managing from a previous app run. On a fresh process our
 // in-memory core state is empty, so stopCoreLocked() cannot see such a core
-// (it only tears down what `coreOverPipe`/`coreCmd` point at) and therefore
+// (it only tears down what `core.overPipe`/`core.cmd` point at) and therefore
 // never stops it. After an unclean exit (crash, Task-Manager kill) that orphan
 // keeps holding the wintun adapter and its old ports, and the first Connect
 // races it. Best-effort and idempotent: when nothing is running, the service
@@ -951,8 +951,8 @@ func (a *App) reconcileOrphanServiceCoreOnStartup() {
 // even when the current running core already belongs to the same profile.
 // Used as a controlled fallback after runtime reload failures.
 func (a *App) forceRestartCoreForProfile(profile Profile, gen uint64, enableTun bool) error {
-	a.coreLifecycleMu.Lock()
-	defer a.coreLifecycleMu.Unlock()
+	a.core.lifecycleMu.Lock()
+	defer a.core.lifecycleMu.Unlock()
 	if gen == 0 {
 		gen = a.connectGen.Add(1)
 	}
@@ -965,30 +965,96 @@ func (a *App) forceRestartCoreForProfile(profile Profile, gen uint64, enableTun 
 // it from the effective user intent at call time (traffic=="tun" && user wants
 // to be connected) so the core boots in the final state without a follow-up
 // PATCH flip — exactly how clash-verge-rev's start_core works.
+//
+// It only sequences the phases below; each phase takes and releases a.mu on
+// its own, so no lock is held across a phase boundary.
 func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) error {
 	if strings.TrimSpace(profile.URL) == "" && !profileHasLocalConfig(profile) {
 		return errors.New("active profile has no subscription URL")
 	}
 
-	var traffic string
-	var serviceInstalled bool
-	var prevListen string
-	var prevSecret string
+	plan := coreStartPlan{profile: profile, gen: gen, enableTun: enableTun}
+	serviceInstalled := a.resetCoreForStart(&plan)
+	if err := a.prepareCoreDataDir(&plan); err != nil {
+		return err
+	}
+	if err := a.allocateCoreStartEndpoint(&plan); err != nil {
+		return err
+	}
+	useServiceCore, err := a.selectServiceCore(plan.parent, plan.traffic, serviceInstalled)
+	if err != nil {
+		return err
+	}
+
+	if useServiceCore {
+		ctrlPort, err := a.launchServiceCore(&plan)
+		if err != nil {
+			return err
+		}
+		listenCopy, secretCopy := a.publishServiceCore(&plan, ctrlPort)
+		return a.awaitCoreReady(&plan, listenCopy, secretCopy, nil, true,
+			"core did not become ready in time (check Sloth service logs and SlothClash/runtime/<profile-id>/ under your config directory)")
+	}
+
+	proc, err := a.launchEmbeddedCoreProcess(&plan)
+	if err != nil {
+		return err
+	}
+	listenCopy, secretCopy, waitToken := a.publishEmbeddedCore(&plan, proc)
+	go a.watchEmbeddedCoreExit(proc.cmd, proc.logFile, waitToken)
+	return a.awaitCoreReady(&plan, listenCopy, secretCopy, proc.cancel, false,
+		"core did not become ready in time (see SlothClash/runtime/<profile-id>/core.log under your OS config directory)")
+}
+
+// coreStartPlan carries what the phases of one startEmbeddedCore call share:
+// the request, the state snapshot taken when the old core was stopped, and the
+// paths and endpoint chosen for the new core.
+type coreStartPlan struct {
+	profile   Profile
+	gen       uint64
+	enableTun bool
+
+	// Snapshot from resetCoreForStart.
+	traffic    string
+	prevListen string
+	prevSecret string
+
+	// From prepareCoreDataDir.
+	bin     string
+	dataDir string
+
+	// From allocateCoreStartEndpoint.
+	parent    context.Context
+	mixedPort int
+	secret    string
+	runID     string
+}
+
+// resetCoreForStart stops whatever core is running and marks the new start
+// under one a.mu section. It records the old endpoint (for the service-core
+// stop barrier) and the effective traffic mode in plan, and returns whether
+// the privileged service is installed.
+func (a *App) resetCoreForStart(plan *coreStartPlan) (serviceInstalled bool) {
 	a.mu.Lock()
-	prevListen = a.coreListen
-	prevSecret = a.coreSecret
+	plan.prevListen = a.core.listen
+	plan.prevSecret = a.core.secret
 	a.stopCoreLocked()
-	a.coreStopIntentional = false
-	traffic = strings.TrimSpace(a.state.Traffic)
-	if traffic != "tun" && traffic != "proxy" {
-		traffic = "proxy"
+	a.core.stopIntentional = false
+	plan.traffic = strings.TrimSpace(a.state.Traffic)
+	if plan.traffic != "tun" && plan.traffic != "proxy" {
+		plan.traffic = "proxy"
 	}
 	serviceInstalled = a.state.Service.Installed
 	// pre-clear previous non-fatal banner on new connect attempt
 	a.state.Connection.LastWarning = ""
 	a.state.Core.Lifecycle = "starting"
 	a.mu.Unlock()
+	return serviceInstalled
+}
 
+// prepareCoreDataDir resolves the mihomo binary and creates the profile's
+// runtime dir (runtime/<profile-id>, with providers/ and the bundled geo files).
+func (a *App) prepareCoreDataDir(plan *coreStartPlan) error {
 	bin, err := a.resolveMihomoBinary()
 	if err != nil {
 		return err
@@ -997,26 +1063,42 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	if err != nil {
 		return err
 	}
-	dataDir := filepath.Join(root, "runtime", profile.ID)
+	dataDir := filepath.Join(root, "runtime", plan.profile.ID)
 	if err := os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755); err != nil {
 		return err
 	}
 	if err := a.ensureGeoInDataDir(dataDir); err != nil {
 		return err
 	}
+	plan.bin = bin
+	plan.dataDir = dataDir
+	return nil
+}
 
+// allocateCoreStartEndpoint picks the parent context for the start, the
+// mixed-port and the controller secret of the new core.
+func (a *App) allocateCoreStartEndpoint(plan *coreStartPlan) error {
 	parent := a.ctx
 	if parent == nil {
 		parent = context.Background()
 	}
+	plan.parent = parent
 
 	mixedPort, err := a.resolveMixedPort()
 	if err != nil {
 		return err
 	}
-	secret := randomSecret()
-	runID := "gen-" + strconv.FormatUint(gen, 10)
+	plan.mixedPort = mixedPort
+	plan.secret = randomSecret()
+	plan.runID = "gen-" + strconv.FormatUint(plan.gen, 10)
+	return nil
+}
 
+// selectServiceCore decides whether the privileged service runs the core.
+// On Windows an installed service is always used. On Unix-socket platforms
+// the helper is probed first: TUN fails without it, Proxy mode falls back to
+// the in-process core with a warning.
+func (a *App) selectServiceCore(parent context.Context, traffic string, serviceInstalled bool) (bool, error) {
 	useServiceCore := runtime.GOOS == "windows" && serviceInstalled
 	// Unix-socket platforms: the helper may be installed but not reachable
 	// (first boot after install, stale socket). Probe first; TUN cannot work
@@ -1024,7 +1106,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	if (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && serviceInstalled {
 		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
 			if traffic == "tun" {
-				return fmt.Errorf("service IPC unavailable for TUN mode: %w", err)
+				return false, fmt.Errorf("service IPC unavailable for TUN mode: %w", err)
 			}
 			// Safe fallback for proxy mode: keep app usable even if privileged helper is temporarily unreachable.
 			a.mu.Lock()
@@ -1036,183 +1118,169 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			useServiceCore = true
 		}
 	}
-	if useServiceCore {
-		// External-controller TCP port for the privileged-service-managed core:
-		// mihomo listens on BOTH the service-supplied pipe (CLI flag) AND this
-		// TCP socket (YAML `external-controller`), and our HTTP client talks to
-		// the TCP socket. The named-pipe HTTP transport on Windows has been
-		// observed to stall 10-20 s on PUT /configs?force=true even after the
-		// reload has completed on the core side — using TCP matches the
-		// clash-verge-rev architecture and eliminates the long stalls. The pipe
-		// is retained purely so the privileged service can keep its existing
-		// start/stop IPC semantics (see stopCoreLocked → ipcSlothStopCore).
-		ctrlPort, perr := pickFreePort()
-		if perr != nil {
-			return perr
-		}
-		// #region agent log
-		debugLog(
-			runID,
-			"H3",
-			"core_manager.go:850",
-			"service-core path selected",
-			map[string]any{
-				"profileId": profile.ID,
-				"traffic":   traffic,
-				"pipe":      slothMihomoIPCPath(profile.ID),
-				"ctrlPort":  ctrlPort,
-			},
-		)
-		// #endregion
-		if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true, enableTun); err != nil {
-			return err
-		}
-		dataDirAbs, errAbs := filepath.Abs(dataDir)
-		if errAbs != nil {
-			return errAbs
-		}
-		cfgAbs := filepath.Join(dataDirAbs, "config.yaml")
-		binAbs, errB := filepath.Abs(bin)
-		if errB != nil {
-			binAbs = bin
-		}
-		logDir := filepath.Join(dataDirAbs, "logs")
-		if err := os.MkdirAll(logDir, 0o755); err != nil {
-			return err
-		}
-		pipeName := slothMihomoIPCPath(profile.ID)
-		if isUnixSocketEndpoint(pipeName) {
-			_ = os.Remove(pipeName)
-		}
+	return useServiceCore, nil
+}
 
-		if err := windowsEnsureSlothIPCReachable(parent); err != nil {
-			return err
-		}
-		if strings.TrimSpace(prevListen) != "" {
-			waitErr := waitForCoreEndpointStop(parent, runID, prevListen, prevSecret, 8*time.Second)
-			// #region agent log
-			debugLog(
-				runID,
-				"H2",
-				"core_manager.go:903",
-				"restart stop barrier completed",
-				map[string]any{
-					"prevListen": prevListen,
-					"waitErr":    errorString(waitErr),
-				},
-			)
-			// #endregion
-			if waitErr != nil {
-				return fmt.Errorf("previous core did not stop cleanly before restart: %w", waitErr)
-			}
-		}
-
-		startCtx, startCancel := context.WithTimeout(parent, 55*time.Second)
-		errStart := ipcSlothStartClash(startCtx, slothIPCStartParams{
-			CorePath:     binAbs,
-			ConfigPath:   cfgAbs,
-			ConfigDir:    dataDirAbs,
-			CoreIpcPath:  pipeName,
-			LogDirectory: logDir,
-		})
-		startCancel()
-		// #region agent log
-		// Log the exact logDir we asked the privileged service to use so the
-		// next "service logs missing" report is diagnosable: if this path
-		// doesn't match what the user sees on disk, it points to a
-		// service-side writing issue (permissions / different account) vs
-		// a client-side bug.
-		debugLog(
-			runID,
-			"H4",
-			"core_manager.go:934",
-			"ipc start finished",
-			map[string]any{
-				"pipe":     pipeName,
-				"startErr": errorString(errStart),
-				"logDir":   logDir,
-			},
-		)
-		// #endregion
-		if errStart != nil {
-			return errStart
-		}
-
-		tcpListen := fmt.Sprintf("127.0.0.1:%d", ctrlPort)
-		a.mu.Lock()
-		prevMixed := a.state.Core.MixedPort
-		// coreOverPipe stays true: it controls the *stop* path
-		// (stopCoreLocked → ipcSlothStopCore vs cmd.Kill). The HTTP API
-		// transport is decided by coreListen, which now points at TCP.
-		a.coreOverPipe = true
-		a.coreCmd = nil
-		a.coreCancel = nil
-		a.coreSecret = secret
-		a.coreListen = tcpListen
-		a.state.Core.ControllerAddr = tcpListen
-		a.state.Core.MixedPort = mixedPort
-		a.state.Core.Running = true
-		a.state.Core.Lifecycle = "running"
-		a.state.Core.LastError = ""
-		listenCopy := tcpListen
-		secretCopy := secret
-		a.mu.Unlock()
-		if runtime.GOOS == "windows" {
-			go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
-		}
-
-		deadline := time.Now().Add(coreReadyTimeout)
-		for time.Now().Before(deadline) {
-			select {
-			case <-parent.Done():
-				a.mu.Lock()
-				a.stopCoreLocked()
-				a.mu.Unlock()
-				return errConnectAborted
-			default:
-			}
-			if a.connectGen.Load() != gen {
-				a.mu.Lock()
-				a.stopCoreLocked()
-				a.mu.Unlock()
-				return errConnectAborted
-			}
-			v, verr := fetchVersionAt(listenCopy, secretCopy)
-			if verr == nil && v != "" {
-				a.mu.Lock()
-				a.state.Core.Version = v
-				a.state.Core.LastError = ""
-				a.state.Core.Lifecycle = "running"
-				a.coreActiveProfileID = profile.ID
-				a.state.UpdatedAt = time.Now().Unix()
-				a.mu.Unlock()
-				return nil
-			}
-			select {
-			case <-parent.Done():
-				a.mu.Lock()
-				a.stopCoreLocked()
-				a.mu.Unlock()
-				return errConnectAborted
-			case <-time.After(400 * time.Millisecond):
-			}
-		}
-
-		a.mu.Lock()
-		a.stopCoreLocked()
-		a.mu.Unlock()
-		return errors.New("core did not become ready in time (check Sloth service logs and SlothClash/runtime/<profile-id>/ under your config directory)")
+// launchServiceCore writes the runtime config and asks the privileged service
+// to start the core, after waiting for the previous core's endpoint to go
+// quiet. It returns the TCP external-controller port the new core listens on.
+func (a *App) launchServiceCore(plan *coreStartPlan) (int, error) {
+	profile := plan.profile
+	runID := plan.runID
+	// External-controller TCP port for the privileged-service-managed core:
+	// mihomo listens on BOTH the service-supplied pipe (CLI flag) AND this
+	// TCP socket (YAML `external-controller`), and our HTTP client talks to
+	// the TCP socket. The named-pipe HTTP transport on Windows has been
+	// observed to stall 10-20 s on PUT /configs?force=true even after the
+	// reload has completed on the core side — using TCP matches the
+	// clash-verge-rev architecture and eliminates the long stalls. The pipe
+	// is retained purely so the privileged service can keep its existing
+	// start/stop IPC semantics (see stopCoreLocked → ipcSlothStopCore).
+	ctrlPort, perr := pickFreePort()
+	if perr != nil {
+		return 0, perr
+	}
+	// #region agent log
+	debugLog(
+		runID,
+		"H3",
+		"core_manager.go:850",
+		"service-core path selected",
+		map[string]any{
+			"profileId": profile.ID,
+			"traffic":   plan.traffic,
+			"pipe":      slothMihomoIPCPath(profile.ID),
+			"ctrlPort":  ctrlPort,
+		},
+	)
+	// #endregion
+	if err := writeRuntimeConfigIfNeeded(a, plan.bin, plan.dataDir, profile, ctrlPort, plan.mixedPort, plan.secret, plan.traffic, true, plan.enableTun); err != nil {
+		return 0, err
+	}
+	dataDirAbs, errAbs := filepath.Abs(plan.dataDir)
+	if errAbs != nil {
+		return 0, errAbs
+	}
+	cfgAbs := filepath.Join(dataDirAbs, "config.yaml")
+	binAbs, errB := filepath.Abs(plan.bin)
+	if errB != nil {
+		binAbs = plan.bin
+	}
+	logDir := filepath.Join(dataDirAbs, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return 0, err
+	}
+	pipeName := slothMihomoIPCPath(profile.ID)
+	if isUnixSocketEndpoint(pipeName) {
+		_ = os.Remove(pipeName)
 	}
 
+	if err := windowsEnsureSlothIPCReachable(plan.parent); err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(plan.prevListen) != "" {
+		waitErr := waitForCoreEndpointStop(plan.parent, runID, plan.prevListen, plan.prevSecret, 8*time.Second)
+		// #region agent log
+		debugLog(
+			runID,
+			"H2",
+			"core_manager.go:903",
+			"restart stop barrier completed",
+			map[string]any{
+				"prevListen": plan.prevListen,
+				"waitErr":    errorString(waitErr),
+			},
+		)
+		// #endregion
+		if waitErr != nil {
+			return 0, fmt.Errorf("previous core did not stop cleanly before restart: %w", waitErr)
+		}
+	}
+
+	startCtx, startCancel := context.WithTimeout(plan.parent, 55*time.Second)
+	errStart := ipcSlothStartClash(startCtx, slothIPCStartParams{
+		CorePath:     binAbs,
+		ConfigPath:   cfgAbs,
+		ConfigDir:    dataDirAbs,
+		CoreIpcPath:  pipeName,
+		LogDirectory: logDir,
+	})
+	startCancel()
+	// #region agent log
+	// Log the exact logDir we asked the privileged service to use so the
+	// next "service logs missing" report is diagnosable: if this path
+	// doesn't match what the user sees on disk, it points to a
+	// service-side writing issue (permissions / different account) vs
+	// a client-side bug.
+	debugLog(
+		runID,
+		"H4",
+		"core_manager.go:934",
+		"ipc start finished",
+		map[string]any{
+			"pipe":     pipeName,
+			"startErr": errorString(errStart),
+			"logDir":   logDir,
+		},
+	)
+	// #endregion
+	if errStart != nil {
+		return 0, errStart
+	}
+	return ctrlPort, nil
+}
+
+// publishServiceCore records the service-managed core as running in one a.mu
+// section and returns the endpoint to poll for readiness.
+func (a *App) publishServiceCore(plan *coreStartPlan, ctrlPort int) (listen, secret string) {
+	mixedPort := plan.mixedPort
+	tcpListen := fmt.Sprintf("127.0.0.1:%d", ctrlPort)
+	a.mu.Lock()
+	prevMixed := a.state.Core.MixedPort
+	// core.overPipe stays true: it controls the *stop* path
+	// (stopCoreLocked → ipcSlothStopCore vs cmd.Kill). The HTTP API
+	// transport is decided by core.listen, which now points at TCP.
+	a.core.overPipe = true
+	a.core.cmd = nil
+	a.core.cancel = nil
+	a.core.secret = plan.secret
+	a.core.listen = tcpListen
+	a.state.Core.ControllerAddr = tcpListen
+	a.state.Core.MixedPort = mixedPort
+	a.state.Core.Running = true
+	a.state.Core.Lifecycle = "running"
+	a.state.Core.LastError = ""
+	listenCopy := tcpListen
+	secretCopy := plan.secret
+	a.mu.Unlock()
+	if runtime.GOOS == "windows" {
+		go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
+	}
+	return listenCopy, secretCopy
+}
+
+// embeddedCoreProcess is a freshly spawned in-process core: its command, the
+// cancel of the context it runs under, and its open core.log.
+type embeddedCoreProcess struct {
+	cmd      *exec.Cmd
+	cancel   context.CancelFunc
+	logFile  *os.File
+	ctrlPort int
+}
+
+// launchEmbeddedCoreProcess writes the runtime config and spawns mihomo as a
+// child process logging to core.log (the previous run's log is rotated).
+func (a *App) launchEmbeddedCoreProcess(plan *coreStartPlan) (embeddedCoreProcess, error) {
+	bin, dataDir := plan.bin, plan.dataDir
 	ctrlPort, err := pickFreePort()
 	if err != nil {
-		return err
+		return embeddedCoreProcess{}, err
 	}
-	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, profile, ctrlPort, mixedPort, secret, traffic, true, enableTun); err != nil {
-		return err
+	if err := writeRuntimeConfigIfNeeded(a, bin, dataDir, plan.profile, ctrlPort, plan.mixedPort, plan.secret, plan.traffic, true, plan.enableTun); err != nil {
+		return embeddedCoreProcess{}, err
 	}
 
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancel(plan.parent)
 	cmd := exec.CommandContext(ctx, bin, "-d", dataDir)
 	cmd.Dir = dataDir
 	if attr := hideWindowSysProcAttr(); attr != nil {
@@ -1225,7 +1293,7 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		cancel()
-		return err
+		return embeddedCoreProcess{}, err
 	}
 	cmd.Stdout = lf
 	cmd.Stderr = lf
@@ -1233,95 +1301,109 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 	if err := cmd.Start(); err != nil {
 		cancel()
 		_ = lf.Close()
-		return err
+		return embeddedCoreProcess{}, err
 	}
+	return embeddedCoreProcess{cmd: cmd, cancel: cancel, logFile: lf, ctrlPort: ctrlPort}, nil
+}
 
+// publishEmbeddedCore records the spawned core as running in one a.mu section
+// and returns the endpoint to poll plus the process token its exit watcher
+// must still match.
+func (a *App) publishEmbeddedCore(plan *coreStartPlan, proc embeddedCoreProcess) (listen, secret string, waitToken uint64) {
+	mixedPort := plan.mixedPort
 	a.mu.Lock()
 	prevMixed := a.state.Core.MixedPort
-	a.coreOverPipe = false
-	a.coreCmd = cmd
-	a.coreCancel = cancel
-	a.coreProcToken++
-	a.coreSecret = secret
-	a.coreListen = fmt.Sprintf("127.0.0.1:%d", ctrlPort)
-	a.state.Core.ControllerAddr = a.coreListen
+	a.core.overPipe = false
+	a.core.cmd = proc.cmd
+	a.core.cancel = proc.cancel
+	a.core.procToken++
+	a.core.secret = plan.secret
+	a.core.listen = fmt.Sprintf("127.0.0.1:%d", proc.ctrlPort)
+	a.state.Core.ControllerAddr = a.core.listen
 	a.state.Core.MixedPort = mixedPort
 	a.state.Core.Running = true
 	a.state.Core.Lifecycle = "running"
 	a.state.Core.LastError = ""
 
-	listenCopy := a.coreListen
-	secretCopy := a.coreSecret
-	waitCmd := cmd
-	waitToken := a.coreProcToken
+	listenCopy := a.core.listen
+	secretCopy := a.core.secret
+	waitToken = a.core.procToken
 	a.mu.Unlock()
 	if runtime.GOOS == "windows" {
 		go a.handleMixedPortChangeForWindowsSysProxy(prevMixed, mixedPort)
 	}
+	return listenCopy, secretCopy, waitToken
+}
 
-	go func() {
-		waitErr := waitCmd.Wait()
-		_ = lf.Close()
-		a.mu.Lock()
-		if waitToken != a.coreProcToken || a.coreCmd != waitCmd {
-			a.mu.Unlock()
-			return
-		}
-		if a.coreStopIntentional {
-			a.mu.Unlock()
-			return
-		}
-		notify := false
-		shouldAutoRestart := false
-		var restartProfileID, restartTraffic string
-		if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
-			prevStatus := strings.TrimSpace(a.state.Connection.Status)
-			a.state.Core.Running = false
-			a.state.Core.Lifecycle = "degraded"
-			a.state.Connection.Status = ConnError
-			a.state.Connection.Health = ""
-			a.state.Connection.LastError = "core exited: " + waitErr.Error()
-			a.state.Core.LastError = waitErr.Error()
-			notify = true
-			// Auto-restart only when the user was actively connected. A warm
-			// boot core (status == "disconnected") dying is not worth a noisy
-			// retry; the user will get fresh attempt on next Connect.
-			if prevStatus == "connected" {
-				shouldAutoRestart = true
-				restartProfileID = a.coreActiveProfileID
-				restartTraffic = strings.TrimSpace(a.state.Traffic)
-			}
-		}
-		a.state.UpdatedAt = time.Now().Unix()
+// watchEmbeddedCoreExit runs on its own goroutine for each spawned core. It
+// waits for the process to exit, closes core.log and, unless the exit was
+// intentional or the core has been replaced (waitToken), marks the core
+// degraded and schedules an auto-restart if the user was connected.
+func (a *App) watchEmbeddedCoreExit(waitCmd *exec.Cmd, lf *os.File, waitToken uint64) {
+	waitErr := waitCmd.Wait()
+	_ = lf.Close()
+	a.mu.Lock()
+	if waitToken != a.core.procToken || a.core.cmd != waitCmd {
 		a.mu.Unlock()
-		if notify {
-			a.emitAppStateChanged()
+		return
+	}
+	if a.core.stopIntentional {
+		a.mu.Unlock()
+		return
+	}
+	notify := false
+	shouldAutoRestart := false
+	var restartProfileID, restartTraffic string
+	if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
+		prevStatus := strings.TrimSpace(a.state.Connection.Status)
+		a.state.Core.Running = false
+		a.state.Core.Lifecycle = "degraded"
+		a.state.Connection.Status = ConnError
+		a.state.Connection.Health = ""
+		a.state.Connection.LastError = "core exited: " + waitErr.Error()
+		a.state.Core.LastError = waitErr.Error()
+		notify = true
+		// Auto-restart only when the user was actively connected. A warm
+		// boot core (status == "disconnected") dying is not worth a noisy
+		// retry; the user will get fresh attempt on next Connect.
+		if prevStatus == "connected" {
+			shouldAutoRestart = true
+			restartProfileID = a.core.activeProfileID
+			restartTraffic = strings.TrimSpace(a.state.Traffic)
 		}
-		if shouldAutoRestart && restartProfileID != "" {
-			a.traceEvent("core.exit.unexpected", "fail", 0, map[string]any{
-				"profileId": restartProfileID,
-				"error":     waitErr.Error(),
-			})
-			go a.attemptCoreAutoRestart(restartProfileID, restartTraffic)
-		}
-	}()
+	}
+	a.state.UpdatedAt = time.Now().Unix()
+	a.mu.Unlock()
+	if notify {
+		a.emitAppStateChanged()
+	}
+	if shouldAutoRestart && restartProfileID != "" {
+		a.traceEvent("core.exit.unexpected", "fail", 0, map[string]any{
+			"profileId": restartProfileID,
+			"error":     waitErr.Error(),
+		})
+		go a.attemptCoreAutoRestart(restartProfileID, restartTraffic)
+	}
+}
 
+// awaitCoreReady polls /version on the new core every 400 ms until it answers,
+// then records the version and binds the core to the profile. It stops the
+// core and gives up on app shutdown (plan.parent), on a superseding Connect
+// (plan.gen), or after coreReadyTimeout with timeoutMsg. cancel is the
+// embedded process's context cancel (nil for the service core); serviceCore also
+// re-asserts Lifecycle "running" on success, as the service path always has.
+func (a *App) awaitCoreReady(plan *coreStartPlan, listenCopy, secretCopy string, cancel context.CancelFunc, serviceCore bool, timeoutMsg string) error {
+	parent := plan.parent
 	deadline := time.Now().Add(coreReadyTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case <-parent.Done():
-			cancel()
-			a.mu.Lock()
-			a.stopCoreLocked()
-			a.mu.Unlock()
+			a.abortCoreStart(cancel)
 			return errConnectAborted
 		default:
 		}
-		if a.connectGen.Load() != gen {
-			cancel()
-			a.mu.Lock()
-			a.stopCoreLocked()
-			a.mu.Unlock()
+		if a.connectGen.Load() != plan.gen {
+			a.abortCoreStart(cancel)
 			return errConnectAborted
 		}
 		v, verr := fetchVersionAt(listenCopy, secretCopy)
@@ -1329,27 +1411,35 @@ func (a *App) startEmbeddedCore(profile Profile, gen uint64, enableTun bool) err
 			a.mu.Lock()
 			a.state.Core.Version = v
 			a.state.Core.LastError = ""
-			a.coreActiveProfileID = profile.ID
+			if serviceCore {
+				a.state.Core.Lifecycle = "running"
+			}
+			a.core.activeProfileID = plan.profile.ID
 			a.state.UpdatedAt = time.Now().Unix()
 			a.mu.Unlock()
 			return nil
 		}
 		select {
 		case <-parent.Done():
-			cancel()
-			a.mu.Lock()
-			a.stopCoreLocked()
-			a.mu.Unlock()
+			a.abortCoreStart(cancel)
 			return errConnectAborted
 		case <-time.After(400 * time.Millisecond):
 		}
 	}
 
-	cancel()
+	a.abortCoreStart(cancel)
+	return errors.New(timeoutMsg)
+}
+
+// abortCoreStart cancels the embedded core's context (when cancel is non-nil)
+// and then stops the core under a.mu.
+func (a *App) abortCoreStart(cancel context.CancelFunc) {
+	if cancel != nil {
+		cancel()
+	}
 	a.mu.Lock()
 	a.stopCoreLocked()
 	a.mu.Unlock()
-	return errors.New("core did not become ready in time (see SlothClash/runtime/<profile-id>/core.log under your OS config directory)")
 }
 
 func pullProxyGroupsFromCore(listen, secret string) ([]ProxyGroup, error) {
@@ -1423,7 +1513,7 @@ func (a *App) pullProxiesIntoState() error {
 		a.mu.Unlock()
 		return errors.New("core not running")
 	}
-	secret = a.coreSecret
+	secret = a.core.secret
 	a.mu.Unlock()
 
 	groups, err := pullProxyGroupsFromCore(listen, secret)

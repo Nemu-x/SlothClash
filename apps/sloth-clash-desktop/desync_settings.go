@@ -206,7 +206,7 @@ func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
 	}
 	a.mu.RLock()
 	endpoint := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	a.mu.RUnlock()
 	var checks []DesyncProbeResult
 	if status.Settings.YouTube {

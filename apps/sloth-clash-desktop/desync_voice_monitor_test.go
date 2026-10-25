@@ -130,7 +130,7 @@ func TestDesyncReportSeparatesDirectAndProfileFlowsWithoutPrivateRoutes(t *testi
 		fmt.Fprint(w, `{}`)
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
 	a.state.Core.Running = true
 	a.desyncAttempt(0, DesyncAutoAttempt{Service: "voice", Target: "104.29.1.1:19330", Code: "udp_stalled"})
@@ -171,12 +171,12 @@ func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 		}}})
 	}))
 	defer server.Close()
-	a := &App{coreListen: strings.TrimPrefix(server.URL, "http://")}
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.desyncCtl.epoch = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	finished := make(chan struct{})
-	go func() { defer close(finished); a.runDesyncVoiceService(ctx, 1, desyncNetworkKey(), a.coreListen, "") }()
+	go func() { defer close(finished); a.runDesyncVoiceService(ctx, 1, desyncNetworkKey(), a.core.listen, "") }()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	// Four polls allow the 8-second persistence boundary even when the first

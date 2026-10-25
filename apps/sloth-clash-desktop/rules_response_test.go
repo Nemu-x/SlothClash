@@ -38,8 +38,8 @@ func TestRulesOverviewPreservesLargeJSON(t *testing.T) {
 		a := &App{}
 		if embedded {
 			a.state.Connection.Status = "connected"
-			a.coreListen = strings.TrimPrefix(server.URL, "http://")
-			a.coreSecret = "local-test"
+			a.core.listen = strings.TrimPrefix(server.URL, "http://")
+			a.core.secret = "local-test"
 		}
 		out := a.FetchRulesOverview()
 		if !out.Reachable || out.LastError != "" || out.RulesBody != string(rulesBody) || out.RuleProvidersBody != string(providerBody) {

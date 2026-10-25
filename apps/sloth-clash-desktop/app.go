@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -24,20 +23,8 @@ type App struct {
 	profiles            []Profile
 	update              UpdateState
 	bundle              embed.FS
-	coreSecret          string
-	coreListen          string
-	coreOverPipe        bool // mihomo started by sloth_clash_service; stop goes via IPC. API still uses coreListen (TCP).
-	coreCmd             *exec.Cmd
-	coreCancel          context.CancelFunc
-	coreStopIntentional bool
-	coreProcToken       uint64
-	// coreActiveProfileID is the profile the running core was started for.
-	// In the reload model (v0.3+) Mihomo keeps running across Connect/Disconnect;
-	// we only tear it down when the profile itself changes (ActivateProfile with a
-	// different ID) or on app shutdown.
-	coreActiveProfileID string
-	coreLifecycleMu     sync.Mutex // serializes ensureCoreForProfile across concurrent callers
-	systemProxyLeased   bool       // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
+	core                coreProcess // core-process bookkeeping; see coreProcess for locking
+	systemProxyLeased   bool        // Windows: we set HKCU system proxy to mixed-port; clear on disconnect/stop
 	systemProxySnapshot map[string]SystemProxyServiceSnapshot
 	tunTakenOver        []tunServiceTakeover
 	connectGen          atomic.Uint64 // bumped when starting async connect or on Disconnect; invalidates in-flight worker
@@ -281,7 +268,7 @@ const tunDrainSettle = 1200 * time.Millisecond
 func (a *App) drainTunAndStopCore() {
 	a.mu.RLock()
 	listen := a.effectiveCoreEndpointLocked()
-	secret := a.coreSecret
+	secret := a.core.secret
 	shouldDrainTun := a.state.Connection.Status == "connected" && strings.TrimSpace(a.state.Traffic) == "tun"
 	a.mu.RUnlock()
 	if shouldDrainTun && strings.TrimSpace(listen) != "" {

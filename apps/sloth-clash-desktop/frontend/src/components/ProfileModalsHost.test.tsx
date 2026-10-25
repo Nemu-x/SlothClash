@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { useProfileModals } from '../hooks/useProfileModals'
@@ -6,6 +6,24 @@ import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
 
 import { ProfileModalsHost } from './ProfileModalsHost'
+
+// Monaco does not render in jsdom; a textarea exposes the YAML editor's value.
+vi.mock('../MonacoYamlEditor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../MonacoYamlEditor')>()),
+  MonacoYamlEditor: ({
+    value,
+    onChange,
+  }: {
+    value: string
+    onChange: (next: string) => void
+  }) => (
+    <textarea
+      data-testid="yaml-editor"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
+}))
 
 const PROFILE = {
   id: 'p1',
@@ -171,5 +189,104 @@ describe('ProfileModalsHost', () => {
       'https://sub.example/work',
     )
     expect(ageKey).toHaveBeenCalledWith('p1', '')
+  })
+
+  describe('profile file dialog', () => {
+    const editor = () => screen.getByTestId('yaml-editor')
+    const openFile = () => {
+      fireEvent.click(screen.getByText('open-menu'))
+      fireEvent.click(screen.getByRole('button', { name: 'Edit file' }))
+    }
+
+    it('loads the current config.yaml into the editor', async () => {
+      const read = wailsApp.stub('ReadProfileConfig', () => ({
+        path: 'C:/data/config.yaml',
+        body: 'mixed-port: 7890\n',
+      }))
+      setup()
+      openFile()
+
+      await waitFor(() => expect(editor()).toHaveValue('mixed-port: 7890\n'))
+      expect(read).toHaveBeenCalledWith('p1')
+      expect(screen.getByText('C:/data/config.yaml')).toBeVisible()
+      expect(screen.queryByText(/^Read:/)).toBeNull()
+    })
+
+    it('shows the placeholder and the reason when there is no config yet', async () => {
+      wailsApp.stub('ReadProfileConfig', () => ({
+        path: 'C:/data/config.yaml',
+        lastError: 'file not found',
+      }))
+      setup()
+      openFile()
+
+      await waitFor(() =>
+        expect((editor() as HTMLTextAreaElement).value).toContain(
+          '# config.yaml not found yet (file not found).',
+        ),
+      )
+      expect(screen.getByText(/^Read: file not found/)).toBeVisible()
+      expect(screen.getByText('C:/data/config.yaml')).toBeVisible()
+    })
+
+    it('shows the placeholder and the error when the read fails', async () => {
+      wailsApp.stub('ReadProfileConfig', () =>
+        Promise.reject(new Error('access denied')),
+      )
+      setup()
+      openFile()
+
+      await waitFor(() =>
+        expect(editor()).toHaveValue(
+          '# Could not load current config.yaml. Paste YAML below to overwrite.\n',
+        ),
+      )
+      expect(screen.getByText(/^Read: Error: access denied/)).toBeVisible()
+    })
+
+    // Closed and reopened while the first read is in flight: the late first
+    // result must not land in the reopened dialog.
+    it('drops a read that resolves after the dialog was closed', async () => {
+      const resolvers: Array<(v: unknown) => void> = []
+      wailsApp.stub(
+        'ReadProfileConfig',
+        () => new Promise((resolve) => resolvers.push(resolve)),
+      )
+      setup()
+      openFile()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      openFile()
+      expect(resolvers).toHaveLength(2)
+
+      await act(async () => {
+        resolvers[0]({ path: 'C:/stale/config.yaml', body: 'stale: true\n' })
+      })
+      expect(editor()).toHaveValue('')
+      expect(screen.queryByText('C:/stale/config.yaml')).toBeNull()
+
+      await act(async () => {
+        resolvers[1]({ path: 'C:/data/config.yaml', body: 'fresh: true\n' })
+      })
+      expect(editor()).toHaveValue('fresh: true\n')
+    })
+
+    it('drops a read that fails after the dialog was closed', async () => {
+      const rejecters: Array<(e: unknown) => void> = []
+      wailsApp.stub(
+        'ReadProfileConfig',
+        () => new Promise((_resolve, reject) => rejecters.push(reject)),
+      )
+      setup()
+      openFile()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      openFile()
+      expect(rejecters).toHaveLength(2)
+
+      await act(async () => {
+        rejecters[0](new Error('stale failure'))
+      })
+      expect(editor()).toHaveValue('')
+      expect(screen.queryByText(/stale failure/)).toBeNull()
+    })
   })
 })

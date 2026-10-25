@@ -1,0 +1,136 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: false
+allow-lan: false
+mode: rule
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: false
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+geox-url:
+    geoip: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+    geosite: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+reality-mlkem: auto
+proxies:
+    - client-fingerprint: chrome
+      flow: xtls-rprx-vision
+      name: Sample Node A [VLESS - tcp]
+      network: tcp
+      port: 8443
+      reality-opts:
+        public-key: pubkey
+        short-id: a1b2c3d4e5f60718
+      server: 1.1.1.1
+      servername: www.apple.com
+      tcp-opts:
+        ip-version: dual
+      tls: true
+      type: vless
+      udp: true
+      uuid: 00000000-0000-0000-0000-000000000000
+    - client-fingerprint: chrome
+      grpc-opts:
+        grpc-service-name: xyz
+        ip-version: dual
+      name: Sample Node B [VLESS - grpc]
+      network: grpc
+      port: 2053
+      reality-opts:
+        public-key: pubkey
+        short-id: 19f8e7d6c5b4a321
+      server: 1.1.1.2
+      servername: apple.com
+      tls: true
+      type: vless
+      udp: true
+      uuid: 00000000-0000-0000-0000-000000000000
+    - client-fingerprint: chrome
+      name: Sample Node C [VLESS - xhttp]
+      network: xhttp
+      port: 843
+      reality-opts:
+        public-key: pubkey
+        short-id: 0f1e2d3c4b5a6978
+      server: 1.1.1.3
+      servername: www.apple.com
+      tls: true
+      type: vless
+      udp: true
+      uuid: 00000000-0000-0000-0000-000000000000
+      xhttp-opts:
+        mode: auto
+        path: /
+proxy-groups:
+    - interval: 300
+      name: AUTO
+      proxies:
+        - Sample Node A [VLESS - tcp]
+        - Sample Node B [VLESS - grpc]
+        - Sample Node C [VLESS - xhttp]
+      type: url-test
+      url: http://www.gstatic.com/generate_204
+rule-providers:
+    Sample-TG:
+        behavior: classical
+        interval: 3600
+        path: ./ruleset/sample-tg.yaml
+        type: http
+        url: https://example.com/rules/sample-tg.yaml
+    Sample-WL:
+        behavior: classical
+        interval: 3600
+        path: ./ruleset/sample-wl.yaml
+        type: http
+        url: https://example.com/rules/sample-wl.yaml
+rules:
+    - GEOSITE,tracker,REJECT
+    - GEOSITE,discord,AUTO
+    - GEOSITE,google,AUTO
+    - GEOSITE,openai,AUTO
+    - GEOSITE,anthropic,AUTO
+    - GEOSITE,huggingface,AUTO
+    - GEOSITE,instagram,AUTO
+    - GEOSITE,facebook,AUTO
+    - RULE-SET,Sample-TG,AUTO
+    - RULE-SET,Sample-WL,AUTO
+    - MATCH,DIRECT

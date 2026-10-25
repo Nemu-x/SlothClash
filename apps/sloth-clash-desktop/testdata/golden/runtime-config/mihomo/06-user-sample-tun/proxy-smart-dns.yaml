@@ -1,0 +1,134 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+mode: rule
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+sniffer:
+    enable: true
+    override-destination: true
+    sniff:
+        HTTP:
+            ports:
+                - 80
+                - 8080-8880
+        QUIC:
+            ports:
+                - 443
+                - 8443
+        TLS:
+            ports:
+                - 443
+                - 8443
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - https://1.1.1.1/dns-query#MAIN
+        - https://8.8.8.8/dns-query#MAIN
+        - https://9.9.9.9/dns-query#MAIN
+    proxy-server-nameserver:
+        - 1.1.1.1
+        - 8.8.8.8
+        - 9.9.9.9
+    respect-rules: true
+geodata-mode: true
+geo-auto-update: false
+geox-url:
+    geoip: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+    geosite: https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+reality-mlkem: auto
+proxies:
+    - client-fingerprint: chrome
+      name: Region A [vless - xhttp reality]
+      network: xhttp
+      port: 443
+      reality-opts:
+        public-key: pubkey
+        short-id: 7c6b5a493827160f
+        support-x25519mlkem768: false
+      server: r2.domain.com
+      servername: r2.domain.com
+      tls: true
+      type: vless
+      udp: true
+      uuid: 00000000-0000-0000-0000-000000000000
+      xhttp-opts:
+        mode: auto
+        path: /
+    - name: Region B [vless - xhttp]
+      network: xhttp
+      port: 443
+      server: igma.domain.com
+      servername: igma.domain.com
+      tls: true
+      type: vless
+      udp: true
+      uuid: 00000000-0000-0000-0000-000000000001
+      xhttp-opts:
+        host: igma.domain.com
+        mode: auto
+        path: /vless-xhttp
+proxy-groups:
+    - name: MAIN
+      proxies:
+        - LATENCY
+        - Region A [vless - xhttp reality]
+        - Region B [vless - xhttp]
+      type: select
+    - name: LATENCY
+      proxies:
+        - Region A [vless - xhttp reality]
+        - Region B [vless - xhttp]
+      type: url-test
+rule-providers:
+    Sample-TG:
+        behavior: classical
+        interval: 3600
+        path: ./ruleset/sample-tg.yaml
+        type: http
+        url: https://example.com/rules/sample-tg.yaml
+    Sample-WL:
+        behavior: classical
+        interval: 3600
+        path: ./ruleset/sample-wl.yaml
+        type: http
+        url: https://example.com/rules/sample-wl.yaml
+rules:
+    - GEOSITE,tracker,REJECT
+    - GEOSITE,discord,LATENCY
+    - GEOSITE,google,LATENCY
+    - GEOSITE,openai,LATENCY
+    - GEOSITE,anthropic,LATENCY
+    - GEOSITE,huggingface,LATENCY
+    - RULE-SET,Sample-TG,LATENCY
+    - RULE-SET,Sample-WL,LATENCY
+    - MATCH,DIRECT

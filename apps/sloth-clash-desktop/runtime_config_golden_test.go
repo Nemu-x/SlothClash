@@ -191,6 +191,11 @@ func newGoldenSubscriptionServer(t *testing.T) *goldenSubscriptionServer {
 	return g
 }
 
+// serve returns the same URL for every case. That is only sound because each
+// case gets a fresh data dir and the pipeline keeps no URL-keyed in-process
+// subscription cache: every case really refetches its own body. If such a
+// cache is ever added, make the URL vary per case (e.g. a per-case path or
+// query) or later cases will silently be generated from an earlier body.
 func (g *goldenSubscriptionServer) serve(b []byte) string {
 	g.mu.Lock()
 	g.body = b
@@ -276,13 +281,25 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 
 	// Windows-only default (ensureTunOverlayForTraffic): the wintun adapter is
 	// named tunWindowsDeviceName unless the profile names one. Drop exactly
-	// that line so the golden is OS-independent, but insist it was there.
+	// that line, and only as a direct key of the top-level tun block, so the
+	// golden is OS-independent; but insist it was there.
 	if runtime.GOOS == "windows" {
-		line := "    device: " + tunWindowsDeviceName + "\n"
-		if strings.Contains(s, "\ntun:\n") && !strings.Contains(s, line) && !tunBlockHasDevice(s) {
-			t.Fatalf("windows: tun block without the default %q device", tunWindowsDeviceName)
+		if start, end, ok := topLevelTunBlock(s); ok {
+			line := "    device: " + tunWindowsDeviceName + "\n"
+			body := s[start:end]
+			i := -1
+			if strings.HasPrefix(body, line) {
+				i = 0
+			} else if j := strings.Index(body, "\n"+line); j >= 0 {
+				i = j + 1
+			}
+			switch {
+			case i >= 0:
+				s = s[:start+i] + s[start+i+len(line):]
+			case !tunBlockHasDevice(s):
+				t.Fatalf("windows: tun block without the default %q device", tunWindowsDeviceName)
+			}
 		}
-		s = strings.Replace(s, line, "", 1)
 	}
 
 	for _, leak := range []string{
@@ -298,17 +315,41 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 	return []byte(s)
 }
 
-// tunBlockHasDevice reports whether the top-level tun mapping carries any
-// device key (a profile- or user-chosen name, which production keeps).
-func tunBlockHasDevice(s string) bool {
-	i := strings.Index(s, "\ntun:\n")
-	if i < 0 {
-		return false
+// topLevelTunBlock returns the byte span [start, end) of the body of the
+// top-level tun mapping: the lines after "tun:" up to the next top-level key.
+func topLevelTunBlock(s string) (start, end int, ok bool) {
+	const header = "tun:\n"
+	if strings.HasPrefix(s, header) {
+		start = len(header)
+	} else {
+		i := strings.Index(s, "\n"+header)
+		if i < 0 {
+			return 0, 0, false
+		}
+		start = i + 1 + len(header)
 	}
-	for _, line := range strings.Split(s[i+len("\ntun:\n"):], "\n") {
+	end = start
+	for end < len(s) {
+		line, _, _ := strings.Cut(s[end:], "\n")
 		if line != "" && !strings.HasPrefix(line, " ") {
 			break // next top-level key
 		}
+		end += len(line)
+		if end < len(s) {
+			end++ // the newline
+		}
+	}
+	return start, end, true
+}
+
+// tunBlockHasDevice reports whether the top-level tun mapping carries any
+// device key (a profile- or user-chosen name, which production keeps).
+func tunBlockHasDevice(s string) bool {
+	start, end, ok := topLevelTunBlock(s)
+	if !ok {
+		return false
+	}
+	for _, line := range strings.Split(s[start:end], "\n") {
 		if strings.HasPrefix(line, "    device:") {
 			return true
 		}

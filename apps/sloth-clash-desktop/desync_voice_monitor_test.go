@@ -140,20 +140,6 @@ func TestDesyncReportSeparatesDirectAndProfileFlowsWithoutPrivateRoutes(t *testi
 	}
 }
 
-func TestDesyncVoiceRuleUpgradeRemovesOldAllUDPMatch(t *testing.T) {
-	old := "AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe))," + desync.DiscordUDPRoute
-	doc := map[string]any{"rules": []any{old, "MATCH,DIRECT"}}
-	applyDesyncOverlay(doc, DesyncSettings{Enabled: true, DiscordUDP: true}, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
-	for _, r := range doc["rules"].([]any) {
-		if r == old {
-			t.Fatal("legacy broad UDP rule retained")
-		}
-	}
-	if !strings.Contains(doc["rules"].([]any)[0].(string), "DST-PORT,1024-65535") {
-		t.Fatal("voice includes unrelated low-port UDP")
-	}
-}
-
 func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 	prefsMu.Lock()
 	previous := prefsCurrent

@@ -13,6 +13,7 @@ type Candidate struct {
 	UDP               bool
 }
 
+// Name is the managed proxy name of c on route.
 func (c Candidate) Name(route string) string { return route + "-" + c.ID }
 
 // Candidates returns the strategies tried for service ("youtube", "discord"

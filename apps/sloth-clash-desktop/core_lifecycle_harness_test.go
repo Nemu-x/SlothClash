@@ -37,6 +37,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 var (
@@ -157,7 +159,7 @@ func (h *lifecycleHarness) addProfile(ctl fakeCoreControl) Profile {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	p := Profile{ID: "lc-" + hex.EncodeToString(b), Name: "lifecycle", Type: "local"}
-	writeSubscriptionBodyCache(h.dataDir(p), []byte(lifecycleTestBody))
+	runtimecfg.WriteSubscriptionBodyCache(h.dataDir(p), []byte(lifecycleTestBody))
 	h.setControl(p, ctl)
 	h.app.mu.Lock()
 	h.app.profiles = append(h.app.profiles, p)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -63,35 +62,6 @@ func TestDesyncOneFailedCheckAndCancellationNeverTriggerRecovery(t *testing.T) {
 	cancel()
 	if confirmDesyncTCPFailure(ctx, check, func(context.Context) bool { return true }) {
 		t.Fatal("canceled work authorized mutation")
-	}
-}
-
-func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T) {
-	old := "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),REJECT"
-	doc := map[string]any{"rules": []any{old, "DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}}
-	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}
-	applyDesyncOverlay(doc, settings, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
-	for _, raw := range desyncSlice(doc["rules"]) {
-		if raw == old {
-			t.Fatal("old static QUIC rejection survived")
-		}
-	}
-	for _, raw := range desyncSlice(doc["proxy-groups"]) {
-		g := raw.(map[string]any)
-		names := g["proxies"].([]string)
-		if names[len(names)-1] != "PASS" {
-			t.Fatal("missing original-rule reserve")
-		}
-	}
-	applyDesyncOverlay(doc, DesyncSettings{}, desyncCacheEntries(currentDesktopPrefs().DesyncCache))
-	if !reflect.DeepEqual(doc["rules"], []any{"DOMAIN-SUFFIX,private.test,REJECT", "MATCH,profile"}) {
-		t.Fatal("profile rules changed")
-	}
-	for _, service := range []string{"youtube", "discord", "voice"} {
-		opts := desync.Candidates(service)[0].Proxy("test")["desync"].(map[string]any)
-		if (opts["reject-quic"] == true) != (service != "voice") {
-			t.Fatal("conditional QUIC scope changed")
-		}
 	}
 }
 

@@ -14,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg"
+	"SlothClashDesktop/internal/runtimecfg/runtimecfgtest"
 )
 
 // Golden snapshots of the generated runtime config.
@@ -149,7 +152,7 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 	readDir("mihomo", filepath.Join("..", "..", "tests", "corpus", "mihomo", "valid"), true)
 	readDir("citrus", filepath.Join("testdata", "citrus"), false)
 
-	rep, err := marshalRuntimeYAML(representativeFullProfile())
+	rep, err := runtimecfg.MarshalYAML(runtimecfgtest.RepresentativeFullProfile())
 	if err != nil {
 		t.Fatalf("marshal representative profile: %v", err)
 	}
@@ -245,8 +248,8 @@ func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer,
 		}
 	}
 	subURL := server.serve(p.body)
-	var res scriptResult
-	if err := writeRuntimeConfig(runtimeConfigInput{
+	var res runtimecfg.ScriptResult
+	if err := runtimecfg.Write(runtimecfg.Input{
 		DataDir:                dataDir,
 		SubURL:                 subURL,
 		ExtendTemplate:         p.extendTemplate,
@@ -259,7 +262,7 @@ func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer,
 		WithExternalController: true,
 		Traffic:                traffic,
 		EnableTun:              enableTun,
-		Prefs:                  currentRuntimeConfigPrefs(),
+		Env:                    currentRuntimeConfigEnv(),
 	}, &res); err != nil {
 		t.Fatalf("writeRuntimeConfig: %v", err)
 	}
@@ -288,12 +291,12 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 	s = strings.ReplaceAll(s, serverURL, goldenSubURLToken)
 
 	// Windows-only default (ensureTunOverlayForTraffic): the wintun adapter is
-	// named tunWindowsDeviceName unless the profile names one. Drop exactly
+	// named runtimecfg.TunWindowsDeviceName unless the profile names one. Drop exactly
 	// that line, and only as a direct key of the top-level tun block, so the
 	// golden is OS-independent; but insist it was there.
 	if runtime.GOOS == "windows" {
 		if start, end, ok := topLevelTunBlock(s); ok {
-			line := "    device: " + tunWindowsDeviceName + "\n"
+			line := "    device: " + runtimecfg.TunWindowsDeviceName + "\n"
 			body := s[start:end]
 			i := -1
 			if strings.HasPrefix(body, line) {
@@ -305,7 +308,7 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 			case i >= 0:
 				s = s[:start+i] + s[start+i+len(line):]
 			case !tunBlockHasDevice(s):
-				t.Fatalf("windows: tun block without the default %q device", tunWindowsDeviceName)
+				t.Fatalf("windows: tun block without the default %q device", runtimecfg.TunWindowsDeviceName)
 			}
 		}
 	}

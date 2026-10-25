@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 const desyncDefaultUDPRepeats = 1
@@ -155,14 +156,6 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	return a.GetDesyncStatus(), nil
 }
 
-// The profile body is never edited. Only generated runtime entries are
-// replaced; user scripts cannot silently remove an explicitly enabled route.
-func applyDesyncOverlay(m map[string]any, s DesyncSettings, cache []desync.CacheEntry) {
-	applyAutomaticDesyncOverlay(m, s, cache)
-}
-
-func desyncSlice(value any) []any { values, _ := value.([]any); return values }
-
 func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target string) (int, error) {
 	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {"200-299"}}
 	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode()
@@ -185,7 +178,7 @@ func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target st
 			message = strings.TrimSpace(string(body))
 		}
 		if message != "" {
-			return 0, fmt.Errorf("core probe: HTTP %d: %s", resp.StatusCode, truncateString(redactCredentialQuery(message), 1024))
+			return 0, fmt.Errorf("core probe: HTTP %d: %s", resp.StatusCode, truncateString(runtimecfg.RedactCredentialQuery(message), 1024))
 		}
 		return 0, fmt.Errorf("core probe: HTTP %d", resp.StatusCode)
 	}

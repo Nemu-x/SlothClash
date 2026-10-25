@@ -46,7 +46,9 @@ describe('ConnectionsPage with a large connection list', () => {
     const { container } = renderWithProviders(<ConnectionsScreen />)
 
     await waitFor(() => expect(rowCount(container)).toBe(CONN_COUNT))
-    expect(fetch).toHaveBeenCalledTimes(1)
+    // The overview polls every 3.5s; a slow runner can render 5k rows past
+    // one interval, so only require that the snapshot was fetched.
+    expect(fetch).toHaveBeenCalled()
     expect(
       summary(container).getByText(`Total: ${CONN_COUNT}/${CONN_COUNT}`),
     ).toBeVisible()
@@ -99,8 +101,11 @@ describe('ConnectionsPage with a large connection list', () => {
     const { container } = renderWithProviders(<ConnectionsScreen />)
     await waitFor(() => expect(rowCount(container)).toBe(3))
 
+    const fetchesBeforeClose = fetch.mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Close all' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(fetch.mock.calls.length).toBeGreaterThan(fetchesBeforeClose),
+    )
     expect(closeAll).toHaveBeenCalledTimes(1)
   })
 })

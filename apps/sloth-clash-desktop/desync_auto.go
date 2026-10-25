@@ -16,6 +16,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 type DesyncAutoService struct {
@@ -288,10 +290,10 @@ func desyncTargets(service string) []string {
 
 // Stop at the first candidate which passes two independent rounds, rather than
 // rewarding a single warm connection or a filtered site's error page.
-func chooseDesyncTCP(ctx context.Context, service string, candidates []desyncCandidate, probe func(context.Context, desyncCandidate, string) error, record func(desyncCandidate, int, error, time.Duration)) (desyncCandidate, error) {
+func chooseDesyncTCP(ctx context.Context, service string, candidates []desync.Candidate, probe func(context.Context, desync.Candidate, string) error, record func(desync.Candidate, int, error, time.Duration)) (desync.Candidate, error) {
 	for i, c := range candidates {
 		if ctx.Err() != nil {
-			return desyncCandidate{}, ctx.Err()
+			return desync.Candidate{}, ctx.Err()
 		}
 		start := time.Now()
 		var err error
@@ -310,20 +312,20 @@ func chooseDesyncTCP(ctx context.Context, service string, candidates []desyncCan
 		}
 		record(c, i+1, err, time.Since(start))
 		if ctx.Err() != nil {
-			return desyncCandidate{}, ctx.Err()
+			return desync.Candidate{}, ctx.Err()
 		}
 		if err == nil {
 			return c, nil
 		}
 	}
-	return desyncCandidate{}, fmt.Errorf("no candidate passed")
+	return desync.Candidate{}, fmt.Errorf("no candidate passed")
 }
-func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, background bool) (desyncCandidate, error) {
-	candidates := orderedDesyncCandidates(service, desyncCachedSelection(network, service))
+func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, background bool) (desync.Candidate, error) {
+	candidates := desync.Ordered(service, desyncCachedSelection(network, service))
 	a.desyncMu.Lock()
 	startAt := a.desyncAuto.nextTCP[service] % len(candidates)
 	a.desyncMu.Unlock()
-	candidates = append(append([]desyncCandidate{}, candidates[startAt:]...), candidates[:startAt]...)
+	candidates = append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
 	if !background {
 		a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Total: len(candidates)})
 	}
@@ -331,14 +333,14 @@ func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint
 		if !background {
 			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		}
-		return desyncCandidate{}, err
+		return desync.Candidate{}, err
 	}
 	trial, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	winner, err := chooseDesyncTCP(trial, service, candidates, func(one context.Context, c desyncCandidate, target string) error {
-		_, e := probeDesyncOutbound(one, endpoint, secret, c.name(route), target)
+	winner, err := chooseDesyncTCP(trial, service, candidates, func(one context.Context, c desync.Candidate, target string) error {
+		_, e := probeDesyncOutbound(one, endpoint, secret, c.Name(route), target)
 		return e
-	}, func(c desyncCandidate, i int, e error, d time.Duration) {
+	}, func(c desync.Candidate, i int, e error, d time.Duration) {
 		a.desyncMu.Lock()
 		if a.desyncAuto.epoch == lease {
 			if a.desyncAuto.nextTCP == nil {
@@ -360,7 +362,7 @@ func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint
 		if !background {
 			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		}
-		return desyncCandidate{}, err
+		return desync.Candidate{}, err
 	}
 	return winner, nil
 }
@@ -370,7 +372,7 @@ func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, end
 	if err != nil {
 		return err
 	}
-	if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.name(route)); err != nil {
+	if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.Name(route)); err != nil {
 		a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		return err
 	}
@@ -440,7 +442,7 @@ func desyncVoiceTarget(connections []ConnectionItem) string {
 		}
 		direct := false
 		for _, chain := range c.Chains {
-			if chain == desyncDiscordUDPRoute {
+			if chain == desync.DiscordUDPRoute {
 				direct = true
 			}
 		}
@@ -481,9 +483,9 @@ func desyncVoiceHealth(now time.Time, p desyncUDPActivity, stableSamples, mediaS
 	return "observing"
 }
 func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, endpoint, secret, target string, rejected map[string]bool) (string, bool, error) {
-	candidates := orderedDesyncCandidates("voice", desyncCachedSelection(network, "voice"))
+	candidates := desync.Ordered("voice", desyncCachedSelection(network, "voice"))
 	var group desyncUDPProxy
-	if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group); err != nil {
+	if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group); err != nil {
 		return "", false, err
 	}
 	trial, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -498,7 +500,7 @@ func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, end
 		a.desyncService(lease, "voice", DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i + 1, Total: len(candidates)})
 		var result desyncUDPProbe
 		start := time.Now()
-		err := autoCoreJSON(trial, endpoint, secret, http.MethodPost, "/proxies/"+c.name(desyncDiscordUDPRoute)+"/desync/udp-probe", map[string]string{"target": target}, &result)
+		err := autoCoreJSON(trial, endpoint, secret, http.MethodPost, "/proxies/"+c.Name(desync.DiscordUDPRoute)+"/desync/udp-probe", map[string]string{"target": target}, &result)
 		passed := err == nil && result.passed()
 		code := desyncErrorCode(err)
 		if err == nil && !passed {
@@ -531,10 +533,10 @@ func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, end
 				}
 			}
 		}
-		if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, desyncDiscordUDPRoute, c.name(desyncDiscordUDPRoute)); err != nil {
+		if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, desync.DiscordUDPRoute, c.Name(desync.DiscordUDPRoute)); err != nil {
 			return "", false, err
 		}
-		return c.name(desyncDiscordUDPRoute), group.Now != c.name(desyncDiscordUDPRoute), nil
+		return c.Name(desync.DiscordUDPRoute), group.Now != c.Name(desync.DiscordUDPRoute), nil
 	}
 	return "", false, fmt.Errorf("no UDP candidate passed")
 }
@@ -549,7 +551,7 @@ func closeStaleDesyncVoice(ctx context.Context, endpoint, secret, target, select
 			if chain == selected {
 				current = true
 			}
-			if chain == desyncDiscordUDPRoute {
+			if chain == desync.DiscordUDPRoute {
 				owned = true
 			}
 		}
@@ -565,7 +567,7 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 	for _, service := range []struct {
 		key, route string
 		enabled    bool
-	}{{"youtube", desyncYouTubeRoute, status.Settings.YouTube}, {"discord", desyncDiscordRoute, status.Settings.Discord}} {
+	}{{"youtube", desync.YouTubeRoute, status.Settings.YouTube}, {"discord", desync.DiscordRoute, status.Settings.Discord}} {
 		if service.enabled {
 			go a.runDesyncTCPService(ctx, lease, network, endpoint, secret, service.key, service.route)
 		} else {
@@ -631,11 +633,11 @@ func (a *App) GetDesyncDiagnosticReport() string {
 				sum := sha256.Sum256([]byte(auto.Network + netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)))
 				route, candidate := "profile", ""
 				for _, name := range c.Chains {
-					if name == desyncDiscordUDPRoute {
+					if name == desync.DiscordUDPRoute {
 						route = "desync"
 					}
 					if knownDesyncVoiceCandidate(name) {
-						candidate = strings.TrimPrefix(name, desyncDiscordUDPRoute+"-")
+						candidate = strings.TrimPrefix(name, desync.DiscordUDPRoute+"-")
 					}
 				}
 				flows = append(flows, map[string]any{"endpoint": hex.EncodeToString(sum[:6]), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
@@ -643,7 +645,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 			report["udpFlows"] = flows
 		}
 		var group desyncUDPProxy
-		if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group) == nil && strings.HasPrefix(group.Now, desyncDiscordUDPRoute+"-") {
+		if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group) == nil && strings.HasPrefix(group.Now, desync.DiscordUDPRoute+"-") {
 			var proxy desyncUDPProxy
 			if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(group.Now), nil, &proxy) == nil && proxy.UDP != nil {
 				for i := range proxy.UDP.Activity {

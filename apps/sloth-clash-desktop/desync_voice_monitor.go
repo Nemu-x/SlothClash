@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/desync"
 )
 
 type desyncVoicePeer struct {
@@ -150,8 +152,8 @@ func (m *desyncVoiceMonitor) observe(now time.Time, connections []ConnectionItem
 }
 
 func knownDesyncVoiceCandidate(name string) bool {
-	for _, c := range desyncCandidates("voice") {
-		if c.name(desyncDiscordUDPRoute) == name {
+	for _, c := range desync.Candidates("voice") {
+		if c.Name(desync.DiscordUDPRoute) == name {
 			return true
 		}
 	}
@@ -213,7 +215,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 		var group desyncUDPProxy
 		err := autoCoreJSON(one, endpoint, secret, http.MethodGet, "/connections", nil, &overview)
 		if err == nil {
-			err = autoCoreJSON(one, endpoint, secret, http.MethodGet, "/proxies/"+desyncDiscordUDPRoute, nil, &group)
+			err = autoCoreJSON(one, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group)
 		}
 		if err == nil && group.Now == desyncProfileSelection {
 			cancel()
@@ -237,7 +239,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 		if err != nil {
 			a.desyncService(lease, "voice", DesyncAutoService{Phase: "observing", Code: desyncErrorCode(err)})
 		} else {
-			id := strings.TrimPrefix(group.Now, desyncDiscordUDPRoute+"-")
+			id := strings.TrimPrefix(group.Now, desync.DiscordUDPRoute+"-")
 			if previousSelected != "" && previousSelected != group.Now {
 				monitor = desyncVoiceMonitor{}
 				validated = ""
@@ -284,7 +286,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 					closeStaleDesyncVoice(ctx, endpoint, secret, target, chosen, overview.Connections)
 					graceUntil = time.Now().Add(75 * time.Second)
 				}
-				if len(rejected) >= len(desyncCandidates("voice")) {
+				if len(rejected) >= len(desync.Candidates("voice")) {
 					rejected = map[string]bool{}
 				}
 			}

@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"SlothClashDesktop/internal/boundedio"
 )
 
 // padJSON right-pads a JSON document with whitespace to exactly size bytes.
@@ -69,8 +71,8 @@ func TestCoreJSONLimits(t *testing.T) {
 		}
 	}
 	for limit, want := range map[int64]string{32 << 20: "32 MiB", 64 << 10: "64 KiB", 1500: "1500 bytes"} {
-		if got := formatByteLimit(limit); got != want {
-			t.Errorf("formatByteLimit(%d) = %q, want %q", limit, got, want)
+		if got := boundedio.FormatLimit(limit); got != want {
+			t.Errorf("boundedio.FormatLimit(%d) = %q, want %q", limit, got, want)
 		}
 	}
 }

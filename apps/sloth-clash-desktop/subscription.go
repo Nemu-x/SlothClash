@@ -2,19 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"gopkg.in/yaml.v3"
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 // SubscriptionPeek is returned before import so the UI can show a suggested name.
@@ -109,7 +105,7 @@ func normalizeSubscriptionAnnouncementFromHeader(raw string) string {
 	text := raw
 	if strings.HasPrefix(strings.ToLower(raw), "base64:") {
 		payload := strings.TrimSpace(raw[len("base64:"):])
-		if b, err := decodeBase64Flexible(payload); err == nil && utf8.Valid(b) {
+		if b, err := runtimecfg.DecodeBase64Flexible(payload); err == nil && utf8.Valid(b) {
 			text = strings.TrimSpace(string(b))
 		}
 	}
@@ -118,7 +114,7 @@ func normalizeSubscriptionAnnouncementFromHeader(raw string) string {
 
 func (a *App) PeekSubscriptionFromURL(raw string) (SubscriptionPeek, error) {
 	_ = a
-	return peekSubscription(context.Background(), raw)
+	return peekSubscription(context.Background(), raw, currentSubscriptionClient())
 }
 
 func hostFromSubscriptionURL(norm string) string {
@@ -181,12 +177,12 @@ func normalizeSubscriptionUserinfoHeader(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	if b, err := decodeBase64Flexible(raw); err == nil && utf8.Valid(b) {
+	if b, err := runtimecfg.DecodeBase64Flexible(raw); err == nil && utf8.Valid(b) {
 		return strings.TrimSpace(string(b))
 	}
 	if dec, err := url.QueryUnescape(raw); err == nil && strings.TrimSpace(dec) != "" {
 		raw2 := strings.TrimSpace(dec)
-		if b, err := decodeBase64Flexible(raw2); err == nil && utf8.Valid(b) {
+		if b, err := runtimecfg.DecodeBase64Flexible(raw2); err == nil && utf8.Valid(b) {
 			return strings.TrimSpace(string(b))
 		}
 		if strings.HasPrefix(raw2, "{") {
@@ -204,7 +200,8 @@ func normalizeSubscriptionUserinfoHeader(raw string) string {
 	return ""
 }
 
-func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (SubscriptionPeek, error) {
+// The probe sends userAgent and otherwise identifies itself as client.
+func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string, client runtimecfg.SubscriptionClient) (SubscriptionPeek, error) {
 	out := SubscriptionPeek{URL: norm}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, norm, nil)
@@ -213,9 +210,9 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 		return out, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	applySubscriptionIdentityHeaders(req)
+	runtimecfg.ApplyIdentityHeaders(req, client)
 
-	client := &http.Client{
+	httpClient := &http.Client{
 		Timeout: 22 * time.Second,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) >= 12 {
@@ -225,7 +222,7 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 		},
 	}
 
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		out.LastError = err.Error()
 		return out, err
@@ -258,8 +255,9 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string) (
 	return out, nil
 }
 
-func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error) {
-	norm, err := normalizeSubscriptionURL(raw)
+// client is the caller's currentSubscriptionClient snapshot.
+func peekSubscription(ctx context.Context, raw string, client runtimecfg.SubscriptionClient) (SubscriptionPeek, error) {
+	norm, err := runtimecfg.NormalizeSubscriptionURL(raw)
 	if err != nil {
 		return SubscriptionPeek{}, err
 	}
@@ -277,7 +275,7 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 	var lastErr error
 
 	for _, ua := range userAgents {
-		out, err := fetchSubscriptionPeekHeaders(cctx, norm, ua)
+		out, err := fetchSubscriptionPeekHeaders(cctx, norm, ua, client)
 		if err != nil {
 			lastErr = err
 			if out.HTTPStatus != 0 || out.LastError != "" {
@@ -303,112 +301,10 @@ func peekSubscription(ctx context.Context, raw string) (SubscriptionPeek, error)
 	return bestErr, errors.New("subscription probe failed")
 }
 
-// normalizeMieruSubscriptionURL rebuilds mieru/mierus URLs so passwords may
-// contain unescaped '@' (delimiter before host:port is the last '@').
-func normalizeMieruSubscriptionURL(raw string) (string, error) {
-	lower := strings.ToLower(raw)
-	const pMierus = "mierus://"
-	const pMieru = "mieru://"
-	var scheme string
-	var rest string
-	switch {
-	case strings.HasPrefix(lower, pMierus):
-		scheme = "mierus"
-		rest = raw[len(pMierus):]
-	case strings.HasPrefix(lower, pMieru):
-		scheme = "mieru"
-		rest = raw[len(pMieru):]
-	default:
-		return "", errors.New("invalid subscription url")
-	}
-
-	frag := ""
-	if i := strings.Index(rest, "#"); i >= 0 {
-		frag = rest[i+1:]
-		rest = rest[:i]
-	}
-	query := ""
-	if i := strings.Index(rest, "?"); i >= 0 {
-		query = rest[i+1:]
-		rest = rest[:i]
-	}
-
-	lastAt := strings.LastIndex(rest, "@")
-	var userInfo, hostPort string
-	if lastAt < 0 {
-		hostPort = strings.TrimSpace(rest)
-	} else {
-		userInfo = rest[:lastAt]
-		hostPort = strings.TrimSpace(rest[lastAt+1:])
-	}
-	if hostPort == "" {
-		return "", errors.New("invalid subscription url")
-	}
-
-	u := &url.URL{Scheme: scheme}
-	userInfo = strings.TrimSpace(userInfo)
-	if userInfo != "" {
-		user, pass, hasColon := strings.Cut(userInfo, ":")
-		if hasColon {
-			u.User = url.UserPassword(user, pass)
-		} else {
-			u.User = url.User(userInfo)
-		}
-	}
-
-	host, port, splitErr := net.SplitHostPort(hostPort)
-	if splitErr != nil {
-		u.Host = hostPort
-	} else {
-		u.Host = net.JoinHostPort(host, port)
-	}
-
-	u.RawQuery = query
-	u.Fragment = frag
-	return u.String(), nil
-}
-
-func normalizeSubscriptionURL(raw string) (string, error) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return "", errors.New("url is required")
-	}
-	lower := strings.ToLower(s)
-	if strings.HasPrefix(lower, "mieru://") || strings.HasPrefix(lower, "mierus://") {
-		return normalizeMieruSubscriptionURL(s)
-	}
-	if !strings.Contains(s, "://") {
-		s = "https://" + s
-	}
-	u, err := url.Parse(s)
-	if err != nil || u.Host == "" {
-		return "", errors.New("invalid subscription url")
-	}
-	// Only fetchable schemes. Without this, anything with a host (ftp://, gopher://…)
-	// reached the HTTP client, which then failed obscurely instead of up front.
-	if !subscriptionSchemeAllowed(u.Scheme) {
-		return "", errSubscriptionURLScheme
-	}
-	return u.String(), nil
-}
-
-func subscriptionURLIsMieru(norm string) bool {
-	u, err := url.Parse(norm)
-	if err != nil || u == nil {
-		return false
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "mieru", "mierus":
-		return true
-	default:
-		return false
-	}
-}
-
 // mieruSubscriptionPeek returns a synthetic peek for mieru/mierus subscription
 // URLs. Go's net/http cannot GET these schemes (unsupported protocol scheme).
 func mieruSubscriptionPeek(norm string) (SubscriptionPeek, bool) {
-	if !subscriptionURLIsMieru(norm) {
+	if !runtimecfg.IsMieruSubscriptionURL(norm) {
 		return SubscriptionPeek{}, false
 	}
 	u, err := url.Parse(norm)
@@ -424,101 +320,6 @@ func mieruSubscriptionPeek(norm string) (SubscriptionPeek, bool) {
 		SuggestedName: name,
 		HTTPStatus:    200,
 	}, true
-}
-
-// buildMieruSubscriptionYAML returns a minimal full-profile YAML document so
-// tryWriteMergedFullProfile treats it like a normal subscription body. Mihomo
-// cannot fetch mieru:// over HTTP; Clash Verge-style flow is inline proxies
-// (see enfein/mieru clash-verge-rev docs).
-func buildMieruSubscriptionYAML(norm string) ([]byte, error) {
-	u, err := url.Parse(norm)
-	if err != nil {
-		return nil, err
-	}
-	if !subscriptionURLIsMieru(norm) {
-		return nil, errors.New("not a mieru subscription url")
-	}
-	if u.Hostname() == "" {
-		return nil, errors.New("mieru subscription url has no host")
-	}
-	portStr := u.Port()
-	if portStr == "" {
-		portStr = "443"
-	}
-	portNum, err := strconv.Atoi(portStr)
-	if err != nil || portNum < 1 || portNum > 65535 {
-		return nil, fmt.Errorf("invalid mieru port %q", portStr)
-	}
-	proxyName := "mieru-auto"
-	if frag := strings.TrimSpace(u.Fragment); frag != "" {
-		proxyName = frag
-	}
-	proxy := map[string]any{
-		"name":   proxyName,
-		"type":   "mieru",
-		"server": u.Hostname(),
-		"port":   portNum,
-	}
-	if u.User != nil {
-		if v := strings.TrimSpace(u.User.Username()); v != "" {
-			proxy["username"] = v
-		}
-		if pw, ok := u.User.Password(); ok && pw != "" {
-			proxy["password"] = pw
-		}
-	}
-	if q := u.Query(); len(q) > 0 {
-		if v := strings.TrimSpace(q.Get("port-range")); v != "" {
-			proxy["port-range"] = v
-		}
-		if v := strings.TrimSpace(q.Get("transport")); v != "" {
-			proxy["transport"] = v
-		}
-		if vals, ok := q["udp"]; ok && len(vals) > 0 {
-			v := strings.TrimSpace(vals[0])
-			if v == "" {
-				// ?udp — флаг присутствия (как parseBoolOrPresence на фронте)
-				proxy["udp"] = true
-			} else {
-				proxy["udp"] = strings.EqualFold(v, "true") || v == "1"
-			}
-		}
-		if v := strings.TrimSpace(q.Get("handshake-mode")); v != "" {
-			proxy["handshake-mode"] = v
-		}
-		if v := strings.TrimSpace(q.Get("multiplexing")); v != "" {
-			proxy["multiplexing"] = v
-		}
-	}
-	// `transport` is mieru's wire protocol to the server (TCP/UDP); `udp`
-	// independently controls relaying the app's UDP traffic over that tunnel.
-	// They are NOT linked: mieru's documented mihomo config is `transport: TCP`
-	// + `udp: true`. Mihomo requires transport, so default it to TCP; never
-	// derive it from udp.
-	if _, ok := proxy["transport"]; !ok {
-		proxy["transport"] = "TCP"
-	}
-	// Relay the app's UDP by default. Without `udp: true` mieru carries TCP
-	// fine but drops UDP apps (e.g. voice/QUIC), which looks like "chat works,
-	// calls die". Matches mieru's official mihomo example and other clients.
-	if _, ok := proxy["udp"]; !ok {
-		proxy["udp"] = true
-	}
-	groupName := "mieru-manual"
-	doc := map[string]any{
-		"proxies": []any{proxy},
-		"proxy-groups": []any{
-			map[string]any{
-				"name":    groupName,
-				"type":    "select",
-				"proxies": []any{proxyName},
-			},
-		},
-		"rules": []any{
-			fmt.Sprintf("MATCH,%s", groupName),
-		},
-	}
-	return yaml.Marshal(doc)
 }
 
 func headerGet(h http.Header, key string) string {
@@ -549,7 +350,7 @@ func decodeProfileTitleB64(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	b, err := decodeBase64Flexible(raw)
+	b, err := runtimecfg.DecodeBase64Flexible(raw)
 	if err != nil || len(b) == 0 {
 		return ""
 	}
@@ -559,25 +360,4 @@ func decodeProfileTitleB64(raw string) string {
 	s := strings.TrimSpace(string(b))
 	s = strings.ReplaceAll(s, "\x00", "")
 	return s
-}
-
-func decodeBase64Flexible(s string) ([]byte, error) {
-	s = strings.TrimSpace(s)
-	var last error
-	for _, enc := range []*base64.Encoding{
-		base64.RawURLEncoding,
-		base64.URLEncoding,
-		base64.RawStdEncoding,
-		base64.StdEncoding,
-	} {
-		b, err := enc.DecodeString(s)
-		if err == nil {
-			return b, nil
-		}
-		last = err
-	}
-	if last == nil {
-		last = errors.New("invalid base64")
-	}
-	return nil, last
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"SlothClashDesktop/internal/runtimecfg"
 )
 
 // App-facing surface for the per-profile JavaScript override: save, clear,
@@ -40,8 +42,8 @@ func (a *App) SetProfileScriptOverride(profileID string, script string) (AppStat
 	if profileID == "" {
 		return a.GetAppState(), errors.New("profile id is required")
 	}
-	if len(script) > maxProfileScriptBytes {
-		return a.GetAppState(), fmt.Errorf("script is %d bytes, over the %d byte limit", len(script), maxProfileScriptBytes)
+	if len(script) > runtimecfg.MaxScriptBytes {
+		return a.GetAppState(), fmt.Errorf("script is %d bytes, over the %d byte limit", len(script), runtimecfg.MaxScriptBytes)
 	}
 
 	a.mu.Lock()
@@ -145,8 +147,8 @@ func (a *App) PreviewProfileScript(profileID string, script string) (ProfileScri
 	if profileID == "" {
 		return ProfileScriptPreview{}, errors.New("profile id is required")
 	}
-	if len(script) > maxProfileScriptBytes {
-		return ProfileScriptPreview{}, fmt.Errorf("script is %d bytes, over the %d byte limit", len(script), maxProfileScriptBytes)
+	if len(script) > runtimecfg.MaxScriptBytes {
+		return ProfileScriptPreview{}, fmt.Errorf("script is %d bytes, over the %d byte limit", len(script), runtimecfg.MaxScriptBytes)
 	}
 
 	a.mu.Lock()
@@ -202,39 +204,39 @@ func (a *App) generatePreviewConfig(liveDir string, profile Profile, script stri
 	defer os.RemoveAll(tmpDir)
 
 	// Seed the cache so generation is served from disk instead of the network.
-	if cached := readSubscriptionBodyCache(liveDir); len(strings.TrimSpace(string(cached))) > 0 {
-		if err := atomicWriteFile(subscriptionBodyCachePath(tmpDir), cached, 0o644); err != nil {
+	if cached := runtimecfg.ReadSubscriptionBodyCache(liveDir); len(strings.TrimSpace(string(cached))) > 0 {
+		if err := atomicWriteFile(runtimecfg.SubscriptionBodyCachePath(tmpDir), cached, 0o644); err != nil {
 			return "", scriptResult{}, err
 		}
 	}
 
-	var res scriptResult
+	var res runtimecfg.ScriptResult
 	// tun.enable=false and no external controller: a preview is a document, not
 	// a session. The invariants that depend on those are asserted by the
 	// pipeline tests, not by eyeballing a preview.
-	if err := a.writeRuntimeConfigWithScript(
-		tmpDir,
-		profile.URL,
-		profile.AgeSecretKey,
-		profile.MergeTemplate,
-		profile.ProxyTemplate,
-		profile.RulesTemplate,
-		script,
-		0,
-		mixedPort,
-		secret,
-		"proxy",
-		false,
-		false,
-		&res,
-	); err != nil {
-		return "", res, err
+	if err := runtimecfg.Write(runtimecfg.Input{
+		DataDir:                tmpDir,
+		SubURL:                 profile.URL,
+		AgeKey:                 profile.AgeSecretKey,
+		ExtendTemplate:         profile.MergeTemplate,
+		ProxyTemplate:          profile.ProxyTemplate,
+		RulesTemplate:          profile.RulesTemplate,
+		Script:                 script,
+		CtrlPort:               0,
+		MixedPort:              mixedPort,
+		Secret:                 secret,
+		WithExternalController: false,
+		Traffic:                "proxy",
+		EnableTun:              false,
+		Env:                    currentRuntimeConfigEnv(),
+	}, &res); err != nil {
+		return "", scriptResult(res), err
 	}
 
 	out, err := os.ReadFile(filepath.Join(tmpDir, "config.yaml"))
 	if err != nil {
-		return "", res, err
+		return "", scriptResult(res), err
 	}
 	// A preview is a read-only view: storage credentials stay out of it.
-	return redactXDriveCredentialsYAML(string(out)), res, nil
+	return runtimecfg.RedactXDriveCredentialsYAML(string(out)), scriptResult(res), nil
 }

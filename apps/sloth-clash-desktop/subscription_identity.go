@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -70,32 +69,6 @@ func truncateHeaderValue(s string, maxRunes int) string {
 		return string(r[:maxRunes])
 	}
 	return string(r[:maxRunes-1]) + "…"
-}
-
-// applySubscriptionIdentityHeaders sets provider-facing client metadata (import / refresh subscription HTTP).
-// The x-hwid header obeys PrivacySettings.HwidEnabled — when the user has
-// toggled it off in Advanced, the header is omitted and other identity fields
-// (x-device-os, x-ver-os, x-device-model, x-app-version) are still sent so
-// providers can route to platform-specific configs without device-unique
-// identifiers.
-func applySubscriptionIdentityHeaders(req *http.Request) {
-	if req == nil {
-		return
-	}
-	id := subscriptionDeviceIdentityCurrent()
-	if id.HWID != "" && currentDesktopPrefs().Privacy.IsHwidEnabled() {
-		req.Header.Set("x-hwid", id.HWID)
-	}
-	req.Header.Set("x-device-os", runtime.GOOS)
-	if id.OSVersion != "" {
-		req.Header.Set("x-ver-os", id.OSVersion)
-	}
-	if id.DeviceModel != "" {
-		req.Header.Set("x-device-model", id.DeviceModel)
-	}
-	if v := strings.TrimSpace(AppVersion); v != "" {
-		req.Header.Set("x-app-version", v)
-	}
 }
 
 // rawStableMachineID returns a platform-specific stable string before hashing (see per-OS files).

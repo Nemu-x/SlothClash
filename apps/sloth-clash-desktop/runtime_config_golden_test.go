@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"embed"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -15,12 +14,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"SlothClashDesktop/internal/runtimecfg"
+	"SlothClashDesktop/internal/runtimecfg/runtimecfgtest"
 )
 
 // Golden snapshots of the generated runtime config.
 //
 // Every profile of the test corpora goes through the production entry point
-// (App.writeRuntimeConfigWithScript: fetch -> parse -> merge templates ->
+// (writeRuntimeConfig: fetch -> parse -> merge templates ->
 // finalize -> marshal -> config.yaml) for both traffic modes and a few key
 // desktop-prefs combinations, and the resulting config.yaml is compared byte
 // for byte with testdata/golden/runtime-config/. The point is to make any
@@ -122,7 +124,7 @@ append:
 )
 
 // goldenBareNodeList is not a full profile, so it takes the bare fallback
-// writer in writeRuntimeConfigWithScript (provider-based config).
+// writer in writeRuntimeConfig (provider-based config).
 var goldenBareNodeList = []byte("proxies:\n  - {name: n1, type: ss, server: s.example.com, port: 443, cipher: aes-128-gcm, password: pw}\n")
 
 func loadGoldenProfiles(t *testing.T) []goldenProfile {
@@ -150,7 +152,7 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 	readDir("mihomo", filepath.Join("..", "..", "tests", "corpus", "mihomo", "valid"), true)
 	readDir("citrus", filepath.Join("testdata", "citrus"), false)
 
-	rep, err := marshalRuntimeYAML(representativeFullProfile())
+	rep, err := runtimecfg.MarshalYAML(runtimecfgtest.RepresentativeFullProfile())
 	if err != nil {
 		t.Fatalf("marshal representative profile: %v", err)
 	}
@@ -209,8 +211,6 @@ func (g *goldenSubscriptionServer) serve(b []byte) string {
 func TestRuntimeConfigGolden(t *testing.T) {
 	profiles := loadGoldenProfiles(t)
 	server := newGoldenSubscriptionServer(t)
-	var bundle embed.FS
-	a := NewApp(bundle)
 
 	expected := map[string]bool{}
 	for _, p := range profiles {
@@ -224,7 +224,7 @@ func TestRuntimeConfigGolden(t *testing.T) {
 				expected[rel] = true
 				t.Run(rel, func(t *testing.T) {
 					withConnectionPrefs(t, v.conn)
-					got := generateGoldenRuntimeConfig(t, a, server, p, mode.traffic, mode.enableTun)
+					got := generateGoldenRuntimeConfig(t, server, p, mode.traffic, mode.enableTun)
 					compareRuntimeConfigGolden(t, rel, got)
 				})
 			}
@@ -233,7 +233,7 @@ func TestRuntimeConfigGolden(t *testing.T) {
 	checkStaleRuntimeConfigGoldens(t, expected)
 }
 
-func generateGoldenRuntimeConfig(t *testing.T, a *App, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {
+func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {
 	t.Helper()
 	dataDir := t.TempDir()
 	if p.seedGeo {
@@ -248,12 +248,23 @@ func generateGoldenRuntimeConfig(t *testing.T, a *App, server *goldenSubscriptio
 		}
 	}
 	subURL := server.serve(p.body)
-	var res scriptResult
-	if err := a.writeRuntimeConfigWithScript(
-		dataDir, subURL, "", p.extendTemplate, p.proxyTemplate, p.rulesTmpl, p.script,
-		goldenCtrlPort, goldenMixedPort, goldenSecret, traffic, true, enableTun, &res,
-	); err != nil {
-		t.Fatalf("writeRuntimeConfigWithScript: %v", err)
+	var res runtimecfg.ScriptResult
+	if err := runtimecfg.Write(runtimecfg.Input{
+		DataDir:                dataDir,
+		SubURL:                 subURL,
+		ExtendTemplate:         p.extendTemplate,
+		ProxyTemplate:          p.proxyTemplate,
+		RulesTemplate:          p.rulesTmpl,
+		Script:                 p.script,
+		CtrlPort:               goldenCtrlPort,
+		MixedPort:              goldenMixedPort,
+		Secret:                 goldenSecret,
+		WithExternalController: true,
+		Traffic:                traffic,
+		EnableTun:              enableTun,
+		Env:                    currentRuntimeConfigEnv(),
+	}, &res); err != nil {
+		t.Fatalf("writeRuntimeConfig: %v", err)
 	}
 	if p.script != "" && !res.Applied {
 		t.Fatalf("script was not applied: %+v", res)
@@ -280,12 +291,12 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 	s = strings.ReplaceAll(s, serverURL, goldenSubURLToken)
 
 	// Windows-only default (ensureTunOverlayForTraffic): the wintun adapter is
-	// named tunWindowsDeviceName unless the profile names one. Drop exactly
+	// named runtimecfg.TunWindowsDeviceName unless the profile names one. Drop exactly
 	// that line, and only as a direct key of the top-level tun block, so the
 	// golden is OS-independent; but insist it was there.
 	if runtime.GOOS == "windows" {
 		if start, end, ok := topLevelTunBlock(s); ok {
-			line := "    device: " + tunWindowsDeviceName + "\n"
+			line := "    device: " + runtimecfg.TunWindowsDeviceName + "\n"
 			body := s[start:end]
 			i := -1
 			if strings.HasPrefix(body, line) {
@@ -297,7 +308,7 @@ func normalizeGoldenRuntimeConfig(t *testing.T, raw []byte, dataDir, serverURL s
 			case i >= 0:
 				s = s[:start+i] + s[start+i+len(line):]
 			case !tunBlockHasDevice(s):
-				t.Fatalf("windows: tun block without the default %q device", tunWindowsDeviceName)
+				t.Fatalf("windows: tun block without the default %q device", runtimecfg.TunWindowsDeviceName)
 			}
 		}
 	}

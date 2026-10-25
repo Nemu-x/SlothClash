@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"SlothClashDesktop/internal/runtimecfg"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -562,231 +564,26 @@ func destIsStale(dst string, srcSize int) (missing bool, srcNewer bool) {
 	return false, false
 }
 
-// tunBlockForTraffic returns the TUN configuration embedded in generated YAML.
-// The enable argument is inlined verbatim into tun.enable so the YAML always
-// reflects the caller's current intent. Defaults mirror clash-verge-rev's
-// IClashTemp::template() + constants::tun (DEFAULT_STACK=gvisor, DNS_HIJACK=["any:53"],
-// strict-route=false, auto-route=true, auto-detect-interface=true). gvisor is the
-// userspace stack Mihomo defaults to and behaves consistently across Windows/macOS/Linux;
-// it avoids the kernel ring-buffer stalls that `stack: system` on wintun shows under
-// sustained UDP load (e.g. gaming). These are defaults only — if the subscription or
-// user TUN settings provide a value the merger will honour it verbatim.
-func tunBlockForTraffic(enable bool) string {
-	enableStr := "false"
-	if enable {
-		enableStr = "true"
-	}
-	return `tun:
-  enable: ` + enableStr + `
-  stack: gvisor
-  auto-route: true
-  auto-detect-interface: true
-  strict-route: false
-  dns-hijack:
-    - any:53
-`
-}
-
-// writeRuntimeConfig generates this profile's runtime config with no script.
-// Kept as the narrow entry point for callers that have no profile in hand
-// (and for the parity/e2e suites, which assert un-scripted generation).
-func (a *App) writeRuntimeConfig(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool) error {
-	return a.writeRuntimeConfigWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, "", ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, nil)
-}
-
-// writeRuntimeConfigWithScript is the same generation with the profile's
-// JavaScript override threaded through, exactly like the declarative templates
-// beside it. scriptOut, when non-nil, receives what the script did.
-func (a *App) writeRuntimeConfigWithScript(dataDir string, subURL string, ageKey string, extendTemplate string, proxyTemplate string, rulesTemplate string, script string, ctrlPort, mixedPort int, secret string, traffic string, withExternalController bool, enableTun bool, scriptOut *scriptResult) error {
-	_ = os.MkdirAll(filepath.Join(dataDir, "providers"), 0o755)
-	_ = os.MkdirAll(filepath.Join(dataDir, "ruleset"), 0o755)
-
-	outcome, err := tryWriteMergedFullProfileWithScript(dataDir, subURL, ageKey, extendTemplate, proxyTemplate, rulesTemplate, script, ctrlPort, mixedPort, secret, traffic, withExternalController, enableTun, scriptOut)
-	if outcome == pipelineOK {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	// outcome is one of the "soft" cases (cache_miss_no_net / not_full_profile);
-	// fall through to write the bare provider profile below.
-	_ = outcome.useBareFallback() // anchor for readers — see pipelineOutcome.
-
-	geoDir := filepath.Join(dataDir, "geo")
-	geoIP := filepath.Join(geoDir, "geoip.dat")
-	geoSite := filepath.Join(geoDir, "geosite.dat")
-
-	var cfg strings.Builder
-	fmt.Fprintf(&cfg, "mixed-port: %d\n", mixedPort)
-	fmt.Fprintf(&cfg, "socks-port: 0\n")
-	fmt.Fprintf(&cfg, "port: 0\n")
-	if withExternalController && ctrlPort > 0 {
-		fmt.Fprintf(&cfg, "external-controller: 127.0.0.1:%d\n", ctrlPort)
-	}
-	fmt.Fprintf(&cfg, "secret: %q\n", secret)
-	// Same user pref as the subscription path (default off = localhost only);
-	// the wildcard bind keeps LAN clients able to reach us when it is on.
-	if currentDesktopPrefs().Connection.IsAllowLanEnabled() {
-		fmt.Fprintf(&cfg, "allow-lan: true\n")
-		fmt.Fprintf(&cfg, "bind-address: \"*\"\n")
-	} else {
-		fmt.Fprintf(&cfg, "allow-lan: false\n")
-	}
-	fmt.Fprintf(&cfg, "mode: rule\n")
-	fmt.Fprintf(&cfg, "log-level: info\n")
-	// Top-level ipv6 must agree with dns.ipv6 below (the subscription path
-	// force-aligns them for the same reason): a machine with no working IPv6
-	// route that gets AAAA records dials v6 and fails.
-	fmt.Fprintf(&cfg, "ipv6: %t\n\n", currentDesktopPrefs().Connection.IsDNSIPv6Enabled())
-
-	// profile.store-selected mirrors clash-verge-rev's `use_clash` defaults:
-	// preserves per-group node selections across hot reloads (we reload on
-	// every Connect/Disconnect/SetTrafficMode). store-fake-ip keeps the
-	// fake-IP map across reloads while TUN is on, so apps with cached
-	// fake-IPs do not have to renegotiate after reconnect.
-	fmt.Fprintf(&cfg, "profile:\n")
-	fmt.Fprintf(&cfg, "  store-selected: true\n")
-	fmt.Fprintf(&cfg, "  store-fake-ip: %t\n\n", enableTun)
-
-	if enableTun {
-		// Match enhance::tun::use_tun: fake-ip DNS block goes in only when TUN
-		// is actually being brought up. Without it, TUN + strict-route gives
-		// "connected" apps but no working resolution / routing.
-		// Both flags follow the Settings → Connection toggles (same source of
-		// truth as the subscription path), instead of being pinned on here.
-		conn := currentDesktopPrefs().Connection
-		fmt.Fprintf(&cfg, `dns:
-  enable: true
-  listen: ":1053"
-  ipv6: %t
-  respect-rules: %t
-  enhanced-mode: fake-ip`, conn.IsDNSIPv6Enabled(), conn.IsSmartDNSEnabled())
-		cfg.WriteString(`
-  fake-ip-range: 198.18.0.1/16
-  # Required whenever fake-ip runs with ipv6:true — without a v6 pool AAAA
-  # queries never get a fake address and IPv6 resolution fails outright
-  # (clash-verge-rev #7373). Same default range upstream uses.
-  fake-ip-range6: fdfe:dcba:9876::1/64
-  use-hosts: true
-  default-nameserver:
-    - 1.1.1.1
-    - 8.8.8.8
-  nameserver:
-    - https://1.1.1.1/dns-query
-    - tls://8.8.8.8:853
-
-`)
-	}
-
-	if _, err := os.Stat(geoIP); err == nil {
-		fmt.Fprintf(&cfg, "geo-auto-update: false\n")
-		// geodata-mode: true selects .dat geoip database; the previous value
-		// "standard" was not a valid mode (it's a value for the unrelated
-		// `geodata-loader` key) — mihomo silently fell back to mmdb and our
-		// bundled .dat files were never loaded.
-		fmt.Fprintf(&cfg, "geodata-mode: true\n")
-		fmt.Fprintf(&cfg, "geoip: %q\n", filepath.ToSlash(geoIP))
-		if _, err2 := os.Stat(geoSite); err2 == nil {
-			fmt.Fprintf(&cfg, "geosite: %q\n", filepath.ToSlash(geoSite))
-		}
-		fmt.Fprintf(&cfg, "\n")
-	}
-
-	fmt.Fprintf(&cfg, "proxy-providers:\n")
-	fmt.Fprintf(&cfg, "  sub1:\n")
-	fmt.Fprintf(&cfg, "    type: http\n")
-	fmt.Fprintf(&cfg, "    url: %q\n", subURL)
-	fmt.Fprintf(&cfg, "    interval: 3600\n")
-	fmt.Fprintf(&cfg, "    path: ./providers/sub1.yaml\n")
-	fmt.Fprintf(&cfg, "    health-check:\n")
-	fmt.Fprintf(&cfg, "      enable: true\n")
-	fmt.Fprintf(&cfg, "      url: http://cp.cloudflare.com/generate_204\n")
-	fmt.Fprintf(&cfg, "      interval: 600\n\n")
-
-	// Bare fallback groups: emit a `select` group (Manual) that lists Auto
-	// first followed by every proxy provider entry. MATCH routes through
-	// Manual so the default selection stays "pick the fastest" (Manual →
-	// Auto → url-test), but users can click an individual node in the
-	// Proxies screen without hitting Mihomo's 400 "cannot change url-test
-	// group selection" error. url-test groups refuse PUT /proxies/{group}
-	// selection, which is why pointing MATCH directly at Auto made manual
-	// node picking look broken in Rule mode.
-	fmt.Fprintf(&cfg, "proxy-groups:\n")
-	fmt.Fprintf(&cfg, "  - name: Auto\n")
-	fmt.Fprintf(&cfg, "    type: url-test\n")
-	fmt.Fprintf(&cfg, "    use:\n")
-	fmt.Fprintf(&cfg, "      - sub1\n")
-	fmt.Fprintf(&cfg, "    url: http://cp.cloudflare.com/generate_204\n")
-	fmt.Fprintf(&cfg, "    interval: 300\n")
-	fmt.Fprintf(&cfg, "    tolerance: 50\n")
-	fmt.Fprintf(&cfg, "  - name: Manual\n")
-	fmt.Fprintf(&cfg, "    type: select\n")
-	fmt.Fprintf(&cfg, "    proxies:\n")
-	fmt.Fprintf(&cfg, "      - Auto\n")
-	fmt.Fprintf(&cfg, "    use:\n")
-	fmt.Fprintf(&cfg, "      - sub1\n\n")
-
-	fmt.Fprintf(&cfg, "rules:\n")
-	fmt.Fprintf(&cfg, "  - MATCH,Manual\n\n")
-	cfg.WriteString(tunBlockForTraffic(enableTun))
-
-	var m map[string]any
-	if err := yaml.Unmarshal([]byte(cfg.String()), &m); err != nil {
-		return err
-	}
-	if err := applyProfileMergeTemplate(m, extendTemplate); err != nil {
-		return err
-	}
-	if err := applyProfileMergeTemplate(m, proxyTemplate); err != nil {
-		return err
-	}
-	if err := applyProfileMergeTemplate(m, rulesTemplate); err != nil {
-		return err
-	}
-	// The bare-provider fallback runs the script too: the user's declarative
-	// templates are applied on this path (just above), so silently skipping only
-	// the script would be the surprising half-measure.
-	if err := finalizeRuntimeConfigPipelineWithScript(
-		m,
-		dataDir,
-		mixedPort,
-		ctrlPort,
-		secret,
-		traffic,
-		withExternalController,
-		enableTun,
-		script,
-		scriptOut,
-	); err != nil {
-		return err
-	}
-
-	out, err := marshalRuntimeYAML(m)
-	if err != nil {
-		return err
-	}
-	cfgPath := filepath.Join(dataDir, "config.yaml")
-	return atomicWriteFile(cfgPath, out, 0o644)
-}
-
 // writeRuntimeConfigIfNeeded uses a hand-edited config.yaml as base when SkipAutoConfig is set,
 // but always reapplies Sloth runtime overlay (ports, secret, tun) for a working connect.
 // enableTun controls the single source of truth for tun.enable that ends up in the
 // written YAML — match the user's current intent (connected && traffic=="tun") so
 // that PUT /configs?force=true on subsequent reloads does not thrash the adapter.
 func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile Profile, ctrlPort, mixedPort int, secret string, traffic string, withEC bool, enableTun bool) error {
-	// Geo files must exist before the pipeline runs — overlayBundledGeoData
-	// only points YAML at <dataDir>/geo/*.dat if those files are physically
-	// present. Without this, an applyRuntimeConfig call that bypasses
-	// startEmbeddedCore (warm-reload, prefs-driven trigger) writes a YAML
-	// with the old geox-url still in place and preflight tries to download
-	// geoip-lite.dat → DNS fail → Connect dies.
+	// Geo files must exist before the pipeline runs — runtimecfg's
+	// overlayBundledGeoData only points YAML at <dataDir>/geo/*.dat if those
+	// files are physically present. Without this, an applyRuntimeConfig call
+	// that bypasses startEmbeddedCore (warm-reload, prefs-driven trigger)
+	// writes a YAML with the old geox-url still in place and preflight tries to
+	// download geoip-lite.dat → DNS fail → Connect dies.
 	if err := a.ensureGeoInDataDir(dataDir); err != nil {
 		// Non-fatal: we still try the pipeline. overlayBundledGeoData will
 		// safely no-op if the files are missing and mihomo's own fallback
 		// kicks in (which may also fail, but at least we have not lied).
 		_ = err
 	}
+	// One snapshot of the app state for this generation and its preflight.
+	env := currentRuntimeConfigEnv()
 	if profile.SkipAutoConfig {
 		cfgPath := filepath.Join(dataDir, "config.yaml")
 		if st, err := os.Stat(cfgPath); err == nil && st.Size() > 0 {
@@ -798,178 +595,54 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 			if err := yaml.Unmarshal(b, &m); err != nil {
 				return err
 			}
-			var scriptRes scriptResult
-			if err := finalizeRuntimeConfigPipelineWithScript(
-				m,
-				dataDir,
-				mixedPort,
-				ctrlPort,
-				secret,
-				traffic,
-				withEC,
-				enableTun,
-				profile.ScriptOverride,
-				&scriptRes,
-			); err != nil {
+			var scriptRes runtimecfg.ScriptResult
+			if err := runtimecfg.Finalize(m, runtimecfg.Input{
+				DataDir:                dataDir,
+				Script:                 profile.ScriptOverride,
+				CtrlPort:               ctrlPort,
+				MixedPort:              mixedPort,
+				Secret:                 secret,
+				WithExternalController: withEC,
+				Traffic:                traffic,
+				EnableTun:              enableTun,
+				Env:                    env,
+			}, &scriptRes); err != nil {
 				return err
 			}
-			a.recordProfileScriptResult(profile.ID, scriptRes)
-			out, err := marshalRuntimeYAML(m)
+			a.recordProfileScriptResult(profile.ID, scriptResult(scriptRes))
+			out, err := runtimecfg.MarshalYAML(m)
 			if err != nil {
 				return err
 			}
 			if err := atomicWriteFile(cfgPath, out, 0o644); err != nil {
 				return err
 			}
-			return runConfigPreflight(binPath, dataDir)
+			return runtimecfg.Preflight(binPath, dataDir, env.Prefs)
 		}
 	}
-	var scriptRes scriptResult
-	if err := a.writeRuntimeConfigWithScript(
-		dataDir,
-		profile.URL,
-		profile.AgeSecretKey,
-		profile.MergeTemplate,
-		profile.ProxyTemplate,
-		profile.RulesTemplate,
-		profile.ScriptOverride,
-		ctrlPort,
-		mixedPort,
-		secret,
-		traffic,
-		withEC,
-		enableTun,
-		&scriptRes,
-	); err != nil {
+	var scriptRes runtimecfg.ScriptResult
+	if err := runtimecfg.Write(runtimecfg.Input{
+		DataDir:                dataDir,
+		SubURL:                 profile.URL,
+		AgeKey:                 profile.AgeSecretKey,
+		ExtendTemplate:         profile.MergeTemplate,
+		ProxyTemplate:          profile.ProxyTemplate,
+		RulesTemplate:          profile.RulesTemplate,
+		Script:                 profile.ScriptOverride,
+		CtrlPort:               ctrlPort,
+		MixedPort:              mixedPort,
+		Secret:                 secret,
+		WithExternalController: withEC,
+		Traffic:                traffic,
+		EnableTun:              enableTun,
+		Env:                    env,
+	}, &scriptRes); err != nil {
 		return err
 	}
 	// Record BEFORE preflight: if a script failure is followed by a preflight
 	// error, the user needs to see both, not just the second one.
-	a.recordProfileScriptResult(profile.ID, scriptRes)
-	return runConfigPreflight(binPath, dataDir)
-}
-
-func runConfigPreflight(binPath, dataDir string) error {
-	binPath = strings.TrimSpace(binPath)
-	if binPath == "" {
-		return nil
-	}
-	cfgPath := filepath.Join(dataDir, "config.yaml")
-	if st, err := os.Stat(cfgPath); err != nil || st.Size() == 0 {
-		return nil
-	}
-	// Last-mile hardening: normalize DNS invariants in the written file before preflight.
-	// This guards against edge cases from user-edited YAML / merge templates.
-	if err := repairRuntimeConfigDNS(cfgPath); err != nil {
-		return fmt.Errorf("configuration preflight failed: cannot normalize dns invariants: %w", err)
-	}
-
-	// Clash/Mihomo supports `-t` test mode; use it before actual launch so users see
-	// parse errors immediately instead of waiting for a failed start.
-	argVariants := [][]string{
-		{"-d", dataDir, "-t"},
-		{"-t", "-d", dataDir},
-	}
-	sawUnsupportedFlag := false
-	for _, args := range argVariants {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		cmd := exec.CommandContext(ctx, binPath, args...)
-		cmd.Dir = dataDir
-		if attr := hideWindowSysProcAttr(); attr != nil {
-			cmd.SysProcAttr = attr
-		}
-		out, err := cmd.CombinedOutput()
-		cancel()
-		text := strings.TrimSpace(string(out))
-		if err == nil {
-			return nil
-		}
-		lower := strings.ToLower(text + "\n" + err.Error())
-		if strings.Contains(lower, "unknown flag") ||
-			strings.Contains(lower, "flag provided but not defined") ||
-			strings.Contains(lower, "unknown shorthand flag") {
-			sawUnsupportedFlag = true
-			continue
-		}
-		if idx := strings.Index(strings.ToLower(text), "parse config error:"); idx >= 0 {
-			msg := strings.TrimSpace(text[idx:])
-			return fmt.Errorf("configuration preflight failed: %s", msg)
-		}
-		if text == "" {
-			text = err.Error()
-		}
-		return fmt.Errorf("configuration preflight failed: %s", strings.TrimSpace(text))
-	}
-	if sawUnsupportedFlag {
-		// Older binaries may not support test mode; run a short startup probe to still
-		// catch fatal parse errors before regular launch.
-		return runConfigStartupProbe(binPath, dataDir)
-	}
-	return nil
-}
-
-func runConfigStartupProbe(binPath, dataDir string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, binPath, "-d", dataDir)
-	cmd.Dir = dataDir
-	if attr := hideWindowSysProcAttr(); attr != nil {
-		cmd.SysProcAttr = attr
-	}
-	out, err := cmd.CombinedOutput()
-	text := strings.TrimSpace(string(out))
-	lower := strings.ToLower(text)
-	if idx := strings.Index(lower, "parse config error:"); idx >= 0 {
-		return fmt.Errorf("configuration preflight failed: %s", strings.TrimSpace(text[idx:]))
-	}
-	if err != nil {
-		// deadline exceeded without parse error usually means the core started; accept.
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil
-		}
-		if text == "" {
-			text = err.Error()
-		}
-		if strings.Contains(strings.ToLower(text), "parse config error") {
-			return fmt.Errorf("configuration preflight failed: %s", text)
-		}
-	}
-	return nil
-}
-
-func repairRuntimeConfigDNS(cfgPath string) error {
-	b, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return err
-	}
-	var m map[string]any
-	if err := yaml.Unmarshal(b, &m); err != nil {
-		return err
-	}
-	if len(m) == 0 {
-		return nil
-	}
-	// A `dns:` key that is not a mapping means the file is broken (usually a
-	// hand-edited merge template). Healing it here would REPLACE it with our
-	// default block and hand the core a config that parses — masking the real
-	// error instead of showing it. Leave it alone so the `-t` preflight below
-	// reports what the core actually rejects.
-	if raw, has := m["dns"]; has {
-		if _, isMap := raw.(map[string]any); !isMap && raw != nil {
-			return nil
-		}
-	}
-	ensureDefaultDNSForTun(m)
-	// The self-heal above fills dns.fake-ip-range6 unconditionally, so the guard
-	// has to run here too — this is the LAST writer of config.yaml before the
-	// core reads it, and without this it would silently undo the pipeline's
-	// decision (see dropUnroutableFakeIPRange6).
-	dropUnroutableFakeIPRange6(m)
-	out, err := marshalRuntimeYAML(m)
-	if err != nil {
-		return err
-	}
-	return atomicWriteFile(cfgPath, out, 0o644)
+	a.recordProfileScriptResult(profile.ID, scriptResult(scriptRes))
+	return runtimecfg.Preflight(binPath, dataDir, env.Prefs)
 }
 
 func coreDoWithEndpoint(ctx context.Context, listen, secret, method, path string, body io.Reader) (*http.Response, error) {

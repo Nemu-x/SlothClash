@@ -1,0 +1,72 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: true
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: true
+    stack: gvisor
+    strict-route: false
+dns:
+    cache-algorithm: arc
+    default-nameserver:
+        - 114.114.114.114
+        - 8.8.8.8
+        - tls://1.12.12.12:853
+        - tls://223.5.5.5:853
+        - system
+    enable: false
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - localhost.ptlogin2.qq.com
+        - DOMAIN,www.baidu.com,real-ip
+        - DOMAIN-SUFFIX,qq.com,real-ip
+        - DOMAIN-SUFFIX,jd.com,fake-ip
+        - MATCH,fake-ip
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    fake-ip-ttl: 1
+    ipv6: true
+    listen: 0.0.0.0:53
+    nameserver:
+        - 114.114.114.114
+        - 8.8.8.8
+        - tls://223.5.5.5:853
+        - https://doh.pub/dns-query
+        - https://dns.alidns.com/dns-query#h3=true
+        - https://mozilla.cloudflare-dns.com/dns-query#DNS&h3=true
+        - dhcp://en0
+        - quic://dns.adguard.com:784
+    nameserver-policy:
+        +.ads.example.com: rcode://success
+        +.example.cn,+.example.apple:
+            - https://doh.pub/dns-query
+            - https://dns.alidns.com/dns-query
+        www.baidu.com,+.google.cn:
+            - 223.5.5.5
+            - https://dns.alidns.com/dns-query
+    prefer-h3: false
+    proxy-server-nameserver:
+        - 114.114.114.114
+        - 8.8.8.8
+        - tls://1.12.12.12:853
+        - tls://223.5.5.5:853
+        - system
+    respect-rules: false
+    serve-expired: true
+    serve-expired-client-timeout: 0
+    serve-expired-ttl: 0
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto

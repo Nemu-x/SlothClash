@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"SlothClashDesktop/internal/desync"
@@ -49,7 +50,13 @@ type DesyncAutoStatus struct {
 	Voice    DesyncAutoService   `json:"voice"`
 	Attempts []DesyncAutoAttempt `json:"attempts"`
 }
-type desyncAutoRuntime struct {
+
+// desyncController is the automatic calibration state. Every field is guarded
+// by mu; epoch is the session lease that makes a superseded session's writes
+// no-ops. App-wide inputs (status, core endpoint, connect generation) are
+// passed in by the App methods that drive it.
+type desyncController struct {
+	mu         sync.Mutex
 	epoch      uint64
 	generation uint64
 	key        string
@@ -58,31 +65,65 @@ type desyncAutoRuntime struct {
 	nextTCP    map[string]int
 }
 
-func (a *App) GetDesyncAutoStatus() DesyncAutoStatus {
-	a.desyncMu.Lock()
-	defer a.desyncMu.Unlock()
-	out := a.desyncAuto.status
+func (c *desyncController) snapshot() DesyncAutoStatus {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.status
 	out.Attempts = append([]DesyncAutoAttempt{}, out.Attempts...)
 	return out
 }
-func (a *App) invalidateDesyncAuto() {
-	a.desyncMu.Lock()
-	defer a.desyncMu.Unlock()
-	if a.desyncAuto.cancel != nil {
-		a.desyncAuto.cancel()
+func (c *desyncController) invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cancel != nil {
+		c.cancel()
 	}
-	a.desyncAuto.epoch++
-	a.desyncAuto.key = ""
-	a.desyncAuto.status.Running = false
+	c.epoch++
+	c.key = ""
+	c.status.Running = false
+}
+
+// active reports whether a calibration session is (or was last) keyed.
+func (c *desyncController) active() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.key != ""
+}
+
+// begin starts a new session for key under parent, cancelling the previous
+// one. It returns ok=false when key is already the running session.
+func (c *desyncController) begin(parent context.Context, key string, generation uint64, network string) (session context.Context, lease uint64, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.key == key {
+		return nil, 0, false
+	}
+	if c.cancel != nil {
+		c.cancel()
+	}
+	session, cancel := context.WithCancel(parent)
+	c.cancel = cancel
+	c.key = key
+	c.epoch++
+	c.generation = generation
+	c.nextTCP = map[string]int{}
+	lease = c.epoch
+	history := c.status.Attempts
+	c.status = DesyncAutoStatus{Running: true, Network: network, Attempts: history}
+	return session, lease, true
+}
+
+func (a *App) GetDesyncAutoStatus() DesyncAutoStatus {
+	return a.desyncCtl.snapshot()
 }
 func (a *App) RetryDesyncAuto() DesyncAutoStatus {
-	a.invalidateDesyncAuto()
+	a.desyncCtl.invalidate()
 	return a.GetDesyncAutoStatus()
 }
-func (a *App) desyncService(lease uint64, service string, state DesyncAutoService) {
-	a.desyncMu.Lock()
-	defer a.desyncMu.Unlock()
-	if a.desyncAuto.epoch != lease {
+func (c *desyncController) setService(lease uint64, service string, state DesyncAutoService) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epoch != lease {
 		return
 	}
 	state.Updated = time.Now().Unix()
@@ -94,38 +135,47 @@ func (a *App) desyncService(lease uint64, service string, state DesyncAutoServic
 	}
 	switch service {
 	case "youtube":
-		a.desyncAuto.status.YouTube = state
+		c.status.YouTube = state
 	case "discord":
-		a.desyncAuto.status.Discord = state
+		c.status.Discord = state
 	case "voice":
-		a.desyncAuto.status.Voice = state
+		c.status.Voice = state
 	}
 }
-func (a *App) desyncAttempt(lease uint64, attempt DesyncAutoAttempt) {
-	a.desyncMu.Lock()
-	if a.desyncAuto.epoch != lease {
-		a.desyncMu.Unlock()
-		return
+
+// recordAttempt appends attempt to the session history (stamped and with its
+// target hashed) and returns the stored copy; ok=false for a stale lease.
+func (c *desyncController) recordAttempt(lease uint64, attempt DesyncAutoAttempt) (DesyncAutoAttempt, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epoch != lease {
+		return attempt, false
 	}
 	attempt.At = time.Now().Unix()
-	attempt.Network = a.desyncAuto.status.Network
+	attempt.Network = c.status.Network
 	if attempt.Target != "" {
 		sum := sha256.Sum256([]byte(attempt.Network + attempt.Target))
 		attempt.Target = hex.EncodeToString(sum[:6])
 	}
-	history := append(a.desyncAuto.status.Attempts, attempt)
+	history := append(c.status.Attempts, attempt)
 	if len(history) > 128 {
 		history = history[len(history)-128:]
 	}
-	a.desyncAuto.status.Attempts = history
-	a.desyncMu.Unlock()
+	c.status.Attempts = history
+	return attempt, true
+}
+func (a *App) desyncAttempt(lease uint64, attempt DesyncAutoAttempt) {
+	attempt, ok := a.desyncCtl.recordAttempt(lease, attempt)
+	if !ok {
+		return
+	}
 	a.appendRuntimeDiag("desync.auto", fmt.Sprintf("service=%s candidate=%s ok=%t code=%s duration_ms=%d sent=%d received=%d", attempt.Service, attempt.Candidate, attempt.OK, attempt.Code, attempt.DurationMS, attempt.Sent, attempt.Received))
 }
 
 func (a *App) runDesyncAutoLoop(ctx context.Context) {
 	timer := time.NewTicker(2 * time.Second)
 	defer timer.Stop()
-	defer a.invalidateDesyncAuto()
+	defer a.desyncCtl.invalidate()
 	for {
 		select {
 		case <-ctx.Done():
@@ -134,11 +184,8 @@ func (a *App) runDesyncAutoLoop(ctx context.Context) {
 		}
 		status := a.GetDesyncStatus()
 		if !status.Settings.Enabled || !status.Connected || !strings.EqualFold(status.Mode, "rule") {
-			a.desyncMu.Lock()
-			active := a.desyncAuto.key != ""
-			a.desyncMu.Unlock()
-			if active {
-				a.invalidateDesyncAuto()
+			if a.desyncCtl.active() {
+				a.desyncCtl.invalidate()
 			}
 			continue
 		}
@@ -148,24 +195,10 @@ func (a *App) runDesyncAutoLoop(ctx context.Context) {
 		generation := a.connectGen.Load()
 		a.mu.RUnlock()
 		key := fmt.Sprintf("%d:%s:%s:%s:%t:%t:%t", generation, endpoint, network, status.Traffic, status.Settings.YouTube, status.Settings.Discord, status.Settings.DiscordUDP)
-		a.desyncMu.Lock()
-		if a.desyncAuto.key == key {
-			a.desyncMu.Unlock()
+		session, lease, started := a.desyncCtl.begin(ctx, key, generation, network)
+		if !started {
 			continue
 		}
-		if a.desyncAuto.cancel != nil {
-			a.desyncAuto.cancel()
-		}
-		session, cancel := context.WithCancel(ctx)
-		a.desyncAuto.cancel = cancel
-		a.desyncAuto.key = key
-		a.desyncAuto.epoch++
-		a.desyncAuto.generation = generation
-		a.desyncAuto.nextTCP = map[string]int{}
-		lease := a.desyncAuto.epoch
-		history := a.desyncAuto.status.Attempts
-		a.desyncAuto.status = DesyncAutoStatus{Running: true, Network: network, Attempts: history}
-		a.desyncMu.Unlock()
 		go a.runDesyncAutoSession(session, lease, network, endpoint, secret, status)
 	}
 }
@@ -249,16 +282,54 @@ func autoCoreJSON(ctx context.Context, endpoint, secret, method, route string, p
 func (a *App) applyDesyncCandidate(ctx context.Context, lease uint64, endpoint, secret, route, name string) error {
 	// Serialize the selector mutation with cancellation. A late successful probe
 	// cannot change a newer session's route. This does not reload the core.
-	status := a.GetDesyncStatus()
-	network := desyncNetworkKey()
-	a.desyncMu.Lock()
-	defer a.desyncMu.Unlock()
-	if a.desyncAuto.epoch != lease || ctx.Err() != nil || a.desyncAuto.generation != a.connectGen.Load() || !status.Connected || !status.Settings.Enabled || !strings.EqualFold(status.Mode, "rule") || a.desyncAuto.status.Network != network {
+	return a.desyncCtl.applyCandidate(ctx, lease, a.connectGen.Load, a.GetDesyncStatus(), desyncNetworkKey(), endpoint, secret, route, name)
+}
+
+// applyCandidate selects name in route while holding mu, so the lease and
+// liveGeneration checks and the selector write cannot interleave with a
+// newer session. status and network are sampled by the caller beforehand.
+func (c *desyncController) applyCandidate(ctx context.Context, lease uint64, liveGeneration func() uint64, status DesyncStatus, network, endpoint, secret, route, name string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epoch != lease || ctx.Err() != nil || c.generation != liveGeneration() || !status.Connected || !status.Settings.Enabled || !strings.EqualFold(status.Mode, "rule") || c.status.Network != network {
 		return context.Canceled
 	}
 	applyCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	return autoCoreJSON(applyCtx, endpoint, secret, http.MethodPut, "/proxies/"+url.PathEscape(route), map[string]string{"name": name}, nil)
+}
+
+// tcpStart is the rotation offset for service's next TCP trial over n candidates.
+func (c *desyncController) tcpStart(service string, n int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.nextTCP[service] % n
+}
+
+// advanceTCP moves service's rotation past the i-th tried candidate (1-based
+// from startAt), keeping a passing one for confirmation. Stale leases are ignored.
+func (c *desyncController) advanceTCP(lease uint64, service string, startAt, i, n int, passed bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epoch == lease {
+		if c.nextTCP == nil {
+			c.nextTCP = map[string]int{}
+		}
+		next := startAt + i
+		if passed {
+			next--
+		} // keep a passing background candidate for confirmation
+		c.nextTCP[service] = next % n
+	}
+}
+
+// resetTCP restarts service's rotation after a candidate was applied.
+func (c *desyncController) resetTCP(lease uint64, service string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epoch == lease {
+		c.nextTCP[service] = 0
+	}
 }
 func waitDesyncGroup(ctx context.Context, endpoint, secret, route string) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -322,16 +393,14 @@ func chooseDesyncTCP(ctx context.Context, service string, candidates []desync.Ca
 }
 func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, background bool) (desync.Candidate, error) {
 	candidates := desync.Ordered(service, desyncCachedSelection(network, service))
-	a.desyncMu.Lock()
-	startAt := a.desyncAuto.nextTCP[service] % len(candidates)
-	a.desyncMu.Unlock()
+	startAt := a.desyncCtl.tcpStart(service, len(candidates))
 	candidates = append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
 	if !background {
-		a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Total: len(candidates)})
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "testing", Total: len(candidates)})
 	}
 	if err := waitDesyncGroup(ctx, endpoint, secret, route); err != nil {
 		if !background {
-			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+			a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		}
 		return desync.Candidate{}, err
 	}
@@ -341,26 +410,15 @@ func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint
 		_, e := probeDesyncOutbound(one, endpoint, secret, c.Name(route), target)
 		return e
 	}, func(c desync.Candidate, i int, e error, d time.Duration) {
-		a.desyncMu.Lock()
-		if a.desyncAuto.epoch == lease {
-			if a.desyncAuto.nextTCP == nil {
-				a.desyncAuto.nextTCP = map[string]int{}
-			}
-			next := startAt + i
-			if e == nil {
-				next--
-			} // keep a passing background candidate for confirmation
-			a.desyncAuto.nextTCP[service] = next % len(candidates)
-		}
-		a.desyncMu.Unlock()
+		a.desyncCtl.advanceTCP(lease, service, startAt, i, len(candidates), e == nil)
 		if !background {
-			a.desyncService(lease, service, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i, Total: len(candidates), Code: desyncErrorCode(e)})
+			a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i, Total: len(candidates), Code: desyncErrorCode(e)})
 		}
 		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: c.ID, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
 	})
 	if err != nil {
 		if !background {
-			a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+			a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		}
 		return desync.Candidate{}, err
 	}
@@ -373,16 +431,12 @@ func (a *App) calibrateDesyncTCP(ctx context.Context, lease uint64, network, end
 		return err
 	}
 	if err = a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.Name(route)); err != nil {
-		a.desyncService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "failed", Code: desyncErrorCode(err)})
 		return err
 	}
 	saveDesyncSelection(network, service, winner.ID)
-	a.desyncMu.Lock()
-	if a.desyncAuto.epoch == lease {
-		a.desyncAuto.nextTCP[service] = 0
-	}
-	a.desyncMu.Unlock()
-	a.desyncService(lease, service, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
+	a.desyncCtl.resetTCP(lease, service)
+	a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
 	return nil
 }
 
@@ -497,7 +551,7 @@ func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, end
 		if trial.Err() != nil {
 			return "", false, trial.Err()
 		}
-		a.desyncService(lease, "voice", DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i + 1, Total: len(candidates)})
+		a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: i + 1, Total: len(candidates)})
 		var result desyncUDPProbe
 		start := time.Now()
 		err := autoCoreJSON(trial, endpoint, secret, http.MethodPost, "/proxies/"+c.Name(desync.DiscordUDPRoute)+"/desync/udp-probe", map[string]string{"target": target}, &result)
@@ -571,13 +625,13 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 		if service.enabled {
 			go a.runDesyncTCPService(ctx, lease, network, endpoint, secret, service.key, service.route)
 		} else {
-			a.desyncService(lease, service.key, DesyncAutoService{Phase: "disabled"})
+			a.desyncCtl.setService(lease, service.key, DesyncAutoService{Phase: "disabled"})
 		}
 	}
 	if !status.Settings.DiscordUDP {
-		a.desyncService(lease, "voice", DesyncAutoService{Phase: "disabled"})
+		a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "disabled"})
 	} else if status.Traffic != "tun" {
-		a.desyncService(lease, "voice", DesyncAutoService{Phase: "needs_tun"})
+		a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "needs_tun"})
 	}
 	if status.Settings.DiscordUDP && status.Traffic == "tun" {
 		a.runDesyncVoiceService(ctx, lease, network, endpoint, secret)

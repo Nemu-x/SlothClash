@@ -237,7 +237,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 			return
 		}
 		if err != nil {
-			a.desyncService(lease, "voice", DesyncAutoService{Phase: "observing", Code: desyncErrorCode(err)})
+			a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "observing", Code: desyncErrorCode(err)})
 		} else {
 			id := strings.TrimPrefix(group.Now, desync.DiscordUDPRoute+"-")
 			if previousSelected != "" && previousSelected != group.Now {
@@ -246,7 +246,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 			}
 			previousSelected = group.Now
 			d := monitor.observe(time.Now(), overview.Connections, activity, group.Now)
-			a.desyncService(lease, "voice", DesyncAutoService{Phase: d.phase, Candidate: id})
+			a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: d.phase, Candidate: id})
 			if d.healthy > 0 {
 				if d.currentHealthy && validated != id {
 					validated = id
@@ -278,9 +278,9 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 				retryAt = time.Now().Add(time.Minute)
 				if err != nil {
 					if a.tryDesyncVoiceReserve(ctx, lease, endpoint, secret, target, group.Now) {
-						a.desyncService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile"})
+						a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile"})
 					} else {
-						a.desyncService(lease, "voice", DesyncAutoService{Phase: "interrupted", Candidate: id, Code: desyncErrorCode(err)})
+						a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "interrupted", Candidate: id, Code: desyncErrorCode(err)})
 					}
 				} else if changed {
 					closeStaleDesyncVoice(ctx, endpoint, secret, target, chosen, overview.Connections)

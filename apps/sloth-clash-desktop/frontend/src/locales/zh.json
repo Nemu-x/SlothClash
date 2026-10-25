@@ -360,6 +360,11 @@
       "localNoUrl": "本地 / 无 URL",
       "active": "当前使用",
       "activate": "设为当前",
+      "updateFailed": {
+        "badge": "更新失败",
+        "title": "上次订阅更新失败",
+        "titleWithTime": "上次订阅更新失败（{{ago}}）"
+      },
       "contextMenu": {
         "updateNow": "立即更新配置",
         "editInfo": "编辑信息",

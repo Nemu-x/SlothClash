@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"SlothClashDesktop/companion"
-
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -70,12 +68,7 @@ type App struct {
 	diagEvents []RuntimeDiagEvent
 
 	// LAN companion controller (control ClashFest on a TV, etc.). Lazily created.
-	companionMu          sync.Mutex
-	companionMgr         *companion.Manager
-	companionWatchCancel context.CancelFunc
-	// companionDeviceWatch cancels the event stream of each device page that is
-	// open (CompanionWatchDevice), keyed by deviceId.
-	companionDeviceWatch map[string]context.CancelFunc
+	companion companionHost
 }
 
 // NewApp creates a new App application struct

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"SlothClashDesktop/companion"
@@ -13,13 +14,25 @@ import (
 
 const companionAgentsEvent = "companion:agents"
 
-// companionManager lazily creates the LAN companion controller (keychain-backed
+// companionHost owns the LAN companion controller state: the lazily created
+// manager, the discovery loop and the per-device event streams. One mutex
+// guards all of it; the Wails bindings on App delegate here.
+type companionHost struct {
+	mu          sync.Mutex
+	mgr         *companion.Manager
+	watchCancel context.CancelFunc
+	// deviceWatch cancels the event stream of each device page that is
+	// open (CompanionWatchDevice), keyed by deviceId.
+	deviceWatch map[string]context.CancelFunc
+}
+
+// manager lazily creates the LAN companion controller (keychain-backed
 // token store). Retries on failure (does not cache a failed init).
-func (a *App) companionManager() (*companion.Manager, error) {
-	a.companionMu.Lock()
-	defer a.companionMu.Unlock()
-	if a.companionMgr != nil {
-		return a.companionMgr, nil
+func (h *companionHost) manager() (*companion.Manager, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.mgr != nil {
+		return h.mgr, nil
 	}
 	root, err := slothDataRoot()
 	if err != nil {
@@ -29,13 +42,62 @@ func (a *App) companionManager() (*companion.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.companionMgr = m
+	h.mgr = m
 	return m, nil
+}
+
+// startDiscovery starts the background browse loop; emit receives each
+// successful browse result. Idempotent while a loop is running.
+func (h *companionHost) startDiscovery(emit func([]companion.AgentInfo)) {
+	h.mu.Lock()
+	if h.watchCancel != nil {
+		h.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	h.watchCancel = cancel
+	h.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		browse := func() {
+			m, err := h.manager()
+			if err != nil {
+				return
+			}
+			bctx, bcancel := context.WithTimeout(ctx, 4*time.Second)
+			agents, derr := m.Discover(bctx)
+			bcancel()
+			if derr == nil {
+				emit(agents)
+			}
+		}
+		browse()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				browse()
+			}
+		}
+	}()
+}
+
+// stopDiscovery stops the background browse loop.
+func (h *companionHost) stopDiscovery() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.watchCancel != nil {
+		h.watchCancel()
+		h.watchCancel = nil
+	}
 }
 
 // CompanionDiscover browses the LAN once and returns the merged agent list.
 func (a *App) CompanionDiscover() ([]companion.AgentInfo, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +108,7 @@ func (a *App) CompanionDiscover() ([]companion.AgentInfo, error) {
 
 // CompanionListAgents returns the merged paired+discovered list without re-browsing.
 func (a *App) CompanionListAgents() ([]companion.AgentInfo, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +117,7 @@ func (a *App) CompanionListAgents() ([]companion.AgentInfo, error) {
 
 // CompanionPairByString pairs from a pasted clashctl-pair://… string.
 func (a *App) CompanionPairByString(s string) (companion.AgentInfo, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return companion.AgentInfo{}, err
 	}
@@ -64,7 +126,7 @@ func (a *App) CompanionPairByString(s string) (companion.AgentInfo, error) {
 
 // CompanionPairByPin pairs with a discovered agent using its 6-digit PIN.
 func (a *App) CompanionPairByPin(deviceID, pin string) (companion.AgentInfo, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return companion.AgentInfo{}, err
 	}
@@ -75,7 +137,7 @@ func (a *App) CompanionPairByPin(deviceID, pin string) (companion.AgentInfo, err
 
 // CompanionStatus reads a paired agent's status.
 func (a *App) CompanionStatus(deviceID string) (*companion.StatusView, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +148,7 @@ func (a *App) CompanionStatus(deviceID string) (*companion.StatusView, error) {
 
 // CompanionPower sets a paired agent's power state ("on"/"off"/"toggle").
 func (a *App) CompanionPower(deviceID, action string) (*companion.PowerResult, error) {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +159,7 @@ func (a *App) CompanionPower(deviceID, action string) (*companion.PowerResult, e
 
 // CompanionShareSubscription pushes this controller's active subscription URL to the agent.
 func (a *App) CompanionShareSubscription(deviceID string) error {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return err
 	}
@@ -112,7 +174,7 @@ func (a *App) CompanionShareSubscription(deviceID string) error {
 
 // CompanionRename renames a paired agent.
 func (a *App) CompanionRename(deviceID, name string) error {
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return err
 	}
@@ -124,7 +186,7 @@ func (a *App) CompanionRename(deviceID, name string) error {
 // CompanionUnpair removes a paired agent and deletes its token.
 func (a *App) CompanionUnpair(deviceID string) error {
 	a.CompanionUnwatchDevice(deviceID)
-	m, err := a.companionManager()
+	m, err := a.companion.manager()
 	if err != nil {
 		return err
 	}
@@ -158,48 +220,14 @@ func (a *App) activeSubscription() (string, string) {
 // "companion:agents" event with the live agent list, so the UI refreshes
 // without frontend polling. Idempotent; stop with CompanionStopDiscovery.
 func (a *App) CompanionStartDiscovery() {
-	a.companionMu.Lock()
-	if a.companionWatchCancel != nil {
-		a.companionMu.Unlock()
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.companionWatchCancel = cancel
-	a.companionMu.Unlock()
-
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		emit := func() {
-			m, err := a.companionManager()
-			if err != nil {
-				return
-			}
-			bctx, bcancel := context.WithTimeout(ctx, 4*time.Second)
-			agents, derr := m.Discover(bctx)
-			bcancel()
-			if derr == nil && a.ctx != nil {
-				wailsrt.EventsEmit(a.ctx, companionAgentsEvent, agents)
-			}
+	a.companion.startDiscovery(func(agents []companion.AgentInfo) {
+		if a.ctx != nil {
+			wailsrt.EventsEmit(a.ctx, companionAgentsEvent, agents)
 		}
-		emit()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				emit()
-			}
-		}
-	}()
+	})
 }
 
 // CompanionStopDiscovery stops the background browse loop.
 func (a *App) CompanionStopDiscovery() {
-	a.companionMu.Lock()
-	defer a.companionMu.Unlock()
-	if a.companionWatchCancel != nil {
-		a.companionWatchCancel()
-		a.companionWatchCancel = nil
-	}
+	a.companion.stopDiscovery()
 }

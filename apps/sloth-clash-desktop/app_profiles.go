@@ -29,7 +29,7 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	finalName := strings.TrimSpace(name)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	peek, peekErr := peekSubscription(ctx, norm)
+	peek, peekErr := peekSubscription(ctx, norm, currentDesktopPrefs().Privacy.IsHwidEnabled())
 	if finalName == "" {
 		if peekErr != nil {
 			return a.GetAppState(), peekErr

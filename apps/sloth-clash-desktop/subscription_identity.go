@@ -77,13 +77,13 @@ func truncateHeaderValue(s string, maxRunes int) string {
 // toggled it off in Advanced, the header is omitted and other identity fields
 // (x-device-os, x-ver-os, x-device-model, x-app-version) are still sent so
 // providers can route to platform-specific configs without device-unique
-// identifiers.
-func applySubscriptionIdentityHeaders(req *http.Request) {
+// identifiers. sendHWID is the caller's PrivacySettings.IsHwidEnabled snapshot.
+func applySubscriptionIdentityHeaders(req *http.Request, sendHWID bool) {
 	if req == nil {
 		return
 	}
 	id := subscriptionDeviceIdentityCurrent()
-	if id.HWID != "" && currentDesktopPrefs().Privacy.IsHwidEnabled() {
+	if id.HWID != "" && sendHWID {
 		req.Header.Set("x-hwid", id.HWID)
 	}
 	req.Header.Set("x-device-os", runtime.GOOS)

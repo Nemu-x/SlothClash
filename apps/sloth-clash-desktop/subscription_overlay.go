@@ -83,7 +83,7 @@ func mergeTunFromYAMLString(m map[string]any, fragment string) {
 	}
 }
 
-func ensureDefaultDNSForTun(m map[string]any) {
+func ensureDefaultDNSForTun(m map[string]any, p runtimeConfigPrefs) {
 	raw, hasDNS := m["dns"]
 	var dns map[string]any
 	if hasDNS {
@@ -95,7 +95,7 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	// `ipv6` and `dns.ipv6`; align them in EVERY branch so the no-dns-block path
 	// below can't ship the incoherent state that once caused the assets.msn.com
 	// dial failure (architecture/ipv6.md).
-	topIPv6 := currentDesktopPrefs().Connection.IsDNSIPv6Enabled()
+	topIPv6 := p.DNSIPv6
 	m["ipv6"] = topIPv6
 
 	if dns == nil {
@@ -171,7 +171,7 @@ func ensureDefaultDNSForTun(m map[string]any) {
 	// stay local. Opt-in only — when the toggle is off we leave whatever the
 	// subscription shipped, because the config-parity guard requires
 	// subscription DNS blocks to survive untouched.
-	if currentDesktopPrefs().Connection.IsSmartDNSEnabled() {
+	if p.SmartDNS {
 		dns["respect-rules"] = true
 	}
 
@@ -322,14 +322,14 @@ func applyCorpVpnSplitInvariant(m map[string]any, enableTun bool) {
 // reassertCriticalRuntimeInvariants re-applies everything a user script must not
 // be able to win, in the same order the overlay applies it. Both callers share
 // these two helpers, so the scripted and un-scripted paths cannot drift apart.
-func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool) {
+func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool, p runtimeConfigPrefs) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 	applyXDriveHardening(m)
-	applyDesyncOverlay(m, currentDesyncSettings())
+	applyDesyncOverlay(m, p.Desync, p.DesyncCache)
 	applyCorpVpnSplitInvariant(m, enableTun)
 }
 
-func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool) {
+func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret, traffic string, withExternalController bool, enableTun bool, p runtimeConfigPrefs) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 	applyXDriveHardening(m)
 
@@ -337,7 +337,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	// is on, a loopback `bind-address` inherited from the profile would silently
 	// defeat it — the core would still listen on localhost only — so rewrite it
 	// to the wildcard, matching clash-verge-rev's fix.
-	allowLan := currentDesktopPrefs().Connection.IsAllowLanEnabled()
+	allowLan := p.AllowLan
 	m["allow-lan"] = allowLan
 	if allowLan {
 		if v, ok := m["bind-address"].(string); !ok || isLoopbackBindAddress(v) {
@@ -374,7 +374,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	// invariants) when TUN is actually being brought up. With TUN off we leave
 	// DNS alone so Mihomo falls back to system DNS for proxied traffic.
 	if enableTun {
-		ensureDefaultDNSForTun(m)
+		ensureDefaultDNSForTun(m, p)
 	}
 
 	ensureTunOverlayForTraffic(m, enableTun)
@@ -385,11 +385,10 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	// (Verge-Rev-style `tun-viewer.tsx` + sniffer / find-process-mode fields)
 	// must win over subscription defaults, matching Verge Rev's merge order
 	// where the verge config patches are applied after the profile's own YAML.
-	prefs := currentDesktopPrefs()
-	applyUserTunOverlay(m, prefs.TUN)
-	applyUserTrafficOverlay(m, prefs.Traffic)
-	applyRealityOverlay(m, prefs.Reality)
-	applyDesyncOverlay(m, currentDesyncSettings())
+	applyUserTunOverlay(m, p.TUN)
+	applyUserTrafficOverlay(m, p.Traffic)
+	applyRealityOverlay(m, p.Reality)
+	applyDesyncOverlay(m, p.Desync, p.DesyncCache)
 
 	// Corp-VPN coexistence LAST: corp route-exclude / split-DNS are mandatory for
 	// no-conflict and must survive any user/subscription overlay.

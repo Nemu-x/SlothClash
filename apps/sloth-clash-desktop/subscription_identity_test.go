@@ -11,7 +11,7 @@ func TestApplySubscriptionIdentityHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applySubscriptionIdentityHeaders(req)
+	applySubscriptionIdentityHeaders(req, currentDesktopPrefs().Privacy.IsHwidEnabled())
 	if got := req.Header.Get("x-hwid"); len(got) != 64 || !isHex(got) {
 		t.Fatalf("x-hwid: want 64 hex chars, got %q", got)
 	}
@@ -45,7 +45,7 @@ func TestApplySubscriptionIdentityHeadersHwidDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applySubscriptionIdentityHeaders(req)
+	applySubscriptionIdentityHeaders(req, currentDesktopPrefs().Privacy.IsHwidEnabled())
 	if got := req.Header.Get("x-hwid"); got != "" {
 		t.Fatalf("x-hwid: want empty, got %q", got)
 	}

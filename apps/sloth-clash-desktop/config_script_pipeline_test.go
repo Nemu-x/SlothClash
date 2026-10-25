@@ -22,7 +22,7 @@ func runPipelineWithScript(t *testing.T, script string, enableTun bool) (map[str
 	m := representativeFullProfile()
 	var res scriptResult
 	if err := finalizeRuntimeConfigPipelineWithScript(
-		m, t.TempDir(), 54333, 9097, "s3cr3t", "tun", true, enableTun, script, &res,
+		m, t.TempDir(), 54333, 9097, "s3cr3t", "tun", true, enableTun, script, &res, currentRuntimeConfigPrefs(),
 	); err != nil {
 		t.Fatalf("pipeline error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestPipelineScriptCannotAddExternalController(t *testing.T) {
 	var res scriptResult
 	if err := finalizeRuntimeConfigPipelineWithScript(
 		m, t.TempDir(), 54333, 9097, "s3cr3t", "tun", false /* withExternalController */, true,
-		`function main(config) { config['external-controller'] = '0.0.0.0:9090'; return config }`, &res,
+		`function main(config) { config['external-controller'] = '0.0.0.0:9090'; return config }`, &res, currentRuntimeConfigPrefs(),
 	); err != nil {
 		t.Fatalf("pipeline error: %v", err)
 	}

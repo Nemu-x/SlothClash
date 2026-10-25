@@ -64,7 +64,7 @@ func fetchTestSubscription(t *testing.T, url, ageKey string) ([]byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	body, _, err := fetchSubscriptionBody(ctx, url, ageKey)
+	body, _, err := fetchSubscriptionBody(ctx, url, ageKey, currentDesktopPrefs().Privacy.IsHwidEnabled())
 	return body, err
 }
 

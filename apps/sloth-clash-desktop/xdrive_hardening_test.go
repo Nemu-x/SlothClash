@@ -74,7 +74,7 @@ function main(config) {
     'xdrive-opts': { service: 'local', 'remote-folder': '/tmp/s' } })
   return config
 }`
-	if err := finalizeRuntimeConfigPipelineWithScript(m, t.TempDir(), 54333, 9097, "secret", "tun", true, true, script, &res); err != nil {
+	if err := finalizeRuntimeConfigPipelineWithScript(m, t.TempDir(), 54333, 9097, "secret", "tun", true, true, script, &res, currentRuntimeConfigPrefs()); err != nil {
 		t.Fatalf("pipeline: %v", err)
 	}
 	if !res.Applied {

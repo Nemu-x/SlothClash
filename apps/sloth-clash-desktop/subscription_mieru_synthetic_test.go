@@ -168,7 +168,7 @@ func TestBuildMieruSubscriptionYAMLPasswordWithAt(t *testing.T) {
 func TestFetchSubscriptionBodyMieruSkipsHTTP(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	b, _, err := fetchSubscriptionBody(ctx, "mieru://a:b@192.0.2.1:9001", "")
+	b, _, err := fetchSubscriptionBody(ctx, "mieru://a:b@192.0.2.1:9001", "", currentDesktopPrefs().Privacy.IsHwidEnabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestFetchSubscriptionBodyMieruSkipsHTTP(t *testing.T) {
 
 func TestPeekSubscriptionMieruNoHTTP(t *testing.T) {
 	t.Parallel()
-	p, err := peekSubscription(context.Background(), "mierus://u:p@192.0.2.2:9002")
+	p, err := peekSubscription(context.Background(), "mierus://u:p@192.0.2.2:9002", currentDesktopPrefs().Privacy.IsHwidEnabled())
 	if err != nil {
 		t.Fatal(err)
 	}

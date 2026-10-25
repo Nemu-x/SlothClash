@@ -164,10 +164,10 @@ func TestSubscriptionRequestsSendTheExactUserAgent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, _, err := fetchSubscriptionBody(ctx, srv.URL+"/sub", ""); err != nil {
+	if _, _, err := fetchSubscriptionBody(ctx, srv.URL+"/sub", "", currentDesktopPrefs().Privacy.IsHwidEnabled()); err != nil {
 		t.Fatalf("fetchSubscriptionBody: %v", err)
 	}
-	if _, err := fetchSubscriptionPeekHeaders(ctx, srv.URL+"/sub", want); err != nil {
+	if _, err := fetchSubscriptionPeekHeaders(ctx, srv.URL+"/sub", want, currentDesktopPrefs().Privacy.IsHwidEnabled()); err != nil {
 		t.Fatalf("fetchSubscriptionPeekHeaders: %v", err)
 	}
 	if len(seen) != 2 {

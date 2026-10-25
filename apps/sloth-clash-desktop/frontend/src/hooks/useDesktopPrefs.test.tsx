@@ -195,7 +195,10 @@ describe('useDesktopPrefs: commits', () => {
 describe('useDesktopPrefs: optimistic toggles', () => {
   it('setUiPref flips at once and keeps the backend echo', async () => {
     const { result } = await setupLoaded()
-    const setUi = wailsApp.stub('SetUISettings', (ui: any) => ({ ui }))
+    // The echo differs from the optimistic value, so adopting it is visible.
+    const setUi = wailsApp.stub('SetUISettings', (ui: any) => ({
+      ui: { ...ui, closeToTray: false },
+    }))
     act(() => result.current.setUiPref('closeToTray', true))
     expect(result.current.settings.closeToTray).toBe(true)
     expect(setUi.mock.calls[0][0]).toMatchObject({
@@ -203,8 +206,8 @@ describe('useDesktopPrefs: optimistic toggles', () => {
       autoConnectOnStartup: true,
       closeToTray: true,
     })
-    await waitFor(() => expect(setUi).toHaveBeenCalledTimes(1))
-    expect(result.current.settings.closeToTray).toBe(true)
+    await waitFor(() => expect(result.current.settings.closeToTray).toBe(false))
+    expect(setUi).toHaveBeenCalledTimes(1)
   })
 
   it('setUiPref rolls back and toasts when the write fails', async () => {
@@ -260,15 +263,15 @@ describe('useDesktopPrefs: optimistic toggles', () => {
 
   it('toggleCorpVpn adopts the backend echo', async () => {
     const { result } = await setupLoaded()
-    wailsApp.stub('SetExperimentalSettings', () => ({
-      experimental: { corpVpnEnabled: false },
+    // The echo differs from the optimistic value, so adopting it is visible.
+    const setExp = wailsApp.stub('SetExperimentalSettings', () => ({
+      experimental: { corpVpnEnabled: true },
     }))
     act(() => result.current.toggleCorpVpn(false))
     expect(result.current.corpVpnEnabled).toBe(false)
-    await waitFor(() =>
-      expect(wailsApp.fn('SetExperimentalSettings')).toHaveBeenCalledTimes(1),
-    )
-    expect(result.current.corpVpnEnabled).toBe(false)
+    expect(setExp).toHaveBeenCalledWith({ corpVpnEnabled: false })
+    await waitFor(() => expect(result.current.corpVpnEnabled).toBe(true))
+    expect(setExp).toHaveBeenCalledTimes(1)
   })
 
   it('toggleAppUpdate rolls back silently on failure', async () => {

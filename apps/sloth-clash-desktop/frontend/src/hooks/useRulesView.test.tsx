@@ -303,6 +303,26 @@ describe('useRulesView', () => {
     expect(result.current.providerErrMap.zeta).toContain('404')
   })
 
+  it('drops stale single-provider errors when a bulk update succeeds', async () => {
+    stubOverview(LIVE_RULES, PROVIDERS)
+    let fail = true
+    wailsApp.stub('UpdateRuleProvider', () =>
+      fail ? Promise.reject(new Error('timeout')) : undefined,
+    )
+    const { result } = renderRulesView()
+    await waitFor(() => expect(result.current.providers).toHaveLength(2))
+
+    act(() => result.current.onRefreshOne('alpha'))
+    await waitFor(() =>
+      expect(result.current.providerErrMap.alpha).toContain('timeout'),
+    )
+
+    fail = false
+    act(() => result.current.onRefreshAll())
+    await waitFor(() => expect(result.current.bulkBusy).toBe(false))
+    expect(result.current.providerErrMap).toEqual({})
+  })
+
   it('skips the bulk update when there are no providers', async () => {
     stubOverview(LIVE_RULES, {})
     const update = wailsApp.stub('UpdateRuleProvider', () => undefined)

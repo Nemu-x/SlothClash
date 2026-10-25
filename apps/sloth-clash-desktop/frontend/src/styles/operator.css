@@ -1,0 +1,92 @@
+/* Operator entry point in the Home header (left of "Add subscription"). */
+.homeOperatorBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.homeOperatorBtnLogo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+.operatorModalCard {
+  text-align: center;
+}
+
+.operatorHost {
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+/* Subscription usage block: what the user actually opened this dialog for. */
+.operatorUsage {
+  margin: 14px 0 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  text-align: left;
+}
+
+.operatorUsageRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operatorUsageValue {
+  font-weight: var(--weight-semibold);
+  font-size: var(--font-size-sm);
+}
+
+.operatorUsageWarn {
+  color: #ffb4b4;
+}
+
+.operatorUsageBar {
+  margin: 8px 0;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  overflow: hidden;
+}
+
+.operatorUsageBarFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.operatorModalCard .operatorLinks {
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.operatorLogo {
+  max-height: 44px;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
+  margin: 4px 0 8px;
+}
+
+.operatorGreeting {
+  margin: 4px 0 8px;
+  font-size: var(--font-size-sm);
+}
+
+.operatorLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.operatorLinkBtn {
+  padding: 4px 12px;
+  font-size: var(--font-size-xs);
+}

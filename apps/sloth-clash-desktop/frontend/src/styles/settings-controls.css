@@ -1,0 +1,327 @@
+/* Custom accent color field (Settings → General). */
+.accentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accentPicker {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.accentHexInput {
+  width: 96px;
+  font-family: var(--font-mono, monospace);
+}
+
+.accentHexInput.invalid {
+  border-color: rgba(190, 55, 55, 0.65);
+}
+
+.accentHexInput.invalid:focus {
+  outline-color: rgba(190, 55, 55, 0.35);
+}
+
+/* REALITY client version (x.y.z): same invalid styling as the accent hex. */
+.realityVersionInput {
+  width: 120px;
+  font-family: var(--font-mono, monospace);
+}
+
+.realityVersionInput.invalid {
+  border-color: rgba(190, 55, 55, 0.65);
+}
+
+.settingsCoreBuild {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.settingsCoreBuild .linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Per-theme applied previews: left swatch on a dark chip, right on a light
+   chip, so the contrast-guard adjustment is visible at pick time. */
+.accentSwatch {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #1a1918;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+
+.accentSwatchLight {
+  border-color: #e9dec8;
+}
+
+.accentResetBtn {
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+}
+
+/* iOS-style switch toggle (Settings booleans). */
+.settingsSwitch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard);
+}
+
+.shell[data-theme="light"] .settingsSwitch {
+  background: rgba(74, 55, 30, 0.2);
+  border-color: rgba(74, 55, 30, 0.32);
+}
+
+/* On = sage green (same family as the Home connect button) — intuitive
+   "enabled", and more legible than bronze on the light theme. */
+.settingsSwitch.on {
+  background: #6f8f72;
+  border-color: #5d7a60;
+}
+
+.shell[data-theme="light"] .settingsSwitch.on {
+  background: #5f8567;
+  border-color: #527456;
+}
+
+.settingsSwitch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settingsSwitchKnob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f4efe6;
+  transform: translateY(-50%);
+  transition: left var(--dur-base) var(--ease-standard);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.settingsSwitch.on .settingsSwitchKnob {
+  left: 20px;
+}
+
+/* Section icons in card headers. */
+.settingsCardIcon {
+  margin-right: var(--space-2);
+  font-size: 0.95em;
+  opacity: 0.9;
+}
+
+.settingsUpToDate {
+  margin: 0;
+  color: var(--ok);
+  font-weight: var(--weight-medium);
+}
+
+/* Update changelog ("What's new") */
+.settingsChangelog {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.shell[data-theme="light"] .settingsChangelog {
+  background: rgba(74, 55, 30, 0.04);
+}
+
+.settingsChangelog > summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.settingsChangelogBody {
+  margin: var(--space-2) 0 0;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Update download progress */
+.updateProgress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.updateProgressTrack {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.shell[data-theme="light"] .updateProgressTrack {
+  background: rgba(74, 55, 30, 0.14);
+}
+
+.updateProgressBar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+.updateProgressBar.indeterminate {
+  width: 40%;
+  animation: updateProgressSlide 1.1s var(--ease-standard) infinite;
+}
+
+@keyframes updateProgressSlide {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.settingsMicroHint {
+  margin: 4px 0 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
+  opacity: 0.85;
+}
+
+.settingsPanel .row {
+  margin: 6px 0 0;
+  gap: 6px;
+}
+
+.settingsPanel .btn {
+  padding: 5px 10px;
+  font-size: var(--font-size-xs);
+  border-radius: 9px;
+}
+
+.settingsInfoDevCard .settingsInfoDevBtnRow.row {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settingsInfoDevCard .settingsInfoDevBtnRow.row .btn {
+  white-space: nowrap;
+}
+
+.settingsInfoDevTitle {
+  margin-bottom: 6px;
+}
+
+.settingsInfoDevBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settingsKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .settingsKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.settingsKpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settingsKpi span {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settingsKpi strong {
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.settingsInfoDevActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settingsGithubBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--accent);
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.settingsGithubTopBtn {
+  align-self: center;
+}
+
+.shell[data-theme="light"] .settingsGithubBtn {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.settingsGithubBtn:hover {
+  border-color: var(--accent-muted);
+  background: var(--accent-dim);
+  color: #fff;
+}
+
+.settingsGithubSvg {
+  display: block;
+}

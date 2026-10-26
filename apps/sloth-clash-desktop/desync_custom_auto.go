@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"SlothClashDesktop/internal/desync"
@@ -25,7 +26,10 @@ import (
 //
 // ready and not_needed entries are re-checked every 90 seconds through their
 // group; a failure confirmed by two follow-ups starts again at step 1. Probes
-// use desyncProbeReachable against https://<domain>/. A session ends on a
+// use desyncProbeReachable against https://<domain>/, or for a preset entry
+// against each of its probe hosts (page and CDN), all of which must pass in
+// every step: a strategy that opens the page but not its media is a failure.
+// A session ends on a
 // network, connection-generation, mode or settings change (the controller
 // key), which re-checks every entry from step 1.
 
@@ -110,9 +114,37 @@ func enabledDesyncCustom() []DesyncCustomEntry {
 	}
 	var out []DesyncCustomEntry
 	for _, e := range settings.Custom {
-		if e.Enabled && e.Preset == "" { // preset entries: not calibrated yet
+		if e.Enabled {
 			out = append(out, e)
 		}
+	}
+	return out
+}
+
+// desyncCustomTargets is the probe URLs of entry among the enabled entries:
+// its domain's root, or the preset's probe hosts under the domains it routes
+// now (desync.PresetOwnedDomains, the same split the config uses): a shared
+// CDN another preset carries is that preset's to check.
+func desyncCustomTargets(entry DesyncCustomEntry, enabled []DesyncCustomEntry) []string {
+	if entry.Preset == "" {
+		return []string{desyncCustomTarget(entry.Domain)}
+	}
+	var presets []string
+	for _, e := range enabled {
+		if e.Preset != "" {
+			presets = append(presets, e.Preset)
+		}
+	}
+	hosts := desync.PresetProbes(entry.Preset, desync.PresetOwnedDomains(entry.Preset, presets))
+	if len(hosts) == 0 {
+		// Unreachable with the catalog (its tests); never probe nothing,
+		// which would pass every candidate.
+		p, _ := desync.PresetByID(entry.Preset)
+		hosts = p.Probes
+	}
+	var out []string
+	for _, host := range hosts {
+		out = append(out, desyncCustomTarget(host))
 	}
 	return out
 }
@@ -185,13 +217,18 @@ func nextDesyncCustom(entries []DesyncCustomEntry, plans map[string]*desyncCusto
 
 func (a *App) stepDesyncCustom(ctx context.Context, lease uint64, network, endpoint, secret string, entry DesyncCustomEntry, plan *desyncCustomPlan) {
 	route := desync.CustomRoute(entry.ID)
-	target := desyncCustomTarget(entry.Domain)
+	targets := desyncCustomTargets(entry, enabledDesyncCustom())
 	if plan.phase == "ready" || plan.phase == "not_needed" {
 		check := func(one context.Context) error {
-			probe, cancel := context.WithTimeout(one, 6*time.Second)
-			defer cancel()
-			_, err := probeDesyncOutboundMode(probe, endpoint, secret, route, target, desyncProbeReachable)
-			return err
+			for _, target := range targets {
+				probe, cancel := context.WithTimeout(one, 6*time.Second)
+				_, err := probeDesyncOutboundMode(probe, endpoint, secret, route, target, desyncProbeReachable)
+				cancel()
+				if err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		err := check(ctx)
 		if err == nil {
@@ -215,12 +252,18 @@ func (a *App) stepDesyncCustom(ctx context.Context, lease uint64, network, endpo
 // phase searching, due after desyncCustomBudgetGap.
 func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, endpoint, secret string, entry DesyncCustomEntry, plan *desyncCustomPlan) {
 	route := desync.CustomRoute(entry.ID)
-	service := desync.CustomService(entry.Domain)
-	targets := []string{desyncCustomTarget(entry.Domain)}
+	service := desync.CustomService(entry.key())
+	// Every target must pass, for the baseline and for a candidate
+	// (chooseDesyncTCP).
+	targets := desyncCustomTargets(entry, enabledDesyncCustom())
 	retry := func(err error) {
 		plan.phase, plan.candidate = "queued", ""
 		plan.due = time.Now().Add(desyncCustomRetry)
 		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "queued", Code: desyncErrorCode(err)})
+	}
+	if len(targets) == 0 {
+		retry(errors.New("no probe target"))
+		return
 	}
 	if err := waitDesyncGroup(ctx, endpoint, secret, route); err != nil {
 		if ctx.Err() == nil {

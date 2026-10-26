@@ -100,6 +100,11 @@ func (a *App) refreshProfileSubscription(profileID string, reconnectActive bool)
 				a.profiles[i].SubscriptionAnnouncement = s
 			}
 			if a.profiles[i].AutoUpdateIntervalMinutes <= 0 {
+				// A legacy profile (no auto-update fields) is treated as
+				// enabled by dueProfileIDs only while its interval is 0;
+				// persist that before giving it an interval, or the first
+				// refresh would silently turn its auto-update off.
+				a.profiles[i].AutoUpdateEnabled = true
 				a.profiles[i].AutoUpdateIntervalMinutes = defaultProfileAutoUpdateMinutes
 			}
 		}

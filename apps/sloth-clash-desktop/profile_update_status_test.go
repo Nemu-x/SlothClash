@@ -50,6 +50,59 @@ func TestRefreshProfileSubscriptionSuccessClearsUpdateError(t *testing.T) {
 	}
 }
 
+// A legacy profile (written before the auto-update fields existed) keeps
+// auto-updating after its first refresh assigns it the default interval.
+func TestRefreshKeepsLegacyProfileAutoUpdating(t *testing.T) {
+	isolateAppDataRoot(t)
+	small := runtimecfgtest.RealisticSubscriptionYAML(5)
+	var body atomic.Pointer[[]byte]
+	body.Store(&small)
+	subURL := runtimecfgtest.ServeSubscription(t, &body)
+
+	const id = "profile-legacy-auto"
+	a := &App{profiles: []Profile{{ID: id, Name: "legacy", Type: "subscription", URL: subURL}}}
+	if got := a.dueProfileIDs(time.Now().Unix()); len(got) != 1 {
+		t.Fatalf("legacy profile not due before its first refresh: %v", got)
+	}
+	state, err := a.refreshProfileSubscription(id, false)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	got := state.Profile.Profiles[0]
+	if !got.AutoUpdateEnabled || got.AutoUpdateIntervalMinutes != defaultProfileAutoUpdateMinutes {
+		t.Fatalf("after refresh: enabled=%v interval=%d, want enabled with the default interval", got.AutoUpdateEnabled, got.AutoUpdateIntervalMinutes)
+	}
+	later := time.Now().Unix() + int64(defaultProfileAutoUpdateMinutes)*60 + 1
+	if due := a.dueProfileIDs(later); len(due) != 1 || due[0] != id {
+		t.Fatalf("legacy profile not due one interval after its refresh: %v", due)
+	}
+}
+
+// A profile whose auto-update the user turned off stays off after a refresh.
+func TestRefreshKeepsDisabledAutoUpdateOff(t *testing.T) {
+	isolateAppDataRoot(t)
+	small := runtimecfgtest.RealisticSubscriptionYAML(5)
+	var body atomic.Pointer[[]byte]
+	body.Store(&small)
+	subURL := runtimecfgtest.ServeSubscription(t, &body)
+
+	const id = "profile-auto-off"
+	a := &App{profiles: []Profile{{
+		ID: id, Name: "off", Type: "subscription", URL: subURL,
+		AutoUpdateEnabled: false, AutoUpdateIntervalMinutes: 120,
+	}}}
+	state, err := a.refreshProfileSubscription(id, false)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if got := state.Profile.Profiles[0]; got.AutoUpdateEnabled {
+		t.Fatalf("refresh turned a disabled auto-update back on")
+	}
+	if due := a.dueProfileIDs(time.Now().Unix() + 3*3600); len(due) != 0 {
+		t.Fatalf("disabled profile became due: %v", due)
+	}
+}
+
 // A body failure other than an oversized body is tolerated by the explicit
 // refresh (nothing returned, as before) but recorded on the profile, and it
 // does not move LastUpdated.

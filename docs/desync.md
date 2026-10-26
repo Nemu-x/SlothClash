@@ -1,6 +1,6 @@
 # Desync
 
-Desync connects selected services and custom domains directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription. The feature is off by default.
+Desync connects selected services and custom domains directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription, or goes directly with a [Desync-only profile](#desync-only-profile-no-vpn). The feature is off by default.
 
 ## Use
 
@@ -20,6 +20,7 @@ Selection runs in the background even when Settings is closed. The panel shows p
 - **Using subscription reserve**: new connections follow the original subscription rules after a remote route passed the service checks. Voice stays on this route during active traffic.
 - **Subscription reserve unavailable**: the selected reserve's latest check failed; background recovery continues without bouncing existing connections.
 - **Desync and reserve unavailable**: the bounded strategy search and reserve verification failed; the controller backs off and tries again. **Check again** restarts the controller.
+- **No working strategy** (Desync-only profile): no strategy passed and there is no reserve; the service connects directly while the search is repeated. **Desync unavailable** is the same profile's wording for any other failure.
 
 **Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Targets are hashed consistently between attempts and flow observations. Custom domains appear only as the same keyed hash (with their random entry IDs and on/off state), so an entry can be matched to its attempts without revealing the site. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
 
@@ -44,6 +45,16 @@ How it works:
 - Winners (a strategy or "not needed") are cached per network under `custom:<domain>` with the same 24-hour expiry and network/build digest as the built-in services.
 
 Limits: Desync changes how a connection's first packets look to a DPI middlebox; it cannot reach a server whose IP address is blocked or a domain blocked by DNS beyond the resolver fallback. UDP and voice for custom domains are not supported. A site served from several CDN hosts may need different strategies per host: add the affected subdomain as its own entry. Only the domain's root URL is tested, not logged-in pages or media playback.
+
+## Desync-only profile (no VPN)
+
+For users without a VPN subscription. **Profiles → Add → Desync only (no VPN)** creates a profile that has no subscription URL and no proxy servers; it is only created by that button. Its generated configuration is the Desync routes (YouTube, Discord, Discord voice and the custom domains, exactly as above) followed by `MATCH,DIRECT`: everything that is not a Desync route connects directly. DNS uses the app's default resolver settings, and both System proxy and TUN work. Discord voice still requires Windows and TUN.
+
+- **Rule mode only.** The routes are rules and there is no server for Global mode, so Global and Direct are not offered while the profile is active (the mode switches back to Rule when it is activated).
+- **Desync must be on.** Activating the profile while Desync is off asks to turn it on; without it every connection goes directly and nothing is unblocked. The card and Home show the state, and Home links to Settings while it is off.
+- **No reserve.** There is no subscription to fall back to, so the controller never verifies or selects one. When no strategy works, the route's group selects `PASS`, which in this profile ends at `MATCH,DIRECT`, the service reports **No working strategy**, and the search is repeated after the backoff. A `PASS` left selected from an earlier session is searched past instead of being treated as a reserve. Voice keeps its candidate and reports the same status.
+- **Nothing else to edit.** The profile has no subscription refresh or update status, no extend / proxy-groups / rules templates, no script and no editable config file; only its name can be changed. Proxies shows that there are no proxy servers, and Home has no node picker. Home also skips the separate direct WAN lookup: the exit already is the direct address.
+- **Diagnostics** include `"desyncOnly": true` and the `no_strategy` attempts; **Run diagnostics** checks a route on `PASS` through `DIRECT`.
 
 ## Selection and recovery
 

@@ -176,7 +176,10 @@ func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	finished := make(chan struct{})
-	go func() { defer close(finished); a.runDesyncVoiceService(ctx, 1, desyncNetworkKey(), a.core.listen, "") }()
+	go func() {
+		defer close(finished)
+		a.runDesyncVoiceService(ctx, 1, desyncNetworkKey(), a.core.listen, "", false)
+	}()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	// Four polls allow the 8-second persistence boundary even when the first

@@ -200,10 +200,16 @@ func readDesyncVoiceActivity(ctx context.Context, endpoint, secret, selected str
 	return all, nil
 }
 
-func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, endpoint, secret string) {
+// noReserve (Desync-only profile): a PASS selection is left by applying the
+// first candidate instead of being watched as a reserve, and a failed search
+// reports no_strategy instead of trying the subscription.
+func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, endpoint, secret string, noReserve bool) {
 	monitor := desyncVoiceMonitor{}
 	rejected := map[string]bool{}
 	target, previousSelected, validated, lastDegraded := "", "", "", ""
+	// noStrategy: the last search found nothing (no-reserve mode); the line
+	// keeps saying so until traffic recovers or another candidate is selected.
+	noStrategy := ""
 	var retryAt, graceUntil time.Time
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
@@ -216,6 +222,13 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 		err := autoCoreJSON(one, endpoint, secret, http.MethodGet, "/connections", nil, &overview)
 		if err == nil {
 			err = autoCoreJSON(one, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group)
+		}
+		if err == nil && group.Now == desyncProfileSelection && noReserve {
+			first := desync.Ordered("voice", desyncCachedSelection(network, "voice"))[0]
+			err = a.applyDesyncCandidate(one, lease, endpoint, secret, desync.DiscordUDPRoute, first.Name(desync.DiscordUDPRoute))
+			if err == nil {
+				group.Now = first.Name(desync.DiscordUDPRoute)
+			}
 		}
 		if err == nil && group.Now == desyncProfileSelection {
 			cancel()
@@ -246,7 +259,14 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 			}
 			previousSelected = group.Now
 			d := monitor.observe(time.Now(), overview.Connections, activity, group.Now)
-			a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: d.phase, Candidate: id})
+			if d.healthy > 0 {
+				noStrategy = ""
+			}
+			if noStrategy != "" {
+				a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "no_strategy", Candidate: id, Code: noStrategy, Route: "desync"})
+			} else {
+				a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: d.phase, Candidate: id})
+			}
 			if d.healthy > 0 {
 				if d.currentHealthy && validated != id {
 					validated = id
@@ -276,13 +296,18 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 					return
 				}
 				retryAt = time.Now().Add(time.Minute)
-				if err != nil {
+				if err != nil && noReserve {
+					// Keep the current candidate: plain UDP is no better.
+					noStrategy = desyncErrorCode(err)
+					a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "no_strategy", Candidate: id, Code: noStrategy, Route: "desync"})
+				} else if err != nil {
 					if a.tryDesyncVoiceReserve(ctx, lease, endpoint, secret, target, group.Now) {
 						a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "profile", Candidate: "profile"})
 					} else {
 						a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "interrupted", Candidate: id, Code: desyncErrorCode(err)})
 					}
 				} else if changed {
+					noStrategy = ""
 					closeStaleDesyncVoice(ctx, endpoint, secret, target, chosen, overview.Connections)
 					graceUntil = time.Now().Add(75 * time.Second)
 				}

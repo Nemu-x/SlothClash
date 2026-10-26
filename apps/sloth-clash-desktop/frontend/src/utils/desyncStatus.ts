@@ -4,6 +4,7 @@ import type {
   DesyncAutoService,
   DesyncAutoStatus,
   DesyncCustomEntry,
+  DesyncPreset,
   DesyncStatus,
 } from '../api/desync'
 
@@ -212,34 +213,116 @@ export type DesyncCustomView = {
   status: DesyncPhaseView
 }
 
+/** A custom entry's status line, gated like the built-in services. */
+function customEntryStatus(
+  snapshot: DesyncSnapshot,
+  ctx: DesyncContext,
+  entry: DesyncCustomEntry | undefined,
+): DesyncPhaseView {
+  const state = entry ? snapshot.automatic?.custom?.[entry.id] : undefined
+  return phaseView(
+    snapshot.status.settings.enabled !== true || !entry?.enabled
+      ? 'disabled'
+      : !ctx.connected
+        ? 'connect'
+        : ctx.mode.toLowerCase() !== 'rule'
+          ? 'rule'
+          : state?.phase || 'queued',
+    state,
+  )
+}
+
 /**
- * One row per custom-domain entry, gated like the built-in services. The
- * calibration state comes from automatic.custom[id].
+ * One row per plain custom-domain entry (preset entries are rows of
+ * desyncPresetViews), gated like the built-in services. The calibration
+ * state comes from automatic.custom[id].
  */
 export function desyncCustomViews(
   snapshot: DesyncSnapshot,
   ctx: DesyncContext,
 ): DesyncCustomView[] {
-  const { status, automatic } = snapshot
-  const enabled = status.settings.enabled === true
-  const ruleMode = ctx.mode.toLowerCase() === 'rule'
-  const entries: DesyncCustomEntry[] = status.settings.custom ?? []
-  return entries.map((e) => {
-    const state = automatic?.custom?.[e.id]
-    return {
+  const entries: DesyncCustomEntry[] = snapshot.status.settings.custom ?? []
+  return entries
+    .filter((e) => !e.preset)
+    .map((e) => ({
       id: e.id,
       domain: e.domain,
       checked: e.enabled,
-      status: phaseView(
-        !enabled || !e.enabled
-          ? 'disabled'
-          : !ctx.connected
-            ? 'connect'
-            : !ruleMode
-              ? 'rule'
-              : state?.phase || 'queued',
-        state,
-      ),
+      status: customEntryStatus(snapshot, ctx, e),
+    }))
+}
+
+export type DesyncPresetView = {
+  /** Catalog preset ID. */
+  id: string
+  name: string
+  domains: string[]
+  /** The stored entry's ID; null while the preset was never switched on. */
+  entryId: string | null
+  /** The preset switch as the user sees it. */
+  checked: boolean
+  status: DesyncPhaseView
+  /**
+   * Domains this switched-on preset routes on behalf of a switched-off one
+   * listed first in the catalog (Instagram carrying Facebook's fbcdn.net),
+   * with that preset's name; null when there are none.
+   */
+  shared: { domains: string[]; names: string[] } | null
+}
+
+/**
+ * One row per catalog preset (catalog order), then one per stored preset
+ * entry the catalog does not list (named by its ID, e.g. while the catalog
+ * has not loaded). Shared domains follow the backend's ownership rule
+ * (desync.PresetOwnedDomains): a domain listed by two presets belongs to the
+ * first switched-on one in catalog order.
+ */
+export function desyncPresetViews(
+  snapshot: DesyncSnapshot,
+  ctx: DesyncContext,
+  catalog: DesyncPreset[],
+): DesyncPresetView[] {
+  const entries = (snapshot.status.settings.custom ?? []).filter(
+    (e) => e.preset,
+  )
+  const entryOf = (id: string) => entries.find((e) => e.preset === id)
+  const presets = [
+    ...catalog,
+    ...entries
+      .filter((e) => !catalog.some((p) => p.id === e.preset))
+      .map((e) => ({
+        id: String(e.preset),
+        name: String(e.preset),
+        domains: [],
+      })),
+  ]
+  const on = (id: string) => entryOf(id)?.enabled === true
+  return presets.map((p, index) => {
+    const entry = entryOf(p.id)
+    const checked = entry?.enabled === true
+    const shared = new Map<string, string[]>() // domain -> earlier listers
+    if (checked) {
+      for (const d of p.domains) {
+        const earlier = presets
+          .slice(0, index)
+          .filter((o) => o.domains.includes(d))
+        // Another switched-on preset earlier in the catalog routes it.
+        if (earlier.some((o) => on(o.id)) || earlier.length === 0) continue
+        shared.set(
+          d,
+          earlier.map((o) => o.name),
+        )
+      }
+    }
+    const names = [...new Set([...shared.values()].flat())]
+    return {
+      id: p.id,
+      name: p.name,
+      domains: p.domains,
+      entryId: entry?.id ?? null,
+      checked,
+      status: customEntryStatus(snapshot, ctx, entry),
+      shared: shared.size > 0 ? { domains: [...shared.keys()], names } : null,
     }
   })
 }
@@ -272,23 +355,52 @@ const CUSTOM_ERROR_CODES = new Set([
   'duplicate',
   'limit',
   'not_found',
+  'preset_overlap',
+  'unknown_preset',
+])
+
+/** Codes worded for a preset switch rather than a typed domain. */
+const PRESET_ERROR_CODES = new Set([
+  'duplicate',
+  'limit',
+  'not_found',
+  'unknown_preset',
 ])
 
 /**
- * The backend rejects a custom domain with "custom domain: <code>"; show the
- * translated reason, or the raw error for anything else.
+ * The backend rejects a custom entry with "custom domain: <code>" (or
+ * "custom domain: preset_overlap: <preset id>"); show the translated reason,
+ * or the raw error for anything else. `presetName` names a preset ID;
+ * `forPreset` words the reason for a preset switch.
  */
-export function customDomainErrorText(t: TFunction, err: unknown): string {
+export function customDomainErrorText(
+  t: TFunction,
+  err: unknown,
+  {
+    presetName = (id: string) => id,
+    forPreset = false,
+  }: { presetName?: (id: string) => string; forPreset?: boolean } = {},
+): string {
   const raw = String(err)
-  const code = /custom domain: ([a-z_]+)/.exec(raw)?.[1]
-  return code && CUSTOM_ERROR_CODES.has(code)
-    ? t(`desync.custom.error.${code}`, { limit: DESYNC_CUSTOM_LIMIT })
-    : raw
+  const m = /custom domain: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
+  const code = m?.[1]
+  if (!code || !CUSTOM_ERROR_CODES.has(code)) return raw
+  const scope = forPreset && PRESET_ERROR_CODES.has(code) ? 'presets' : 'custom'
+  return t(`desync.${scope}.error.${code}`, {
+    limit: DESYNC_CUSTOM_LIMIT,
+    name: presetName(m?.[2] ?? ''),
+  })
+}
+
+/** A preset's display name from the catalog, or its ID. */
+export function desyncPresetName(catalog: DesyncPreset[], id: string): string {
+  return catalog.find((p) => p.id === id)?.name ?? id
 }
 
 /**
  * Mirrors desyncHasSelection (desync_custom.go): the backend refuses to
- * enable Desync without a service or a switched-on custom domain.
+ * enable Desync without a service or a switched-on custom entry (a domain or
+ * a preset).
  */
 export function desyncHasSelection(
   settings: DesyncStatus['settings'],
@@ -313,15 +425,27 @@ export function desyncEnablePatch(
   }
 }
 
-/** Short names of what Desync covers: the services, then "Sites N". */
+/**
+ * Short names of what Desync covers: the services, the switched-on presets
+ * by name (catalog order), then the plain domains as "Sites N".
+ */
 export function desyncSelectionNames(
   t: TFunction,
   settings: DesyncStatus['settings'],
+  catalog: DesyncPreset[] = [],
 ): string[] {
   const names: string[] = []
   if (settings.youtube) names.push('YouTube')
   if (settings.discord || settings.discordUDP) names.push('Discord')
-  const sites = (settings.custom ?? []).filter((e) => e.enabled).length
+  const on = (settings.custom ?? []).filter((e) => e.enabled)
+  const presets = on.filter((e) => e.preset).map((e) => String(e.preset))
+  const rank = (id: string) => {
+    const i = catalog.findIndex((p) => p.id === id)
+    return i < 0 ? catalog.length : i
+  }
+  presets.sort((a, b) => rank(a) - rank(b))
+  for (const id of presets) names.push(desyncPresetName(catalog, id))
+  const sites = on.filter((e) => !e.preset).length
   if (sites > 0) names.push(t('desync.custom.homeItem', { count: sites }))
   return names
 }

@@ -13,8 +13,10 @@ import (
 //
 //  1. baseline: two rounds through plain DIRECT. Passing means the site is not
 //     blocked: the group selects DIRECT (state not_needed).
-//  2. search: the custom candidate set (cached winner first) in 30-second
-//     budgets that resume where the previous one stopped; after the first
+//  2. search: the custom candidate set (cached winner first) in budgets of
+//     30 seconds per probed host (desyncCustomStepBudget: one for a plain
+//     entry, one per page and CDN host for a preset) that resume where the
+//     previous one stopped; after the first
 //     failed budget the group selects PASS, so traffic follows the profile
 //     while the search continues. A winner passing two rounds is selected
 //     (state ready). Each budget is one worker step: between two budgets the
@@ -46,6 +48,16 @@ var (
 	// desyncCustomBudgetGap separates two search budgets of one entry.
 	desyncCustomBudgetGap = time.Second
 )
+
+// desyncCustomStepBudget is the time one calibration step (the baseline, or
+// one search budget) gets for an entry probing `targets` hosts:
+// desyncCustomBudget per host. A candidate costs up to 2 rounds × targets ×
+// 5 s (chooseDesyncTCP), so a preset entry (page and CDN hosts) needs
+// proportionally more for a passing candidate on a slow network not to be cut
+// off at the deadline; a plain entry (one host) keeps the base budget.
+func desyncCustomStepBudget(targets int) time.Duration {
+	return desyncCustomBudget * time.Duration(max(1, targets))
+}
 
 // desyncCustomPlan is the worker's per-entry state within one session.
 type desyncCustomPlan struct {
@@ -265,6 +277,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 		retry(errors.New("no probe target"))
 		return
 	}
+	budget := desyncCustomStepBudget(len(targets))
 	if err := waitDesyncGroup(ctx, endpoint, secret, route); err != nil {
 		if ctx.Err() == nil {
 			retry(err)
@@ -297,7 +310,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 	// 1. Baseline.
 	if plan.phase != "searching" {
 		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "testing", Candidate: desync.DirectID, Attempt: 1, Total: total})
-		baseline, cancel := context.WithTimeout(ctx, desyncCustomBudget)
+		baseline, cancel := context.WithTimeout(ctx, budget)
 		_, err := chooseDesyncTCP(baseline, targets, []desync.Candidate{{ID: desync.DirectID}}, probe, func(c desync.Candidate, _ int, e error, d time.Duration) { attempt(c, e, d) })
 		cancel()
 		if ctx.Err() != nil {
@@ -325,7 +338,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 	}
 	startAt := a.desyncCtl.tcpStart(service, len(candidates))
 	rotated := append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
-	trial, cancel := context.WithTimeout(ctx, desyncCustomBudget)
+	trial, cancel := context.WithTimeout(ctx, budget)
 	winner, err := chooseDesyncTCP(trial, targets, rotated, probe, func(c desync.Candidate, i int, e error, d time.Duration) {
 		if trial.Err() != nil {
 			return

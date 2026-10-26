@@ -59,6 +59,7 @@ export function HomePage({
   connectBusy,
   homeActiveNodeOpen,
   homeActiveNodeRef,
+  connectButtonRef,
   showBuiltinProxyGroups,
   hideGlobalMode,
   hideProxyMode,
@@ -91,6 +92,8 @@ export function HomePage({
   connectBusy: boolean
   homeActiveNodeOpen: boolean
   homeActiveNodeRef: Ref<HTMLDivElement>
+  /** The Connect button (focus target after a dialog that changed Home). */
+  connectButtonRef?: Ref<HTMLButtonElement>
   showBuiltinProxyGroups: boolean
   // Brand hide flags (presentation-only; see brand-headers-protocol).
   hideGlobalMode?: boolean
@@ -437,6 +440,7 @@ export function HomePage({
           </div>
           <div className="connectCenter">
             <button
+              ref={connectButtonRef}
               type="button"
               className="connectBtn"
               data-tour="connect"

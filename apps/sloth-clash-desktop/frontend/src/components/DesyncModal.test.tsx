@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { DesyncStatus } from '../api/desync'
@@ -7,6 +8,7 @@ import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { HomePage } from '../pages/Home'
 import { ProfilesPage } from '../pages/Profiles'
 import {
+  DESYNC_PRESETS,
   desyncAuto,
   desyncSnapshot,
   desyncStatus,
@@ -316,6 +318,109 @@ function ModalHost({
   )
 }
 
+/**
+ * App on an empty Home: "No VPN subscription?" opens the onboarding, and
+ * Create replaces the empty Home (and with it the link) by the new profile's.
+ */
+function EmptyHomeHost({ withFallback }: { withFallback: boolean }) {
+  const modal = useDesyncModal()
+  const connectRef = useRef<HTMLButtonElement>(null)
+  const [profiles, setProfiles] = useState<any[]>([])
+  const state = {
+    profile: { activeProfileId: profiles[0]?.id ?? '', profiles },
+    connection: { status: 'disconnected' },
+    mode: { current: 'rule' },
+    traffic: 'tun',
+  }
+  const vm = useHomeViewModel({
+    state,
+    connectBusy: false,
+    optimisticMode: null,
+    optimisticTraffic: null,
+    updateSnap: null,
+  })
+  return (
+    <>
+      <HomePage
+        state={state}
+        vm={vm}
+        service={null}
+        linkToast=""
+        error={null}
+        updateSnap={null}
+        connectBusy={false}
+        homeActiveNodeOpen={false}
+        homeActiveNodeRef={null}
+        connectButtonRef={connectRef}
+        showBuiltinProxyGroups={false}
+        onOpenOperator={noop}
+        onOpenImport={noop}
+        onOpenSupport={noop}
+        onOpenUpdate={noop}
+        onSetMode={noop}
+        onSwitchTraffic={noop}
+        onStartDesyncOnly={modal.openOnboarding}
+        onConnectClick={noop}
+        onInstallService={noop}
+        onRefreshService={noop}
+        onSelectGroup={noop}
+        onSelectNode={noop}
+        onToggleActiveNodeOpen={noop}
+      />
+      {modal.view ? (
+        <DesyncModal
+          view={modal.view}
+          connected={false}
+          mode="rule"
+          traffic="tun"
+          profiles={profiles}
+          refresh={async () =>
+            setProfiles([
+              {
+                id: NEW_ID,
+                name: 'Desync only',
+                type: 'local',
+                kind: 'desync-only',
+              },
+            ])
+          }
+          onClose={modal.close}
+          onCreated={noop}
+          fallbackFocus={withFallback ? () => connectRef.current : undefined}
+        />
+      ) : null}
+    </>
+  )
+}
+
+describe('DesyncModal: focus after creating from an empty Home', () => {
+  async function createFromEmptyHome(withFallback: boolean) {
+    stubStatus(desyncStatus())
+    stubCreate(NEW_ID)
+    renderWithProviders(<EmptyHomeHost withFallback={withFallback} />)
+    const link = screen.getByRole('button', {
+      name: /Unblock YouTube & Discord without VPN/,
+    })
+    link.focus()
+    fireEvent.click(link)
+    await screen.findByRole('switch', { name: 'YouTube' })
+    fireEvent.click(createButton())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The link that opened the dialog is gone with the empty Home.
+    expect(link.isConnected).toBe(false)
+  }
+
+  it('lands on Connect, not on the page body', async () => {
+    await createFromEmptyHome(true)
+    expect(screen.getByRole('button', { name: 'Connect' })).toHaveFocus()
+  })
+
+  it('without a fallback focus would be lost (the case it fixes)', async () => {
+    await createFromEmptyHome(false)
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
 const HOME_STATE = {
   profile: { activeProfileId: 'p1', profiles: [SUB] },
   connection: { status: 'connected', health: 'ready' },
@@ -417,6 +522,32 @@ describe('Desync modal entry points', () => {
     expect(within(card).getByText('On')).toBeVisible()
     fireEvent.click(within(card).getByRole('button', { name: 'Open' }))
     expect(screen.getByRole('dialog', { name: 'Desync' })).toBeVisible()
+  })
+
+  it('the Settings summary names switched-on presets', async () => {
+    stubStatus(
+      desyncStatus({
+        settings: {
+          custom: [
+            { id: 'a1', domain: 'example.org', enabled: true },
+            { id: 'ig', domain: '', preset: 'instagram', enabled: true },
+            { id: 'a2', domain: 'example.net', enabled: true },
+            { id: 'fb', domain: '', preset: 'facebook', enabled: true },
+            { id: 'xx', domain: '', preset: 'x', enabled: false },
+          ],
+        },
+      }),
+    )
+    wailsApp.stub('ListDesyncPresets', () => DESYNC_PRESETS)
+    renderWithProviders(
+      <DesyncSummaryCard {...CONNECTED} onOpen={() => undefined} />,
+    )
+    const card = screen.getByRole('group', { name: 'Desync' })
+    expect(
+      await within(card).findByText(
+        'YouTube, Discord, Facebook, Instagram, Sites 2',
+      ),
+    ).toBeVisible()
   })
 
   it('a Desync-only profile card opens the modal without activating', async () => {

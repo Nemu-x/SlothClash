@@ -28,6 +28,7 @@ type customFakeCore struct {
 	probes   []string            // "name target expected"
 	inflight atomic.Int32
 	maxSeen  atomic.Int32
+	delay    atomic.Int64 // extra latency of every delay probe, in ns
 	srv      *httptest.Server
 }
 
@@ -59,7 +60,7 @@ func newCustomFakeCore(t *testing.T, passes func(name, target string) bool) *cus
 			c.mu.Lock()
 			c.probes = append(c.probes, proxy+" "+target+" "+expected)
 			c.mu.Unlock()
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(2*time.Millisecond + time.Duration(c.delay.Load()))
 			if c.passes(proxy, target) {
 				fmt.Fprint(w, `{"delay":9}`)
 				return

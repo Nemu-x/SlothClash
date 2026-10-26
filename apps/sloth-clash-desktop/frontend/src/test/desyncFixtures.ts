@@ -1,6 +1,7 @@
 import type {
   DesyncAutoService,
   DesyncAutoStatus,
+  DesyncPreset,
   DesyncSettings,
   DesyncStatus,
 } from '../api/desync'
@@ -64,3 +65,38 @@ export function desyncSnapshot(
 ): DesyncSnapshot {
   return { status, automatic }
 }
+
+/** The preset catalog as ListDesyncPresets returns it (internal/desync/presets.go). */
+export const DESYNC_PRESETS: DesyncPreset[] = [
+  {
+    id: 'facebook',
+    name: 'Facebook',
+    domains: [
+      'facebook.com',
+      'fbcdn.net',
+      'facebook.net',
+      'fbsbx.com',
+      'fb.com',
+      'fb.me',
+      'fb.watch',
+      'messenger.com',
+      'm.me',
+    ],
+  },
+  {
+    id: 'instagram',
+    name: 'Instagram',
+    domains: [
+      'instagram.com',
+      'cdninstagram.com',
+      'ig.me',
+      'instagr.am',
+      'fbcdn.net',
+    ],
+  },
+  {
+    id: 'x',
+    name: 'X (Twitter)',
+    domains: ['x.com', 'twitter.com', 'twimg.com', 't.co', 'pscp.tv'],
+  },
+]

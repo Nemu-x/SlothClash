@@ -18,7 +18,7 @@ func TestDesyncTCPNeedsAllTargetsAndTwoRounds(t *testing.T) {
 	candidates := []desync.Candidate{{ID: "first"}, {ID: "second"}, {ID: "unused"}}
 	calls := map[string]int{}
 	records := 0
-	winner, err := chooseDesyncTCP(context.Background(), "discord", candidates, func(_ context.Context, c desync.Candidate, target string) error {
+	winner, err := chooseDesyncTCP(context.Background(), desyncTargets("discord"), candidates, func(_ context.Context, c desync.Candidate, target string) error {
 		calls[c.ID]++
 		if c.ID == "first" && strings.Contains(target, "cdn.") {
 			return fmt.Errorf("TLS handshake failed")
@@ -32,7 +32,7 @@ func TestDesyncTCPNeedsAllTargetsAndTwoRounds(t *testing.T) {
 func TestDesyncLateProbeCannotWinAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	winner, err := chooseDesyncTCP(ctx, "youtube", []desync.Candidate{{ID: "late"}}, func(context.Context, desync.Candidate, string) error { cancel(); return nil }, func(desync.Candidate, int, error, time.Duration) {})
+	winner, err := chooseDesyncTCP(ctx, desyncTargets("youtube"), []desync.Candidate{{ID: "late"}}, func(context.Context, desync.Candidate, string) error { cancel(); return nil }, func(desync.Candidate, int, error, time.Duration) {})
 	if err == nil || winner.ID != "" {
 		t.Fatal("a canceled result was selected")
 	}

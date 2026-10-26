@@ -17,7 +17,9 @@ type DesyncNetworkCache struct {
 	YouTube string `json:"youtube,omitempty"`
 	Discord string `json:"discord,omitempty"`
 	Voice   string `json:"voice,omitempty"`
-	Updated int64  `json:"updated"`
+	// Custom maps a custom domain to its winner (desync.CacheEntry.Custom).
+	Custom  map[string]string `json:"custom,omitempty"`
+	Updated int64             `json:"updated"`
 }
 
 func desyncNetworkKey() string {

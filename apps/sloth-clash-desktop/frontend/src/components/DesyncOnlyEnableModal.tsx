@@ -20,14 +20,25 @@ export function DesyncOnlyEnableModal({
 }) {
   const { t } = useTranslation()
   const cardRef = useRef<HTMLDivElement>(null)
-  useDialogFocus(cardRef, open, busy ? undefined : onClose)
+  const overlayDownRef = useRef(false)
+  // While Desync is being turned on the dialog stays (Escape, backdrop).
+  const close = busy ? undefined : onClose
+  useDialogFocus(cardRef, open, close)
   if (!open) return null
   return (
     <div
       className="modalOverlay"
       role="presentation"
       style={{ zIndex: 72 }}
-      onClick={onClose}
+      onMouseDown={(e) => {
+        overlayDownRef.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        // Only a click that started on the backdrop: a text selection
+        // dragged out of the dialog must not close it.
+        if (e.target === e.currentTarget && overlayDownRef.current) close?.()
+        overlayDownRef.current = false
+      }}
     >
       <div
         ref={cardRef}
@@ -36,7 +47,6 @@ export function DesyncOnlyEnableModal({
         aria-modal="true"
         aria-labelledby="desyncOnlyEnableTitle"
         aria-describedby="desyncOnlyEnableBody"
-        onClick={(e) => e.stopPropagation()}
       >
         <h3 id="desyncOnlyEnableTitle" className="modalTitle">
           {t('ui.profiles.desyncOnly.enableTitle')}

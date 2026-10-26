@@ -115,6 +115,34 @@ describe('Profiles page: Desync-only card', () => {
     expect(refreshButton?.hidden).toBe(true)
   })
 
+  it('shows no update time (lastUpdated is its creation time)', () => {
+    const subscription = {
+      id: 'p1',
+      name: 'Sub',
+      type: 'subscription',
+      url: 'https://example.com/sub',
+      lastUpdated: Math.floor(Date.now() / 1000) - 120,
+    }
+    renderWithProviders(
+      <ProfilesPage
+        profiles={[subscription, DESYNC_ONLY]}
+        activeProfileId="p2"
+        refreshBusyId={null}
+        desyncEnabled
+        error={null}
+        onImport={noop}
+        onActivate={noop}
+        onRefresh={noop}
+        onContextMenu={noop}
+      />,
+    )
+    const shown = [...document.querySelectorAll('.profileUpdated')].map(
+      (el) => el.textContent,
+    )
+    // Only the subscription's time; the Desync-only card's 1m is not shown.
+    expect(shown).toEqual(['2m ago'])
+  })
+
   it('says when Desync is on', () => {
     renderWithProviders(
       <ProfilesPage

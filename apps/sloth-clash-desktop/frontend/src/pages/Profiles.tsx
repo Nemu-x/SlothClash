@@ -58,7 +58,11 @@ export function ProfilesPage({
           const trafficPair = profileTrafficPair(p)
           const trafficTitle = profileTrafficLine(p)
           const host = profileSubscriptionHost(String(p.url ?? ''))
-          const ago = formatProfileAgo(Number(p.lastUpdated ?? 0))
+          // A Desync-only profile's lastUpdated is its creation / rename
+          // time, not a content update: no "updated X ago" for it.
+          const ago = desyncOnly
+            ? ''
+            : formatProfileAgo(Number(p.lastUpdated ?? 0))
           const updateError = desyncOnly
             ? ''
             : String(p.lastUpdateError ?? '').trim()

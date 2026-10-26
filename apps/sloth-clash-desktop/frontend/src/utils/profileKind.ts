@@ -13,3 +13,18 @@ export function isDesyncOnlyProfile(p: unknown): boolean {
     (p as { kind?: unknown }).kind === PROFILE_KIND_DESYNC_ONLY
   )
 }
+
+/**
+ * Activates a profile and, for a Desync-only one, offers to turn Desync on.
+ * `activate` resolves to whether the activation succeeded (it shows the
+ * error itself); a failed one keeps the previous profile, so nothing is
+ * offered.
+ */
+export async function activateProfileThenOfferDesync(
+  target: unknown,
+  activate: () => Promise<boolean>,
+  offerDesync: () => Promise<void>,
+): Promise<void> {
+  if (!(await activate())) return
+  if (isDesyncOnlyProfile(target)) await offerDesync()
+}

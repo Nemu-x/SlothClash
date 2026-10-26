@@ -350,7 +350,13 @@
       "insightExit": "Выход",
       "insightDirect": "Напрямую",
       "insightLatency": "Задержка",
-      "insightSpeed": "Скорость"
+      "insightSpeed": "Скорость",
+      "desyncOnlySubtitle": "Только Desync · без VPN",
+      "desyncOnlyOff": "Desync выключен: весь трафик идёт напрямую. Включить",
+      "desyncOnlyRuleOnly": "Профиль «Только Desync» работает только в режиме правил: маршруты Desync — это правила, а сервера для глобального режима нет",
+      "desyncOnlyRuleHint": "Только правила",
+      "proxyServers": "Прокси-серверы",
+      "desyncOnlyNoServers": "Нет · только маршруты Desync"
     },
     "profiles": {
       "title": "Профили",
@@ -393,7 +399,11 @@
         "namePlaceholderUrl": "Пусто = использовать Profile-Title с сервера",
         "namePlaceholderPaste": "Пусто = «Локальный конфиг»",
         "pasteFromClipboard": "Вставить из буфера",
-        "loadFromFile": "Загрузить из файла…"
+        "loadFromFile": "Загрузить из файла…",
+        "tabDesync": "Только Desync (без VPN)",
+        "desyncBlurb": "Для тех, у кого нет VPN-подписки. YouTube, Discord и ваши домены идут через Desync, всё остальное подключается напрямую. Сервисы выбираются в «Настройки → Desync».",
+        "namePlaceholderDesync": "Пусто = «Desync only»",
+        "create": "Создать"
       },
       "editInfo": {
         "title": "Изменить сведения профиля",
@@ -494,6 +504,17 @@
         "savedBanner": "Скрипт сохранён",
         "clearedBanner": "Скрипт очищен",
         "badgeTitle": "Скрипт этого профиля упал на последнем запуске"
+      },
+      "desyncOnly": {
+        "badge": "Только Desync",
+        "badgeTitle": "Без VPN-серверов: только маршруты Desync, всё остальное напрямую",
+        "desyncOn": "Без VPN · Desync включён",
+        "desyncOff": "Без VPN · Desync выключен",
+        "enableTitle": "Включить Desync?",
+        "enableBody": "В этом профиле нет VPN-серверов. Без Desync весь трафик идёт напрямую и ничего не разблокируется.",
+        "enable": "Включить Desync",
+        "notNow": "Не сейчас",
+        "editBlurb": "У профиля «Только Desync» нет подписки, поэтому меняется только имя."
       }
     },
     "proxies": {
@@ -532,7 +553,8 @@
       "densityCompact": "Компактно",
       "densityComfortable": "Просторно",
       "hiddenChip": "скрытая",
-      "hiddenChipHint": "Эта группа помечена в подписке как скрытая."
+      "hiddenChipHint": "Эта группа помечена в подписке как скрытая.",
+      "desyncOnlyEmpty": "В этом профиле нет прокси-серверов — только маршруты Desync. Всё остальное подключается напрямую."
     },
     "rules": {
       "title": "Правила",
@@ -760,7 +782,9 @@
       "profile_failed": "Резерв подписки недоступен · повторяем проверку",
       "queued": "Ожидаем проверку",
       "not_needed": "Не заблокирован · Desync не нужен",
-      "unavailable": "Desync не может разблокировать сайт"
+      "unavailable": "Desync не может разблокировать сайт",
+      "no_strategy": "Нет рабочей стратегии · подключаемся напрямую, повторим автоматически",
+      "failed_direct": "Desync недоступен · повторим автоматически"
     },
     "copyFailed": "Не удалось скопировать диагностику",
     "homeChipAria": "Статус Desync · открыть настройки",

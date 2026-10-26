@@ -40,6 +40,10 @@ type DesyncStatus struct {
 	Connected        bool           `json:"connected"`
 	Mode             string         `json:"mode"`
 	Traffic          string         `json:"traffic"`
+	// DesyncOnly reports that the active profile is a Desync-only one: no
+	// subscription reserve exists, so a route that finds no strategy goes
+	// direct (no_strategy) instead of to the reserve.
+	DesyncOnly bool `json:"desyncOnly"`
 }
 
 type DesyncProbeResult struct {
@@ -141,8 +145,9 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 	connected := a.state.Connection.Status == "connected" && a.state.Core.Running
 	mode := a.state.Mode.Current
 	traffic := a.state.Traffic
+	desyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	a.mu.RUnlock()
-	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic}
+	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic, DesyncOnly: desyncOnly}
 }
 
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
@@ -275,7 +280,11 @@ func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
 		var group desyncUDPProxy
 		err := autoCoreJSON(probeCtx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(checks[i].Route), nil, &group)
 		delay := 0
-		if err == nil && group.Now == desyncProfileSelection {
+		if err == nil && group.Now == desyncProfileSelection && status.DesyncOnly {
+			// No reserve: PASS ends at DIRECT, so test that path.
+			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, "DIRECT", checks[i].URL)
+			checks[i].Route = "direct"
+		} else if err == nil && group.Now == desyncProfileSelection {
 			var result desyncProfileProbe
 			result, err = probeDesyncProfile(probeCtx, endpoint, secret, checks[i].Route, "")
 			delay = int(result.DurationMS)

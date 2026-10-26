@@ -121,7 +121,12 @@ func confirmDesyncTCPFailure(ctx context.Context, check func(context.Context) er
 	return ctx.Err() == nil
 }
 
-func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) {
+// noReserve is the Desync-only profile: there is no subscription to fall back
+// to, so the reserve is never verified or selected. When no strategy works
+// the group selects PASS (which, in that profile, ends at MATCH,DIRECT), the
+// service reports no_strategy and the search is repeated in the background
+// after a doubling backoff (recoverDesyncNoStrategy).
+func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, noReserve bool) {
 	var group desyncUDPProxy
 	for {
 		err := waitDesyncGroup(ctx, endpoint, secret, route)
@@ -136,7 +141,8 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 			return
 		}
 	}
-	reserve := group.Now == desyncProfileSelection
+	// A PASS left selected (store-selected) is the reserve only where there is one.
+	reserve := !noReserve && group.Now == desyncProfileSelection
 	recovery := desyncReserveRecovery{since: time.Now()}
 	if reserve {
 		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "profile", Candidate: "profile"})
@@ -146,6 +152,13 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 			err := a.calibrateDesyncTCP(ctx, lease, network, endpoint, secret, service, route)
 			if ctx.Err() != nil {
 				return
+			}
+			if err != nil && noReserve {
+				a.desyncNoStrategy(ctx, lease, endpoint, secret, service, route, err)
+				if !a.recoverDesyncNoStrategy(ctx, lease, network, endpoint, secret, service, route) {
+					return
+				}
+				err = nil // a strategy is applied (ready): monitor it below
 			}
 			if err != nil {
 				if fallbackErr := a.confirmDesyncProfile(ctx, lease, endpoint, secret, service, route, ""); fallbackErr == nil {
@@ -206,6 +219,61 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 		}
 		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: phase, Candidate: "profile", Code: desyncErrorCode(e)})
 		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: "profile", OK: e == nil, Code: desyncErrorCode(e), DurationMS: p.DurationMS})
+	}
+}
+
+// desyncNoStrategy is the no-reserve outcome of a failed TCP search: the
+// group falls through (PASS, which a Desync-only profile ends at DIRECT)
+// instead of keeping a strategy that does not work, and the service reports
+// no_strategy with the search's reason.
+func (a *App) desyncNoStrategy(ctx context.Context, lease uint64, endpoint, secret, service, route string, cause error) {
+	if a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, desyncProfileSelection) == nil {
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: "direct", OK: true, Code: "no_strategy"})
+	}
+	a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "no_strategy", Code: desyncErrorCode(cause)})
+}
+
+// The no-strategy retry backoff: 1 minute, doubling up to 30 (as for custom
+// domains). A variable so tests can shorten it.
+var desyncNoStrategyRetry = time.Minute
+
+const desyncNoStrategyBackoffMax = 30 * time.Minute
+
+// desyncNoStrategyBackoff is the wait before background retry number retry
+// (1-based).
+func desyncNoStrategyBackoff(retry int) time.Duration {
+	return min(desyncNoStrategyRetry<<min(retry-1, 5), desyncNoStrategyBackoffMax)
+}
+
+// recoverDesyncNoStrategy repeats a failed no-reserve search until a strategy
+// works, then applies it and reports ready (true; false when ctx ends). The
+// retries are background searches, so the visible status stays no_strategy
+// (route direct) instead of flashing testing/failed every round; their
+// attempts are still recorded for diagnostics. Check again (RetryDesyncAuto)
+// restarts the session, which searches immediately.
+func (a *App) recoverDesyncNoStrategy(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) bool {
+	for retry := 1; ; retry++ {
+		if !desyncWait(ctx, desyncNoStrategyBackoff(retry)) {
+			return false
+		}
+		winner, err := a.findDesyncTCP(ctx, lease, network, endpoint, secret, service, route, true)
+		if ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			continue
+		}
+		if err := a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.Name(route)); err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+			continue
+		}
+		saveDesyncSelection(network, service, winner.ID)
+		a.desyncCtl.resetTCP(lease, service)
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: winner.ID, OK: true, Code: "desync_restored"})
+		return true
 	}
 }
 

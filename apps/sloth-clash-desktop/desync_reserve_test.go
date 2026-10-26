@@ -120,7 +120,7 @@ func TestDesyncTCPFailedCandidatesUseVerifiedReserveWithoutReload(t *testing.T) 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		a.runDesyncTCPService(ctx, 1, network, a.core.listen, "", "youtube", desync.YouTubeRoute)
+		a.runDesyncTCPService(ctx, 1, network, a.core.listen, "", "youtube", desync.YouTubeRoute, false)
 	}()
 	select {
 	case value := <-selected:
@@ -251,7 +251,7 @@ func TestDesyncUnavailableProfileRetainsSelectorAndBackgroundSearchCannotSwitch(
 	a.desyncCtl.epoch = 1
 	a.desyncCtl.status.Network = desyncNetworkKey()
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	a.runDesyncTCPService(ctx, 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute)
+	a.runDesyncTCPService(ctx, 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, false)
 	cancel()
 	if puts.Load() != 0 || a.GetDesyncAutoStatus().YouTube.Code != "reserve_direct" {
 		t.Fatal("unavailable reserve changed selector or hid reason")

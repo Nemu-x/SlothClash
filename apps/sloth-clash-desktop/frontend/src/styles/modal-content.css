@@ -95,6 +95,7 @@
 
 .importModeTabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   margin: var(--space-1) 0 var(--space-4);
   padding: var(--space-1);

@@ -41,6 +41,11 @@ export interface DesyncStatus {
   connected: boolean
   mode: string
   traffic: string
+  /**
+   * The active profile is Desync-only: no subscription reserve, a route
+   * without a working strategy goes direct (phase no_strategy).
+   */
+  desyncOnly?: boolean
 }
 
 export interface DesyncUDPStatus {

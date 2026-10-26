@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { isDesyncOnlyProfile } from '../utils/profileKind'
+
 export type ProfileMenuTarget = {
   id: string
   name: string
@@ -24,7 +26,7 @@ export function ProfileContextMenu({
   target: ProfileMenuTarget | null
   // The full profile record (or null) — needed to know if the URL is set and
   // for the actual `url` value used by "Copy subscription URL".
-  profile: { url?: string } | null
+  profile: { url?: string; kind?: string } | null
   onUpdate: (id: string) => void
   onEditInfo: (id: string, name: string, url: string) => void
   onCopyUrl: (url: string) => void
@@ -80,6 +82,9 @@ export function ProfileContextMenu({
 
   if (!target) return null
   const hasUrl = Boolean(String(profile?.url ?? '').trim())
+  // A Desync-only profile has no subscription, rules, templates or config
+  // file of its own: only its name and deleting it are left to the user.
+  const desyncOnly = isDesyncOnlyProfile(profile)
   return (
     <div
       ref={menuRef}
@@ -94,14 +99,16 @@ export function ProfileContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="ctxTitle">{target.name}</div>
-      <button
-        type="button"
-        className="ctxItem"
-        disabled={!hasUrl}
-        onClick={() => onUpdate(target.id)}
-      >
-        {t('ui.profiles.contextMenu.updateNow')}
-      </button>
+      {desyncOnly ? null : (
+        <button
+          type="button"
+          className="ctxItem"
+          disabled={!hasUrl}
+          onClick={() => onUpdate(target.id)}
+        >
+          {t('ui.profiles.contextMenu.updateNow')}
+        </button>
+      )}
       <button
         type="button"
         className="ctxItem"
@@ -111,21 +118,25 @@ export function ProfileContextMenu({
       >
         {t('ui.profiles.contextMenu.editInfo')}
       </button>
-      <button
-        type="button"
-        className="ctxItem"
-        disabled={!hasUrl}
-        onClick={() => onCopyUrl(String(profile?.url ?? ''))}
-      >
-        {t('ui.profiles.contextMenu.copySubscriptionUrl')}
-      </button>
-      <button
-        type="button"
-        className="ctxItem"
-        onClick={() => onOpenRules(target.id, target.name)}
-      >
-        {t('ui.profiles.contextMenu.rules')}
-      </button>
+      {desyncOnly ? null : (
+        <>
+          <button
+            type="button"
+            className="ctxItem"
+            disabled={!hasUrl}
+            onClick={() => onCopyUrl(String(profile?.url ?? ''))}
+          >
+            {t('ui.profiles.contextMenu.copySubscriptionUrl')}
+          </button>
+          <button
+            type="button"
+            className="ctxItem"
+            onClick={() => onOpenRules(target.id, target.name)}
+          >
+            {t('ui.profiles.contextMenu.rules')}
+          </button>
+        </>
+      )}
       <button
         type="button"
         className="ctxItem"
@@ -133,6 +144,36 @@ export function ProfileContextMenu({
       >
         {t('ui.profiles.contextMenu.deleteProfile')}
       </button>
+      {desyncOnly ? null : (
+        <AdvancedItems
+          target={target}
+          onOpenExtendConfig={onOpenExtendConfig}
+          onOpenProxyGroups={onOpenProxyGroups}
+          onOpenScript={onOpenScript}
+          onOpenEditFile={onOpenEditFile}
+        />
+      )}
+    </div>
+  )
+}
+
+// The per-profile editors (extend config, proxy groups, script, raw file).
+function AdvancedItems({
+  target,
+  onOpenExtendConfig,
+  onOpenProxyGroups,
+  onOpenScript,
+  onOpenEditFile,
+}: {
+  target: ProfileMenuTarget
+  onOpenExtendConfig: (id: string, name: string) => void
+  onOpenProxyGroups: (id: string, name: string) => void
+  onOpenScript: (id: string, name: string) => void
+  onOpenEditFile: (id: string, name: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
       <div className="ctxSection">{t('ui.profiles.contextMenu.advanced')}</div>
       <button
         type="button"
@@ -162,6 +203,6 @@ export function ProfileContextMenu({
       >
         {t('ui.profiles.contextMenu.editFile')}
       </button>
-    </div>
+    </>
   )
 }

@@ -43,6 +43,9 @@ type App struct {
 	// first launch, reconnect fixes it" bug. nil until startup wires it.
 	bootDone      chan struct{}
 	closeToTray   bool
+	// modeBeforeDesyncOnly is the mode a Desync-only profile overrode with
+	// Rule ("global"/"direct", or ""); guarded by mu, persisted in profiles.json.
+	modeBeforeDesyncOnly string
 	quitRequested bool
 
 	emitStateMu           sync.Mutex

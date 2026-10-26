@@ -165,7 +165,12 @@ func (a *App) ActivateProfile(profileID string) (AppState, error) {
 	}
 	connected := a.state.Connection.Status == "connected"
 	profileChanged := a.state.Profile.ActiveProfileID != profileID
+	wasDesyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	a.state.Profile.ActiveProfileID = profileID
+	// A Desync-only profile runs in Rule mode only; leaving one brings back
+	// the user's own mode choice.
+	a.enforceDesyncOnlyModeLocked()
+	a.restoreModeAfterDesyncOnlyLocked(wasDesyncOnly)
 	if profileChanged {
 		// ActiveGroup + cached /proxies belong to the previous profile —
 		// drop them so the UI doesn't briefly highlight a group that
@@ -210,6 +215,7 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 	}
 
 	wasActive := a.state.Profile.ActiveProfileID == profileID
+	wasDesyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	a.profiles = append(a.profiles[:idx], a.profiles[idx+1:]...)
 	a.state.Profile.Profiles = a.profiles
 	if wasActive {
@@ -225,6 +231,8 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 		a.state.Proxy.ActiveGroup = ""
 		a.state.Proxy.Groups = []ProxyGroup{}
 		a.state.Proxy.LastGoodGroup = a.activeProfileLastGoodGroupLocked()
+		a.enforceDesyncOnlyModeLocked()
+		a.restoreModeAfterDesyncOnlyLocked(wasDesyncOnly)
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	connected := a.state.Connection.Status == "connected"
@@ -270,6 +278,9 @@ func (a *App) UpdateProfileInfo(profileID string, displayName string, subscripti
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], subscriptionURL); err != nil {
+			return a.state, err
+		}
 		a.profiles[i].Name = displayName
 		if subscriptionURL != "" {
 			norm, err := runtimecfg.NormalizeSubscriptionURL(subscriptionURL)
@@ -344,6 +355,9 @@ func (a *App) SetProfileAgeSecretKey(profileID string, secretKey string) (AppSta
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], secretKey); err != nil {
+			return a.state, err
+		}
 		if secretKey != a.profiles[i].AgeSecretKey {
 			resetProfileUpdateStatusLocked(&a.profiles[i])
 		}
@@ -377,6 +391,10 @@ func (a *App) SetProfileMergeTemplate(profileID string, template string) (AppSta
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], template); err != nil {
+			a.mu.Unlock()
+			return a.GetAppState(), err
+		}
 		a.profiles[i].MergeTemplate = template
 		a.profiles[i].SkipAutoConfig = false
 		a.profiles[i].LastUpdated = time.Now().Unix()
@@ -417,6 +435,10 @@ func (a *App) SetProfileProxyTemplate(profileID string, template string) (AppSta
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], template); err != nil {
+			a.mu.Unlock()
+			return a.GetAppState(), err
+		}
 		a.profiles[i].ProxyTemplate = template
 		a.profiles[i].SkipAutoConfig = false
 		a.profiles[i].LastUpdated = time.Now().Unix()
@@ -456,6 +478,10 @@ func (a *App) SetProfileRulesTemplate(profileID string, template string) (AppSta
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], template); err != nil {
+			a.mu.Unlock()
+			return a.GetAppState(), err
+		}
 		a.profiles[i].RulesTemplate = template
 		a.profiles[i].SkipAutoConfig = false
 		a.profiles[i].LastUpdated = time.Now().Unix()

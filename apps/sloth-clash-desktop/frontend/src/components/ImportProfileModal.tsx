@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-export type ImportMode = 'url' | 'paste'
+// 'desync': create a Desync-only profile (no VPN), nothing to import.
+export type ImportMode = 'url' | 'paste' | 'desync'
 
 const SCHEME_RE = /\b(?:vless|vmess|ss|trojan|hysteria2|hy2|tuic):\/\//gi
 
@@ -90,7 +91,8 @@ export function ImportProfileModal({
   name: string
   content: string
   busy: boolean
-  // Brand hide flag: drop the paste/local-config tab, URL-only import.
+  // Brand hide flag: drop the paste/local-config tab (and the Desync-only
+  // one), URL-only import.
   hidePaste?: boolean
   onModeChange: (next: ImportMode) => void
   onUrlChange: (next: string) => void
@@ -108,9 +110,11 @@ export function ImportProfileModal({
   const detection = effectiveMode === 'paste' ? detect(content, t) : null
   const canSubmit =
     !busy &&
-    (effectiveMode === 'url'
-      ? url.trim().length > 0
-      : content.trim().length > 0 && detection?.kind !== 'unknown')
+    (effectiveMode === 'desync'
+      ? true
+      : effectiveMode === 'url'
+        ? url.trim().length > 0
+        : content.trim().length > 0 && detection?.kind !== 'unknown')
 
   const onFilePicked = async (file: File | undefined) => {
     if (!file) return
@@ -152,10 +156,23 @@ export function ImportProfileModal({
             >
               {t('ui.profiles.importModal.tabPaste')}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveMode === 'desync'}
+              className={effectiveMode === 'desync' ? 'btn' : 'btn ghost'}
+              onClick={() => onModeChange('desync')}
+            >
+              {t('ui.profiles.importModal.tabDesync')}
+            </button>
           </div>
         )}
 
-        {effectiveMode === 'url' ? (
+        {effectiveMode === 'desync' ? (
+          <p className="muted small">
+            {t('ui.profiles.importModal.desyncBlurb')}
+          </p>
+        ) : effectiveMode === 'url' ? (
           <label className="field modalField">
             <span className="fieldLab">
               {t('ui.profiles.importModal.subscriptionUrl')}
@@ -199,22 +216,26 @@ export function ImportProfileModal({
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder={
-              effectiveMode === 'url'
-                ? t('ui.profiles.importModal.namePlaceholderUrl')
-                : t('ui.profiles.importModal.namePlaceholderPaste')
+              effectiveMode === 'desync'
+                ? t('ui.profiles.importModal.namePlaceholderDesync')
+                : effectiveMode === 'url'
+                  ? t('ui.profiles.importModal.namePlaceholderUrl')
+                  : t('ui.profiles.importModal.namePlaceholderPaste')
             }
           />
         </label>
 
         <div className="modalFooter">
           <div className="modalFooterLeft">
-            <button
-              type="button"
-              className="btn btnModalSecondary"
-              onClick={onPasteFromClipboard}
-            >
-              {t('ui.profiles.importModal.pasteFromClipboard')}
-            </button>
+            {effectiveMode === 'desync' ? null : (
+              <button
+                type="button"
+                className="btn btnModalSecondary"
+                onClick={onPasteFromClipboard}
+              >
+                {t('ui.profiles.importModal.pasteFromClipboard')}
+              </button>
+            )}
             {effectiveMode === 'paste' ? (
               <>
                 <button
@@ -252,7 +273,9 @@ export function ImportProfileModal({
               disabled={!canSubmit}
               onClick={onSubmit}
             >
-              {t('common.import')}
+              {effectiveMode === 'desync'
+                ? t('ui.profiles.importModal.create')
+                : t('common.import')}
             </button>
           </div>
         </div>

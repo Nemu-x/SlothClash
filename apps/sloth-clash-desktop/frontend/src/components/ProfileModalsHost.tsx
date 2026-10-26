@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import {
   ConfirmInstallConfigFromLink,
+  CreateDesyncOnlyProfile,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,
@@ -23,6 +24,7 @@ import {
   DEFAULT_MERGE_TEMPLATE,
   mergeTemplateFromProfile,
 } from '../mergeTemplate'
+import { isDesyncOnlyProfile } from '../utils/profileKind'
 import { friendlyErrorMessage, yamlValidationError } from '../utils/yaml'
 
 import { DeleteProfileModal } from './DeleteProfileModal'
@@ -57,13 +59,14 @@ export function ProfileModalsHost({
   setBanner,
   pushToast,
   onImported,
+  onDesyncOnlyActivated,
 }: {
   modals: ProfileModals
   profiles: any[] | undefined
   proxyGroups: any[] | undefined
   hidePaste?: boolean
   /** App's action wrapper: clears the error, runs, surfaces a failure, refreshes. */
-  run: (action: () => Promise<any>) => Promise<void>
+  run: (action: () => Promise<any>) => Promise<unknown>
   refresh: () => Promise<void>
   setError: (msg: string) => void
   /** Settings status line. */
@@ -71,6 +74,8 @@ export function ProfileModalsHost({
   pushToast: (toast: Omit<Toast, 'id'>) => number
   /** A profile was imported from the import dialog. */
   onImported: () => void
+  /** A created Desync-only profile became the active one (the first profile). */
+  onDesyncOnlyActivated?: () => void
 }) {
   const { t } = useTranslation()
   const [importName, setImportName] = useState('')
@@ -100,6 +105,9 @@ export function ProfileModalsHost({
   const profileFileModal = modals.file
   const profileEditInfo = modals.editInfo
   const profileMenu = modals.menu
+  const editInfoDesyncOnly = isDesyncOnlyProfile(
+    profiles?.find((x: any) => x.id === profileEditInfo?.id),
+  )
 
   // The YAML errors and the draft seeding below are effects carried over from
   // App.tsx unchanged (lint-relaxed there): the errors trail the draft by one
@@ -228,13 +236,21 @@ export function ProfileModalsHost({
     setImportBusy(true)
     try {
       const name = importName.trim()
-      if (importMode === 'paste') {
+      let desyncOnlyActive = false
+      if (importMode === 'desync' && !hidePaste) {
+        const st = await CreateDesyncOnlyProfile(name)
+        const activeId = st?.profile?.activeProfileId
+        desyncOnlyActive = isDesyncOnlyProfile(
+          st?.profile?.profiles?.find((x: any) => x.id === activeId),
+        )
+      } else if (importMode === 'paste' && !hidePaste) {
         await ImportProfileFromText(name, importContent.trim())
       } else {
         await ImportProfileFromURL(name, importUrl.trim())
       }
       await refresh()
       onImported()
+      if (desyncOnlyActive) onDesyncOnlyActivated?.()
       setImportUrl('')
       setImportName('')
       setImportContent('')
@@ -377,6 +393,7 @@ export function ProfileModalsHost({
       />
       <ProfileEditInfoModal
         target={profileEditInfo}
+        desyncOnly={editInfoDesyncOnly}
         name={profileEditName}
         url={profileEditUrl}
         autoEnabled={profileEditAutoEnabled}
@@ -412,6 +429,11 @@ export function ProfileModalsHost({
         onClose={() => modals.setEditInfo(null)}
         onSave={(id) => {
           void run(async () => {
+            if (editInfoDesyncOnly) {
+              // No subscription fields to save (the backend refuses them).
+              await UpdateProfileInfo(id, profileEditName.trim(), '')
+              return
+            }
             await UpdateProfileInfo(
               id,
               profileEditName.trim(),

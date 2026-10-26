@@ -1,6 +1,6 @@
 # Desync
 
-Desync connects selected services and custom domains directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription. The feature is off by default.
+Desync connects selected services and custom domains directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription, or goes directly with a [Desync-only profile](#desync-only-profile-no-vpn). The feature is off by default.
 
 ## Use
 
@@ -20,6 +20,7 @@ Selection runs in the background even when Settings is closed. The panel shows p
 - **Using subscription reserve**: new connections follow the original subscription rules after a remote route passed the service checks. Voice stays on this route during active traffic.
 - **Subscription reserve unavailable**: the selected reserve's latest check failed; background recovery continues without bouncing existing connections.
 - **Desync and reserve unavailable**: the bounded strategy search and reserve verification failed; the controller backs off and tries again. **Check again** restarts the controller.
+- **No working strategy** (Desync-only profile): no strategy passed and there is no reserve; the service connects directly while the search is repeated in the background (the status stays put during those retries). **Check again** searches at once. **Desync unavailable** is the same profile's wording for any other failure.
 
 **Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Probe targets, Discord voice endpoints and custom domains appear only as a keyed digest: HMAC-SHA256 truncated to 12 hex characters, keyed by a random secret generated once per install and stored in the local prefs file. The secret is never included in the report and never returned to the UI, so a reader cannot test a guessed site against a digest. Digests stay the same across reports from the same install, so attempts match flow observations and each custom domain (listed with its random entry ID and on/off state) matches its attempts. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
 
@@ -44,6 +45,16 @@ How it works:
 - Winners (a strategy or "not needed") are cached per network under `custom:<domain>` with the same 24-hour expiry and network/build digest as the built-in services.
 
 Limits: Desync changes how a connection's first packets look to a DPI middlebox; it cannot reach a server whose IP address is blocked or a domain blocked by DNS beyond the resolver fallback. UDP and voice for custom domains are not supported. A site served from several CDN hosts may need different strategies per host: add the affected subdomain as its own entry. Only the domain's root URL is tested, not logged-in pages or media playback. The probe is a small HEAD request, so a DPI that lets a connection start and cuts it only after a size threshold can show a site as **not needed** while real page loads stall. If a site shows **not needed** but does not load, keep the entry (and add the host that actually stalls, such as a media or CDN subdomain, as its own entry anyway) and press **Check again** while the problem is visible: a strategy is picked only when a probe through plain direct access fails.
+
+## Desync-only profile (no VPN)
+
+For users without a VPN subscription. **Profiles → Add → Desync only (no VPN)** creates a profile that has no subscription URL and no proxy servers; it is only created by that button. Its generated configuration is the Desync routes (YouTube, Discord, Discord voice and the custom domains, exactly as above) followed by `MATCH,DIRECT`: everything that is not a Desync route connects directly. DNS uses the app's default resolver settings, and both System proxy and TUN work. Discord voice still requires Windows and TUN.
+
+- **Rule mode only.** The routes are rules and there is no server for Global mode, so Global and Direct are not offered while the profile is active (the mode switches back to Rule when it is activated). Switching to a profile with servers again restores exactly the mode the Desync-only profile overrode (Global or Direct), also after a restart; if the mode was already Rule, it stays Rule.
+- **Desync must be on.** Activating the profile while Desync is off asks to turn it on; without it every connection goes directly and nothing is unblocked. The card and Home show the state, and Home links to Settings while it is off.
+- **No reserve.** There is no subscription to fall back to, so the controller never verifies or selects one. When no strategy works, the route's group selects `PASS`, which in this profile ends at `MATCH,DIRECT`, the service reports **No working strategy**, and the search is repeated in the background after 1 minute, doubling up to 30 minutes (as for custom domains). The status stays **No working strategy** during those retries instead of switching to the search and failure states every round; the first strategy that passes is applied and the service shows it as working. **Check again** restarts the controller and searches immediately. A `PASS` left selected from an earlier session is searched past instead of being treated as a reserve. Voice keeps its candidate and reports the same status.
+- **Nothing else to edit.** The profile has no subscription refresh, update status or "updated" time, no extend / proxy-groups / rules templates, no script and no editable config file; only its name can be changed. Proxies shows that there are no proxy servers, and Home has no node picker. Home also skips the separate direct WAN lookup: the exit already is the direct address.
+- **Diagnostics** include `"desyncOnly": true` and the `no_strategy` attempts; **Run diagnostics** checks a route on `PASS` through `DIRECT`.
 
 ## Selection and recovery
 

@@ -48,6 +48,9 @@ func (a *App) Connect() (AppState, error) {
 		a.mu.Unlock()
 		return a.GetAppState(), nil
 	}
+	// Normally already in force (ActivateProfile / load); the mode the
+	// warmup applies must never be Global or Direct for a Desync-only profile.
+	a.enforceDesyncOnlyModeLocked()
 	a.state.Connection.Status = ConnConnecting
 	a.state.Connection.Health = ""
 	a.state.Connection.LastError = ""

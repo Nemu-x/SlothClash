@@ -9,6 +9,11 @@ type Input struct {
 	SubURL  string
 	AgeKey  string
 
+	// DesyncOnly builds the config of a Desync-only profile: no subscription
+	// (SubURL, AgeKey, the templates and Script must be empty), only the
+	// Desync routes in front of MATCH,DIRECT (desync_only.go).
+	DesyncOnly bool
+
 	// The profile's declarative merge templates and JavaScript override.
 	ExtendTemplate string
 	ProxyTemplate  string

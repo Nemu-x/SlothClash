@@ -186,6 +186,25 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
 			{ID: "9e8d7c6b", Domain: "xn--e1afmkfd.xn--p1ai", Enabled: true},
 		}}},
+		// Presets: one entry routing the catalog's domains.
+		goldenProfile{id: "synthetic/representative-desync-preset-1", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{
+			{ID: "fb01fb01", Preset: "facebook", Enabled: true},
+		}}},
+		// All three: the shared fbcdn.net goes to Facebook (catalog order)
+		// although Instagram is listed first.
+		goldenProfile{id: "synthetic/representative-desync-preset-all", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, Custom: []DesyncCustomEntry{
+			{ID: "1a1a1a1a", Preset: "instagram", Enabled: true},
+			{ID: "2b2b2b2b", Preset: "x", Enabled: true},
+			{ID: "3c3c3c3c", Preset: "facebook", Enabled: true},
+		}}},
+		// Presets and plain entries: a switched-off preset is absent, a more
+		// specific plain domain goes first.
+		goldenProfile{id: "synthetic/desync-only-preset-and-custom", desyncOnly: true, desync: &DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+			{ID: "1a1a1a1a", Preset: "instagram", Enabled: true},
+			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
+			{ID: "3c3c3c3c", Preset: "facebook", Enabled: false},
+		}}},
 		// Desync-only profiles (no subscription). With Desync off the config
 		// is plain MATCH,DIRECT; each service adds only its own routes.
 		goldenProfile{id: "synthetic/desync-only-off", desyncOnly: true, desync: &DesyncSettings{YouTube: true}},

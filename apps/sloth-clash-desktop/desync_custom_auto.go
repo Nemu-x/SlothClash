@@ -16,7 +16,10 @@ import (
 //     budgets that resume where the previous one stopped; after the first
 //     failed budget the group selects PASS, so traffic follows the profile
 //     while the search continues. A winner passing two rounds is selected
-//     (state ready).
+//     (state ready). Each budget is one worker step: between two budgets the
+//     worker serves whatever else is due first (the most overdue entry wins),
+//     so a blocked site cannot hold back other entries' re-checks for more
+//     than one budget.
 //  3. nothing works: PASS stays selected (state unavailable) and the entry is
 //     searched again after a doubling backoff.
 //
@@ -27,19 +30,31 @@ import (
 // key), which re-checks every entry from step 1.
 
 const (
-	desyncCustomCheckEvery  = 90 * time.Second
 	desyncCustomBuiltinWait = 2 * time.Minute
 	desyncCustomRetry       = time.Minute
 	desyncCustomBackoffMax  = 30 * time.Minute
-	desyncCustomBudget      = 30 * time.Second
+)
+
+// Variables so tests can shorten them.
+var (
+	desyncCustomCheckEvery = 90 * time.Second
+	desyncCustomBudget     = 30 * time.Second
+	// desyncCustomBudgetGap separates two search budgets of one entry.
+	desyncCustomBudgetGap = time.Second
 )
 
 // desyncCustomPlan is the worker's per-entry state within one session.
 type desyncCustomPlan struct {
-	due       time.Time
-	phase     string // last outcome: queued, ready, not_needed, unavailable
+	due time.Time
+	// phase is the last outcome (queued, ready, not_needed, unavailable) or
+	// searching: the baseline failed and the search is between budgets.
+	phase     string
 	candidate string
 	failures  int // consecutive unavailable outcomes
+	// Search progress (phase searching): candidates completed so far and
+	// whether the group already selects PASS.
+	tried   int
+	passing bool
 }
 
 func (c *desyncController) setCustom(lease uint64, id string, state DesyncAutoService) {
@@ -130,9 +145,16 @@ func (a *App) runDesyncCustomService(ctx context.Context, lease uint64, network,
 			}
 		}
 		a.desyncCtl.pruneCustom(lease, keep)
-		entry, plan := nextDesyncCustom(entries, plans, time.Now())
+		now := time.Now()
+		entry, plan := nextDesyncCustom(entries, plans, now)
 		if plan == nil {
-			if !desyncWait(ctx, 2*time.Second) {
+			// Poll for new entries; wake earlier for the next due one (a
+			// search between budgets).
+			idle := 2 * time.Second
+			for _, p := range plans {
+				idle = min(idle, max(p.due.Sub(now), time.Millisecond))
+			}
+			if !desyncWait(ctx, idle) {
 				return
 			}
 			continue
@@ -142,7 +164,8 @@ func (a *App) runDesyncCustomService(ctx context.Context, lease uint64, network,
 }
 
 // nextDesyncCustom picks the entry to serve: new entries first (in list
-// order), then the first due one. A new entry gets a plan (state queued).
+// order), then the most overdue one (list order on ties). A new entry gets a
+// plan (state queued).
 func nextDesyncCustom(entries []DesyncCustomEntry, plans map[string]*desyncCustomPlan, now time.Time) (DesyncCustomEntry, *desyncCustomPlan) {
 	for _, e := range entries {
 		if plans[e.ID] == nil {
@@ -150,12 +173,14 @@ func nextDesyncCustom(entries []DesyncCustomEntry, plans map[string]*desyncCusto
 			return e, plans[e.ID]
 		}
 	}
+	var pick DesyncCustomEntry
+	var plan *desyncCustomPlan
 	for _, e := range entries {
-		if p := plans[e.ID]; !now.Before(p.due) {
-			return e, p
+		if p := plans[e.ID]; !now.Before(p.due) && (plan == nil || p.due.Before(plan.due)) {
+			pick, plan = e, p
 		}
 	}
-	return DesyncCustomEntry{}, nil
+	return pick, plan
 }
 
 func (a *App) stepDesyncCustom(ctx context.Context, lease uint64, network, endpoint, secret string, entry DesyncCustomEntry, plan *desyncCustomPlan) {
@@ -185,6 +210,9 @@ func (a *App) stepDesyncCustom(ctx context.Context, lease uint64, network, endpo
 	a.calibrateDesyncCustom(ctx, lease, network, endpoint, secret, entry, plan)
 }
 
+// calibrateDesyncCustom runs one bounded step of an entry's calibration: the
+// baseline, or one search budget. An unfinished search leaves the plan in
+// phase searching, due after desyncCustomBudgetGap.
 func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, endpoint, secret string, entry DesyncCustomEntry, plan *desyncCustomPlan) {
 	route := desync.CustomRoute(entry.ID)
 	service := desync.CustomService(entry.Domain)
@@ -224,72 +252,74 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 	}
 
 	// 1. Baseline.
-	a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "testing", Candidate: desync.DirectID, Attempt: 1, Total: total})
-	baseline, cancel := context.WithTimeout(ctx, desyncCustomBudget)
-	_, err := chooseDesyncTCP(baseline, targets, []desync.Candidate{{ID: desync.DirectID}}, probe, func(c desync.Candidate, _ int, e error, d time.Duration) { attempt(c, e, d) })
-	cancel()
-	if ctx.Err() != nil {
-		return
-	}
-	if err == nil {
-		if !selectMember("DIRECT") {
-			return
-		}
-		saveDesyncSelection(network, service, desync.DirectID)
-		*plan = desyncCustomPlan{phase: "not_needed", candidate: desync.DirectID, due: time.Now().Add(desyncCustomCheckEvery)}
-		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "not_needed", Candidate: desync.DirectID})
-		return
-	}
-
-	// 2. Search, resuming across budgets; a candidate cut off by the budget
-	// deadline is not counted and is tried again first.
-	tried, passing := 0, false
-	for tried < len(candidates) {
-		if !desyncCustomWanted(entry) {
-			return // removed or switched off meanwhile; the next pass prunes it
-		}
-		startAt := a.desyncCtl.tcpStart(service, len(candidates))
-		rotated := append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
-		trial, cancel := context.WithTimeout(ctx, desyncCustomBudget)
-		winner, err := chooseDesyncTCP(trial, targets, rotated, probe, func(c desync.Candidate, i int, e error, d time.Duration) {
-			if trial.Err() != nil {
-				return
-			}
-			tried++
-			a.desyncCtl.advanceTCP(lease, service, startAt, i, len(candidates), e == nil)
-			a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: 1 + tried, Total: total, Code: desyncErrorCode(e)})
-			attempt(c, e, d)
-		})
+	if plan.phase != "searching" {
+		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "testing", Candidate: desync.DirectID, Attempt: 1, Total: total})
+		baseline, cancel := context.WithTimeout(ctx, desyncCustomBudget)
+		_, err := chooseDesyncTCP(baseline, targets, []desync.Candidate{{ID: desync.DirectID}}, probe, func(c desync.Candidate, _ int, e error, d time.Duration) { attempt(c, e, d) })
 		cancel()
 		if ctx.Err() != nil {
 			return
 		}
 		if err == nil {
-			if !selectMember(winner.Name(route)) {
+			if !selectMember("DIRECT") {
 				return
 			}
-			saveDesyncSelection(network, service, winner.ID)
-			a.desyncCtl.resetTCP(lease, service)
-			*plan = desyncCustomPlan{phase: "ready", candidate: winner.ID, due: time.Now().Add(desyncCustomCheckEvery)}
-			a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
+			saveDesyncSelection(network, service, desync.DirectID)
+			*plan = desyncCustomPlan{phase: "not_needed", candidate: desync.DirectID, due: time.Now().Add(desyncCustomCheckEvery)}
+			a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "not_needed", Candidate: desync.DirectID})
 			return
 		}
-		if !passing {
-			// Do not leave the site on a failing candidate while searching.
-			if !selectMember(desyncProfileSelection) {
-				return
-			}
-			passing = true
-		}
-		if !desyncWait(ctx, time.Second) {
-			return
-		}
-	}
-
-	// 3. Nothing works: the profile's rules carry the site.
-	if !passing && !selectMember(desyncProfileSelection) {
+		plan.phase, plan.candidate, plan.tried, plan.passing = "searching", "", 0, false
+		plan.due = time.Now()
 		return
 	}
+
+	// 2. Search: one budget, resuming where the previous one stopped; a
+	// candidate cut off by the budget deadline is not counted and is tried
+	// again first.
+	if !desyncCustomWanted(entry) {
+		return // removed or switched off meanwhile; the next pass prunes it
+	}
+	startAt := a.desyncCtl.tcpStart(service, len(candidates))
+	rotated := append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
+	trial, cancel := context.WithTimeout(ctx, desyncCustomBudget)
+	winner, err := chooseDesyncTCP(trial, targets, rotated, probe, func(c desync.Candidate, i int, e error, d time.Duration) {
+		if trial.Err() != nil {
+			return
+		}
+		plan.tried++
+		a.desyncCtl.advanceTCP(lease, service, startAt, i, len(candidates), e == nil)
+		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "testing", Candidate: c.ID, Attempt: 1 + plan.tried, Total: total, Code: desyncErrorCode(e)})
+		attempt(c, e, d)
+	})
+	cancel()
+	if ctx.Err() != nil {
+		return
+	}
+	if err == nil {
+		if !selectMember(winner.Name(route)) {
+			return
+		}
+		saveDesyncSelection(network, service, winner.ID)
+		a.desyncCtl.resetTCP(lease, service)
+		*plan = desyncCustomPlan{phase: "ready", candidate: winner.ID, due: time.Now().Add(desyncCustomCheckEvery)}
+		a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
+		return
+	}
+	if !plan.passing {
+		// Do not leave the site on a failing candidate while searching.
+		if !selectMember(desyncProfileSelection) {
+			return
+		}
+		plan.passing = true
+	}
+	if plan.tried < len(candidates) {
+		plan.due = time.Now().Add(desyncCustomBudgetGap)
+		return
+	}
+
+	// 3. Nothing works: the profile's rules (PASS, selected above) carry the
+	// site.
 	failures := plan.failures + 1
 	backoff := desyncCustomRetry << min(failures-1, 5)
 	*plan = desyncCustomPlan{phase: "unavailable", candidate: "profile", failures: failures, due: time.Now().Add(min(backoff, desyncCustomBackoffMax))}

@@ -115,6 +115,7 @@ type fakeCoreControl struct {
 	NeverReady         bool   `json:"neverReady,omitempty"`
 	BreakOnFirstReload bool   `json:"breakOnFirstReload,omitempty"`
 	FailReload         bool   `json:"failReload,omitempty"`
+	FailDelay          bool   `json:"failDelay,omitempty"`
 }
 
 const lifecycleTestBody = "" +

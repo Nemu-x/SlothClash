@@ -45,6 +45,10 @@ func Write(in Input, scriptOut *ScriptResult) error {
 	_ = os.MkdirAll(filepath.Join(in.DataDir, "providers"), 0o755)
 	_ = os.MkdirAll(filepath.Join(in.DataDir, "ruleset"), 0o755)
 
+	if in.DesyncOnly {
+		return writeDesyncOnly(in)
+	}
+
 	outcome, err := tryWriteMergedFullProfile(in, scriptOut)
 	if outcome == pipelineOK {
 		return nil

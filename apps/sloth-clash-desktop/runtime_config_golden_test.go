@@ -94,6 +94,9 @@ type goldenProfile struct {
 	// desync, when set, is the stored Desync config the case runs with, on
 	// top of the Connection toggles under test.
 	desync *DesyncSettings
+	// desyncOnly generates a Desync-only profile: no subscription (body is
+	// unused and nothing is served), the Desync routes + MATCH,DIRECT.
+	desyncOnly bool
 }
 
 // goldenScriptedTemplates covers merge_template.go and config_script.go on top
@@ -182,6 +185,15 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 			{ID: "1f2e3d4c", Domain: "blocked.example.net", Enabled: false},
 			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
 			{ID: "9e8d7c6b", Domain: "xn--e1afmkfd.xn--p1ai", Enabled: true},
+		}}},
+		// Desync-only profiles (no subscription). With Desync off the config
+		// is plain MATCH,DIRECT; each service adds only its own routes.
+		goldenProfile{id: "synthetic/desync-only-off", desyncOnly: true, desync: &DesyncSettings{YouTube: true}},
+		goldenProfile{id: "synthetic/desync-only-youtube", desyncOnly: true, fullPrefs: true, desync: &DesyncSettings{Enabled: true, YouTube: true}},
+		goldenProfile{id: "synthetic/desync-only-discord-voice", desyncOnly: true, desync: &DesyncSettings{Enabled: true, Discord: true, DiscordUDP: true}},
+		goldenProfile{id: "synthetic/desync-only-all-custom", desyncOnly: true, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
 		}}},
 	)
 	return out
@@ -278,11 +290,15 @@ func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer,
 			}
 		}
 	}
-	subURL := server.serve(p.body)
+	subURL := ""
+	if !p.desyncOnly {
+		subURL = server.serve(p.body)
+	}
 	var res runtimecfg.ScriptResult
 	if err := runtimecfg.Write(runtimecfg.Input{
 		DataDir:                dataDir,
 		SubURL:                 subURL,
+		DesyncOnly:             p.desyncOnly,
 		ExtendTemplate:         p.extendTemplate,
 		ProxyTemplate:          p.proxyTemplate,
 		RulesTemplate:          p.rulesTmpl,

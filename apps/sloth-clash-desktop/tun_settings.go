@@ -218,12 +218,13 @@ func loadDesktopPrefs() {
 	if err != nil || len(b) == 0 {
 		return
 	}
-	var disk DesktopPrefs
+	var disk desktopPrefsFile
 	if err := json.Unmarshal(b, &disk); err != nil {
 		return
 	}
 	prefsMu.Lock()
-	prefsCurrent = disk
+	prefsCurrent = disk.DesktopPrefs
+	prefsDesyncReportKey.Store(disk.DesyncReportKey)
 	prefsMu.Unlock()
 }
 
@@ -239,7 +240,7 @@ func saveDesktopPrefsLocked(prefs DesktopPrefs) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(prefs, "", "  ")
+	b, err := json.MarshalIndent(desktopPrefsFile{DesktopPrefs: prefs, DesyncReportKey: storedDesyncReportKey()}, "", "  ")
 	if err != nil {
 		return err
 	}

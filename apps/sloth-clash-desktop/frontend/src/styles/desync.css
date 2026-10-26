@@ -93,6 +93,76 @@
   overflow-wrap: break-word;
 }
 
+/* Custom domains: same row vocabulary, a wider name column for domains and
+   a remove control beside the switch. */
+.desyncSettingsCard .desyncCustom {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+.desyncSettingsCard .desyncCustomTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+.desyncSettingsCard .desyncCustomHint {
+  margin: 2px 0 0;
+}
+.desyncSettingsCard .desyncCustomRow {
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) auto;
+}
+.desyncSettingsCard .desyncCustomDomain {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desyncSettingsCard .desyncCustomNote {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+  padding-left: 13px; /* under the chip text, past the dot */
+}
+.desyncSettingsCard .desyncCustomControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.desyncSettingsCard .desyncCustomRemove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.desyncSettingsCard .desyncCustomRemove:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-deep);
+}
+.desyncSettingsCard .desyncCustomRemove:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 1px;
+}
+.desyncSettingsCard .desyncCustomRemove:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.desyncSettingsCard .desyncCustomAdd {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.desyncSettingsCard .desyncCustomAdd .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Actions: primary check, quiet link for diagnostics. */
 .desyncSettingsCard .desyncActions {
   display: flex;

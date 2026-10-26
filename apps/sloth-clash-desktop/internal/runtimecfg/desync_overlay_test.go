@@ -64,7 +64,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 		t.Skip("set SLOTH_MIHOMO_BIN for patched-core preflight")
 	}
 	doc := map[string]any{"mode": "rule", "rules": []any{"MATCH,DIRECT"}, "proxies": []any{}}
-	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordUDP: runtime.GOOS == "windows"}
+	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordUDP: runtime.GOOS == "windows", FakeTTL: runtime.GOOS == "windows", Custom: []DesyncCustomRoute{{ID: "0a1b2c3d", Domain: "example.org"}, {ID: "5a6b7c8d", Domain: "media.example.org"}}}
 	applyDesyncOverlay(doc, settings, nil, nil)
 	data, err := yaml.Marshal(doc)
 	if err != nil {

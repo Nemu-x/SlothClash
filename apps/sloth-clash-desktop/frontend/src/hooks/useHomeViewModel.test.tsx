@@ -321,4 +321,61 @@ describe('useHomeViewModel: Desync chip', () => {
     }).desyncChip
     expect(global?.tooltip).toContain('YouTube: Select Rule mode')
   })
+
+  describe('custom domains', () => {
+    const entries = [
+      { id: 'a1', domain: 'example.org', enabled: true },
+      { id: 'b2', domain: 'example.net', enabled: true },
+      { id: 'c3', domain: 'off.example.com', enabled: false },
+    ]
+    const chipWith = (custom: Record<string, string>, settings = {}) =>
+      vm({
+        state: rule(),
+        desync: desyncSnapshot(
+          desyncStatus({ settings: { custom: entries, ...settings } }),
+          desyncAuto({
+            custom: Object.fromEntries(
+              Object.entries(custom).map(([id, p]) => [id, desyncService(p)]),
+            ),
+          }),
+        ),
+      }).desyncChip
+
+    it('adds one item counting the switched-on entries, each in the tooltip', () => {
+      const chip = chipWith({ a1: 'ready', b2: 'not_needed' })
+      expect(chip?.services.at(-1)).toEqual({
+        key: 'custom',
+        name: 'Sites 2',
+        tone: 'ok',
+      })
+      expect(chip?.tooltip).toContain(
+        'example.org: HTTPS available · automatic',
+      )
+      expect(chip?.tooltip).toContain(
+        'example.net: Not blocked · Desync not needed',
+      )
+      expect(chip?.tooltip).not.toContain('off.example.com')
+    })
+
+    it('a partly unavailable set is pending, not a problem', () => {
+      expect(
+        chipWith({ a1: 'ready', b2: 'unavailable' })?.services.at(-1)?.tone,
+      ).toBe('pending')
+      expect(
+        chipWith({ a1: 'unavailable', b2: 'unavailable' })?.services.at(-1)
+          ?.tone,
+      ).toBe('problem')
+      expect(
+        chipWith({ a1: 'testing', b2: 'ready' })?.services.at(-1)?.tone,
+      ).toBe('pending')
+    })
+
+    it('shows the chip for custom-only Desync', () => {
+      const chip = chipWith(
+        { a1: 'ready', b2: 'ready' },
+        { youtube: false, discord: false, discordUDP: false },
+      )
+      expect(chip?.services.map((s) => s.key)).toEqual(['custom'])
+    })
+  })
 })

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import {
   type DesyncSnapshot,
   type DesyncTone,
+  desyncCustomTone,
+  desyncCustomViews,
   desyncServiceTone,
   desyncServiceViews,
 } from '../utils/desyncStatus'
@@ -218,12 +220,14 @@ export function useHomeViewModel({
   const trafficCurrent = String(state?.traffic ?? '')
   const desyncChip = useMemo((): HomeDesyncChip | null => {
     if (!desync || desync.status.settings.enabled !== true) return null
-    const views = desyncServiceViews(desync, {
+    const ctx = {
       connected: connectionStatus === 'connected',
       mode: modeCurrent,
       traffic: trafficCurrent,
-    }).filter((v) => v.checked)
-    if (views.length === 0) return null
+    }
+    const views = desyncServiceViews(desync, ctx).filter((v) => v.checked)
+    const custom = desyncCustomViews(desync, ctx).filter((v) => v.checked)
+    if (views.length === 0 && custom.length === 0) return null
     const phaseText = (v: { phase: string; attempt: number; total: number }) =>
       t(`desync.phase.${v.phase}`, { attempt: v.attempt, total: v.total })
     const lines: string[] = []
@@ -231,14 +235,21 @@ export function useHomeViewModel({
       lines.push(`${v.name}: ${phaseText(v.status)}`)
       if (v.voice) lines.push(`${t('desync.voice')}: ${phaseText(v.voice)}`)
     }
-    return {
-      services: views.map((v) => ({
-        key: v.key,
-        name: v.name,
-        tone: desyncServiceTone(v),
-      })),
-      tooltip: lines.join('\n'),
+    for (const v of custom) lines.push(`${v.domain}: ${phaseText(v.status)}`)
+    const services: HomeDesyncChip['services'] = views.map((v) => ({
+      key: v.key,
+      name: v.name,
+      tone: desyncServiceTone(v),
+    }))
+    // All custom domains share one item: "Sites 3" with their combined tone.
+    if (custom.length > 0) {
+      services.push({
+        key: 'custom',
+        name: t('desync.custom.homeItem', { count: custom.length }),
+        tone: desyncCustomTone(custom),
+      })
     }
+    return { services, tooltip: lines.join('\n') }
   }, [desync, connectionStatus, modeCurrent, trafficCurrent, t])
 
   return {

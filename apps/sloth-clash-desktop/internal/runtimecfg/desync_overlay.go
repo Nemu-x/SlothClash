@@ -1,6 +1,7 @@
 package runtimecfg
 
 import (
+	"sort"
 	"strings"
 
 	"SlothClashDesktop/internal/desync"
@@ -47,7 +48,7 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 	}
 	var rules []any
 	for _, r := range desyncSlice(m["rules"]) {
-		if text, ok := r.(string); ok && managedRules[text] {
+		if text, ok := r.(string); ok && (managedRules[text] || isCustomDesyncRule(text)) {
 			removed = true
 			continue
 		}
@@ -105,7 +106,54 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 			}
 		}
 	}
+	// Custom domains: one hidden group per entry, after the built-in services
+	// (whose domains an entry can never repeat). Its members are the custom
+	// candidates, DIRECT (the site is not blocked) and PASS (nothing works:
+	// fall through to the profile's rules).
+	for _, entry := range s.Custom {
+		route := desync.CustomRoute(entry.ID)
+		cached := desync.CachedSelection(cache, network, desync.CustomService(entry.Domain))
+		names := []string{}
+		for _, c := range desync.OrderedCustom(s.FakeTTL, cached) {
+			proxies = append(proxies, c.Proxy(route))
+			names = append(names, c.Name(route))
+		}
+		selected := names[0]
+		if cached == desync.DirectID {
+			selected = "DIRECT"
+		}
+		names = append(names, "DIRECT", "PASS")
+		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": selected, desync.ManagedKey: true})
+	}
+	generated = append(generated, customDesyncRules(s.Custom)...)
 	m["proxies"] = proxies
 	m["proxy-groups"] = groups
 	m["rules"] = append(generated, rules...)
+}
+
+// customDesyncRules routes each entry like a built-in service (TCP, plus
+// UDP/443 so the candidates can reject QUIC and the browser falls back to
+// TCP, where the transform applies). A more specific entry
+// (sub.example.org) goes before a broader one (example.org) so both work;
+// entries of equal depth keep the user's order.
+func customDesyncRules(entries []DesyncCustomRoute) []any {
+	ordered := append([]DesyncCustomRoute(nil), entries...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return strings.Count(ordered[i].Domain, ".") > strings.Count(ordered[j].Domain, ".")
+	})
+	var out []any
+	for _, entry := range ordered {
+		for _, r := range desync.Rules([]string{entry.Domain}, desync.CustomRoute(entry.ID)) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// isCustomDesyncRule reports a rule targeting a custom-domain group. The
+// prefix is ours, so any such rule is a generated one from an earlier pass
+// (or a removed entry) and is regenerated from the current settings.
+func isCustomDesyncRule(rule string) bool {
+	i := strings.LastIndex(rule, ",")
+	return i >= 0 && strings.HasPrefix(rule[i+1:], desync.CustomRoutePrefix)
 }

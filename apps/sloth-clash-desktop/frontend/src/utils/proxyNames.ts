@@ -9,7 +9,7 @@ export function isUnsafeGroupName(name: string) {
 
 /** Reserved strategy routes are controlled by automatic Desync calibration. */
 export function isInternalDesyncName(name: string) {
-  return /^SLOTH-DESYNC-(YOUTUBE|DISCORD)(?:-|$)/.test(String(name))
+  return /^SLOTH-DESYNC-(YOUTUBE|DISCORD|CUSTOM)(?:-|$)/.test(String(name))
 }
 
 /** Built-in policy nodes hidden from picker/grid when "show builtin" is off. */

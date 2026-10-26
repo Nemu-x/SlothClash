@@ -759,9 +759,32 @@
       "checking": "Confirming a connection failure",
       "profile": "Using subscription reserve",
       "profile_failed": "Subscription reserve unavailable · retrying",
-      "queued": "Waiting for a check"
+      "queued": "Waiting for a check",
+      "not_needed": "Not blocked · Desync not needed",
+      "unavailable": "Desync can't unblock this site"
     },
     "copyFailed": "Could not copy diagnostics",
-    "homeChipAria": "Desync status · open settings"
+    "homeChipAria": "Desync status · open settings",
+    "custom": {
+      "title": "Custom domains",
+      "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",
+      "inputLabel": "Domain",
+      "add": "Add",
+      "remove": "Remove {{domain}}",
+      "ipHint": "Likely blocked by IP address; traffic follows your profile.",
+      "limitReached": "Up to {{limit}} domains.",
+      "homeItem": "Sites {{count}}",
+      "error": {
+        "empty": "Enter a domain, for example example.com.",
+        "invalid": "This is not a valid domain name.",
+        "ip": "Enter a domain name, not an IP address.",
+        "wildcard": "Enter the domain without * or +. — subdomains are included automatically.",
+        "public_suffix": "Enter a site’s domain, not a whole zone such as com or co.uk.",
+        "builtin": "This domain is covered by the built-in YouTube or Discord switch.",
+        "duplicate": "This domain is already in the list.",
+        "limit": "You can add up to {{limit}} domains.",
+        "not_found": "This entry no longer exists. The list was refreshed."
+      }
+    }
   }
 }

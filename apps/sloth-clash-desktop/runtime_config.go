@@ -40,9 +40,20 @@ func runtimeConfigPrefsFrom(p DesktopPrefs) runtimecfg.Prefs {
 		TUN:         runtimecfg.TunSettings(p.TUN),
 		Traffic:     runtimecfg.TrafficSettings(p.Traffic),
 		Reality:     runtimecfg.RealitySettings(p.Reality),
-		Desync:      runtimecfg.DesyncSettings{Enabled: d.Enabled, YouTube: d.YouTube, Discord: d.Discord, DiscordUDP: d.DiscordUDP},
+		Desync:      runtimecfg.DesyncSettings{Enabled: d.Enabled, YouTube: d.YouTube, Discord: d.Discord, DiscordUDP: d.DiscordUDP, Custom: desyncCustomRoutes(d.Custom), FakeTTL: desyncFakeTTLSupported},
 		DesyncCache: desyncCacheEntries(p.DesyncCache),
 	}
+}
+
+// desyncCustomRoutes is the enabled entries of an (already sanitized) list.
+func desyncCustomRoutes(entries []DesyncCustomEntry) []runtimecfg.DesyncCustomRoute {
+	var out []runtimecfg.DesyncCustomRoute
+	for _, e := range entries {
+		if e.Enabled {
+			out = append(out, runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain})
+		}
+	}
+	return out
 }
 
 // currentSubscriptionClient is how a subscription request made right now

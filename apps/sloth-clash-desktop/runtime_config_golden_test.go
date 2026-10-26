@@ -172,6 +172,17 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 		goldenProfile{id: "synthetic/bare-node-list", body: goldenBareNodeList, fullPrefs: true},
 		goldenProfile{id: "synthetic/bare-node-list-geo", body: goldenBareNodeList, seedGeo: true},
 		goldenProfile{id: "synthetic/representative-desync", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}},
+		goldenProfile{id: "synthetic/representative-desync-custom-1", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+		}}},
+		// Several entries: a disabled one (absent from the output) and a
+		// subdomain of another entry (its rules go first).
+		goldenProfile{id: "synthetic/representative-desync-custom-several", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+			{ID: "1f2e3d4c", Domain: "blocked.example.net", Enabled: false},
+			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
+			{ID: "9e8d7c6b", Domain: "xn--e1afmkfd.xn--p1ai", Enabled: true},
+		}}},
 	)
 	return out
 }
@@ -247,6 +258,10 @@ func withGoldenDesync(t *testing.T, s DesyncSettings) {
 	prefsMu.Lock()
 	prefsCurrent.Desync = s
 	prefsMu.Unlock()
+	// One custom candidate set on every OS: the fake-TTL one.
+	prev := desyncFakeTTLSupported
+	desyncFakeTTLSupported = true
+	t.Cleanup(func() { desyncFakeTTLSupported = prev })
 }
 
 func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {

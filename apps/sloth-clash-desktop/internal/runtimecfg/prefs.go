@@ -60,4 +60,17 @@ type DesyncSettings struct {
 	YouTube    bool
 	Discord    bool
 	DiscordUDP bool
+	// Custom is the enabled custom-domain entries, already validated (the
+	// domain goes into rules verbatim), in the user's order.
+	Custom []DesyncCustomRoute
+	// FakeTTL reports whether fake-TTL strategies work on this platform; it
+	// selects the custom candidate set.
+	FakeTTL bool
+}
+
+// DesyncCustomRoute is one enabled custom-domain entry: its stable ID (which
+// names the group) and its normalized domain.
+type DesyncCustomRoute struct {
+	ID     string
+	Domain string
 }

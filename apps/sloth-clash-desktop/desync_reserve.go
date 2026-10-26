@@ -124,7 +124,8 @@ func confirmDesyncTCPFailure(ctx context.Context, check func(context.Context) er
 // noReserve is the Desync-only profile: there is no subscription to fall back
 // to, so the reserve is never verified or selected. When no strategy works
 // the group selects PASS (which, in that profile, ends at MATCH,DIRECT), the
-// service reports no_strategy and the search is repeated after the backoff.
+// service reports no_strategy and the search is repeated in the background
+// after a doubling backoff (recoverDesyncNoStrategy).
 func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, noReserve bool) {
 	var group desyncUDPProxy
 	for {
@@ -154,10 +155,10 @@ func (a *App) runDesyncTCPService(ctx context.Context, lease uint64, network, en
 			}
 			if err != nil && noReserve {
 				a.desyncNoStrategy(ctx, lease, endpoint, secret, service, route, err)
-				if !desyncWait(ctx, time.Minute) {
+				if !a.recoverDesyncNoStrategy(ctx, lease, network, endpoint, secret, service, route) {
 					return
 				}
-				continue
+				err = nil // a strategy is applied (ready): monitor it below
 			}
 			if err != nil {
 				if fallbackErr := a.confirmDesyncProfile(ctx, lease, endpoint, secret, service, route, ""); fallbackErr == nil {
@@ -230,6 +231,50 @@ func (a *App) desyncNoStrategy(ctx context.Context, lease uint64, endpoint, secr
 		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: "direct", OK: true, Code: "no_strategy"})
 	}
 	a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "no_strategy", Code: desyncErrorCode(cause)})
+}
+
+// The no-strategy retry backoff: 1 minute, doubling up to 30 (as for custom
+// domains). A variable so tests can shorten it.
+var desyncNoStrategyRetry = time.Minute
+
+const desyncNoStrategyBackoffMax = 30 * time.Minute
+
+// desyncNoStrategyBackoff is the wait before background retry number retry
+// (1-based).
+func desyncNoStrategyBackoff(retry int) time.Duration {
+	return min(desyncNoStrategyRetry<<min(retry-1, 5), desyncNoStrategyBackoffMax)
+}
+
+// recoverDesyncNoStrategy repeats a failed no-reserve search until a strategy
+// works, then applies it and reports ready (true; false when ctx ends). The
+// retries are background searches, so the visible status stays no_strategy
+// (route direct) instead of flashing testing/failed every round; their
+// attempts are still recorded for diagnostics. Check again (RetryDesyncAuto)
+// restarts the session, which searches immediately.
+func (a *App) recoverDesyncNoStrategy(ctx context.Context, lease uint64, network, endpoint, secret, service, route string) bool {
+	for retry := 1; ; retry++ {
+		if !desyncWait(ctx, desyncNoStrategyBackoff(retry)) {
+			return false
+		}
+		winner, err := a.findDesyncTCP(ctx, lease, network, endpoint, secret, service, route, true)
+		if ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			continue
+		}
+		if err := a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, winner.Name(route)); err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+			continue
+		}
+		saveDesyncSelection(network, service, winner.ID)
+		a.desyncCtl.resetTCP(lease, service)
+		a.desyncCtl.setService(lease, service, DesyncAutoService{Phase: "ready", Candidate: winner.ID})
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: service, Candidate: winner.ID, OK: true, Code: "desync_restored"})
+		return true
+	}
 }
 
 // Recheck all relevant owned peers immediately before committing the reserve.

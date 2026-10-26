@@ -27,6 +27,9 @@ type noReserveCore struct {
 	puts        []string
 	reserve     atomic.Int32
 	srv         *httptest.Server
+	// onDelay, when set before the controller starts, runs on every delay
+	// probe.
+	onDelay func()
 }
 
 func newNoReserveCore(t *testing.T, delayStatus int, now string) *noReserveCore {
@@ -49,6 +52,9 @@ func newNoReserveCore(t *testing.T, delayStatus int, now string) *noReserveCore 
 			c.mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasSuffix(r.URL.Path, "/delay"):
+			if c.onDelay != nil {
+				c.onDelay()
+			}
 			if code := int(c.delayStatus.Load()); code != http.StatusOK {
 				w.WriteHeader(code)
 				fmt.Fprint(w, `{"message":"TLS timeout"}`)
@@ -188,5 +194,64 @@ func TestDesyncVoiceNoReserveLeavesPass(t *testing.T) {
 	}
 	if phase := a.GetDesyncAutoStatus().Voice.Phase; phase == "profile" || phase == "profile_failed" {
 		t.Fatalf("voice phase %q is a reserve state", phase)
+	}
+}
+
+func TestDesyncNoStrategyBackoffDoubles(t *testing.T) {
+	want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 30 * time.Minute, 30 * time.Minute}
+	for i, w := range want {
+		if got := desyncNoStrategyBackoff(i + 1); got != w {
+			t.Fatalf("retry %d waits %v, want %v", i+1, got, w)
+		}
+	}
+	if got := desyncNoStrategyBackoff(1000); got != desyncNoStrategyBackoffMax {
+		t.Fatalf("a late retry waits %v, want the cap", got)
+	}
+}
+
+// After no_strategy the search repeats in the background: the visible state
+// stays no_strategy (no testing/failed flashes) until a strategy works,
+// which is then applied and reported ready.
+func TestDesyncTCPNoReserveRetriesQuietly(t *testing.T) {
+	retry := desyncNoStrategyRetry
+	desyncNoStrategyRetry = 20 * time.Millisecond
+	t.Cleanup(func() { desyncNoStrategyRetry = retry })
+	core := newNoReserveCore(t, http.StatusServiceUnavailable, desync.YouTubeRoute+"-r3")
+	a := noReserveApp(t, core, DesyncSettings{Enabled: true, YouTube: true})
+	var retried atomic.Int32
+	var flashed atomic.Value
+	var settled atomic.Bool
+	core.onDelay = func() {
+		if !settled.Load() {
+			return // the first, visible search
+		}
+		if phase := a.GetDesyncAutoStatus().YouTube.Phase; phase != "no_strategy" {
+			flashed.Store(phase)
+		}
+		retried.Add(1)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.runDesyncTCPService(ctx, 1, a.desyncCtl.status.Network, a.core.listen, "", "youtube", desync.YouTubeRoute, true)
+	}()
+	defer func() { cancel(); <-done }()
+	waitPhase(t, "no_strategy", 15*time.Second, func() bool { return a.GetDesyncAutoStatus().YouTube.Phase == "no_strategy" })
+	settled.Store(true)
+	// Several failed background rounds (a round probes every candidate).
+	rounds := int32(2 * len(desync.Ordered("youtube", "")))
+	waitPhase(t, "background retries", 15*time.Second, func() bool { return retried.Load() > rounds })
+	if phase := flashed.Load(); phase != nil {
+		t.Fatalf("a background retry showed phase %q", phase)
+	}
+	core.delayStatus.Store(http.StatusOK)
+	waitPhase(t, "ready", 15*time.Second, func() bool { return a.GetDesyncAutoStatus().YouTube.Phase == "ready" })
+	if phase := flashed.Load(); phase != nil {
+		t.Fatalf("a background retry showed phase %q", phase)
+	}
+	got := core.selections()
+	if len(got) < 2 || got[0] != desyncProfileSelection || got[len(got)-1] == desyncProfileSelection {
+		t.Fatalf("selections = %v, want PASS then a strategy", got)
 	}
 }

@@ -9,6 +9,7 @@ import {
   desyncServiceTone,
   desyncServiceViews,
 } from '../utils/desyncStatus'
+import { isDesyncOnlyProfile } from '../utils/profileKind'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from '../utils/proxyNames'
 
 export type HomeActiveNodeVisual = { iso: string; text: string }
@@ -24,6 +25,10 @@ export type HomeViewModel = {
   hasAnyProfile: boolean
   hasActiveProfile: boolean
   activeProfile: any
+  /** The active profile is Desync-only: no nodes, Rule mode only. */
+  isDesyncOnly: boolean
+  /** Desync-only profile with Desync switched off: everything goes direct. */
+  desyncOnlyOff: boolean
   /** Mode / traffic as shown: the optimistic pick while a switch is in flight. */
   displayMode: string
   displayTraffic: string
@@ -80,6 +85,10 @@ export function useHomeViewModel({
     const id = state?.profile?.activeProfileId
     return state?.profile?.profiles?.find((p: any) => p.id === id)
   }, [state])
+
+  const isDesyncOnly = isDesyncOnlyProfile(activeProfile)
+  const desyncOnlyOff =
+    isDesyncOnly && desync?.status.settings.enabled === false
 
   const displayMode = optimisticMode ?? String(state?.mode?.current ?? 'rule')
   const displayTraffic = optimisticTraffic ?? String(state?.traffic ?? 'proxy')
@@ -154,6 +163,8 @@ export function useHomeViewModel({
   }, [activeNode])
 
   const nodePickerGroup = useMemo(() => {
+    // No nodes to pick: only hidden Desync route groups exist.
+    if (isDesyncOnly) return null
     const groups = (state?.proxy?.groups ?? []) as any[]
     const activeGroup = String(state?.proxy?.activeGroup ?? '').trim()
     if (!activeGroup || groups.length === 0) return null
@@ -179,7 +190,7 @@ export function useHomeViewModel({
       return null
     }
     return g
-  }, [state?.proxy?.activeGroup, state?.proxy?.groups])
+  }, [isDesyncOnly, state?.proxy?.activeGroup, state?.proxy?.groups])
 
   const homeAlertTooltip = useMemo(() => {
     const parts: string[] = []
@@ -256,6 +267,8 @@ export function useHomeViewModel({
     hasAnyProfile,
     hasActiveProfile,
     activeProfile,
+    isDesyncOnly,
+    desyncOnlyOff,
     displayMode,
     displayTraffic,
     connectionLabel,

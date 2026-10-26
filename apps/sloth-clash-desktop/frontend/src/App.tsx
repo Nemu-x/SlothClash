@@ -12,6 +12,7 @@ import {
   SetTrafficMode,
 } from './api/core'
 import { GetCorpVpnStatus } from './api/corp'
+import { type DesyncSettings, GetDesyncStatus } from './api/desync'
 import {
   GetRuntimeDiagEvents,
   OpenPathInExplorer,
@@ -45,6 +46,7 @@ import {
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
+import { DesyncOnlyEnableModal } from './components/DesyncOnlyEnableModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OperatorModal } from './components/OperatorModal'
 import { ProfileModalsHost } from './components/ProfileModalsHost'
@@ -105,6 +107,7 @@ import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { ImportModalReason, Screen } from './types/app'
 import { deriveAccentVars, normalizeHex, resolveAccent } from './utils/accent'
+import { isDesyncOnlyProfile } from './utils/profileKind'
 import { DEFAULT_SETTINGS } from './utils/settings'
 
 function App() {
@@ -795,14 +798,55 @@ function App() {
     }
   }
 
-  // Desync summary for Home: same shared poll as the Settings card, active
-  // only while Home is shown (the card keeps it alive on Settings).
-  const { snapshot: desyncSnapshot } = useDesyncStatus({
-    connected: state?.connection?.status === 'connected',
-    mode: String(state?.mode?.current ?? ''),
-    traffic: String(state?.traffic ?? ''),
-    enabled: screen === 'home',
-  })
+  // Desync summary for Home (and the Desync-only profile cards): same shared
+  // poll as the Settings card, active only while one of them is shown (the
+  // card keeps it alive on Settings).
+  const { snapshot: desyncSnapshot, save: saveDesyncSettings } =
+    useDesyncStatus({
+      connected: state?.connection?.status === 'connected',
+      mode: String(state?.mode?.current ?? ''),
+      traffic: String(state?.traffic ?? ''),
+      enabled: screen === 'home' || screen === 'profiles',
+    })
+
+  // Activating a Desync-only profile while Desync is off offers to turn it
+  // on: without it the profile routes everything directly.
+  const [desyncOnlyPrompt, setDesyncOnlyPrompt] =
+    useState<DesyncSettings | null>(null)
+  const [desyncOnlyBusy, setDesyncOnlyBusy] = useState(false)
+  const activateProfile = async (id: string) => {
+    await run(() => ActivateProfile(id))
+    const target = (state?.profile?.profiles ?? []).find(
+      (p: any) => p.id === id,
+    )
+    if (isDesyncOnlyProfile(target)) await promptDesyncIfOff()
+  }
+  const promptDesyncIfOff = async () => {
+    try {
+      const status = await GetDesyncStatus()
+      if (status.settings.enabled !== true) setDesyncOnlyPrompt(status.settings)
+    } catch {
+      // No status: Home and the card still show that Desync is off.
+    }
+  }
+  const enableDesyncForProfile = async () => {
+    if (!desyncOnlyPrompt) return
+    setDesyncOnlyBusy(true)
+    setError('')
+    try {
+      // false: another Desync write is in flight; the dialog stays for a retry.
+      if (await saveDesyncSettings({ ...desyncOnlyPrompt, enabled: true })) {
+        setDesyncOnlyPrompt(null)
+      }
+    } catch (e: any) {
+      // Typically no service selected: Settings is where that is fixed.
+      setDesyncOnlyPrompt(null)
+      setError(String(e))
+      setScreen('settings')
+    } finally {
+      setDesyncOnlyBusy(false)
+    }
+  }
 
   // Home screen derivations (status label, active node, tooltips …).
   const homeVm = useHomeViewModel({
@@ -1212,6 +1256,7 @@ function App() {
           {screen === 'proxies' ? (
             <ProxiesPage
               groups={(state?.proxy?.groups ?? []) as any[]}
+              desyncOnly={homeVm.isDesyncOnly}
               activeGroup={state?.proxy?.activeGroup ?? ''}
               connectionStatus={state?.connection?.status ?? ''}
               displayMode={displayMode}
@@ -1242,7 +1287,12 @@ function App() {
               refreshBusyId={profileRefreshBusyId}
               error={error}
               onImport={() => openImportModal('manual')}
-              onActivate={(id) => void run(() => ActivateProfile(id))}
+              desyncEnabled={
+                desyncSnapshot
+                  ? desyncSnapshot.status.settings.enabled === true
+                  : undefined
+              }
+              onActivate={(id) => void activateProfile(id)}
               onRefresh={(id) => {
                 setProfileRefreshBusyId(id)
                 void (async () => {
@@ -1509,6 +1559,14 @@ function App() {
         setBanner={setTunBanner}
         pushToast={pushToast}
         onImported={dismissSpotlight}
+        onDesyncOnlyActivated={() => void promptDesyncIfOff()}
+      />
+
+      <DesyncOnlyEnableModal
+        open={desyncOnlyPrompt !== null}
+        busy={desyncOnlyBusy}
+        onClose={() => setDesyncOnlyPrompt(null)}
+        onEnable={() => void enableDesyncForProfile()}
       />
 
       <SettingsResetModal

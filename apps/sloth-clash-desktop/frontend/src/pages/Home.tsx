@@ -119,6 +119,8 @@ export function HomePage({
   const { t } = useTranslation()
   const {
     activeProfile,
+    isDesyncOnly,
+    desyncOnlyOff,
     homeUpdateTooltip,
     homeAlertTooltip,
     hasAnyProfile,
@@ -145,6 +147,8 @@ export function HomePage({
     }
   }
   const connectionStatus = state?.connection?.status ?? ''
+  // A Desync-only profile has no Global mode: its routes are rules.
+  const ruleOnly = Boolean(hideGlobalMode) || isDesyncOnly
   const lastConnectionError =
     connectionStatus === 'error'
       ? String(state?.connection?.lastError ?? '')
@@ -200,9 +204,11 @@ export function HomePage({
             ) : null}
           </div>
           <p className="muted">
-            {activeProfile?.type === 'subscription'
-              ? t('ui.common.subscription')
-              : t('ui.common.local')}
+            {isDesyncOnly
+              ? t('ui.home.desyncOnlySubtitle')
+              : activeProfile?.type === 'subscription'
+                ? t('ui.common.subscription')
+                : t('ui.common.local')}
           </p>
           {corpConnected ? (
             <button
@@ -213,6 +219,20 @@ export function HomePage({
             >
               <span className="homeCorpDot" aria-hidden />
               {t('corp.homeIndicator')}
+            </button>
+          ) : null}
+          {desyncOnlyOff ? (
+            <button
+              type="button"
+              className="homeDesyncChip"
+              onClick={() => onOpenDesync?.()}
+            >
+              <span className="homeDesyncChipService" data-tone="problem">
+                {t('ui.home.desyncOnlyOff')}
+              </span>
+              <span className="homeDesyncChipArrow" aria-hidden>
+                ›
+              </span>
             </button>
           ) : null}
           {desyncChip ? (
@@ -338,12 +358,15 @@ export function HomePage({
                 </span>
                 <div
                   className={
-                    hideGlobalMode
+                    ruleOnly
                       ? 'segmentInset segmentInset1'
                       : 'segmentInset segmentInset2'
                   }
                   role="group"
                   aria-label={t('ui.home.routingModeAria')}
+                  title={
+                    isDesyncOnly ? t('ui.home.desyncOnlyRuleOnly') : undefined
+                  }
                 >
                   <div
                     className="segmentGlider"
@@ -351,14 +374,14 @@ export function HomePage({
                     style={
                       {
                         '--seg-i':
-                          !hideGlobalMode && displayMode === 'global' ? 1 : 0,
+                          !ruleOnly && displayMode === 'global' ? 1 : 0,
                       } as CSSProperties
                     }
                   />
                   {/* Hide-Global-Mode drops the Global OPTION, it does not hide
                       the whole control — the user still needs to see which mode
                       is active. */}
-                  {(hideGlobalMode
+                  {(ruleOnly
                     ? (['rule'] as const)
                     : (['rule', 'global'] as const)
                   ).map((m) => (
@@ -366,9 +389,11 @@ export function HomePage({
                       key={m}
                       type="button"
                       title={
-                        m === 'rule'
-                          ? t('ui.home.ruleTitle')
-                          : t('ui.home.globalTitle')
+                        isDesyncOnly
+                          ? t('ui.home.desyncOnlyRuleOnly')
+                          : m === 'rule'
+                            ? t('ui.home.ruleTitle')
+                            : t('ui.home.globalTitle')
                       }
                       className={
                         displayMode === m
@@ -383,6 +408,11 @@ export function HomePage({
                     </button>
                   ))}
                 </div>
+                {isDesyncOnly ? (
+                  <span className="muted small">
+                    {t('ui.home.desyncOnlyRuleHint')}
+                  </span>
+                ) : null}
               </>
             }
           </div>
@@ -528,142 +558,152 @@ export function HomePage({
               </button>
             </div>
           ) : null}
-          <div className="statusRow">
-            <span>{t('ui.home.activeGroup')}</span>
-            <strong>
-              {String(state?.proxy?.activeGroup ?? '').trim() || '—'}
-            </strong>
-          </div>
-          <div className="statusRow statusRowNode">
-            <span>{t('ui.home.pickGroup')}</span>
-            <div className="statusRowValue statusRowNodeValue">
-              {connectionStatus === 'connected' ? (
-                <div className="statusNodePick">
-                  <select
-                    className="selectModern selectInline selectCompact"
-                    aria-label={t('ui.home.activeProxyGroupAria')}
-                    value={String(state?.proxy?.activeGroup ?? '')}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      if (!v) return
-                      onSelectGroup(v)
-                    }}
-                  >
-                    {(state?.proxy?.groups ?? [])
-                      .filter((g: any) => {
-                        const name = String(g?.name ?? '')
-                        if (
-                          isUnsafeGroupName(name) ||
-                          isInternalDesyncName(name)
-                        )
-                          return false
-                        // Same rule as the Proxies sidebar: GLOBAL is mihomo's
-                        // catch-all selector used only in Global mode. In Rule
-                        // mode it is dead weight and can confuse the user into
-                        // picking it as an active group.
-                        if (
-                          displayMode === 'rule' &&
-                          name.toUpperCase() === 'GLOBAL'
-                        )
-                          return false
-                        return true
-                      })
-                      .map((g: any) => (
-                        <option key={g.name} value={g.name}>
-                          {g.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              ) : (
-                <strong className="monoTight statusNodeTextClamp">—</strong>
-              )}
+          {isDesyncOnly ? (
+            <div className="statusRow">
+              <span>{t('ui.home.proxyServers')}</span>
+              <strong>{t('ui.home.desyncOnlyNoServers')}</strong>
             </div>
-          </div>
-          <div className="statusRow statusRowNode">
-            <span>{t('ui.home.activeNode')}</span>
-            <div className="statusRowValue statusRowNodeValue">
-              {nodePickerGroup && connectionStatus === 'connected' ? (
-                <div className="statusNodeMenu" ref={homeActiveNodeRef}>
-                  <button
-                    type="button"
-                    className="statusNodeMenuTrigger selectModern selectInline selectCompact"
-                    aria-haspopup="listbox"
-                    aria-expanded={homeActiveNodeOpen}
-                    aria-label={t('ui.home.activeNode')}
-                    onClick={onToggleActiveNodeOpen}
-                  >
-                    <span className="statusNodeMenuTriggerInner">
-                      <FlagMark
-                        iso2={extractNodeFlagIso(
-                          String(nodePickerGroup.selected ?? ''),
-                        )}
-                        width={20}
-                        height={14}
-                      />
-                      <span className="statusNodeMenuTriggerLabel">
-                        {proxyNodeLabelBesideFlag(
-                          String(nodePickerGroup.selected ?? ''),
-                        )}
-                      </span>
+          ) : (
+            <>
+              <div className="statusRow">
+                <span>{t('ui.home.activeGroup')}</span>
+                <strong>
+                  {String(state?.proxy?.activeGroup ?? '').trim() || '—'}
+                </strong>
+              </div>
+              <div className="statusRow statusRowNode">
+                <span>{t('ui.home.pickGroup')}</span>
+                <div className="statusRowValue statusRowNodeValue">
+                  {connectionStatus === 'connected' ? (
+                    <div className="statusNodePick">
+                      <select
+                        className="selectModern selectInline selectCompact"
+                        aria-label={t('ui.home.activeProxyGroupAria')}
+                        value={String(state?.proxy?.activeGroup ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (!v) return
+                          onSelectGroup(v)
+                        }}
+                      >
+                        {(state?.proxy?.groups ?? [])
+                          .filter((g: any) => {
+                            const name = String(g?.name ?? '')
+                            if (
+                              isUnsafeGroupName(name) ||
+                              isInternalDesyncName(name)
+                            )
+                              return false
+                            // Same rule as the Proxies sidebar: GLOBAL is mihomo's
+                            // catch-all selector used only in Global mode. In Rule
+                            // mode it is dead weight and can confuse the user into
+                            // picking it as an active group.
+                            if (
+                              displayMode === 'rule' &&
+                              name.toUpperCase() === 'GLOBAL'
+                            )
+                              return false
+                            return true
+                          })
+                          .map((g: any) => (
+                            <option key={g.name} value={g.name}>
+                              {g.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <strong className="monoTight statusNodeTextClamp">—</strong>
+                  )}
+                </div>
+              </div>
+              <div className="statusRow statusRowNode">
+                <span>{t('ui.home.activeNode')}</span>
+                <div className="statusRowValue statusRowNodeValue">
+                  {nodePickerGroup && connectionStatus === 'connected' ? (
+                    <div className="statusNodeMenu" ref={homeActiveNodeRef}>
+                      <button
+                        type="button"
+                        className="statusNodeMenuTrigger selectModern selectInline selectCompact"
+                        aria-haspopup="listbox"
+                        aria-expanded={homeActiveNodeOpen}
+                        aria-label={t('ui.home.activeNode')}
+                        onClick={onToggleActiveNodeOpen}
+                      >
+                        <span className="statusNodeMenuTriggerInner">
+                          <FlagMark
+                            iso2={extractNodeFlagIso(
+                              String(nodePickerGroup.selected ?? ''),
+                            )}
+                            width={20}
+                            height={14}
+                          />
+                          <span className="statusNodeMenuTriggerLabel">
+                            {proxyNodeLabelBesideFlag(
+                              String(nodePickerGroup.selected ?? ''),
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                      {homeActiveNodeOpen ? (
+                        <ul
+                          className="statusNodeMenuList"
+                          role="listbox"
+                          aria-label={t('ui.home.activeNode')}
+                        >
+                          {filterProxyNodesForDisplay(
+                            (nodePickerGroup.proxies ?? []) as string[],
+                            showBuiltinProxyGroups,
+                            String(nodePickerGroup.selected ?? ''),
+                          ).map((p: string) => {
+                            const sel = String(nodePickerGroup.selected ?? '')
+                            const isSel = sel === p
+                            return (
+                              <li
+                                key={p}
+                                role="option"
+                                aria-selected={isSel}
+                                className={
+                                  'statusNodeMenuItem' +
+                                  (isSel ? ' isActive' : '')
+                                }
+                                onClick={() => {
+                                  if (!p || isSel) return
+                                  onSelectNode(String(nodePickerGroup.name), p)
+                                }}
+                              >
+                                <FlagMark
+                                  iso2={extractNodeFlagIso(p)}
+                                  width={16}
+                                  height={11}
+                                />
+                                <span className="statusNodeMenuItemLabel">
+                                  {proxyNodeLabelBesideFlag(p)}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="statusNodeStatic">
+                      {activeNodeVisual.iso ? (
+                        <FlagMark
+                          iso2={activeNodeVisual.iso}
+                          width={20}
+                          height={14}
+                        />
+                      ) : null}
+                      <strong className="monoTight statusNodeTextClamp">
+                        {activeNodeVisual.text || activeNode || '—'}
+                      </strong>
                     </span>
-                  </button>
-                  {homeActiveNodeOpen ? (
-                    <ul
-                      className="statusNodeMenuList"
-                      role="listbox"
-                      aria-label={t('ui.home.activeNode')}
-                    >
-                      {filterProxyNodesForDisplay(
-                        (nodePickerGroup.proxies ?? []) as string[],
-                        showBuiltinProxyGroups,
-                        String(nodePickerGroup.selected ?? ''),
-                      ).map((p: string) => {
-                        const sel = String(nodePickerGroup.selected ?? '')
-                        const isSel = sel === p
-                        return (
-                          <li
-                            key={p}
-                            role="option"
-                            aria-selected={isSel}
-                            className={
-                              'statusNodeMenuItem' + (isSel ? ' isActive' : '')
-                            }
-                            onClick={() => {
-                              if (!p || isSel) return
-                              onSelectNode(String(nodePickerGroup.name), p)
-                            }}
-                          >
-                            <FlagMark
-                              iso2={extractNodeFlagIso(p)}
-                              width={16}
-                              height={11}
-                            />
-                            <span className="statusNodeMenuItemLabel">
-                              {proxyNodeLabelBesideFlag(p)}
-                            </span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  ) : null}
+                  )}
                 </div>
-              ) : (
-                <span className="statusNodeStatic">
-                  {activeNodeVisual.iso ? (
-                    <FlagMark
-                      iso2={activeNodeVisual.iso}
-                      width={20}
-                      height={14}
-                    />
-                  ) : null}
-                  <strong className="monoTight statusNodeTextClamp">
-                    {activeNodeVisual.text || activeNode || '—'}
-                  </strong>
-                </span>
-              )}
-            </div>
-          </div>
+              </div>
+            </>
+          )}
           <div className="statusRow">
             <span>Core</span>
             <span
@@ -731,42 +771,47 @@ export function HomePage({
               )}
             </div>
           </div>
-          <div className="statusRow">
-            <span>{t('ui.home.insightDirect')}</span>
-            <div
-              className="statusRowValue insightFlagCell"
-              title={
-                String(state?.mode?.current ?? '') === 'rule'
-                  ? [state?.insight?.directIp, state?.insight?.directError]
-                      .map((s) => String(s ?? '').trim())
-                      .filter(Boolean)
-                      .join(' — ') || undefined
-                  : undefined
-              }
-            >
-              {String(state?.mode?.current ?? '') === 'rule' ? (
-                state?.insight?.directFlagIso2 ? (
-                  <FlagMark
-                    iso2={String(state.insight.directFlagIso2)}
-                    width={22}
-                    height={15}
-                  />
-                ) : state?.insight?.directError ? (
-                  <span className="muted small insightExitErr">
-                    {state.insight.directError}
-                  </span>
-                ) : state?.insight?.directIp ? (
-                  <span className="muted small" title={state.insight.directIp}>
-                    …
-                  </span>
+          {isDesyncOnly ? null : (
+            <div className="statusRow">
+              <span>{t('ui.home.insightDirect')}</span>
+              <div
+                className="statusRowValue insightFlagCell"
+                title={
+                  String(state?.mode?.current ?? '') === 'rule'
+                    ? [state?.insight?.directIp, state?.insight?.directError]
+                        .map((s) => String(s ?? '').trim())
+                        .filter(Boolean)
+                        .join(' — ') || undefined
+                    : undefined
+                }
+              >
+                {String(state?.mode?.current ?? '') === 'rule' ? (
+                  state?.insight?.directFlagIso2 ? (
+                    <FlagMark
+                      iso2={String(state.insight.directFlagIso2)}
+                      width={22}
+                      height={15}
+                    />
+                  ) : state?.insight?.directError ? (
+                    <span className="muted small insightExitErr">
+                      {state.insight.directError}
+                    </span>
+                  ) : state?.insight?.directIp ? (
+                    <span
+                      className="muted small"
+                      title={state.insight.directIp}
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <span className="muted">—</span>
+                  )
                 ) : (
                   <span className="muted">—</span>
-                )
-              ) : (
-                <span className="muted">—</span>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          )}
           <div className="statusRow">
             <span>{t('ui.home.insightSpeed')}</span>
             <div

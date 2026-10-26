@@ -164,6 +164,7 @@ function AgeKeySection({
 
 export function ProfileEditInfoModal({
   target,
+  desyncOnly = false,
   name,
   url,
   autoEnabled,
@@ -182,6 +183,8 @@ export function ProfileEditInfoModal({
   onSave,
 }: {
   target: ProfileEditInfoTarget | null
+  /** A Desync-only profile: no subscription, so only the name is editable. */
+  desyncOnly?: boolean
   name: string
   url: string
   autoEnabled: boolean
@@ -220,7 +223,11 @@ export function ProfileEditInfoModal({
         <h3 id="editInfoTitle" className="modalTitle">
           {t('ui.profiles.editInfo.title')}
         </h3>
-        <p className="muted small">{t('ui.profiles.editInfo.blurb')}</p>
+        <p className="muted small">
+          {desyncOnly
+            ? t('ui.profiles.desyncOnly.editBlurb')
+            : t('ui.profiles.editInfo.blurb')}
+        </p>
         <label className="field modalField">
           <span className="fieldLab">{t('ui.profiles.editInfo.name')}</span>
           <input
@@ -230,59 +237,37 @@ export function ProfileEditInfoModal({
             autoFocus
           />
         </label>
-        <label className="field modalField">
-          <span className="fieldLab">
-            {t('ui.profiles.editInfo.subscriptionUrl')}
-          </span>
-          <input
-            className="input"
-            value={url}
-            onChange={(e) => onUrlChange(e.target.value)}
-            placeholder={t('ui.profiles.editInfo.urlPlaceholder')}
+        {desyncOnly ? null : (
+          <SubscriptionFields
+            url={url}
+            autoEnabled={autoEnabled}
+            autoInterval={autoInterval}
+            onUrlChange={onUrlChange}
+            onAutoEnabledToggle={onAutoEnabledToggle}
+            onAutoIntervalChange={onAutoIntervalChange}
           />
-        </label>
-        <div className="fieldGrid">
-          <label className="field modalField">
-            <span className="fieldLab">
-              {t('ui.profiles.editInfo.autoUpdate')}
-            </span>
+        )}
+        {desyncOnly ? null : (
+          <AgeKeySection
+            key={target.id}
+            ageKey={ageKey}
+            onAgeKeyChange={onAgeKeyChange}
+            onGenerateAgeKeyPair={onGenerateAgeKeyPair}
+            onDeriveAgePublicKey={onDeriveAgePublicKey}
+            onCopyText={onCopyName}
+          />
+        )}
+        <div className="modalActions">
+          {desyncOnly ? null : (
             <button
               type="button"
-              className={`trafficKnob ${autoEnabled ? 'on' : ''}`}
-              onClick={onAutoEnabledToggle}
+              className="btn btnModalSecondary"
+              disabled={!url.trim()}
+              onClick={() => onCopyUrl(url.trim())}
             >
-              {autoEnabled ? t('common.on') : t('common.off')}
+              {t('ui.profiles.editInfo.copyUrl')}
             </button>
-          </label>
-          <label className="field modalField">
-            <span className="fieldLab">
-              {t('ui.profiles.editInfo.intervalMinutes')}
-            </span>
-            <input
-              className="input"
-              value={autoInterval}
-              onChange={(e) => onAutoIntervalChange(e.target.value)}
-              placeholder="360"
-            />
-          </label>
-        </div>
-        <AgeKeySection
-          key={target.id}
-          ageKey={ageKey}
-          onAgeKeyChange={onAgeKeyChange}
-          onGenerateAgeKeyPair={onGenerateAgeKeyPair}
-          onDeriveAgePublicKey={onDeriveAgePublicKey}
-          onCopyText={onCopyName}
-        />
-        <div className="modalActions">
-          <button
-            type="button"
-            className="btn btnModalSecondary"
-            disabled={!url.trim()}
-            onClick={() => onCopyUrl(url.trim())}
-          >
-            {t('ui.profiles.editInfo.copyUrl')}
-          </button>
+          )}
           <button
             type="button"
             className="btn btnModalSecondary"
@@ -309,5 +294,64 @@ export function ProfileEditInfoModal({
         </div>
       </div>
     </div>
+  )
+}
+
+// The subscription URL and its auto-update schedule (subscription profiles).
+function SubscriptionFields({
+  url,
+  autoEnabled,
+  autoInterval,
+  onUrlChange,
+  onAutoEnabledToggle,
+  onAutoIntervalChange,
+}: {
+  url: string
+  autoEnabled: boolean
+  autoInterval: string
+  onUrlChange: (next: string) => void
+  onAutoEnabledToggle: () => void
+  onAutoIntervalChange: (next: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <label className="field modalField">
+        <span className="fieldLab">
+          {t('ui.profiles.editInfo.subscriptionUrl')}
+        </span>
+        <input
+          className="input"
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          placeholder={t('ui.profiles.editInfo.urlPlaceholder')}
+        />
+      </label>
+      <div className="fieldGrid">
+        <label className="field modalField">
+          <span className="fieldLab">
+            {t('ui.profiles.editInfo.autoUpdate')}
+          </span>
+          <button
+            type="button"
+            className={`trafficKnob ${autoEnabled ? 'on' : ''}`}
+            onClick={onAutoEnabledToggle}
+          >
+            {autoEnabled ? t('common.on') : t('common.off')}
+          </button>
+        </label>
+        <label className="field modalField">
+          <span className="fieldLab">
+            {t('ui.profiles.editInfo.intervalMinutes')}
+          </span>
+          <input
+            className="input"
+            value={autoInterval}
+            onChange={(e) => onAutoIntervalChange(e.target.value)}
+            placeholder="360"
+          />
+        </label>
+      </div>
+    </>
   )
 }

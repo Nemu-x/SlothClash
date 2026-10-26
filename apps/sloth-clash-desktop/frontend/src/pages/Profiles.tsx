@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import { formatProfileAgo } from '../utils/format'
+import { isDesyncOnlyProfile } from '../utils/profileKind'
 import {
   profileSubscriptionHost,
   profileTrafficLine,
@@ -19,6 +20,7 @@ export function ProfilesPage({
   profiles,
   activeProfileId,
   refreshBusyId,
+  desyncEnabled,
   error,
   onImport,
   onActivate,
@@ -28,6 +30,8 @@ export function ProfilesPage({
   profiles: any[]
   activeProfileId: string
   refreshBusyId: string | null
+  /** Desync switched on (Settings); undefined while not known yet. */
+  desyncEnabled?: boolean
   error: string | null
   onImport: () => void
   onActivate: (id: string) => void
@@ -49,11 +53,15 @@ export function ProfilesPage({
       <div className="profileList">
         {profiles.map((p) => {
           const active = activeProfileId === p.id
+          // No subscription: no refresh, no update status, no traffic.
+          const desyncOnly = isDesyncOnlyProfile(p)
           const trafficPair = profileTrafficPair(p)
           const trafficTitle = profileTrafficLine(p)
           const host = profileSubscriptionHost(String(p.url ?? ''))
           const ago = formatProfileAgo(Number(p.lastUpdated ?? 0))
-          const updateError = String(p.lastUpdateError ?? '').trim()
+          const updateError = desyncOnly
+            ? ''
+            : String(p.lastUpdateError ?? '').trim()
           // Badge tooltip: when the last refresh attempt ran and why it failed.
           const attemptAgo = formatProfileAgo(Number(p.lastUpdateAttempt ?? 0))
           const updateErrorTitle = updateError
@@ -119,6 +127,7 @@ export function ProfilesPage({
                   ) : null}
                   <button
                     type="button"
+                    hidden={desyncOnly}
                     className={`profileRefreshIcon${refreshBusyId === p.id ? ' isBusy' : ''}`}
                     aria-label={t('ui.profiles.refreshSubscription')}
                     title={t('ui.profiles.refreshSubscription')}
@@ -163,10 +172,14 @@ export function ProfilesPage({
                     className="profileHost"
                     title={p.url ? String(p.url) : undefined}
                   >
-                    {host ||
-                      (p.url
-                        ? t('ui.common.subscription')
-                        : t('ui.profiles.localNoUrl'))}
+                    {desyncOnly
+                      ? desyncEnabled === false
+                        ? t('ui.profiles.desyncOnly.desyncOff')
+                        : t('ui.profiles.desyncOnly.desyncOn')
+                      : host ||
+                        (p.url
+                          ? t('ui.common.subscription')
+                          : t('ui.profiles.localNoUrl'))}
                   </span>
                   {ago ? <span className="profileUpdated">{ago}</span> : null}
                 </div>
@@ -179,7 +192,17 @@ export function ProfilesPage({
                   </div>
                 ) : null}
                 <div className="profileCardFoot">
-                  <span className="profileTypeChip">{p.type}</span>
+                  {/* The kind badge: a Desync-only profile is not a "local" one. */}
+                  {desyncOnly ? (
+                    <span
+                      className="profileTypeChip profileKindDesync"
+                      title={t('ui.profiles.desyncOnly.badgeTitle')}
+                    >
+                      {t('ui.profiles.desyncOnly.badge')}
+                    </span>
+                  ) : (
+                    <span className="profileTypeChip">{p.type}</span>
+                  )}
                   {active ? (
                     <span className="profileBadge">
                       {t('ui.profiles.active')}

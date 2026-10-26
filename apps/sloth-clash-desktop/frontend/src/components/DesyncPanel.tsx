@@ -3,45 +3,21 @@ import { useTranslation } from 'react-i18next'
 
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
+import { useDesyncPresets } from '../hooks/queries/useDesyncPresets'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import {
   customDomainErrorText,
   DESYNC_CUSTOM_LIMIT,
   desyncCustomViews,
   desyncEnablePatch,
+  desyncPresetName,
+  desyncPresetViews,
+  type DesyncPresetView,
   desyncServiceViews,
-  type DesyncPhaseView,
 } from '../utils/desyncStatus'
 
-/** Inline status chip: a toned dot plus the phase text. */
-export function DesyncStatusChip({
-  view,
-  prefix,
-  sub,
-}: {
-  view: DesyncPhaseView
-  prefix?: string
-  sub?: boolean
-}) {
-  const { t } = useTranslation()
-  const text = t(`desync.phase.${view.phase}`, {
-    attempt: view.attempt,
-    total: view.total,
-  })
-  return (
-    <span
-      className={`desyncChip${sub ? ' desyncChipSub' : ''}`}
-      data-tone={view.tone}
-      data-phase={view.phase}
-      role="status"
-    >
-      <span className="desyncChipDot" aria-hidden />
-      <span className="desyncChipText">
-        {prefix ? `${prefix}: ${text}` : text}
-      </span>
-    </span>
-  )
-}
+import { DesyncPresetList } from './DesyncPresetList'
+import { DesyncStatusChip } from './DesyncStatusChip'
 
 /**
  * - manage: the full controls — master switch, service rows and custom
@@ -92,14 +68,21 @@ export function DesyncPanel({
     error: pollError,
     save: saveSettings,
     addCustom,
+    addPreset,
     removeCustom,
     setCustomEnabled,
     retry: retryAuto,
   } = useDesyncStatus({ connected, mode, traffic })
+  const catalog = useDesyncPresets()
   const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)
   const [domainInput, setDomainInput] = useState('')
   const [customError, setCustomError] = useState('')
+  const [presetError, setPresetError] = useState('')
+  const [replaced, setReplaced] = useState<{
+    id: string
+    domains: string[]
+  } | null>(null)
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
@@ -134,19 +117,51 @@ export function DesyncPanel({
     }
   }
 
-  /** One custom-list write; its validation error shows under the field. */
-  async function writeCustom(call: () => Promise<boolean>): Promise<boolean> {
+  const presetName = (id: string) => desyncPresetName(catalog, id)
+
+  /**
+   * One custom-list write. A domain write's validation error shows under the
+   * field, a preset switch's under the Popular list.
+   */
+  async function writeCustom(
+    call: () => Promise<boolean>,
+    scope: 'domain' | 'preset' = 'domain',
+  ): Promise<boolean> {
     if (!status || busy) return false
     setSaving(true)
     setCustomError('')
+    setPresetError('')
+    setReplaced(null)
     try {
       return await call()
     } catch (err: unknown) {
-      if (mountedRef.current) setCustomError(customDomainErrorText(t, err))
+      if (mountedRef.current) {
+        const text = customDomainErrorText(t, err, {
+          presetName,
+          forPreset: scope === 'preset',
+        })
+        if (scope === 'preset') setPresetError(text)
+        else setCustomError(text)
+      }
       return false
     } finally {
       if (mountedRef.current) setSaving(false)
     }
+  }
+
+  /**
+   * Preset switch: ON adds the preset the first time, then re-enables its
+   * entry; OFF only disables it (the entry and its cached strategy stay).
+   */
+  function togglePreset(view: DesyncPresetView) {
+    void writeCustom(async () => {
+      if (view.entryId) return setCustomEnabled(view.entryId, !view.checked)
+      const result = await addPreset(view.id)
+      if (result === false) return false
+      if (result.length > 0 && mountedRef.current)
+        setReplaced({ id: view.id, domains: result })
+      return true
+    }, 'preset')
   }
 
   async function submitDomain() {
@@ -190,11 +205,16 @@ export function DesyncPanel({
   const customRows = snapshot
     ? desyncCustomViews(snapshot, { connected, mode, traffic })
     : []
-  const atLimit = customRows.length >= DESYNC_CUSTOM_LIMIT
+  const presetRows = snapshot
+    ? desyncPresetViews(snapshot, { connected, mode, traffic }, catalog)
+    : []
+  // The cap counts every entry, presets included (desyncCustomLimit).
+  const atLimit = (status?.settings.custom?.length ?? 0) >= DESYNC_CUSTOM_LIMIT
   const shownError = outerError || error || pollError
   const servicesTitleId = `${baseId}-services`
   const customTitleId = `${baseId}-custom`
   const customErrorId = `${baseId}-custom-error`
+  const ownTitleId = `${baseId}-own`
 
   return (
     <div className="desyncPanel" data-variant={variant}>
@@ -284,112 +304,136 @@ export function DesyncPanel({
             <p className="small muted desyncCustomHint">
               {t('desync.custom.hint')}
             </p>
-            {customRows.length > 0 ? (
-              <ul className="desyncServices desyncCustomList">
-                {customRows.map((row) => (
-                  <li
-                    key={row.id}
-                    className="desyncService desyncCustomRow"
-                    data-custom={row.id}
-                  >
-                    <span
-                      className="desyncServiceName desyncCustomDomain"
-                      title={row.domain}
-                    >
-                      {row.domain}
-                    </span>
-                    <div className="desyncServiceStatus">
-                      {onboarding ? null : (
-                        <>
-                          <DesyncStatusChip view={row.status} />
-                          {row.status.phase === 'unavailable' ? (
-                            <span className="desyncCustomNote">
-                              {t('desync.custom.ipHint')}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                    <div className="desyncCustomControls">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={row.checked}
-                        aria-label={row.domain}
-                        className={`settingsSwitch${row.checked ? ' on' : ''}`}
-                        disabled={busy || (!supported && !row.checked)}
-                        onClick={() =>
-                          void writeCustom(() =>
-                            setCustomEnabled(row.id, !row.checked),
-                          )
-                        }
-                      >
-                        <span className="settingsSwitchKnob" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        className="desyncCustomRemove"
-                        aria-label={t('desync.custom.remove', {
-                          domain: row.domain,
-                        })}
-                        title={t('desync.custom.remove', {
-                          domain: row.domain,
-                        })}
-                        disabled={busy}
-                        onClick={() =>
-                          void writeCustom(() => removeCustom(row.id))
-                        }
-                      >
-                        <span aria-hidden>×</span>
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <form
-              className="desyncCustomAdd"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void submitDomain()
-              }}
-            >
-              <input
-                className="input"
-                type="text"
-                value={domainInput}
-                onChange={(e) => {
-                  setDomainInput(e.target.value)
-                  setCustomError('')
-                }}
-                placeholder="example.com"
-                aria-label={t('desync.custom.inputLabel')}
-                aria-invalid={customError ? true : undefined}
-                aria-describedby={customError ? customErrorId : undefined}
-                disabled={busy || atLimit || !supported}
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
+            {presetRows.length > 0 ? (
+              <DesyncPresetList
+                views={presetRows}
+                onboarding={onboarding}
+                busy={busy}
+                supported={supported}
+                replaced={replaced}
+                error={presetError}
+                onToggle={togglePreset}
               />
-              <button
-                type="submit"
-                className="btn"
-                disabled={busy || atLimit || !supported || !domainInput.trim()}
-              >
-                {t('desync.custom.add')}
-              </button>
-            </form>
-            {customError ? (
-              <p id={customErrorId} className="error small" role="alert">
-                {customError}
-              </p>
-            ) : atLimit ? (
-              <p className="small muted">
-                {t('desync.custom.limitReached', {
-                  limit: DESYNC_CUSTOM_LIMIT,
-                })}
-              </p>
             ) : null}
+            <div
+              className="desyncSubgroup desyncOwnSites"
+              role={presetRows.length > 0 ? 'group' : undefined}
+              aria-labelledby={presetRows.length > 0 ? ownTitleId : undefined}
+            >
+              {presetRows.length > 0 ? (
+                <h5 id={ownTitleId} className="desyncSubTitle">
+                  {t('desync.custom.ownTitle')}
+                </h5>
+              ) : null}
+              {customRows.length > 0 ? (
+                <ul className="desyncServices desyncCustomList">
+                  {customRows.map((row) => (
+                    <li
+                      key={row.id}
+                      className="desyncService desyncCustomRow"
+                      data-custom={row.id}
+                    >
+                      <span
+                        className="desyncServiceName desyncCustomDomain"
+                        title={row.domain}
+                      >
+                        {row.domain}
+                      </span>
+                      <div className="desyncServiceStatus">
+                        {onboarding ? null : (
+                          <>
+                            <DesyncStatusChip view={row.status} />
+                            {row.status.phase === 'unavailable' ? (
+                              <span className="desyncCustomNote">
+                                {t('desync.custom.ipHint')}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                      <div className="desyncCustomControls">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={row.checked}
+                          aria-label={row.domain}
+                          className={`settingsSwitch${row.checked ? ' on' : ''}`}
+                          disabled={busy || (!supported && !row.checked)}
+                          onClick={() =>
+                            void writeCustom(() =>
+                              setCustomEnabled(row.id, !row.checked),
+                            )
+                          }
+                        >
+                          <span className="settingsSwitchKnob" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          className="desyncCustomRemove"
+                          aria-label={t('desync.custom.remove', {
+                            domain: row.domain,
+                          })}
+                          title={t('desync.custom.remove', {
+                            domain: row.domain,
+                          })}
+                          disabled={busy}
+                          onClick={() =>
+                            void writeCustom(() => removeCustom(row.id))
+                          }
+                        >
+                          <span aria-hidden>×</span>
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <form
+                className="desyncCustomAdd"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void submitDomain()
+                }}
+              >
+                <input
+                  className="input"
+                  type="text"
+                  value={domainInput}
+                  onChange={(e) => {
+                    setDomainInput(e.target.value)
+                    setCustomError('')
+                  }}
+                  placeholder="example.com"
+                  aria-label={t('desync.custom.inputLabel')}
+                  aria-invalid={customError ? true : undefined}
+                  aria-describedby={customError ? customErrorId : undefined}
+                  disabled={busy || atLimit || !supported}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={
+                    busy || atLimit || !supported || !domainInput.trim()
+                  }
+                >
+                  {t('desync.custom.add')}
+                </button>
+              </form>
+              {customError ? (
+                <p id={customErrorId} className="error small" role="alert">
+                  {customError}
+                </p>
+              ) : atLimit ? (
+                <p className="small muted">
+                  {t('desync.custom.limitReached', {
+                    limit: DESYNC_CUSTOM_LIMIT,
+                  })}
+                </p>
+              ) : null}
+            </div>
           </section>
         ) : null}
         {children}

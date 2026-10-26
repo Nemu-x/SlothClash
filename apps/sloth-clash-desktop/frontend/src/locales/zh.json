@@ -811,8 +811,11 @@
         "builtin": "该域名已由内置的 YouTube 或 Discord 开关覆盖。",
         "duplicate": "该域名已在列表中。",
         "limit": "最多可以添加 {{limit}} 个域名。",
-        "not_found": "该条目已不存在，列表已刷新。"
-      }
+        "not_found": "该条目已不存在，列表已刷新。",
+        "preset_overlap": "已被 {{name}} 预设覆盖。",
+        "unknown_preset": "此版本中没有该预设。"
+      },
+      "ownTitle": "其他网站"
     },
     "lead": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站。",
     "servicesTitle": "服务",
@@ -837,6 +840,19 @@
       "created": "“{{name}}”已启用：Desync 已开启。",
       "saveBusy": "上一次更改仍在保存，请重试。",
       "notCreated": "配置未创建，请重试。"
+    },
+    "presets": {
+      "title": "热门",
+      "more": "另外 {{count}} 个",
+      "less": "收起",
+      "shared": "{{domains}} 也经由此路由：它与 {{names}} 共用，因此其他网站上的 {{names}} 图片也会走这里。",
+      "replaced_other": "已替换 {{domains}}：{{name}} 预设已涵盖。",
+      "error": {
+        "duplicate": "该预设已在列表中。",
+        "limit": "包括预设在内最多 {{limit}} 个条目。请先移除一个域名。",
+        "not_found": "该预设条目已不存在，列表已刷新。",
+        "unknown_preset": "此版本中没有该预设。"
+      }
     }
   }
 }

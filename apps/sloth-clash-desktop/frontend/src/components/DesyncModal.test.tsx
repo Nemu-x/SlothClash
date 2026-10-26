@@ -7,6 +7,7 @@ import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { HomePage } from '../pages/Home'
 import { ProfilesPage } from '../pages/Profiles'
 import {
+  DESYNC_PRESETS,
   desyncAuto,
   desyncSnapshot,
   desyncStatus,
@@ -417,6 +418,32 @@ describe('Desync modal entry points', () => {
     expect(within(card).getByText('On')).toBeVisible()
     fireEvent.click(within(card).getByRole('button', { name: 'Open' }))
     expect(screen.getByRole('dialog', { name: 'Desync' })).toBeVisible()
+  })
+
+  it('the Settings summary names switched-on presets', async () => {
+    stubStatus(
+      desyncStatus({
+        settings: {
+          custom: [
+            { id: 'a1', domain: 'example.org', enabled: true },
+            { id: 'ig', domain: '', preset: 'instagram', enabled: true },
+            { id: 'a2', domain: 'example.net', enabled: true },
+            { id: 'fb', domain: '', preset: 'facebook', enabled: true },
+            { id: 'xx', domain: '', preset: 'x', enabled: false },
+          ],
+        },
+      }),
+    )
+    wailsApp.stub('ListDesyncPresets', () => DESYNC_PRESETS)
+    renderWithProviders(
+      <DesyncSummaryCard {...CONNECTED} onOpen={() => undefined} />,
+    )
+    const card = screen.getByRole('group', { name: 'Desync' })
+    expect(
+      await within(card).findByText(
+        'YouTube, Discord, Facebook, Instagram, Sites 2',
+      ),
+    ).toBeVisible()
   })
 
   it('a Desync-only profile card opens the modal without activating', async () => {

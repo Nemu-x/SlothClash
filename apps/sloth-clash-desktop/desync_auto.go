@@ -35,6 +35,7 @@ type DesyncAutoAttempt struct {
 	Service    string `json:"service"`
 	Candidate  string `json:"candidate"`
 	Target     string `json:"target,omitempty"`
+	Preset     string `json:"preset,omitempty"` // custom preset ID, in clear (Target empty)
 	OK         bool   `json:"ok"`
 	Code       string `json:"code,omitempty"`
 	DurationMS int64  `json:"durationMS"`
@@ -675,10 +676,15 @@ func (a *App) GetDesyncDiagnosticReport() string {
 	report["controllerRevision"] = 5
 	report["desyncOnly"] = status.DesyncOnly
 	// Custom domains appear only as the install-keyed digest probe targets
-	// use (so an entry matches its attempts); the IDs are random.
+	// use (so an entry matches its attempts); the IDs are random. A preset
+	// entry is reported by its catalog ID, which names no user input.
 	key := desyncReportKey()
 	custom := []map[string]any{}
 	for _, e := range status.Settings.Custom {
+		if e.Preset != "" {
+			custom = append(custom, map[string]any{"id": e.ID, "preset": e.Preset, "enabled": e.Enabled})
+			continue
+		}
 		custom = append(custom, map[string]any{"id": e.ID, "domain": desyncReportDigest(key, e.Domain), "enabled": e.Enabled})
 	}
 	report["customDomains"] = custom

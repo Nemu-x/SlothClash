@@ -103,6 +103,9 @@ func (a *App) startup(ctx context.Context) {
 	a.closeToTray = currentDesktopPrefs().UI.IsCloseToTray()
 	a.mu.Unlock()
 	a.loadProfilesFromDisk()
+	// The generation pipeline reports its own subscription body fetches here
+	// (profile update status, profile_update_status.go).
+	bodyFetchRecorder.Store(a)
 	// Reclaim runtime dirs of profiles deleted in earlier sessions (audit R3).
 	a.pruneOrphanRuntimeDirs()
 	a.refreshServiceStatus()

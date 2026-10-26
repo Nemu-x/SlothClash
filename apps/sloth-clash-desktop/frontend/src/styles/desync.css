@@ -51,10 +51,13 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* Room for the scrollbar without shifting the rows when it appears. */
-  margin-right: calc(-1 * var(--space-2));
-  padding-right: var(--space-2);
+  /* The 10px scrollbar (base.css) gets a permanent gutter inside the card's
+     side padding: rows keep the footer's right edge and never shift when a
+     new custom domain makes the body scroll. 14px out = 10px gutter + 4px,
+     and 4px on the left: room for focus rings, which a scroller clips. */
   scrollbar-gutter: stable;
+  margin: 0 -14px 0 -4px;
+  padding: 0 4px;
 }
 .desyncPanelError {
   flex: 0 0 auto;

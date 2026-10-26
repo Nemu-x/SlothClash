@@ -1,0 +1,35 @@
+import { fireEvent, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+
+import { renderWithProviders } from '../test/render'
+
+import { DesyncOnlyEnableModal } from './DesyncOnlyEnableModal'
+
+describe('DesyncOnlyEnableModal', () => {
+  it('focuses Turn on Desync and closes on Escape', () => {
+    const onClose = vi.fn()
+    renderWithProviders(
+      <DesyncOnlyEnableModal
+        open
+        busy={false}
+        onClose={onClose}
+        onEnable={vi.fn()}
+      />,
+    )
+    expect(
+      screen.getByRole('dialog', { name: 'Turn on Desync?' }),
+    ).toHaveAccessibleDescription(/This profile has no VPN servers/)
+    expect(screen.getByRole('button', { name: 'Turn on Desync' })).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays while turning Desync on', () => {
+    const onClose = vi.fn()
+    renderWithProviders(
+      <DesyncOnlyEnableModal open busy onClose={onClose} onEnable={vi.fn()} />,
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})

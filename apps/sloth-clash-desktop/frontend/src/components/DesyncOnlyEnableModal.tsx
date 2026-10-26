@@ -1,4 +1,7 @@
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 /**
  * Asked after a Desync-only profile was activated while Desync is off: such a
@@ -16,6 +19,8 @@ export function DesyncOnlyEnableModal({
   onEnable: () => void
 }) {
   const { t } = useTranslation()
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(cardRef, open, busy ? undefined : onClose)
   if (!open) return null
   return (
     <div
@@ -25,16 +30,20 @@ export function DesyncOnlyEnableModal({
       onClick={onClose}
     >
       <div
+        ref={cardRef}
         className="modalCard"
         role="dialog"
         aria-modal="true"
         aria-labelledby="desyncOnlyEnableTitle"
+        aria-describedby="desyncOnlyEnableBody"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="desyncOnlyEnableTitle" className="modalTitle">
           {t('ui.profiles.desyncOnly.enableTitle')}
         </h3>
-        <p className="muted small">{t('ui.profiles.desyncOnly.enableBody')}</p>
+        <p id="desyncOnlyEnableBody" className="muted small">
+          {t('ui.profiles.desyncOnly.enableBody')}
+        </p>
         <div className="modalFooter">
           <div className="modalFooterRight" style={{ width: '100%' }}>
             <button
@@ -50,6 +59,7 @@ export function DesyncOnlyEnableModal({
               className="btn primary"
               disabled={busy}
               onClick={onEnable}
+              data-autofocus
             >
               {t('ui.profiles.desyncOnly.enable')}
             </button>

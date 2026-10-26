@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -187,6 +188,29 @@ func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
 	}
 	if status, _ = a.SetDesyncCustomDomainEnabled(id, false); status.Settings.Enabled {
 		t.Fatal("Desync stayed on with nothing selected")
+	}
+}
+
+// withDesyncCoreFeatures pretends the embedded core reports features.
+func withDesyncCoreFeatures(t *testing.T, features ...string) {
+	t.Helper()
+	embeddedCoreFeatures() // settle the once before overriding its value
+	previous := embeddedCoreFeaturesValue
+	embeddedCoreFeaturesValue = features
+	t.Cleanup(func() { embeddedCoreFeaturesValue = previous })
+}
+
+func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
+	withDesyncCoreFeatures(t, "desync")
+	stored := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Enabled: true}}
+	withDesyncPrefs(t, DesyncSettings{DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 1, Custom: stored})
+	// The UI sends the toggles only: no YouTube/Discord and no Custom field.
+	status, err := (&App{}).SetDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4})
+	if err != nil || !status.Settings.Enabled {
+		t.Fatalf("enabling with only stored custom domains failed: %+v %v", status.Settings, err)
+	}
+	if !reflect.DeepEqual(status.Settings.Custom, stored) || !reflect.DeepEqual(currentDesyncSettings().Custom, stored) {
+		t.Fatalf("custom list not kept: status %+v, prefs %+v", status.Settings.Custom, currentDesyncSettings().Custom)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"reflect"
 	"strings"
 	"testing"
@@ -100,5 +101,42 @@ func TestDesyncPresetTargetsFollowOwnership(t *testing.T) {
 	}
 	if got := desyncCustomTargets(customEntry, nil); !reflect.DeepEqual(got, []string{"https://example.org/"}) {
 		t.Fatalf("plain: %v", got)
+	}
+}
+
+func TestDesyncReportNamesPresetsAndHashesUserDomains(t *testing.T) {
+	core := newCustomFakeCore(t, func(name, _ string) bool { return name == "DIRECT" })
+	a, network := customTestApp(t, core, customEntry, presetEntry)
+	secret := strings.Repeat("ab", 32)
+	withDesyncReportKey(t, secret)
+	calibrateCustomToEnd(a, 1, network, a.core.listen, "", customEntry, &desyncCustomPlan{})
+	calibrateCustomToEnd(a, 1, network, a.core.listen, "", presetEntry, &desyncCustomPlan{})
+	a.state.Connection.Status = "disconnected"
+	text := a.GetDesyncDiagnosticReport()
+	if strings.Contains(text, "example.org") {
+		t.Fatalf("user domain leaked into the report: %s", text)
+	}
+	key, _ := hex.DecodeString(secret)
+	report := parseDesyncReport(t, text)
+	want := []map[string]any{
+		{"id": customEntry.ID, "domain": desyncReportDigest(key, "example.org"), "enabled": true},
+		{"id": presetEntry.ID, "preset": "facebook", "enabled": true},
+	}
+	if !reflect.DeepEqual(report.Custom, want) {
+		t.Fatalf("custom entries: %v", report.Custom)
+	}
+	presetAttempts := 0
+	for _, attempt := range report.Automatic.Attempts {
+		if attempt.Preset == "facebook" {
+			presetAttempts++
+			if attempt.Target != "" || attempt.Service != "custom" {
+				t.Fatalf("preset attempt: %+v", attempt)
+			}
+		} else if attempt.Service == "custom" && attempt.Target != desyncReportDigest(key, "example.org") {
+			t.Fatalf("plain attempt: %+v", attempt)
+		}
+	}
+	if presetAttempts == 0 || report.Automatic.Custom[presetEntry.ID].Phase != "not_needed" {
+		t.Fatalf("preset attempts missing: %+v", report.Automatic)
 	}
 }

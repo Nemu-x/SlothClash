@@ -50,6 +50,15 @@ const (
 	subscriptionMaxWireBytes = 48 << 20
 )
 
+// ErrTooManyRedirects is what the subscription clients' CheckRedirect returns
+// once a request has followed SubscriptionMaxRedirects redirects. http.Client
+// wraps it in a *url.Error; main matches it with errors.Is to tell a redirect
+// loop (deterministic) from a network failure.
+var ErrTooManyRedirects = errors.New("too many redirects")
+
+// SubscriptionMaxRedirects bounds the redirects a subscription request follows.
+const SubscriptionMaxRedirects = 12
+
 // FetchSubscriptionBody returns the (decrypted) subscription body plus the
 // response headers of the successful GET — the same response carries the
 // optional brand manifest (main's branding.go), so callers can capture it
@@ -74,8 +83,8 @@ func FetchSubscriptionBody(ctx context.Context, rawURL string, ageKey string, cl
 	httpClient := &http.Client{
 		Timeout: 50 * time.Second,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 12 {
-				return errors.New("too many redirects")
+			if len(via) >= SubscriptionMaxRedirects {
+				return ErrTooManyRedirects
 			}
 			return nil
 		},
@@ -154,16 +163,20 @@ func refreshSubscriptionBodyCache(ctx context.Context, dataDir, subURL, ageKey s
 		return nil
 	}
 	body, hdr, err := FetchSubscriptionBody(ctx, subURL, ageKey, client)
-	if err != nil {
-		return err
+	if err == nil && len(bytes.TrimSpace(body)) == 0 {
+		err = errEmptySubscriptionBody
 	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		return errors.New("empty subscription body")
+	if err != nil {
+		client.bodyFetched(dataDir, err)
+		return err
 	}
 	WriteSubscriptionBodyCache(dataDir, body)
 	client.headers(dataDir, subURL, hdr)
+	client.bodyFetched(dataDir, nil)
 	return nil
 }
+
+var errEmptySubscriptionBody = errors.New("empty subscription body")
 
 // ---------------------------------------------------------------------------
 // Singleflight dedup for subscription fetches.
@@ -290,13 +303,12 @@ func tryWriteMergedFullProfile(in Input, scriptOut *ScriptResult) (pipelineOutco
 		if err == nil {
 			in.Env.Client.headers(in.DataDir, in.SubURL, hdr)
 		}
-		if err != nil || len(bytes.TrimSpace(b)) == 0 {
-			f := map[string]any{"dataDir": in.DataDir}
-			if err != nil {
-				f["error"] = err.Error()
-			} else {
-				f["error"] = "empty body"
-			}
+		if err == nil && len(bytes.TrimSpace(b)) == 0 {
+			err = errEmptySubscriptionBody
+		}
+		if err != nil {
+			in.Env.Client.bodyFetched(in.DataDir, err)
+			f := map[string]any{"dataDir": in.DataDir, "error": err.Error()}
 			traceEvent("pipeline.subscription.fetch", "fail", fetchDur, f)
 			if boundedio.IsLimitError(err) {
 				return pipelineBodyTooLarge, err
@@ -309,6 +321,7 @@ func tryWriteMergedFullProfile(in Input, scriptOut *ScriptResult) (pipelineOutco
 		})
 		body = b
 		WriteSubscriptionBodyCache(in.DataDir, body)
+		in.Env.Client.bodyFetched(in.DataDir, nil)
 	}
 
 	parseStart := time.Now()

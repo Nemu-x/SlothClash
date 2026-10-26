@@ -53,6 +53,18 @@ export function ProfilesPage({
           const trafficTitle = profileTrafficLine(p)
           const host = profileSubscriptionHost(String(p.url ?? ''))
           const ago = formatProfileAgo(Number(p.lastUpdated ?? 0))
+          const updateError = String(p.lastUpdateError ?? '').trim()
+          // Badge tooltip: when the last refresh attempt ran and why it failed.
+          const attemptAgo = formatProfileAgo(Number(p.lastUpdateAttempt ?? 0))
+          const updateErrorTitle = updateError
+            ? `${
+                attemptAgo
+                  ? t('ui.profiles.updateFailed.titleWithTime', {
+                      ago: attemptAgo,
+                    })
+                  : t('ui.profiles.updateFailed.title')
+              }\n${updateError}`
+            : ''
           return (
             <div
               key={p.id}
@@ -93,6 +105,16 @@ export function ProfilesPage({
                       aria-label={t('ui.profiles.scriptModal.badgeTitle')}
                     >
                       JS
+                    </span>
+                  ) : null}
+                  {/* No live-region role: every failing card would announce. */}
+                  {updateError ? (
+                    <span
+                      className="profileScriptBadge"
+                      title={updateErrorTitle}
+                      aria-label={updateErrorTitle}
+                    >
+                      {t('ui.profiles.updateFailed.badge')}
                     </span>
                   ) : null}
                   <button

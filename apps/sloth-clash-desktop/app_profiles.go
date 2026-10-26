@@ -276,6 +276,9 @@ func (a *App) UpdateProfileInfo(profileID string, displayName string, subscripti
 			if err != nil {
 				return a.state, err
 			}
+			if norm != a.profiles[i].URL {
+				resetProfileUpdateStatusLocked(&a.profiles[i])
+			}
 			a.profiles[i].URL = norm
 		}
 		a.profiles[i].LastUpdated = time.Now().Unix()
@@ -341,6 +344,9 @@ func (a *App) SetProfileAgeSecretKey(profileID string, secretKey string) (AppSta
 			continue
 		}
 		found = true
+		if secretKey != a.profiles[i].AgeSecretKey {
+			resetProfileUpdateStatusLocked(&a.profiles[i])
+		}
 		a.profiles[i].AgeSecretKey = secretKey
 		a.profiles[i].LastUpdated = time.Now().Unix()
 		break

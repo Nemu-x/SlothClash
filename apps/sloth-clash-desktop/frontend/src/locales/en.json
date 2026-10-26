@@ -361,6 +361,11 @@
       "localNoUrl": "Local / no URL",
       "active": "Active",
       "activate": "Activate",
+      "updateFailed": {
+        "badge": "Update failed",
+        "title": "The last subscription update failed",
+        "titleWithTime": "The last subscription update failed ({{ago}})"
+      },
       "contextMenu": {
         "updateNow": "Update profile now",
         "editInfo": "Edit info",

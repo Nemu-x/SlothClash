@@ -91,6 +91,9 @@ type goldenProfile struct {
 	// seedGeo pre-creates <dataDir>/geo/{geoip,geosite}.dat, the files the
 	// bare fallback writer points geoip/geosite at when present.
 	seedGeo bool
+	// desync, when set, is the stored Desync config the case runs with, on
+	// top of the Connection toggles under test.
+	desync *DesyncSettings
 }
 
 // goldenScriptedTemplates covers merge_template.go and config_script.go on top
@@ -168,6 +171,7 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 		},
 		goldenProfile{id: "synthetic/bare-node-list", body: goldenBareNodeList, fullPrefs: true},
 		goldenProfile{id: "synthetic/bare-node-list-geo", body: goldenBareNodeList, seedGeo: true},
+		goldenProfile{id: "synthetic/representative-desync", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}},
 	)
 	return out
 }
@@ -224,6 +228,9 @@ func TestRuntimeConfigGolden(t *testing.T) {
 				expected[rel] = true
 				t.Run(rel, func(t *testing.T) {
 					withConnectionPrefs(t, v.conn)
+					if p.desync != nil {
+						withGoldenDesync(t, *p.desync)
+					}
 					got := generateGoldenRuntimeConfig(t, server, p, mode.traffic, mode.enableTun)
 					compareRuntimeConfigGolden(t, rel, got)
 				})
@@ -231,6 +238,15 @@ func TestRuntimeConfigGolden(t *testing.T) {
 		}
 	}
 	checkStaleRuntimeConfigGoldens(t, expected)
+}
+
+// withGoldenDesync stores s as the Desync config of one case; the prefs swap
+// of withConnectionPrefs restores the previous prefs.
+func withGoldenDesync(t *testing.T, s DesyncSettings) {
+	t.Helper()
+	prefsMu.Lock()
+	prefsCurrent.Desync = s
+	prefsMu.Unlock()
 }
 
 func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {

@@ -1,5 +1,5 @@
-import { screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders } from '../test/render'
 
@@ -78,5 +78,51 @@ describe('ProfilesPage update status badge', () => {
     ])
     expect(screen.getByText('Healthy')).toBeTruthy()
     expect(screen.queryByText('Update failed')).toBeNull()
+  })
+})
+
+describe('ProfilesPage keyboard', () => {
+  const SUB = {
+    id: 'p1',
+    name: 'Sub',
+    type: 'subscription',
+    url: 'https://sub.example.com/s/token',
+  }
+
+  function renderWith(onActivate = vi.fn(), onRefresh = vi.fn()) {
+    renderWithProviders(
+      <ProfilesPage
+        profiles={[SUB]}
+        activeProfileId=""
+        refreshBusyId={null}
+        error={null}
+        onImport={noop}
+        onActivate={onActivate}
+        onRefresh={onRefresh}
+        onContextMenu={noop}
+      />,
+    )
+    return { onActivate, onRefresh }
+  }
+
+  it('Enter and Space on the card activate it', () => {
+    const { onActivate } = renderWith()
+    const card = screen.getByText('Sub').closest('.profileCard') as HTMLElement
+    // Handled (default prevented: Space must not scroll the page).
+    expect(fireEvent.keyDown(card, { key: 'Enter' })).toBe(false)
+    expect(fireEvent.keyDown(card, { key: ' ' })).toBe(false)
+    expect(onActivate).toHaveBeenCalledTimes(2)
+    expect(onActivate).toHaveBeenCalledWith('p1')
+  })
+
+  it('Enter and Space on the refresh button are left to the button', () => {
+    const { onActivate } = renderWith()
+    const refresh = screen.getByRole('button', {
+      name: 'Refresh subscription',
+    })
+    // Not prevented, so the browser turns them into the button's click.
+    expect(fireEvent.keyDown(refresh, { key: 'Enter' })).toBe(true)
+    expect(fireEvent.keyDown(refresh, { key: ' ' })).toBe(true)
+    expect(onActivate).not.toHaveBeenCalled()
   })
 })

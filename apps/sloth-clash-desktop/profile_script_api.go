@@ -54,6 +54,10 @@ func (a *App) SetProfileScriptOverride(profileID string, script string) (AppStat
 			continue
 		}
 		found = true
+		if err := rejectDesyncOnlyValue(a.profiles[i], script); err != nil {
+			a.mu.Unlock()
+			return a.GetAppState(), err
+		}
 		a.profiles[i].ScriptOverride = script
 		a.profiles[i].ScriptError = ""
 		a.profiles[i].ScriptErrorLine = 0
@@ -164,6 +168,9 @@ func (a *App) PreviewProfileScript(profileID string, script string) (ProfileScri
 	a.mu.Unlock()
 	if !found {
 		return ProfileScriptPreview{}, errors.New("profile not found")
+	}
+	if profileIsDesyncOnly(target) {
+		return ProfileScriptPreview{}, errDesyncOnlyProfileField
 	}
 
 	root, err := slothDataRoot()

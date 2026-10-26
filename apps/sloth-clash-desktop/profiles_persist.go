@@ -41,6 +41,10 @@ func (a *App) loadProfilesFromDisk() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(disk.Profiles) > 0 {
+		// A hand-edited Desync-only profile loses what it cannot carry.
+		for i := range disk.Profiles {
+			sanitizeDesyncOnlyProfile(&disk.Profiles[i])
+		}
 		a.profiles = disk.Profiles
 		a.state.Profile.Profiles = disk.Profiles
 	}
@@ -64,6 +68,7 @@ func (a *App) loadProfilesFromDisk() {
 	if a.state.Mode.Current == "direct" && strings.TrimSpace(a.state.Mode.LastNonDirectMode) == "" {
 		a.state.Mode.LastNonDirectMode = "rule"
 	}
+	a.enforceDesyncOnlyModeLocked()
 	// Hydrate the active profile's sticky pick into ProxyState so the
 	// UI and the auto-select routine can read it synchronously on next
 	// connect — no waiting for /proxies, no heuristics. This is what

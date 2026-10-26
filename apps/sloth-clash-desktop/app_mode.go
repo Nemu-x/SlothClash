@@ -14,6 +14,10 @@ func (a *App) SetMode(mode string) (AppState, error) {
 	}
 
 	a.mu.Lock()
+	if mode != "rule" && a.activeProfileIsDesyncOnlyLocked() {
+		a.mu.Unlock()
+		return a.GetAppState(), errDesyncOnlyMode
+	}
 	connected := a.state.Connection.Status == "connected"
 	listen := a.effectiveCoreEndpointLocked()
 	secret := a.core.secret

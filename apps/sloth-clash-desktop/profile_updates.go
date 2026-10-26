@@ -157,6 +157,13 @@ func (a *App) SetProfileAutoUpdate(profileID string, enabled bool, intervalMinut
 			continue
 		}
 		found = true
+		if profileIsDesyncOnly(a.profiles[i]) {
+			// Nothing to refresh: "off" is already the state, "on" is an error.
+			if enabled {
+				return a.state, errDesyncOnlyProfileField
+			}
+			return a.state, nil
+		}
 		a.profiles[i].AutoUpdateEnabled = enabled
 		a.profiles[i].AutoUpdateIntervalMinutes = intervalMinutes
 		a.profiles[i].LastUpdated = time.Now().Unix()

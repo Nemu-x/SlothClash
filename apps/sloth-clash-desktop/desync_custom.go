@@ -25,19 +25,58 @@ const desyncCustomLimit = 32
 var desyncFakeTTLSupported = runtime.GOOS == "windows"
 
 // DesyncCustomEntry is one user domain routed through Desync (the domain and
-// its subdomains). ID names the entry's hidden group and never changes.
+// its subdomains), or one catalog preset (Preset set, Domain empty: its
+// domains are read from desync.Presets when the config is generated, so a
+// catalog update reaches stored entries). ID names the entry's hidden group
+// and never changes.
 type DesyncCustomEntry struct {
 	ID      string `json:"id"`
 	Domain  string `json:"domain"`
+	Preset  string `json:"preset,omitempty"`
 	Enabled bool   `json:"enabled"`
 }
 
-// desyncCustomError is a validation failure; Code is stable for the UI.
-type desyncCustomError struct{ Code string }
+// key is the entry's cache key (desync.CustomEntryKey).
+func (e DesyncCustomEntry) key() string { return desync.CustomEntryKey(e.Domain, e.Preset) }
 
-func (e *desyncCustomError) Error() string { return "custom domain: " + e.Code }
+// DesyncPreset is one catalog preset as the UI lists it.
+type DesyncPreset struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Domains []string `json:"domains"`
+}
+
+// desyncCustomError is a validation failure; Code is stable for the UI.
+// Detail, when set, names what the failure refers to (a preset ID), never a
+// user domain.
+type desyncCustomError struct{ Code, Detail string }
+
+func (e *desyncCustomError) Error() string {
+	if e.Detail != "" {
+		return "custom domain: " + e.Code + ": " + e.Detail
+	}
+	return "custom domain: " + e.Code
+}
 
 func customDomainError(code string) error { return &desyncCustomError{Code: code} }
+
+// presetOverlap returns the preset ID among entries whose catalog domains
+// overlap domain, or "". Every catalog domain counts, not only the ones the
+// preset owns at the moment: ownership changes as presets are switched.
+func presetOverlap(entries []DesyncCustomEntry, domain string) string {
+	for _, e := range entries {
+		if e.Preset == "" {
+			continue
+		}
+		p, _ := desync.PresetByID(e.Preset)
+		for _, d := range p.Domains {
+			if desync.DomainsOverlap(d, domain) {
+				return e.Preset
+			}
+		}
+	}
+	return ""
+}
 
 // normalizeDesyncCustomDomain turns what a user typed (a domain, a URL, a
 // host:port) into the lowercase ASCII (punycode) domain a DOMAIN-SUFFIX rule
@@ -112,19 +151,38 @@ func validDesyncCustomID(id string) bool {
 }
 
 // sanitizeDesyncCustom drops stored entries the config generation must not
-// see (bad ID, invalid or re-normalized domain, duplicates) and keeps at most
-// desyncCustomLimit. Prefs are ours, but a hand-edited file must not be able
-// to put arbitrary text into generated rules.
+// see (bad ID, invalid or re-normalized domain, unknown or repeated preset, a
+// preset entry with a domain, duplicates, a domain overlapping a preset
+// entry's) and keeps at most desyncCustomLimit. Prefs are ours, but a
+// hand-edited file must not be able to put arbitrary text into generated
+// rules. A preset entry wins over a plain one overlapping it wherever either
+// is in the list (the API never stores both).
 func sanitizeDesyncCustom(entries []DesyncCustomEntry) []DesyncCustomEntry {
 	if len(entries) == 0 {
 		return nil
 	}
-	var out []DesyncCustomEntry
 	ids := map[string]bool{}
+	presets := map[string]bool{}
+	var kept []DesyncCustomEntry // valid preset entries, for the overlap check
+	for _, e := range entries {
+		if _, known := desync.PresetByID(e.Preset); e.Preset != "" && known && e.Domain == "" && validDesyncCustomID(e.ID) && !ids[e.ID] && !presets[e.Preset] {
+			ids[e.ID] = true
+			presets[e.Preset] = true
+			kept = append(kept, e)
+		}
+	}
+	var out []DesyncCustomEntry
 	domains := map[string]bool{}
 	for _, e := range entries {
+		if e.Preset != "" {
+			if presets[e.Preset] && ids[e.ID] && len(out) < desyncCustomLimit {
+				delete(presets, e.Preset) // the first stored copy only
+				out = append(out, e)
+			}
+			continue
+		}
 		domain, err := normalizeDesyncCustomDomain(e.Domain)
-		if err != nil || domain != e.Domain || !validDesyncCustomID(e.ID) || ids[e.ID] || domains[domain] || len(out) >= desyncCustomLimit {
+		if err != nil || domain != e.Domain || !validDesyncCustomID(e.ID) || ids[e.ID] || domains[domain] || presetOverlap(kept, domain) != "" || len(out) >= desyncCustomLimit {
 			continue
 		}
 		ids[e.ID] = true
@@ -214,6 +272,11 @@ func (a *App) AddDesyncCustomDomain(input string) (DesyncStatus, error) {
 				return nil, customDomainError("duplicate")
 			}
 		}
+		// A preset in the list (on or off) already covers its domains; a
+		// second group for the same names would split their traffic.
+		if preset := presetOverlap(entries, domain); preset != "" {
+			return nil, &desyncCustomError{Code: "preset_overlap", Detail: preset}
+		}
 		if len(entries) >= desyncCustomLimit {
 			return nil, customDomainError("limit")
 		}
@@ -222,6 +285,48 @@ func (a *App) AddDesyncCustomDomain(input string) (DesyncStatus, error) {
 			return nil, err
 		}
 		return append(entries, DesyncCustomEntry{ID: id, Domain: domain, Enabled: true}), nil
+	})
+}
+
+// ListDesyncPresets returns the preset catalog (ID, name, every domain).
+func (a *App) ListDesyncPresets() []DesyncPreset {
+	out := make([]DesyncPreset, 0, len(desync.Presets))
+	for _, p := range desync.Presets {
+		out = append(out, DesyncPreset{ID: p.ID, Name: p.Name, Domains: append([]string(nil), p.Domains...)})
+	}
+	return out
+}
+
+// AddDesyncPreset adds the catalog preset id as one entry, enabled. Plain
+// entries the preset covers (a domain equal to, or under, one of its
+// domains, e.g. a "facebook.com" typed before presets existed) are replaced
+// by it: the preset routes the same names and more, and keeping both would
+// put one name in two groups. RemoveDesyncCustomDomain and
+// SetDesyncCustomDomainEnabled take the preset entry's ID like any other.
+func (a *App) AddDesyncPreset(id string) (DesyncStatus, error) {
+	preset, ok := desync.PresetByID(id)
+	if !ok {
+		return a.GetDesyncStatus(), customDomainError("unknown_preset")
+	}
+	return a.updateDesyncCustom("add_preset", func(entries []DesyncCustomEntry) ([]DesyncCustomEntry, error) {
+		kept := entries[:0:0]
+		for _, e := range entries {
+			if e.Preset == preset.ID {
+				return nil, customDomainError("duplicate")
+			}
+			if e.Preset == "" && presetOverlap([]DesyncCustomEntry{{Preset: preset.ID}}, e.Domain) != "" {
+				continue // replaced by the preset
+			}
+			kept = append(kept, e)
+		}
+		if len(kept) >= desyncCustomLimit {
+			return nil, customDomainError("limit")
+		}
+		entryID, err := newDesyncCustomID(entries)
+		if err != nil {
+			return nil, err
+		}
+		return append(kept, DesyncCustomEntry{ID: entryID, Preset: preset.ID, Enabled: true}), nil
 	})
 }
 

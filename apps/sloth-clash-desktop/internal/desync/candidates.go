@@ -158,7 +158,8 @@ type CacheEntry struct {
 	YouTube string
 	Discord string
 	Voice   string
-	// Custom maps a custom domain to its winner (a candidate ID or DirectID).
+	// Custom maps a custom entry key (CustomEntryKey) to its winner (a
+	// candidate ID or DirectID).
 	Custom  map[string]string
 	Updated int64
 }

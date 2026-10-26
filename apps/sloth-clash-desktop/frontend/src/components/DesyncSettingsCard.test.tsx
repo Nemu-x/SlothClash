@@ -238,10 +238,10 @@ describe('DesyncSettingsCard: status chips', () => {
       text: 'Desync and reserve unavailable · retrying automatically',
     },
     {
-      title: 'reserve failed → problem',
+      title: 'reserve check failed → pending (recovering)',
       auto: desyncAuto({ discord: desyncService('profile_failed') }),
       service: 'discord',
-      tone: 'problem',
+      tone: 'pending',
       text: 'Subscription reserve unavailable · retrying',
     },
     {
@@ -296,11 +296,11 @@ describe('DesyncSettingsCard: status chips', () => {
       text: 'Discord voice: Waiting for a Discord voice connection',
     },
     {
-      title: 'voice: interrupted → problem',
+      title: 'voice: interrupted → pending (recovering)',
       auto: desyncAuto({ voice: desyncService('interrupted') }),
       service: 'discord',
       index: 1,
-      tone: 'problem',
+      tone: 'pending',
       text: 'Discord voice: UDP traffic interrupted; waiting for recovery',
     },
     {

@@ -51,6 +51,9 @@ export type DesyncContext = {
  * desync_reserve.go, desync_voice_monitor.go) plus the UI-side gates
  * (disabled / connect / rule / needs_tun / queued / waiting). Unknown
  * phases fall back to 'pending': still shown verbatim-keyed, never as ok.
+ *
+ * 'problem' (red) is only for a service that definitely does not work and
+ * that the app cannot fix; a state it is still recovering from is 'pending'.
  */
 const PHASE_TONE: Record<string, DesyncTone> = {
   // Working.
@@ -68,15 +71,19 @@ const PHASE_TONE: Record<string, DesyncTone> = {
   waiting: 'pending',
   observing: 'pending',
   partial: 'pending',
-  // Broken.
+  // Degraded but recovering: the reserve's latest check failed while
+  // background recovery continues; voice traffic stalled and is waiting for
+  // recovery or a strategy trial.
+  profile_failed: 'pending',
+  interrupted: 'pending',
+  // Broken: strategy search and reserve both failed.
   failed: 'problem',
-  profile_failed: 'problem',
-  interrupted: 'problem',
   // Custom domain: no strategy works (likely blocked by IP); the profile
   // carries it.
   unavailable: 'problem',
   // Desync-only profile (no reserve): no strategy works, the route goes
-  // direct while the search repeats.
+  // direct while the search repeats. Nothing else carries the service, so it
+  // does not work: red.
   no_strategy: 'problem',
   // Desync-only profile: "failed" there has no reserve to mention.
   failed_direct: 'problem',

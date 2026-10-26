@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -25,6 +26,10 @@ type DesyncSettings struct {
 	DiscordUDP        bool `json:"discordUDP"`
 	DiscordUDPTTL     int  `json:"discordUDPTTL"`
 	DiscordUDPRepeats int  `json:"discordUDPRepeats"`
+	// Custom is the user's custom domains. Absent in prefs written before it
+	// existed (= none). Only the AddDesyncCustomDomain family changes it;
+	// SetDesyncSettings keeps the stored list.
+	Custom []DesyncCustomEntry `json:"custom,omitempty"`
 }
 
 type DesyncStatus struct {
@@ -53,9 +58,12 @@ func currentDesyncSettings() DesyncSettings {
 // effectiveDesyncSettings fills the defaults a stored (possibly never-touched)
 // desync config leaves at zero.
 func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
-	if s == (DesyncSettings{}) {
-		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats}
+	custom := sanitizeDesyncCustom(s.Custom)
+	s.Custom = nil
+	if reflect.DeepEqual(s, DesyncSettings{}) { // never touched
+		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats, Custom: custom}
 	}
+	s.Custom = custom
 	if s.DiscordTTL == 0 {
 		s.DiscordTTL = 4
 	}
@@ -118,8 +126,8 @@ func validateDesyncSettings(s DesyncSettings, platform string, coreSupported boo
 		if !coreSupported {
 			return s, fmt.Errorf("the embedded core does not support desync")
 		}
-		if !s.YouTube && !s.Discord && !s.DiscordUDP {
-			return s, fmt.Errorf("select YouTube or Discord before enabling desync")
+		if !desyncHasSelection(s) {
+			return s, fmt.Errorf("select YouTube, Discord or a custom domain before enabling desync")
 		}
 		if (s.Discord || s.DiscordUDP) && platform != "windows" {
 			return s, fmt.Errorf("the Discord fake method currently requires Windows")
@@ -139,6 +147,9 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	a.desyncCtl.invalidate()
+	// The custom list has its own methods; a settings object the UI read
+	// before an add/remove must not roll the list back.
+	next.Custom = currentDesyncSettings().Custom
 	next, err := validateDesyncSettings(next, runtime.GOOS, desyncCoreSupported())
 	if err != nil {
 		return a.GetDesyncStatus(), err
@@ -147,6 +158,12 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 		return a.GetDesyncStatus(), fmt.Errorf("the embedded core does not support desync UDP")
 	}
 	prefsMu.Lock()
+	// Re-read under the lock: an add/remove may have landed since.
+	next.Custom = effectiveDesyncSettings(prefsCurrent.Desync).Custom
+	if next.Enabled && !desyncHasSelection(next) {
+		prefsMu.Unlock()
+		return a.GetDesyncStatus(), fmt.Errorf("select YouTube, Discord or a custom domain before enabling desync")
+	}
 	prefsCurrent.Desync = next
 	snapshot := prefsCurrent
 	savePrefsBestEffort(snapshot)
@@ -156,8 +173,40 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	return a.GetDesyncStatus(), nil
 }
 
+// desyncProbeMode is what a probe through a Desync outbound has to prove.
+type desyncProbeMode int
+
+const (
+	// desyncProbeStrict: a successful HTTP status from a fixed service URL
+	// (YouTube, Discord). An error page does not count.
+	desyncProbeStrict desyncProbeMode = iota
+	// desyncProbeReachable (custom domains): any HTTP response over TLS that
+	// verified for the URL's host. The user's site has no known-good URL, so
+	// the status says nothing about DPI; the verified certificate proves the
+	// connection reached the real server rather than a block page.
+	desyncProbeReachable
+)
+
+// expected is the core delay API's status filter for the mode. The core
+// (adapter.URLTest) always verifies TLS against the system roots for the
+// URL's host, does not follow redirects, and with patch 0020 fails a response
+// outside this range.
+func (m desyncProbeMode) expected() string {
+	if m == desyncProbeReachable {
+		return "100-599"
+	}
+	return "200-299"
+}
+
+// desyncCustomTarget is the probe URL of a custom domain.
+func desyncCustomTarget(domain string) string { return "https://" + domain + "/" }
+
 func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target string) (int, error) {
-	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {"200-299"}}
+	return probeDesyncOutboundMode(ctx, endpoint, secret, route, target, desyncProbeStrict)
+}
+
+func probeDesyncOutboundMode(ctx context.Context, endpoint, secret, route, target string, mode desyncProbeMode) (int, error) {
+	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {mode.expected()}}
 	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode()
 	resp, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, path, nil)
 	if err != nil {

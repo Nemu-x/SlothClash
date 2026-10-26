@@ -6,9 +6,12 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 
 import {
+  AddDesyncCustomDomain,
   GetDesyncAutoStatus,
   GetDesyncStatus,
+  RemoveDesyncCustomDomain,
   RetryDesyncAuto,
+  SetDesyncCustomDomainEnabled,
   SetDesyncSettings,
   type DesyncAutoStatus,
   type DesyncSettings,
@@ -61,7 +64,7 @@ async function fetchSnapshot(qc: QueryClient): Promise<DesyncSnapshot> {
  * shown). Re-polls at once when connection / mode / traffic change, since
  * those gate the calibration.
  *
- * `save` / `retry` are stable (useCallback) so they are safe effect deps.
+ * `save`, the custom-entry writes and `retry` are stable (useCallback) so they are safe effect deps.
  */
 export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
   const qc = useQueryClient()
@@ -88,17 +91,17 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
   }, [gateKey, enabled, qc])
 
   /**
-   * Apply `settings` (the full object). Returns false without calling the
-   * backend when another save is still in flight.
+   * Run one settings write and store the status it returns. Returns false
+   * without calling the backend when another write is still in flight.
    */
-  const save = useCallback(
-    async (settings: DesyncSettings): Promise<boolean> => {
+  const write = useCallback(
+    async (call: () => Promise<DesyncStatus>): Promise<boolean> => {
       const w = writeState(qc)
       if (w.saving) return false
       w.revision++
       w.saving = true
       try {
-        const next: DesyncStatus = await SetDesyncSettings(settings)
+        const next = await call()
         qc.setQueryData<DesyncSnapshot>(DESYNC_STATUS_KEY, (old) =>
           old ? { ...old, status: next } : old,
         )
@@ -108,6 +111,25 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
       }
     },
     [qc],
+  )
+
+  /** Apply `settings` (the full object; the custom list is not changed). */
+  const save = useCallback(
+    (settings: DesyncSettings) => write(() => SetDesyncSettings(settings)),
+    [write],
+  )
+  const addCustom = useCallback(
+    (domain: string) => write(() => AddDesyncCustomDomain(domain)),
+    [write],
+  )
+  const removeCustom = useCallback(
+    (id: string) => write(() => RemoveDesyncCustomDomain(id)),
+    [write],
+  )
+  const setCustomEnabled = useCallback(
+    (id: string, enabled: boolean) =>
+      write(() => SetDesyncCustomDomainEnabled(id, enabled)),
+    [write],
   )
 
   const retry = useCallback(async (): Promise<DesyncAutoStatus> => {
@@ -122,6 +144,9 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     snapshot: q.data ?? null,
     error: q.error ? String(q.error) : '',
     save,
+    addCustom,
+    removeCustom,
+    setCustomEnabled,
     retry,
   }
 }

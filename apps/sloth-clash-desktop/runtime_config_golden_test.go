@@ -91,6 +91,9 @@ type goldenProfile struct {
 	// seedGeo pre-creates <dataDir>/geo/{geoip,geosite}.dat, the files the
 	// bare fallback writer points geoip/geosite at when present.
 	seedGeo bool
+	// desync, when set, is the stored Desync config the case runs with, on
+	// top of the Connection toggles under test.
+	desync *DesyncSettings
 }
 
 // goldenScriptedTemplates covers merge_template.go and config_script.go on top
@@ -168,6 +171,18 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 		},
 		goldenProfile{id: "synthetic/bare-node-list", body: goldenBareNodeList, fullPrefs: true},
 		goldenProfile{id: "synthetic/bare-node-list-geo", body: goldenBareNodeList, seedGeo: true},
+		goldenProfile{id: "synthetic/representative-desync", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}},
+		goldenProfile{id: "synthetic/representative-desync-custom-1", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+		}}},
+		// Several entries: a disabled one (absent from the output) and a
+		// subdomain of another entry (its rules go first).
+		goldenProfile{id: "synthetic/representative-desync-custom-several", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Discord: true, Custom: []DesyncCustomEntry{
+			{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+			{ID: "1f2e3d4c", Domain: "blocked.example.net", Enabled: false},
+			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
+			{ID: "9e8d7c6b", Domain: "xn--e1afmkfd.xn--p1ai", Enabled: true},
+		}}},
 	)
 	return out
 }
@@ -224,6 +239,9 @@ func TestRuntimeConfigGolden(t *testing.T) {
 				expected[rel] = true
 				t.Run(rel, func(t *testing.T) {
 					withConnectionPrefs(t, v.conn)
+					if p.desync != nil {
+						withGoldenDesync(t, *p.desync)
+					}
 					got := generateGoldenRuntimeConfig(t, server, p, mode.traffic, mode.enableTun)
 					compareRuntimeConfigGolden(t, rel, got)
 				})
@@ -231,6 +249,19 @@ func TestRuntimeConfigGolden(t *testing.T) {
 		}
 	}
 	checkStaleRuntimeConfigGoldens(t, expected)
+}
+
+// withGoldenDesync stores s as the Desync config of one case; the prefs swap
+// of withConnectionPrefs restores the previous prefs.
+func withGoldenDesync(t *testing.T, s DesyncSettings) {
+	t.Helper()
+	prefsMu.Lock()
+	prefsCurrent.Desync = s
+	prefsMu.Unlock()
+	// One custom candidate set on every OS: the fake-TTL one.
+	prev := desyncFakeTTLSupported
+	desyncFakeTTLSupported = true
+	t.Cleanup(func() { desyncFakeTTLSupported = prev })
 }
 
 func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {

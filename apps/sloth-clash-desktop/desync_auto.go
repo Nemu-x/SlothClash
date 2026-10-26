@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -43,12 +42,14 @@ type DesyncAutoAttempt struct {
 	Received   int    `json:"received,omitempty"`
 }
 type DesyncAutoStatus struct {
-	Running  bool                `json:"running"`
-	Network  string              `json:"network,omitempty"`
-	YouTube  DesyncAutoService   `json:"youtube"`
-	Discord  DesyncAutoService   `json:"discord"`
-	Voice    DesyncAutoService   `json:"voice"`
-	Attempts []DesyncAutoAttempt `json:"attempts"`
+	Running bool              `json:"running"`
+	Network string            `json:"network,omitempty"`
+	YouTube DesyncAutoService `json:"youtube"`
+	Discord DesyncAutoService `json:"discord"`
+	Voice   DesyncAutoService `json:"voice"`
+	// Custom is the state of each enabled custom-domain entry, by entry ID.
+	Custom   map[string]DesyncAutoService `json:"custom,omitempty"`
+	Attempts []DesyncAutoAttempt          `json:"attempts"`
 }
 
 // desyncController is the automatic calibration state. Every field is guarded
@@ -70,6 +71,13 @@ func (c *desyncController) snapshot() DesyncAutoStatus {
 	defer c.mu.Unlock()
 	out := c.status
 	out.Attempts = append([]DesyncAutoAttempt{}, out.Attempts...)
+	if out.Custom != nil {
+		custom := make(map[string]DesyncAutoService, len(out.Custom))
+		for id, state := range out.Custom {
+			custom[id] = state
+		}
+		out.Custom = custom
+	}
 	return out
 }
 func (c *desyncController) invalidate() {
@@ -146,6 +154,10 @@ func (c *desyncController) setService(lease uint64, service string, state Desync
 // recordAttempt appends attempt to the session history (stamped and with its
 // target hashed) and returns the stored copy; ok=false for a stale lease.
 func (c *desyncController) recordAttempt(lease uint64, attempt DesyncAutoAttempt) (DesyncAutoAttempt, bool) {
+	if attempt.Target != "" {
+		// Before c.mu: the first use takes prefsMu to create the key.
+		attempt.Target = desyncReportDigest(desyncReportKey(), attempt.Target)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.epoch != lease {
@@ -153,10 +165,6 @@ func (c *desyncController) recordAttempt(lease uint64, attempt DesyncAutoAttempt
 	}
 	attempt.At = time.Now().Unix()
 	attempt.Network = c.status.Network
-	if attempt.Target != "" {
-		sum := sha256.Sum256([]byte(attempt.Network + attempt.Target))
-		attempt.Target = hex.EncodeToString(sum[:6])
-	}
 	history := append(c.status.Attempts, attempt)
 	if len(history) > 128 {
 		history = history[len(history)-128:]
@@ -361,7 +369,7 @@ func desyncTargets(service string) []string {
 
 // Stop at the first candidate which passes two independent rounds, rather than
 // rewarding a single warm connection or a filtered site's error page.
-func chooseDesyncTCP(ctx context.Context, service string, candidates []desync.Candidate, probe func(context.Context, desync.Candidate, string) error, record func(desync.Candidate, int, error, time.Duration)) (desync.Candidate, error) {
+func chooseDesyncTCP(ctx context.Context, targets []string, candidates []desync.Candidate, probe func(context.Context, desync.Candidate, string) error, record func(desync.Candidate, int, error, time.Duration)) (desync.Candidate, error) {
 	for i, c := range candidates {
 		if ctx.Err() != nil {
 			return desync.Candidate{}, ctx.Err()
@@ -369,7 +377,7 @@ func chooseDesyncTCP(ctx context.Context, service string, candidates []desync.Ca
 		start := time.Now()
 		var err error
 		for round := 0; round < 2 && err == nil; round++ {
-			for _, target := range desyncTargets(service) {
+			for _, target := range targets {
 				one, cancel := context.WithTimeout(ctx, 5*time.Second)
 				err = probe(one, c, target)
 				cancel()
@@ -406,7 +414,7 @@ func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint
 	}
 	trial, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	winner, err := chooseDesyncTCP(trial, service, candidates, func(one context.Context, c desync.Candidate, target string) error {
+	winner, err := chooseDesyncTCP(trial, desyncTargets(service), candidates, func(one context.Context, c desync.Candidate, target string) error {
 		_, e := probeDesyncOutbound(one, endpoint, secret, c.Name(route), target)
 		return e
 	}, func(c desync.Candidate, i int, e error, d time.Duration) {
@@ -633,6 +641,9 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 	} else if status.Traffic != "tun" {
 		a.desyncCtl.setService(lease, "voice", DesyncAutoService{Phase: "needs_tun"})
 	}
+	// Custom domains follow the built-in services and track the stored list
+	// themselves, so adding an entry searches for it alone.
+	go a.runDesyncCustomService(ctx, lease, network, endpoint, secret, status.Settings)
 	if status.Settings.DiscordUDP && status.Traffic == "tun" {
 		a.runDesyncVoiceService(ctx, lease, network, endpoint, secret)
 	} else {
@@ -658,7 +669,15 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		}
 	}
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
-	report["controllerRevision"] = 3
+	report["controllerRevision"] = 4
+	// Custom domains appear only as the install-keyed digest probe targets
+	// use (so an entry matches its attempts); the IDs are random.
+	key := desyncReportKey()
+	custom := []map[string]any{}
+	for _, e := range status.Settings.Custom {
+		custom = append(custom, map[string]any{"id": e.ID, "domain": desyncReportDigest(key, e.Domain), "enabled": e.Enabled})
+	}
+	report["customDomains"] = custom
 	if build, ok := debug.ReadBuildInfo(); ok {
 		report["goVersion"] = build.GoVersion
 		for _, s := range build.Settings {
@@ -684,7 +703,6 @@ func (a *App) GetDesyncDiagnosticReport() string {
 				if !isDiscordUDPConnection(c) || len(flows) >= 64 {
 					continue
 				}
-				sum := sha256.Sum256([]byte(auto.Network + netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)))
 				route, candidate := "profile", ""
 				for _, name := range c.Chains {
 					if name == desync.DiscordUDPRoute {
@@ -694,7 +712,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 						candidate = strings.TrimPrefix(name, desync.DiscordUDPRoute+"-")
 					}
 				}
-				flows = append(flows, map[string]any{"endpoint": hex.EncodeToString(sum[:6]), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
+				flows = append(flows, map[string]any{"endpoint": desyncReportDigest(key, netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
 			}
 			report["udpFlows"] = flows
 		}
@@ -703,8 +721,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 			var proxy desyncUDPProxy
 			if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(group.Now), nil, &proxy) == nil && proxy.UDP != nil {
 				for i := range proxy.UDP.Activity {
-					sum := sha256.Sum256([]byte(auto.Network + proxy.UDP.Activity[i].Endpoint))
-					proxy.UDP.Activity[i].Endpoint = hex.EncodeToString(sum[:6])
+					proxy.UDP.Activity[i].Endpoint = desyncReportDigest(key, proxy.UDP.Activity[i].Endpoint)
 				}
 				report["udp"] = proxy.UDP
 			}

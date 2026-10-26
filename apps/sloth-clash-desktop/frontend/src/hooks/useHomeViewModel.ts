@@ -1,9 +1,22 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  type DesyncSnapshot,
+  type DesyncTone,
+  desyncServiceTone,
+  desyncServiceViews,
+} from '../utils/desyncStatus'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from '../utils/proxyNames'
 
 export type HomeActiveNodeVisual = { iso: string; text: string }
+
+/** Compact Desync summary on Home (only while Desync is switched on). */
+export type HomeDesyncChip = {
+  services: { key: string; name: string; tone: DesyncTone }[]
+  /** Full per-service status, one line each (tooltip / accessible name). */
+  tooltip: string
+}
 
 export type HomeViewModel = {
   hasAnyProfile: boolean
@@ -24,6 +37,8 @@ export type HomeViewModel = {
   nodePickerGroup: any
   homeAlertTooltip: string
   homeUpdateTooltip: string
+  /** null = hide the chip (Desync off, no service on, or not loaded yet). */
+  desyncChip: HomeDesyncChip | null
 }
 
 /**
@@ -37,12 +52,15 @@ export function useHomeViewModel({
   optimisticMode,
   optimisticTraffic,
   updateSnap,
+  desync = null,
 }: {
   state: any
   connectBusy: boolean
   optimisticMode: string | null
   optimisticTraffic: string | null
   updateSnap: any
+  /** Shared Desync snapshot (useDesyncStatus), the same one the card shows. */
+  desync?: DesyncSnapshot | null
 }): HomeViewModel {
   const { t } = useTranslation()
 
@@ -195,6 +213,34 @@ export function useHomeViewModel({
       : t('ui.home.updateAvailable')
   }, [t, updateSnap?.hasUpdate, updateSnap?.latestVersion])
 
+  const connectionStatus = state?.connection?.status
+  const modeCurrent = String(state?.mode?.current ?? '')
+  const trafficCurrent = String(state?.traffic ?? '')
+  const desyncChip = useMemo((): HomeDesyncChip | null => {
+    if (!desync || desync.status.settings.enabled !== true) return null
+    const views = desyncServiceViews(desync, {
+      connected: connectionStatus === 'connected',
+      mode: modeCurrent,
+      traffic: trafficCurrent,
+    }).filter((v) => v.checked)
+    if (views.length === 0) return null
+    const phaseText = (v: { phase: string; attempt: number; total: number }) =>
+      t(`desync.phase.${v.phase}`, { attempt: v.attempt, total: v.total })
+    const lines: string[] = []
+    for (const v of views) {
+      lines.push(`${v.name}: ${phaseText(v.status)}`)
+      if (v.voice) lines.push(`${t('desync.voice')}: ${phaseText(v.voice)}`)
+    }
+    return {
+      services: views.map((v) => ({
+        key: v.key,
+        name: v.name,
+        tone: desyncServiceTone(v),
+      })),
+      tooltip: lines.join('\n'),
+    }
+  }, [desync, connectionStatus, modeCurrent, trafficCurrent, t])
+
   return {
     hasAnyProfile,
     hasActiveProfile,
@@ -210,5 +256,6 @@ export function useHomeViewModel({
     nodePickerGroup,
     homeAlertTooltip,
     homeUpdateTooltip,
+    desyncChip,
   }
 }

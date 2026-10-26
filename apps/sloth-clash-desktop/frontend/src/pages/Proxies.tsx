@@ -136,6 +136,7 @@ function GroupIcon({ icon }: { icon: unknown }) {
 
 export function ProxiesPage({
   groups,
+  desyncOnly = false,
   connectionStatus,
   displayMode,
   showBuiltin,
@@ -150,6 +151,8 @@ export function ProxiesPage({
   onPingAll,
 }: {
   groups: any[]
+  /** The active profile is Desync-only: it has no proxy servers at all. */
+  desyncOnly?: boolean
   activeGroup: string
   connectionStatus: string
   displayMode: string
@@ -186,6 +189,18 @@ export function ProxiesPage({
   const visibleGroups = showHidden
     ? baseVisibleGroups
     : baseVisibleGroups.filter((g: any) => g?.hidden !== true)
+
+  if (desyncOnly) {
+    // Nothing to pick or test: the only groups are the hidden Desync routes,
+    // and the mode is Rule only.
+    return (
+      <div className="panel proxiesPanel">
+        <h2>{t('ui.proxies.title')}</h2>
+        <p className="muted">{t('ui.proxies.desyncOnlyEmpty')}</p>
+        {error ? <p className="error">{friendlyErrorMessage(error)}</p> : null}
+      </div>
+    )
+  }
 
   return (
     <div className="panel proxiesPanel">

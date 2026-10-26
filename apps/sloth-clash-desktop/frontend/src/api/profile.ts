@@ -6,6 +6,7 @@
 export {
   ActivateProfile,
   ClearProfileScriptOverride,
+  CreateDesyncOnlyProfile,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,

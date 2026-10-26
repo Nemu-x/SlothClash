@@ -6,8 +6,11 @@
 //
 // It speaks just enough of the mihomo external-controller API for those paths:
 // /version, /configs (GET, PATCH mode, PUT reload), /proxies, /proxies/{name}
-// (PUT selection), /proxies/{name}/delay, /traffic, /rules, /providers/rules,
-// with the same bearer-secret check mihomo applies. It never opens the
+// (GET, PUT selection), /proxies/{name}/delay, /traffic, /rules,
+// /providers/rules, with the same bearer-secret check mihomo applies. The
+// config's own select groups (e.g. the generated Desync routes) are served
+// next to the fixed GLOBAL / PROXY pair; a Desync reserve probe
+// (/proxies/{name}/desync/profile-probe) is logged and answered "unavailable". It never opens the
 // mixed-port, never touches TUN and never dials out.
 //
 // Behaviour is steered per data dir by an optional fakecore.json next to
@@ -49,6 +52,8 @@ type control struct {
 	// FailReload makes every PUT /configs return 500 while /version stays
 	// healthy (the "reload response lost, core fine" case).
 	FailReload bool `json:"failReload"`
+	// FailDelay makes every delay probe fail the way a blocked site does.
+	FailDelay bool `json:"failDelay"`
 }
 
 // maxLifetime bounds how long an orphaned fake core can outlive a crashed
@@ -125,6 +130,7 @@ func main() {
 	if m, ok := cfg["mode"].(string); ok && m != "" {
 		s.mode = m
 	}
+	s.loadGroups(cfg)
 	logEvent("start controller=%s", controller)
 	// Something for core.log, so the app's per-run log rotation has a
 	// non-empty file to keep.
@@ -140,6 +146,56 @@ type server struct {
 	mode   string
 	broken bool
 	now    map[string]string
+	// groups are the config's select groups beyond GLOBAL / PROXY: name ->
+	// members. Their selection lives in now like the fixed pair's.
+	groups map[string][]string
+}
+
+// loadGroups (re)reads the config's select groups. A selection survives a
+// reload while it is still a member; otherwise the group starts at its
+// default-selected (or first) member, like mihomo without a stored pick.
+func (s *server) loadGroups(cfg map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	groups := map[string][]string{}
+	list, _ := cfg["proxy-groups"].([]any)
+	for _, raw := range list {
+		g, _ := raw.(map[string]any)
+		name, _ := g["name"].(string)
+		if name == "" || name == "GLOBAL" || name == "PROXY" {
+			continue
+		}
+		var members []string
+		ms, _ := g["proxies"].([]any)
+		for _, m := range ms {
+			if v, ok := m.(string); ok {
+				members = append(members, v)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		groups[name] = members
+		selected := members[0]
+		if d, ok := g["default-selected"].(string); ok && d != "" {
+			selected = d
+		}
+		keep := false
+		for _, m := range members {
+			if m == s.now[name] {
+				keep = true
+			}
+		}
+		if !keep {
+			s.now[name] = selected
+		}
+	}
+	for name := range s.groups {
+		if _, still := groups[name]; !still {
+			delete(s.now, name)
+		}
+	}
+	s.groups = groups
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -168,8 +224,25 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleConfigs(w, r)
 	case path == "/proxies" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]any{"proxies": s.proxies()})
+	case strings.HasPrefix(path, "/proxies/") && strings.HasSuffix(path, "/desync/profile-probe"):
+		logEvent("profile-probe %s", strings.TrimSuffix(strings.TrimPrefix(path, "/proxies/"), "/desync/profile-probe"))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "route": "direct", "code": "reserve_unavailable"})
 	case strings.HasPrefix(path, "/proxies/") && strings.HasSuffix(path, "/delay"):
+		name := strings.TrimSuffix(strings.TrimPrefix(path, "/proxies/"), "/delay")
+		if s.ctl.FailDelay {
+			logEvent("delay %s fail", name)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "TLS handshake timeout"})
+			return
+		}
+		logEvent("delay %s ok", name)
 		writeJSON(w, http.StatusOK, map[string]int{"delay": 42})
+	case strings.HasPrefix(path, "/proxies/") && r.Method == http.MethodGet:
+		name := strings.TrimPrefix(path, "/proxies/")
+		if v, ok := s.proxies()[name]; ok {
+			writeJSON(w, http.StatusOK, v)
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "proxy not found"})
 	case strings.HasPrefix(path, "/proxies/") && r.Method == http.MethodPut:
 		name := strings.TrimPrefix(path, "/proxies/")
 		var body struct {
@@ -253,10 +326,17 @@ func (s *server) handleConfigs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "reload failed"})
 			return
 		}
-		if _, err := os.Stat(cfgPath); err != nil {
+		raw, err := os.ReadFile(cfgPath)
+		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 			return
 		}
+		var cfg map[string]any
+		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+			return
+		}
+		s.loadGroups(cfg)
 		logEvent("reload ok path=%s", cfgPath)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -267,10 +347,19 @@ func (s *server) handleConfigs(w http.ResponseWriter, r *http.Request) {
 func (s *server) proxies() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return map[string]any{
+	out := map[string]any{
 		"GLOBAL": map[string]any{"type": "Selector", "all": []string{"PROXY", "DIRECT"}, "now": s.now["GLOBAL"]},
 		"PROXY":  map[string]any{"type": "Selector", "all": []string{"node-a", "DIRECT"}, "now": s.now["PROXY"]},
 		"node-a": map[string]any{"type": "Shadowsocks", "history": []any{}},
 		"DIRECT": map[string]any{"type": "Direct", "history": []any{}},
 	}
+	for name, members := range s.groups {
+		out[name] = map[string]any{"type": "Selector", "all": members, "now": s.now[name], "hidden": true}
+		for _, m := range members {
+			if _, known := out[m]; !known && m != "PASS" {
+				out[m] = map[string]any{"type": "Direct", "history": []any{}}
+			}
+		}
+	}
+	return out
 }

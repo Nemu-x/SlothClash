@@ -1,0 +1,129 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: false
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: true
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: true
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: false
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    proxy-server-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        tlsrec: 3+s
+      name: SLOTH-DESYNC-YOUTUBE-r3
+      type: direct
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        tlsrec: 1+s
+      name: SLOTH-DESYNC-YOUTUBE-r1
+      type: direct
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        tlsrec: 2+s
+      name: SLOTH-DESYNC-YOUTUBE-r2
+      type: direct
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        tlsrec: 4+s
+      name: SLOTH-DESYNC-YOUTUBE-r4
+      type: direct
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        tlsrec: 8+s
+      name: SLOTH-DESYNC-YOUTUBE-r8
+      type: direct
+    - _sloth-desync-managed: true
+      desync:
+        dns-fallback: true
+        reject-quic: true
+        split: 1+s
+        split-delay-ms: 5
+      name: SLOTH-DESYNC-YOUTUBE-split
+      type: direct
+proxy-groups:
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-YOUTUBE-r3
+      hidden: true
+      name: SLOTH-DESYNC-YOUTUBE
+      proxies:
+        - SLOTH-DESYNC-YOUTUBE-r3
+        - SLOTH-DESYNC-YOUTUBE-r1
+        - SLOTH-DESYNC-YOUTUBE-r2
+        - SLOTH-DESYNC-YOUTUBE-r4
+        - SLOTH-DESYNC-YOUTUBE-r8
+        - SLOTH-DESYNC-YOUTUBE-split
+        - PASS
+      type: select
+rules:
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtu.be)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtu.be)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,googlevideo.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,googlevideo.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,ytimg.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,ytimg.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtubei.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtubei.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
+    - MATCH,DIRECT

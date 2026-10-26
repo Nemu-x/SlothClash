@@ -32,6 +32,7 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 	mixed := a.state.Core.MixedPort
 	groups := append([]ProxyGroup(nil), a.state.Proxy.Groups...)
 	ag := strings.TrimSpace(a.state.Proxy.ActiveGroup)
+	desyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	prevInsight := a.state.Insight
 	a.mu.RUnlock()
 
@@ -108,7 +109,9 @@ func (a *App) RefreshHomeInsight() (AppState, error) {
 	}
 
 	// In rule mode, resolve WAN IP (and geo flag) for comparison with tunnel exit on Home.
-	if mode == "rule" {
+	// A Desync-only profile has no tunnel: its exit IP above already is the
+	// WAN, so a second lookup would only repeat it.
+	if mode == "rule" && !desyncOnly {
 		ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
 		if ip, err := fetchIPDirect(ctx); err != nil {
 			ins.DirectError = err.Error()

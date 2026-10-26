@@ -253,6 +253,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 		DataDir:                dataDir,
 		SubURL:                 target.URL,
 		AgeKey:                 target.AgeSecretKey,
+		DesyncOnly:             profileIsDesyncOnly(target),
 		ExtendTemplate:         target.MergeTemplate,
 		ProxyTemplate:          target.ProxyTemplate,
 		RulesTemplate:          target.RulesTemplate,
@@ -283,6 +284,20 @@ func (a *App) WriteProfileConfig(profileID string, content string) (AppState, er
 	}
 	if len(check) == 0 {
 		return a.GetAppState(), errors.New("config must be a non-empty YAML mapping")
+	}
+	// A Desync-only profile's config is always generated (SkipAutoConfig
+	// would pin a hand-edited one); refuse before touching the file.
+	a.mu.RLock()
+	desyncOnly := false
+	for _, pr := range a.profiles {
+		if pr.ID == profileID {
+			desyncOnly = profileIsDesyncOnly(pr)
+			break
+		}
+	}
+	a.mu.RUnlock()
+	if desyncOnly {
+		return a.GetAppState(), errDesyncOnlyProfileField
 	}
 
 	p := a.GetProfilePaths(profileID).ConfigPath
@@ -455,7 +470,9 @@ func (a *App) reloadActiveProfileConfig() error {
 // pipeline (runtimecfg's tryWriteMergedFullProfile → cache-first) builds their config from the
 // cached body / on-disk file, no network involved. (See architecture/core-lifecycle.md #1.)
 func profileHasLocalConfig(p Profile) bool {
-	return strings.EqualFold(strings.TrimSpace(p.Type), "local") || p.SkipAutoConfig
+	// A Desync-only profile needs no URL either: its config is generated from
+	// the Desync settings alone.
+	return strings.EqualFold(strings.TrimSpace(p.Type), "local") || p.SkipAutoConfig || profileIsDesyncOnly(p)
 }
 
 // loadProfileSubscriptionBody returns the subscription body used to build the
@@ -463,6 +480,9 @@ func profileHasLocalConfig(p Profile) bool {
 // body cache for local profiles (Type "local", no URL), or a fresh network
 // fetch for URL-backed profiles. Keeps local profiles first-class in the editors.
 func (a *App) loadProfileSubscriptionBody(ctx context.Context, p Profile) ([]byte, error) {
+	if profileIsDesyncOnly(p) {
+		return nil, errDesyncOnlyProfileField
+	}
 	if strings.TrimSpace(p.URL) == "" {
 		if !profileHasLocalConfig(p) {
 			return nil, errors.New("profile has no subscription url")

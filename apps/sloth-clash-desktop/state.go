@@ -47,6 +47,12 @@ type Profile struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Type string `json:"type"`
+	// Kind is what the profile is made of: "" = a subscription or local
+	// config (every profile saved before Kind existed), "desync-only" = no
+	// subscription and no nodes, only the Desync routes plus MATCH,DIRECT
+	// (profile_desync_only.go). Such a profile has Type "local" (no remote
+	// source) and never carries a URL, templates or a script.
+	Kind string `json:"kind,omitempty"`
 	URL  string `json:"url,omitempty"`
 	// AgeSecretKey is the optional age identity (AGE-SECRET-KEY-…) used to
 	// decrypt an age-encrypted subscription body; empty = plain subscription.

@@ -287,12 +287,35 @@ describe('useHomeViewModel: Desync chip', () => {
     expect(chip?.services.map((s) => s.key)).toEqual(['discord'])
   })
 
-  it('a failing voice line raises Discord to a problem', () => {
+  it('an interrupted voice line raises a working Discord to pending', () => {
+    // Interrupted voice is still recovering: yellow, not red.
     const chip = vm({
       state: rule(),
       desync: desyncSnapshot(
         desyncStatus(),
         desyncAuto({ voice: desyncService('interrupted') }),
+      ),
+    }).desyncChip
+    expect(chip?.services[1]).toMatchObject({ key: 'discord', tone: 'pending' })
+  })
+
+  it('a reserve whose check failed is pending, not a problem', () => {
+    const chip = vm({
+      state: rule(),
+      desync: desyncSnapshot(
+        desyncStatus(),
+        desyncAuto({ youtube: desyncService('profile_failed') }),
+      ),
+    }).desyncChip
+    expect(chip?.services[0]).toMatchObject({ key: 'youtube', tone: 'pending' })
+  })
+
+  it('a voice line without a working strategy raises Discord to a problem', () => {
+    const chip = vm({
+      state: rule(),
+      desync: desyncSnapshot(
+        desyncStatus({ desyncOnly: true }),
+        desyncAuto({ voice: desyncService('no_strategy') }),
       ),
     }).desyncChip
     expect(chip?.services[1]).toMatchObject({ key: 'discord', tone: 'problem' })

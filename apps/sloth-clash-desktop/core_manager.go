@@ -584,7 +584,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 	}
 	// One snapshot of the app state for this generation and its preflight.
 	env := currentRuntimeConfigEnv()
-	if profile.SkipAutoConfig {
+	if profile.SkipAutoConfig && !profileIsDesyncOnly(profile) {
 		cfgPath := filepath.Join(dataDir, "config.yaml")
 		if st, err := os.Stat(cfgPath); err == nil && st.Size() > 0 {
 			b, err := os.ReadFile(cfgPath)
@@ -625,6 +625,7 @@ func writeRuntimeConfigIfNeeded(a *App, binPath string, dataDir string, profile 
 		DataDir:                dataDir,
 		SubURL:                 profile.URL,
 		AgeKey:                 profile.AgeSecretKey,
+		DesyncOnly:             profileIsDesyncOnly(profile),
 		ExtendTemplate:         profile.MergeTemplate,
 		ProxyTemplate:          profile.ProxyTemplate,
 		RulesTemplate:          profile.RulesTemplate,

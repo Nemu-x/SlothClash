@@ -110,7 +110,7 @@ func enabledDesyncCustom() []DesyncCustomEntry {
 	}
 	var out []DesyncCustomEntry
 	for _, e := range settings.Custom {
-		if e.Enabled {
+		if e.Enabled && e.Preset == "" { // preset entries: not calibrated yet
 			out = append(out, e)
 		}
 	}
@@ -119,7 +119,7 @@ func enabledDesyncCustom() []DesyncCustomEntry {
 
 func desyncCustomWanted(entry DesyncCustomEntry) bool {
 	for _, e := range enabledDesyncCustom() {
-		if e.ID == entry.ID && e.Domain == entry.Domain {
+		if e == entry {
 			return true
 		}
 	}

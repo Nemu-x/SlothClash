@@ -249,6 +249,52 @@ func TestDesyncOnlyProfileRestoresGlobalOnLeave(t *testing.T) {
 	}
 }
 
+// A Direct choice survives a visit to a Desync-only profile (also across a
+// restart), and a Rule choice is never raised to Global on the way back.
+func TestDesyncOnlyProfileRestoresExactModeOnLeave(t *testing.T) {
+	isolateAppDataRoot(t)
+	profiles := func() []Profile {
+		return []Profile{
+			{ID: "profile-1", Name: "sub", Type: "subscription", URL: "https://example.com/s"},
+			{ID: "profile-2", Name: "d", Type: "local", Kind: profileKindDesyncOnly},
+		}
+	}
+	visit := func(mode, last string) *App {
+		a := &App{profiles: profiles()}
+		a.state.Profile.Profiles = a.profiles
+		a.state.Profile.ActiveProfileID = "profile-1"
+		a.state.Mode.Current = mode
+		a.state.Mode.LastNonDirectMode = last
+		if _, err := a.ActivateProfile("profile-2"); err != nil {
+			t.Fatal(err)
+		}
+		if a.state.Mode.Current != "rule" {
+			t.Fatalf("on the Desync-only profile: mode=%q, want rule", a.state.Mode.Current)
+		}
+		return a
+	}
+
+	a := visit("direct", "global")
+	if state, err := a.ActivateProfile("profile-1"); err != nil || state.Mode.Current != "direct" {
+		t.Fatalf("Direct after the round trip: mode=%q err=%v, want direct", state.Mode.Current, err)
+	}
+
+	// Saved while on the Desync-only profile, then loaded by a new run.
+	visit("direct", "global")
+	b := &App{}
+	b.loadProfilesFromDisk()
+	if state, err := b.ActivateProfile("profile-1"); err != nil || state.Mode.Current != "direct" {
+		t.Fatalf("Direct after a restart: mode=%q err=%v, want direct", state.Mode.Current, err)
+	}
+
+	// Already in Rule: nothing was overridden, so leaving stays Rule even
+	// though the last non-direct choice on record is Global.
+	c := visit("rule", "global")
+	if state, err := c.ActivateProfile("profile-1"); err != nil || state.Mode.Current != "rule" {
+		t.Fatalf("Rule after the round trip: mode=%q err=%v, want rule", state.Mode.Current, err)
+	}
+}
+
 // A hand-edited profiles.json cannot smuggle a subscription into a
 // Desync-only profile.
 func TestLoadSanitizesDesyncOnlyProfile(t *testing.T) {

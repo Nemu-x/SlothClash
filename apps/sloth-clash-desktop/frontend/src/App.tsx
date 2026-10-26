@@ -1241,6 +1241,11 @@ function App() {
               corpConnected={corpVpnEnabled && corpConnected}
               onOpenCorp={() => setScreen('corp')}
               onOpenDesync={desyncModal.openManage}
+              onStartDesyncOnly={
+                brandManifest?.hideLocalConfigs
+                  ? undefined
+                  : desyncModal.openOnboarding
+              }
               onConnectClick={connectAction}
               onInstallService={() => void installService()}
               onRefreshService={() =>
@@ -1569,7 +1574,7 @@ function App() {
         setBanner={setTunBanner}
         pushToast={pushToast}
         onImported={dismissSpotlight}
-        onDesyncOnlyActivated={() => void promptDesyncIfOff()}
+        onStartDesyncOnly={desyncModal.openOnboarding}
       />
 
       {desyncModal.view ? (

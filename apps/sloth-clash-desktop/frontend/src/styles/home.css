@@ -38,6 +38,22 @@
   margin: 0;
 }
 
+/* Empty Home: "Add subscription", and under it a quiet line for someone
+   without a VPN subscription (Desync-only onboarding). */
+.homeFirstRun {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+/* Two classes: desync.css (.desyncAltLine) loads later. */
+.homeFirstRun .homeFirstRunAlt {
+  max-width: 20rem;
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
 .homeAlertBadge {
   flex-shrink: 0;
   width: 26px;

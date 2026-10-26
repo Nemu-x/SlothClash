@@ -1,8 +1,10 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { DesyncModal } from '../components/DesyncModal'
 import { ProfileContextMenu } from '../components/ProfileContextMenu'
 import { ProfileModalsHost } from '../components/ProfileModalsHost'
+import { useDesyncModal } from '../hooks/useDesyncModal'
 import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { useProfileModals } from '../hooks/useProfileModals'
 import {
@@ -29,13 +31,17 @@ const DESYNC_ONLY = {
   lastUpdated: Math.floor(Date.now() / 1000) - 60,
 }
 
-// The App side: useProfileModals holds what is open.
+// The App side: useProfileModals and useDesyncModal hold what is open, and
+// the import dialog hands over to the Desync onboarding.
 function CreateHarness({
-  onDesyncOnlyActivated,
+  hidePaste,
+  onCreated = noop,
 }: {
-  onDesyncOnlyActivated: () => void
+  hidePaste?: boolean
+  onCreated?: (name: string) => void
 }) {
   const modals = useProfileModals()
+  const desync = useDesyncModal()
   return (
     <>
       <button type="button" onClick={() => modals.openImport('manual')}>
@@ -45,6 +51,7 @@ function CreateHarness({
         modals={modals}
         profiles={[]}
         proxyGroups={[]}
+        hidePaste={hidePaste}
         run={async (a) => {
           await a()
         }}
@@ -53,37 +60,77 @@ function CreateHarness({
         setBanner={vi.fn()}
         pushToast={vi.fn(() => 1)}
         onImported={vi.fn()}
-        onDesyncOnlyActivated={onDesyncOnlyActivated}
+        onStartDesyncOnly={desync.openOnboarding}
       />
+      {desync.view ? (
+        <DesyncModal
+          view={desync.view}
+          connected={false}
+          mode="rule"
+          traffic="tun"
+          profiles={[]}
+          refresh={async () => {}}
+          onClose={desync.close}
+          onCreated={onCreated}
+        />
+      ) : null}
     </>
   )
 }
 
 describe('Add profile dialog: Desync only', () => {
-  it('creates a Desync-only profile without a URL', async () => {
+  it('hands over to the Desync onboarding, which creates the profile', async () => {
+    wailsApp.stub('GetDesyncStatus', () =>
+      desyncStatus({ settings: { enabled: true } }),
+    )
+    wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
     const create = wailsApp.stub('CreateDesyncOnlyProfile', () => ({
+      // The first profile: the backend makes it the active one itself.
       profile: { activeProfileId: 'p2', profiles: [DESYNC_ONLY] },
     }))
     const importUrl = wailsApp.stub('ImportProfileFromURL', () => undefined)
-    const activated = vi.fn()
-    renderWithProviders(<CreateHarness onDesyncOnlyActivated={activated} />)
+    const created = vi.fn()
+    renderWithProviders(<CreateHarness onCreated={created} />)
 
     fireEvent.click(screen.getByText('open-import'))
-    fireEvent.click(screen.getByRole('tab', { name: 'Desync only (no VPN)' }))
-    // No URL field and no clipboard paste: there is nothing to import.
-    expect(screen.queryByPlaceholderText('https://…')).toBeNull()
+    // No third mode: Desync only is a quiet line under the actions.
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.queryByRole('tab', { name: /Desync only/ })).toBeNull()
+    expect(screen.getByText('No VPN subscription?')).toBeVisible()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Desync only (no VPN)' }),
+    )
+
+    // The import dialog closed; the onboarding dialog is open.
     expect(
-      screen.queryByRole('button', { name: 'Paste from clipboard' }),
+      screen.queryByRole('dialog', { name: 'Import subscription' }),
     ).toBeNull()
-    fireEvent.change(screen.getByLabelText(/Display name/), {
+    expect(
+      screen.getByRole('dialog', { name: 'Unblock without VPN' }),
+    ).toBeVisible()
+    await screen.findByRole('switch', { name: 'YouTube' })
+    fireEvent.change(screen.getByLabelText(/Profile name/), {
       target: { value: ' Free ' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create profile' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledWith('Free'))
+    await waitFor(() => expect(created).toHaveBeenCalledWith('No VPN'))
     expect(importUrl).not.toHaveBeenCalled()
-    // It became the active profile: the app is told so it can offer Desync.
-    await waitFor(() => expect(activated).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('a brand that hides local configs hides the Desync-only line too', () => {
+    renderWithProviders(<CreateHarness hidePaste />)
+    fireEvent.click(screen.getByText('open-import'))
+    expect(
+      screen.getByRole('dialog', { name: 'Import subscription' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByText('No VPN subscription?')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Desync only (no VPN)' }),
+    ).toBeNull()
   })
 })
 

@@ -246,6 +246,28 @@
   color: var(--ok);
 }
 
+/* ── "No VPN subscription? → Desync only": a quiet secondary line (import
+   dialog, empty Home). Muted question, accent link, underline on hover. ── */
+.desyncAltLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+.desyncAltLine .linkBtn {
+  font-size: inherit;
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+.desyncAltLine .linkBtn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 /* ── Home: compact summary, same footprint as the corp-VPN pill ── */
 .homeDesyncChip {
   display: inline-flex;

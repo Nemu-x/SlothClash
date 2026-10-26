@@ -73,6 +73,7 @@ export function HomePage({
   corpConnected,
   onOpenCorp,
   onOpenDesync,
+  onStartDesyncOnly,
   onConnectClick,
   onInstallService,
   onRefreshService,
@@ -109,6 +110,9 @@ export function HomePage({
   onOpenCorp?: () => void
   // Desync chip (shown only while Desync is on) opens the Desync modal.
   onOpenDesync?: () => void
+  // Empty Home: "No VPN subscription?" opens the Desync-only onboarding.
+  // Undefined hides the line (brand hide-local-configs).
+  onStartDesyncOnly?: () => void
   onConnectClick: () => void
   onInstallService: () => void
   onRefreshService: () => void
@@ -288,13 +292,28 @@ export function HomePage({
             </button>
           ) : null}
           {!hasAnyProfile ? (
-            <button
-              type="button"
-              className="pulseBeacon"
-              onClick={() => onOpenImport('beacon')}
-            >
-              {t('ui.home.addSubscription')}
-            </button>
+            <div className="homeFirstRun">
+              <button
+                type="button"
+                className="pulseBeacon"
+                onClick={() => onOpenImport('beacon')}
+              >
+                {t('ui.home.addSubscription')}
+              </button>
+              {onStartDesyncOnly ? (
+                <p className="desyncAltLine homeFirstRunAlt">
+                  <span>{t('ui.home.desyncAltQuestion')}</span>
+                  <button
+                    type="button"
+                    className="linkBtn"
+                    onClick={onStartDesyncOnly}
+                  >
+                    {t('ui.home.desyncAltLink')}
+                    <span aria-hidden> →</span>
+                  </button>
+                </p>
+              ) : null}
+            </div>
           ) : (
             <button
               type="button"

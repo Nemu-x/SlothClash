@@ -165,9 +165,12 @@ func (a *App) ActivateProfile(profileID string) (AppState, error) {
 	}
 	connected := a.state.Connection.Status == "connected"
 	profileChanged := a.state.Profile.ActiveProfileID != profileID
+	wasDesyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	a.state.Profile.ActiveProfileID = profileID
-	// A Desync-only profile runs in Rule mode only.
+	// A Desync-only profile runs in Rule mode only; leaving one brings back
+	// the user's own mode choice.
 	a.enforceDesyncOnlyModeLocked()
+	a.restoreModeAfterDesyncOnlyLocked(wasDesyncOnly)
 	if profileChanged {
 		// ActiveGroup + cached /proxies belong to the previous profile —
 		// drop them so the UI doesn't briefly highlight a group that
@@ -212,6 +215,7 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 	}
 
 	wasActive := a.state.Profile.ActiveProfileID == profileID
+	wasDesyncOnly := a.activeProfileIsDesyncOnlyLocked()
 	a.profiles = append(a.profiles[:idx], a.profiles[idx+1:]...)
 	a.state.Profile.Profiles = a.profiles
 	if wasActive {
@@ -228,6 +232,7 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 		a.state.Proxy.Groups = []ProxyGroup{}
 		a.state.Proxy.LastGoodGroup = a.activeProfileLastGoodGroupLocked()
 		a.enforceDesyncOnlyModeLocked()
+		a.restoreModeAfterDesyncOnlyLocked(wasDesyncOnly)
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	connected := a.state.Connection.Status == "connected"

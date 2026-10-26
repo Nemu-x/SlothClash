@@ -145,15 +145,36 @@ func (a *App) activeProfileIsDesyncOnly() bool {
 // then MATCH,DIRECT), Global has no node to send traffic to and Direct would
 // switch Desync off. Reports whether the mode changed. Caller holds a.mu
 // (write).
+//
+// LastNonDirectMode is left alone: it is the user's own Rule/Global choice,
+// not something this profile chose, and restoreModeAfterDesyncOnlyLocked
+// brings it back when a profile with servers becomes active again.
 func (a *App) enforceDesyncOnlyModeLocked() bool {
 	if !a.activeProfileIsDesyncOnlyLocked() || a.state.Mode.Current == "rule" {
 		return false
 	}
 	a.state.Mode.Current = "rule"
-	a.state.Mode.LastNonDirectMode = "rule"
 	if strings.EqualFold(strings.TrimSpace(a.state.Proxy.ActiveGroup), "GLOBAL") {
 		a.state.Proxy.ActiveGroup = ""
 	}
+	return true
+}
+
+// restoreModeAfterDesyncOnlyLocked runs after the active profile changed;
+// wasDesyncOnly tells whether the previous one was a Desync-only profile.
+// Leaving it for a profile with servers ends the forced Rule mode: the mode
+// returns to the user's last own non-direct choice (LastNonDirectMode), so a
+// Global choice made before visiting the Desync-only profile survives the
+// round trip instead of silently becoming Rule. A Direct mode from before the
+// visit is not brought back (LastNonDirectMode never holds Direct); Rule or
+// Global, whichever the user picked last, is the least surprising state for a
+// profile with servers. Reports whether the mode changed. Caller holds a.mu
+// (write).
+func (a *App) restoreModeAfterDesyncOnlyLocked(wasDesyncOnly bool) bool {
+	if !wasDesyncOnly || a.activeProfileIsDesyncOnlyLocked() || a.state.Mode.Current != "rule" || a.state.Mode.LastNonDirectMode != "global" {
+		return false
+	}
+	a.state.Mode.Current = "global"
 	return true
 }
 

@@ -185,6 +185,70 @@ func TestDesyncOnlyProfilePinsRuleMode(t *testing.T) {
 	}
 }
 
+// A Global choice survives a visit to a Desync-only profile: the forced
+// Rule mode ends when a profile with servers is active again, by activation
+// or by deleting the active Desync-only profile, and across a restart.
+func TestDesyncOnlyProfileRestoresGlobalOnLeave(t *testing.T) {
+	isolateAppDataRoot(t)
+	newApp := func() *App {
+		a := &App{profiles: []Profile{
+			{ID: "profile-1", Name: "sub", Type: "subscription", URL: "https://example.com/s"},
+			{ID: "profile-2", Name: "d", Type: "local", Kind: profileKindDesyncOnly},
+			{ID: "profile-3", Name: "sub2", Type: "subscription", URL: "https://example.com/t"},
+		}}
+		a.state.Profile.Profiles = a.profiles
+		a.state.Profile.ActiveProfileID = "profile-1"
+		a.state.Mode.Current = "rule"
+		a.state.Mode.LastNonDirectMode = "rule"
+		if _, err := a.SetMode("global"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.ActivateProfile("profile-2"); err != nil {
+			t.Fatal(err)
+		}
+		if a.state.Mode.Current != "rule" || a.state.Mode.LastNonDirectMode != "global" {
+			t.Fatalf("on the Desync-only profile: mode=%q last=%q, want rule with global remembered", a.state.Mode.Current, a.state.Mode.LastNonDirectMode)
+		}
+		return a
+	}
+
+	a := newApp()
+	if state, err := a.ActivateProfile("profile-3"); err != nil || state.Mode.Current != "global" {
+		t.Fatalf("after leaving by activation: mode=%q err=%v, want global", state.Mode.Current, err)
+	}
+
+	a = newApp()
+	if state, err := a.DeleteProfile("profile-2"); err != nil || state.Mode.Current != "global" {
+		t.Fatalf("after deleting the active Desync-only profile: mode=%q err=%v, want global", state.Mode.Current, err)
+	}
+
+	// Saved while on the Desync-only profile, then loaded by a new run.
+	a = newApp()
+	b := &App{}
+	b.loadProfilesFromDisk()
+	if b.state.Mode.Current != "rule" || b.state.Mode.LastNonDirectMode != "global" {
+		t.Fatalf("loaded mode=%q last=%q", b.state.Mode.Current, b.state.Mode.LastNonDirectMode)
+	}
+	if state, err := b.ActivateProfile("profile-1"); err != nil || state.Mode.Current != "global" {
+		t.Fatalf("after a restart: mode=%q err=%v, want global", state.Mode.Current, err)
+	}
+
+	// A Rule choice stays Rule, and switching between profiles with servers
+	// never changes the mode.
+	c := &App{profiles: a.profiles}
+	c.state.Profile.Profiles = c.profiles
+	c.state.Profile.ActiveProfileID = "profile-2"
+	c.state.Mode.Current = "rule"
+	c.state.Mode.LastNonDirectMode = "rule"
+	if state, _ := c.ActivateProfile("profile-1"); state.Mode.Current != "rule" {
+		t.Fatalf("a Rule choice became %q", state.Mode.Current)
+	}
+	c.state.Mode.LastNonDirectMode = "global"
+	if state, _ := c.ActivateProfile("profile-3"); state.Mode.Current != "rule" {
+		t.Fatalf("switching between subscription profiles changed the mode to %q", state.Mode.Current)
+	}
+}
+
 // A hand-edited profiles.json cannot smuggle a subscription into a
 // Desync-only profile.
 func TestLoadSanitizesDesyncOnlyProfile(t *testing.T) {

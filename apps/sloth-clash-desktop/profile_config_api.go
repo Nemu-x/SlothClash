@@ -253,6 +253,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 		DataDir:                dataDir,
 		SubURL:                 target.URL,
 		AgeKey:                 target.AgeSecretKey,
+		DesyncOnly:             profileIsDesyncOnly(target),
 		ExtendTemplate:         target.MergeTemplate,
 		ProxyTemplate:          target.ProxyTemplate,
 		RulesTemplate:          target.RulesTemplate,

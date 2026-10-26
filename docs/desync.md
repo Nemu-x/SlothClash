@@ -1,10 +1,10 @@
 # Desync
 
-Desync connects selected services directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription. The feature is off by default.
+Desync connects selected services and custom domains directly using automatically tested strategies in the embedded mihomo core. Other traffic follows the subscription. The feature is off by default.
 
 ## Use
 
-Open **Settings → Desync**, enable it and select YouTube or Discord. The Discord control enables its web and voice paths together in one settings update; their health is still reported separately. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer exposed. Previously saved partial selections remain readable; toggling Discord off/on, or enabling Desync with Discord selected, enables the combined behavior.
+Open **Settings → Desync**, enable it and select YouTube or Discord. The Discord control enables its web and voice paths together in one settings update; their health is still reported separately. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer exposed. Previously saved partial selections remain readable; toggling Discord off/on, or enabling Desync with Discord selected, enables the combined behavior. Other sites can be added under **Custom domains** (see below).
 
 Selection runs in the background even when Settings is closed. The panel shows progress and one of these outcomes:
 
@@ -21,7 +21,29 @@ Selection runs in the background even when Settings is closed. The panel shows p
 - **Subscription reserve unavailable**: the selected reserve's latest check failed; background recovery continues without bouncing existing connections.
 - **Desync and reserve unavailable**: the bounded strategy search and reserve verification failed; the controller backs off and tries again. **Check again** restarts the controller.
 
-**Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Targets are hashed consistently between attempts and flow observations. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
+**Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Targets are hashed consistently between attempts and flow observations. Custom domains appear only as the same keyed hash (with their random entry IDs and on/off state), so an entry can be matched to its attempts without revealing the site. It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
+
+## Custom domains
+
+**Settings → Desync → Custom domains** takes any other site. Type a domain (`example.com`; a pasted URL or `host:port` is reduced to its host) and press **Add**. The entry covers the domain and all of its subdomains. Up to 32 entries; each can be switched off or removed. Internationalized names are stored in punycode (`пример.рф` → `xn--e1afmkfd.xn--p1ai`). IP addresses, wildcards (`*.`/`+.`, which are unnecessary since subdomains are included), public suffixes (`com`, `co.uk`, `github.io`), duplicates and domains already covered by the YouTube or Discord switch are rejected. Desync can be enabled with only custom domains selected; switching off or removing the last selected route turns Desync off.
+
+The app runs the existing strategies against the site and keeps the one that works; no strategy needs to be chosen. Each entry shows one of these states:
+
+- **Waiting for a check** / **Finding a strategy · n/N**: the entry is queued or being tested.
+- **Not blocked · Desync not needed**: plain direct access already works, so the site is routed directly without any transformation.
+- **HTTPS available · automatic**: a strategy passed and is applied to this site.
+- **Desync can't unblock this site**: no strategy worked. The site most likely is blocked by its IP address, which no DPI desync can bypass. Its traffic follows the profile's normal rules (a VPN subscription still covers it), and the check is repeated later.
+
+How it works:
+
+- Every enabled entry has its own hidden selector `SLOTH-DESYNC-CUSTOM-<id>`. The ID is random and fixed for the entry, so adding, removing or reordering entries never moves another entry's selection. The group contains the custom candidates, `DIRECT` and `PASS`. Its rules (TCP, plus UDP/443 so candidates can reject QUIC and the browser falls back to TCP) follow the built-in service rules and precede the subscription's rules; a more specific entry (`media.example.org`) is placed before a broader one (`example.org`). Corporate VPN routing keeps its priority.
+- Candidates are the YouTube set (TLS record fragmentation `r3`, `r1`, `r2`, `r4`, `r8`, then `split`) followed, on Windows, by the Discord TCP fake-prefix set (TTL 4, 5, 3, … through 1–32). A strategy whose transformation equals an earlier one is tried once (Discord `record` is YouTube `r1`). The cached winner is tried first.
+- The probe is `https://<domain>/` through the candidate. It passes on any HTTP response, provided TLS completed with a certificate valid for that host: the status says nothing about DPI on an arbitrary site, while a verified certificate proves the connection reached the real server instead of a block page. YouTube and Discord keep the strict successful-status check. This uses the core delay API with `expected=100-599`; measured on the patched core, it accepts a 404 and rejects a wrong-host, self-signed or expired certificate and plain HTTP on the TLS port. Redirects are not followed, so the redirect target is not tested.
+- Before searching, the site is probed twice through plain `DIRECT`. If that works, the entry is **not needed** and selects `DIRECT`. Otherwise the candidates are tried two rounds each, in 30-second budgets that resume where the previous budget stopped. After the first failed budget the group selects `PASS`, so the site follows the profile instead of a failing strategy while the search continues. If the whole set fails, `PASS` stays selected and the entry is searched again after 1 minute, doubling up to 30 minutes.
+- Custom entries are calibrated after the built-in services' initial search, one entry at a time. Adding, removing or switching an entry regenerates the configuration but does not restart the YouTube/Discord calibration; only the new entry is searched. Working entries are re-checked every 90 seconds; a failure confirmed by two follow-up checks starts again from the baseline. A network or connection change re-checks every entry.
+- Winners (a strategy or "not needed") are cached per network under `custom:<domain>` with the same 24-hour expiry and network/build digest as the built-in services.
+
+Limits: Desync changes how a connection's first packets look to a DPI middlebox; it cannot reach a server whose IP address is blocked or a domain blocked by DNS beyond the resolver fallback. UDP and voice for custom domains are not supported. A site served from several CDN hosts may need different strategies per host: add the affected subdomain as its own entry. Only the domain's root URL is tested, not logged-in pages or media playback.
 
 ## Selection and recovery
 

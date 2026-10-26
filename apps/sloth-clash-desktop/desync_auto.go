@@ -138,6 +138,9 @@ func (c *desyncController) setService(lease uint64, service string, state Desync
 	state.Updated = time.Now().Unix()
 	if state.Route == "" && state.Phase != "disabled" && state.Phase != "needs_tun" {
 		state.Route = "desync"
+		if state.Phase == "no_strategy" {
+			state.Route = "direct"
+		}
 		if state.Phase == "profile" || state.Phase == "profile_failed" {
 			state.Route = "profile"
 		}
@@ -203,7 +206,7 @@ func (a *App) runDesyncAutoLoop(ctx context.Context) {
 		endpoint, secret := a.effectiveCoreEndpointLocked(), a.core.secret
 		generation := a.connectGen.Load()
 		a.mu.RUnlock()
-		key := fmt.Sprintf("%d:%s:%s:%s:%t:%t:%t", generation, endpoint, network, status.Traffic, status.Settings.YouTube, status.Settings.Discord, status.Settings.DiscordUDP)
+		key := fmt.Sprintf("%d:%s:%s:%s:%t:%t:%t:%t", generation, endpoint, network, status.Traffic, status.Settings.YouTube, status.Settings.Discord, status.Settings.DiscordUDP, status.DesyncOnly)
 		session, lease, started := a.desyncCtl.begin(ctx, key, generation, network)
 		if !started {
 			continue
@@ -632,7 +635,7 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 		enabled    bool
 	}{{"youtube", desync.YouTubeRoute, status.Settings.YouTube}, {"discord", desync.DiscordRoute, status.Settings.Discord}} {
 		if service.enabled {
-			go a.runDesyncTCPService(ctx, lease, network, endpoint, secret, service.key, service.route)
+			go a.runDesyncTCPService(ctx, lease, network, endpoint, secret, service.key, service.route, status.DesyncOnly)
 		} else {
 			a.desyncCtl.setService(lease, service.key, DesyncAutoService{Phase: "disabled"})
 		}
@@ -646,7 +649,7 @@ func (a *App) runDesyncAutoSession(ctx context.Context, lease uint64, network, e
 	// themselves, so adding an entry searches for it alone.
 	go a.runDesyncCustomService(ctx, lease, network, endpoint, secret, status.Settings)
 	if status.Settings.DiscordUDP && status.Traffic == "tun" {
-		a.runDesyncVoiceService(ctx, lease, network, endpoint, secret)
+		a.runDesyncVoiceService(ctx, lease, network, endpoint, secret, status.DesyncOnly)
 	} else {
 		<-ctx.Done()
 	}
@@ -670,7 +673,8 @@ func (a *App) GetDesyncDiagnosticReport() string {
 		}
 	}
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
-	report["controllerRevision"] = 4
+	report["controllerRevision"] = 5
+	report["desyncOnly"] = status.DesyncOnly
 	// Custom domains appear only hashed, with the same keyed digest as probe
 	// targets (so an entry matches its attempts); the IDs are random.
 	custom := []map[string]any{}

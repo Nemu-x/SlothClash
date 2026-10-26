@@ -83,6 +83,34 @@ describe('DesyncSettingsCard: controls', () => {
     )
   })
 
+  it('ignores further toggles while a save is in flight', async () => {
+    const status = desyncStatus()
+    stubBackend(status)
+    let finish: (s: DesyncStatus) => void = () => undefined
+    const set = wailsApp.stub(
+      'SetDesyncSettings',
+      () =>
+        new Promise<DesyncStatus>((resolve) => {
+          finish = resolve
+        }),
+    )
+    await renderCard()
+
+    const youtube = screen.getByRole('switch', { name: 'YouTube' })
+    fireEvent.click(youtube)
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(youtube).toBeDisabled())
+    expect(screen.getByRole('switch', { name: 'Discord' })).toBeDisabled()
+
+    fireEvent.click(youtube)
+    fireEvent.click(screen.getByRole('switch', { name: 'Discord' }))
+    expect(set).toHaveBeenCalledTimes(1)
+
+    finish(desyncStatus({ settings: { ...status.settings, youtube: false } }))
+    await waitFor(() => expect(youtube).not.toBeDisabled())
+    expect(set).toHaveBeenCalledTimes(1)
+  })
+
   it('toggling Discord off clears both discord flags', async () => {
     const status = desyncStatus()
     stubBackend(status)

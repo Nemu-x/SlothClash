@@ -141,6 +141,10 @@
 .homeDesyncChip:hover {
   border-color: var(--accent-muted);
 }
+.homeDesyncChip:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+}
 .homeDesyncChipLabel {
   color: var(--text-muted);
 }

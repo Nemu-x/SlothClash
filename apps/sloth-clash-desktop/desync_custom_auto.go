@@ -282,7 +282,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 		return err
 	}
 	attempt := func(c desync.Candidate, e error, d time.Duration) {
-		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: c.ID, Target: entry.Domain, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: c.ID, Target: entry.Domain, Preset: entry.Preset, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
 	}
 	selectMember := func(name string) bool {
 		if err := a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, name); err != nil {
@@ -367,5 +367,5 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 	backoff := desyncCustomRetry << min(failures-1, 5)
 	*plan = desyncCustomPlan{phase: "unavailable", candidate: "profile", failures: failures, due: time.Now().Add(min(backoff, desyncCustomBackoffMax))}
 	a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "unavailable", Candidate: "profile", Code: "exhausted"})
-	a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: "profile", Target: entry.Domain, OK: true, Code: "unavailable"})
+	a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: "profile", Target: entry.Domain, Preset: entry.Preset, OK: true, Code: "unavailable"})
 }

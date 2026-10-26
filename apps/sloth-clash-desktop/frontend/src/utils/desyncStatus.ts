@@ -285,3 +285,43 @@ export function customDomainErrorText(t: TFunction, err: unknown): string {
     ? t(`desync.custom.error.${code}`, { limit: DESYNC_CUSTOM_LIMIT })
     : raw
 }
+
+/**
+ * Mirrors desyncHasSelection (desync_custom.go): the backend refuses to
+ * enable Desync without a service or a switched-on custom domain.
+ */
+export function desyncHasSelection(
+  settings: DesyncStatus['settings'],
+): boolean {
+  if (settings.youtube || settings.discord || settings.discordUDP) return true
+  return (settings.custom ?? []).some((e) => e.enabled)
+}
+
+/**
+ * The settings patch that switches Desync on, exactly as the master switch
+ * applies it: a selected Discord gets voice (UDP) whenever the core has it.
+ */
+export function desyncEnablePatch(
+  status: DesyncStatus,
+): Partial<DesyncStatus['settings']> {
+  const s = status.settings
+  return {
+    enabled: true,
+    ...(s.discord || s.discordUDP
+      ? { discord: true, discordUDP: status.udpCoreSupported }
+      : {}),
+  }
+}
+
+/** Short names of what Desync covers: the services, then "Sites N". */
+export function desyncSelectionNames(
+  t: TFunction,
+  settings: DesyncStatus['settings'],
+): string[] {
+  const names: string[] = []
+  if (settings.youtube) names.push('YouTube')
+  if (settings.discord || settings.discordUDP) names.push('Discord')
+  const sites = (settings.custom ?? []).filter((e) => e.enabled).length
+  if (sites > 0) names.push(t('desync.custom.homeItem', { count: sites }))
+  return names
+}

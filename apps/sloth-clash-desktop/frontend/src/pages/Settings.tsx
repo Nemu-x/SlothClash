@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { main } from '../api/models'
-import { DesyncSettingsCard } from '../components/DesyncSettingsCard'
+import { DesyncSummaryCard } from '../components/DesyncSummaryCard'
 import type { SettingsResetMode } from '../components/SettingsResetModal'
 import { APP_DOWNLOADS_URL, APP_REPO_URL, APP_TELEGRAM_URL } from '../constants'
 import { useCoreBuild } from '../hooks/queries/useCoreBuild'
@@ -312,6 +312,7 @@ export function SettingsPage({
   serviceInfo,
   onEnsureTun,
   onShowTunModal,
+  onOpenDesync,
   onApplyDefaultAutoUpdate,
   onRefreshAllSubs,
   onExportDiagnostics,
@@ -342,6 +343,8 @@ export function SettingsPage({
   serviceInfo: main.ServiceRuntimeInfo | null
   onEnsureTun: () => void
   onShowTunModal: () => void
+  /** Opens the Desync modal (the Settings card is only a summary). */
+  onOpenDesync: () => void
   onApplyDefaultAutoUpdate: () => void
   onRefreshAllSubs: () => void
   onExportDiagnostics: () => void
@@ -641,10 +644,11 @@ export function SettingsPage({
           </div>
 
           <RealityCard prefs={realityPrefs} onCommit={onSetReality} />
-          <DesyncSettingsCard
+          <DesyncSummaryCard
             connected={state?.connection?.status === 'connected'}
             mode={String(state?.mode?.current ?? '')}
             traffic={String(state?.traffic ?? '')}
+            onOpen={onOpenDesync}
           />
 
           <div className="homeCard settingsCardCompact">

@@ -46,6 +46,7 @@ import {
 import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
+import { DesyncModal } from './components/DesyncModal'
 import { DesyncOnlyEnableModal } from './components/DesyncOnlyEnableModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OperatorModal } from './components/OperatorModal'
@@ -71,6 +72,7 @@ import { useBackendEvents } from './hooks/useBackendEvents'
 import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useDesktopPrefs } from './hooks/useDesktopPrefs'
+import { useDesyncModal } from './hooks/useDesyncModal'
 import { useHomeViewModel } from './hooks/useHomeViewModel'
 import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
@@ -163,6 +165,8 @@ function App() {
   // Which profile dialog is open; their drafts live in ProfileModalsHost.
   const profileModals = useProfileModals()
   const isAnyEditorModalOpen = profileModals.isAnyEditorModalOpen
+  // The Desync modal: the controls (manage) or the Desync-only onboarding.
+  const desyncModal = useDesyncModal()
   const [serviceInfo, setServiceInfo] =
     useState<main.ServiceRuntimeInfo | null>(null)
   // Session-dismiss for the app-wide "update the helper service" banner. It
@@ -803,8 +807,8 @@ function App() {
   }
 
   // Desync summary for Home (and the Desync-only profile cards): same shared
-  // poll as the Settings card, active only while one of them is shown (the
-  // card keeps it alive on Settings).
+  // poll as the Desync modal, active only while one of them is shown (the
+  // Settings summary and the modal keep it alive themselves).
   const { snapshot: desyncSnapshot, save: saveDesyncSettings } =
     useDesyncStatus({
       connected: state?.connection?.status === 'connected',
@@ -842,10 +846,11 @@ function App() {
         setDesyncOnlyPrompt(null)
       }
     } catch (e: any) {
-      // Typically no service selected: Settings is where that is fixed.
+      // Typically no service selected: the Desync modal is where that is
+      // fixed.
       setDesyncOnlyPrompt(null)
       setError(String(e))
-      setScreen('settings')
+      desyncModal.openManage()
     } finally {
       setDesyncOnlyBusy(false)
     }
@@ -1235,7 +1240,12 @@ function App() {
               onSwitchTraffic={(m) => switchTraffic(m)}
               corpConnected={corpVpnEnabled && corpConnected}
               onOpenCorp={() => setScreen('corp')}
-              onOpenDesync={() => setScreen('settings')}
+              onOpenDesync={desyncModal.openManage}
+              onStartDesyncOnly={
+                brandManifest?.hideLocalConfigs
+                  ? undefined
+                  : desyncModal.openOnboarding
+              }
               onConnectClick={connectAction}
               onInstallService={() => void installService()}
               onRefreshService={() =>
@@ -1296,6 +1306,7 @@ function App() {
                   : undefined
               }
               onActivate={(id) => void activateProfile(id)}
+              onOpenDesync={desyncModal.openManage}
               onRefresh={(id) => {
                 setProfileRefreshBusyId(id)
                 void (async () => {
@@ -1491,6 +1502,7 @@ function App() {
                 serviceInfo={serviceInfo}
                 onEnsureTun={ensureTun}
                 onShowTunModal={() => setShowTunModal(true)}
+                onOpenDesync={desyncModal.openManage}
                 onApplyDefaultAutoUpdate={() =>
                   void applyDefaultAutoUpdateToProfiles()
                 }
@@ -1562,8 +1574,27 @@ function App() {
         setBanner={setTunBanner}
         pushToast={pushToast}
         onImported={dismissSpotlight}
-        onDesyncOnlyActivated={() => void promptDesyncIfOff()}
+        onStartDesyncOnly={desyncModal.openOnboarding}
       />
+
+      {desyncModal.view ? (
+        <DesyncModal
+          view={desyncModal.view}
+          connected={state?.connection?.status === 'connected'}
+          mode={String(state?.mode?.current ?? '')}
+          traffic={String(state?.traffic ?? '')}
+          profiles={state?.profile?.profiles}
+          refresh={refresh}
+          onClose={desyncModal.close}
+          onCreated={(name) => {
+            dismissSpotlight()
+            pushToast({
+              kind: 'success',
+              message: t('desync.onboarding.created', { name }),
+            })
+          }}
+        />
+      ) : null}
 
       <DesyncOnlyEnableModal
         open={desyncOnlyPrompt !== null}

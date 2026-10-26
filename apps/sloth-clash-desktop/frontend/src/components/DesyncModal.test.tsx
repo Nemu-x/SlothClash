@@ -200,6 +200,28 @@ describe('DesyncModal: onboarding', () => {
     expect(activate).not.toHaveBeenCalled()
   })
 
+  it('activates the new profile, not an older Desync-only one', async () => {
+    stubStatus(desyncStatus())
+    wailsApp.stub('CreateDesyncOnlyProfile', () => ({
+      profile: {
+        activeProfileId: 'p1',
+        profiles: [
+          SUB,
+          // Not in the (stale) list the dialog was given either.
+          { id: 'old', name: 'Old', type: 'local', kind: 'desync-only' },
+          { id: NEW_ID, name: 'New', type: 'local', kind: 'desync-only' },
+        ],
+      },
+    }))
+    const activate = wailsApp.stub('ActivateProfile', () => ({}))
+    const props = renderModal('onboarding')
+    await screen.findByRole('switch', { name: 'YouTube' })
+    fireEvent.click(createButton())
+    await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
+    expect(activate).toHaveBeenCalledWith(NEW_ID)
+    expect(props.onCreated).toHaveBeenCalledWith('New')
+  })
+
   it('Cancel creates nothing', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
     const set = wailsApp.stub('SetDesyncSettings', () => desyncStatus())

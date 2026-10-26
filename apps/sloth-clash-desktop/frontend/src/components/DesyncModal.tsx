@@ -77,9 +77,12 @@ export function DesyncModal({
     const before = new Set((profiles ?? []).map((p: any) => String(p.id)))
     const st = await CreateDesyncOnlyProfile(name.trim())
     const list: any[] = st?.profile?.profiles ?? []
+    // The backend appends the new profile: the last Desync-only one that
+    // was not there before (the last one at all if `profiles` was stale).
     const made =
-      list.find((p) => !before.has(String(p.id)) && isDesyncOnlyProfile(p)) ??
-      list.findLast((p) => isDesyncOnlyProfile(p))
+      list.findLast(
+        (p) => !before.has(String(p.id)) && isDesyncOnlyProfile(p),
+      ) ?? list.findLast((p) => isDesyncOnlyProfile(p))
     if (!made) throw new Error(t('desync.onboarding.notCreated'))
     const created = {
       id: String(made.id),

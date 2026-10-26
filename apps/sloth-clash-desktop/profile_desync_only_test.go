@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,87 @@ func TestCreateDesyncOnlyProfile(t *testing.T) {
 	// Not the first profile: the active one stays.
 	if state.Profile.ActiveProfileID != p.ID {
 		t.Fatalf("active moved to %q", state.Profile.ActiveProfileID)
+	}
+}
+
+// blockProfilesStore makes persistProfilesLocked fail until cleanup: a
+// non-empty directory where profiles.json goes (no rename lands on it).
+func blockProfilesStore(t *testing.T) {
+	t.Helper()
+	path, err := profilesStorePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(path)
+	if err := os.MkdirAll(filepath.Join(path, "blocker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+}
+
+// A creation that cannot be saved leaves nothing behind in memory: no
+// profile, no active-profile or mode change, so a retry creates exactly one.
+func TestCreateDesyncOnlyProfileRollsBackOnPersistFailure(t *testing.T) {
+	isolateAppDataRoot(t)
+	sub := Profile{ID: "profile-1", Name: "Sub", Type: "subscription", URL: "https://example.com/s"}
+	for _, tc := range []struct {
+		name   string
+		active string
+	}{
+		{"first profile (would become active)", ""},
+		{"another profile is active", sub.ID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Spare capacity, so an in-place append would be visible. With
+			// nothing active the new profile would become active and pin
+			// Rule mode.
+			a := &App{profiles: make([]Profile, 0, 4)}
+			if tc.active != "" {
+				a.profiles = append(a.profiles, sub)
+			}
+			a.state.Profile.Profiles = a.profiles
+			a.state.Profile.ActiveProfileID = tc.active
+			a.state.Mode.Current = "global"
+			a.state.Proxy.ActiveGroup = "GLOBAL"
+			a.state.UpdatedAt = 42
+			before := append([]Profile(nil), a.profiles...)
+			blockProfilesStore(t)
+
+			if _, err := a.CreateDesyncOnlyProfile("No VPN"); err == nil {
+				t.Fatal("create succeeded although profiles.json cannot be written")
+			}
+			if len(a.profiles) != len(before) || len(a.state.Profile.Profiles) != len(before) {
+				t.Fatalf("profiles after a failed create: %+v / %+v", a.profiles, a.state.Profile.Profiles)
+			}
+			// The spare capacity of the old slice was not written to either.
+			if spare := a.profiles[:cap(a.profiles)]; len(spare) > len(before) && spare[len(before)].ID != "" {
+				t.Fatalf("failed create wrote into the old backing array: %+v", spare[len(before)])
+			}
+			if a.state.Profile.ActiveProfileID != tc.active || a.state.Mode.Current != "global" ||
+				a.state.Proxy.ActiveGroup != "GLOBAL" || a.modeBeforeDesyncOnly != "" || a.state.UpdatedAt != 42 {
+				t.Fatalf("state after a failed create: active=%q mode=%q group=%q before=%q updated=%d",
+					a.state.Profile.ActiveProfileID, a.state.Mode.Current, a.state.Proxy.ActiveGroup, a.modeBeforeDesyncOnly, a.state.UpdatedAt)
+			}
+
+			// The retry, with the store writable again, creates one profile.
+			path, _ := profilesStorePath()
+			if err := os.RemoveAll(path); err != nil {
+				t.Fatal(err)
+			}
+			state, err := a.CreateDesyncOnlyProfile("No VPN")
+			if err != nil {
+				t.Fatalf("retry: %v", err)
+			}
+			created := 0
+			for _, p := range state.Profile.Profiles {
+				if profileIsDesyncOnly(p) {
+					created++
+				}
+			}
+			if created != 1 || len(state.Profile.Profiles) != len(before)+1 {
+				t.Fatalf("retry left %d Desync-only profiles: %+v", created, state.Profile.Profiles)
+			}
+		})
 	}
 }
 

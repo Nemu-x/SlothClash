@@ -26,6 +26,9 @@ export default mergeConfig(
             environment: 'jsdom',
             include: ['src/**/*.test.tsx'],
             setupFiles: ['./src/test/setupDom.ts'],
+            // Stylesheets stay empty except an explicit `?raw` import, which
+            // a test applies itself to check the cascade (layout rules).
+            css: { include: [/\.css\?raw$/] },
           },
         },
       ],

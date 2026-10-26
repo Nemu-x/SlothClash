@@ -2,6 +2,7 @@ import { fireEvent, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+import modalContentCss from '../styles/modal-content.css?raw'
 import { renderWithProviders } from '../test/render'
 
 import { type ImportMode, ImportProfileModal } from './ImportProfileModal'
@@ -128,6 +129,67 @@ describe('ImportProfileModal: source switch', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).not.toHaveBeenCalled()
   })
+})
+
+describe('ImportProfileModal: short windows', () => {
+  // The real stylesheet, applied in jsdom (vitest does not load CSS): the
+  // cascade is computed, layout is not, so this checks which box scrolls and
+  // what stays fixed.
+  function withStyles() {
+    const style = document.createElement('style')
+    style.textContent = modalContentCss
+    document.head.append(style)
+    return () => style.remove()
+  }
+
+  it.each([
+    ['url', false],
+    ['paste', false],
+    ['url', true],
+  ] as const)(
+    'mode %s (hidePaste=%s): only the fields scroll, inside a capped dialog',
+    (mode, hidePaste) => {
+      const unstyle = withStyles()
+      try {
+        renderWithProviders(<Harness hidePaste={hidePaste} />)
+        if (mode === 'paste')
+          fireEvent.click(screen.getByRole('tab', { name: 'Paste / File' }))
+        const dialog = screen.getByRole('dialog')
+        const card = getComputedStyle(dialog)
+        expect(card.display).toBe('flex')
+        expect(card.flexDirection).toBe('column')
+        expect(card.maxHeight).toMatch(/^min\(/)
+
+        const panel = dialog.querySelector('.importPanel') as HTMLElement
+        expect(panel.parentElement).toBe(dialog)
+        const body = getComputedStyle(panel)
+        expect(body.overflowY).toBe('auto')
+        expect(body.minHeight).toBe('0px')
+        expect(body.flexShrink).toBe('1')
+        // Every field is in the scrolling panel ...
+        for (const field of dialog.querySelectorAll('input, textarea')) {
+          if ((field as HTMLInputElement).type === 'file') continue
+          expect(panel.contains(field)).toBe(true)
+        }
+        // ... while the head, the actions and the Desync-only line do not
+        // shrink or scroll away.
+        const fixed = [
+          dialog.querySelector('.modalTitle'),
+          dialog.querySelector('.importBlurb'),
+          dialog.querySelector('.importModeSwitch'),
+          dialog.querySelector('.importFooter'),
+          dialog.querySelector('.importAlt'),
+        ].filter((el): el is Element => el !== null)
+        expect(fixed.length).toBe(hidePaste ? 3 : 5)
+        for (const el of fixed) {
+          expect(panel.contains(el)).toBe(false)
+          expect(getComputedStyle(el).flexShrink).toBe('0')
+        }
+      } finally {
+        unstyle()
+      }
+    },
+  )
 })
 
 describe('ImportProfileModal: Desync-only line', () => {

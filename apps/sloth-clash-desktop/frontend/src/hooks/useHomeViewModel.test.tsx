@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  DESYNC_PRESETS,
   desyncAuto,
   desyncService,
   desyncSnapshot,
@@ -399,6 +400,69 @@ describe('useHomeViewModel: Desync chip', () => {
         { youtube: false, discord: false, discordUDP: false },
       )
       expect(chip?.services.map((s) => s.key)).toEqual(['custom'])
+    })
+  })
+
+  describe('presets', () => {
+    // Stored Instagram first: the chip still follows the catalog order.
+    const entries = [
+      { id: 'ig', domain: '', preset: 'instagram', enabled: true },
+      { id: 'a1', domain: 'example.org', enabled: true },
+      { id: 'fb', domain: '', preset: 'facebook', enabled: true },
+      { id: 'xx', domain: '', preset: 'x', enabled: false },
+      { id: 'b2', domain: 'example.net', enabled: true },
+    ]
+    const chipWith = (custom: Record<string, string>, settings = {}) =>
+      vm({
+        state: rule(),
+        desyncPresets: DESYNC_PRESETS,
+        desync: desyncSnapshot(
+          desyncStatus({ settings: { custom: entries, ...settings } }),
+          desyncAuto({
+            custom: Object.fromEntries(
+              Object.entries(custom).map(([id, p]) => [id, desyncService(p)]),
+            ),
+          }),
+        ),
+      }).desyncChip
+
+    it('names each switched-on preset like a service, before the sites', () => {
+      const chip = chipWith({
+        fb: 'ready',
+        ig: 'unavailable',
+        a1: 'ready',
+        b2: 'ready',
+      })
+      expect(chip?.services).toEqual([
+        { key: 'youtube', name: 'YouTube', tone: 'ok' },
+        { key: 'discord', name: 'Discord', tone: 'ok' },
+        { key: 'preset:facebook', name: 'Facebook', tone: 'ok' },
+        { key: 'preset:instagram', name: 'Instagram', tone: 'problem' },
+        { key: 'custom', name: 'Sites 2', tone: 'ok' },
+      ])
+      expect(chip?.tooltip).toContain('Facebook: HTTPS available · automatic')
+      expect(chip?.tooltip).toContain(
+        "Instagram: Desync can't unblock this site",
+      )
+      expect(chip?.tooltip).not.toContain('X (Twitter)')
+    })
+
+    it('shows the chip for preset-only Desync', () => {
+      const chip = vm({
+        state: rule(),
+        desyncPresets: DESYNC_PRESETS,
+        desync: desyncSnapshot(
+          desyncStatus({
+            settings: {
+              youtube: false,
+              discord: false,
+              discordUDP: false,
+              custom: [entries[2]],
+            },
+          }),
+        ),
+      }).desyncChip
+      expect(chip?.services.map((s) => s.name)).toEqual(['Facebook'])
     })
   })
 })

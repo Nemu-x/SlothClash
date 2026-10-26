@@ -12,7 +12,6 @@ import {
   SetTrafficMode,
 } from './api/core'
 import { GetCorpVpnStatus } from './api/corp'
-import { type DesyncSettings, GetDesyncStatus } from './api/desync'
 import {
   GetRuntimeDiagEvents,
   OpenPathInExplorer,
@@ -64,6 +63,7 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
+import { useDesyncPresets } from './hooks/queries/useDesyncPresets'
 import { useDesyncStatus } from './hooks/queries/useDesyncStatus'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
@@ -73,6 +73,7 @@ import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useDesktopPrefs } from './hooks/useDesktopPrefs'
 import { useDesyncModal } from './hooks/useDesyncModal'
+import { useDesyncOnlyPrompt } from './hooks/useDesyncOnlyPrompt'
 import { useHomeViewModel } from './hooks/useHomeViewModel'
 import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
@@ -175,6 +176,7 @@ function App() {
   const [showBuiltinProxyGroups, setShowBuiltinProxyGroups] = useState(false)
   const [homeActiveNodeOpen, setHomeActiveNodeOpen] = useState(false)
   const homeActiveNodeRef = useRef<HTMLDivElement | null>(null)
+  const homeConnectRef = useRef<HTMLButtonElement | null>(null)
   // Live corp-VPN connection state, for the nav dot + Home indicator.
   const [corpConnected, setCorpConnected] = useState<boolean>(false)
   const [updateProgress, setUpdateProgress] = useState<{
@@ -816,45 +818,25 @@ function App() {
       traffic: String(state?.traffic ?? ''),
       enabled: screen === 'home' || screen === 'profiles',
     })
+  const desyncPresets = useDesyncPresets()
 
   // Activating a Desync-only profile while Desync is off offers to turn it
   // on: without it the profile routes everything directly.
-  const [desyncOnlyPrompt, setDesyncOnlyPrompt] =
-    useState<DesyncSettings | null>(null)
-  const [desyncOnlyBusy, setDesyncOnlyBusy] = useState(false)
+  const desyncOnlyPrompt = useDesyncOnlyPrompt({
+    save: saveDesyncSettings,
+    onFailed: (e) => {
+      // Typically no service selected: the Desync modal is where that is
+      // fixed.
+      setError(String(e))
+      desyncModal.openManage()
+    },
+  })
   const activateProfile = (id: string) =>
     activateProfileThenOfferDesync(
       (state?.profile?.profiles ?? []).find((p: any) => p.id === id),
       () => run(() => ActivateProfile(id)),
-      promptDesyncIfOff,
+      desyncOnlyPrompt.offer,
     )
-  const promptDesyncIfOff = async () => {
-    try {
-      const status = await GetDesyncStatus()
-      if (status.settings.enabled !== true) setDesyncOnlyPrompt(status.settings)
-    } catch {
-      // No status: Home and the card still show that Desync is off.
-    }
-  }
-  const enableDesyncForProfile = async () => {
-    if (!desyncOnlyPrompt) return
-    setDesyncOnlyBusy(true)
-    setError('')
-    try {
-      // false: another Desync write is in flight; the dialog stays for a retry.
-      if (await saveDesyncSettings({ ...desyncOnlyPrompt, enabled: true })) {
-        setDesyncOnlyPrompt(null)
-      }
-    } catch (e: any) {
-      // Typically no service selected: the Desync modal is where that is
-      // fixed.
-      setDesyncOnlyPrompt(null)
-      setError(String(e))
-      desyncModal.openManage()
-    } finally {
-      setDesyncOnlyBusy(false)
-    }
-  }
 
   // Home screen derivations (status label, active node, tooltips …).
   const homeVm = useHomeViewModel({
@@ -864,6 +846,7 @@ function App() {
     optimisticTraffic,
     updateSnap,
     desync: desyncSnapshot,
+    desyncPresets,
   })
   const { hasAnyProfile, hasActiveProfile, activeProfile, displayMode } = homeVm
 
@@ -1219,6 +1202,7 @@ function App() {
               connectBusy={connectBusy}
               homeActiveNodeOpen={homeActiveNodeOpen}
               homeActiveNodeRef={homeActiveNodeRef}
+              connectButtonRef={homeConnectRef}
               showBuiltinProxyGroups={showBuiltinProxyGroups}
               onOpenImport={(reason) => openImportModal(reason)}
               onOpenSupport={(url) => void BrowserOpenURL(url)}
@@ -1586,6 +1570,9 @@ function App() {
           profiles={state?.profile?.profiles}
           refresh={refresh}
           onClose={desyncModal.close}
+          // Onboarding from an empty Home: the link that opened it is gone
+          // once the profile exists; Connect is the next step.
+          fallbackFocus={() => homeConnectRef.current}
           onCreated={(name) => {
             dismissSpotlight()
             pushToast({
@@ -1597,10 +1584,13 @@ function App() {
       ) : null}
 
       <DesyncOnlyEnableModal
-        open={desyncOnlyPrompt !== null}
-        busy={desyncOnlyBusy}
-        onClose={() => setDesyncOnlyPrompt(null)}
-        onEnable={() => void enableDesyncForProfile()}
+        open={desyncOnlyPrompt.open}
+        busy={desyncOnlyPrompt.busy}
+        onClose={desyncOnlyPrompt.dismiss}
+        onEnable={() => {
+          setError('')
+          void desyncOnlyPrompt.enable()
+        }}
       />
 
       <SettingsResetModal

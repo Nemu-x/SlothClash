@@ -91,7 +91,9 @@ export function ProfilesPage({
                 onActivate(p.id)
               }}
               onKeyDown={(e) => {
-                if (active) return
+                // Only the card itself: a nested button (refresh, Desync
+                // settings) handles its own Enter / Space.
+                if (active || e.target !== e.currentTarget) return
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
                   onActivate(p.id)
@@ -199,8 +201,6 @@ export function ProfilesPage({
                         e.stopPropagation()
                         onOpenDesync()
                       }}
-                      // The card activates on Enter / Space: keep those here.
-                      onKeyDown={(e) => e.stopPropagation()}
                     >
                       {t('ui.profiles.desyncOnly.configure')}
                       <span aria-hidden> ›</span>

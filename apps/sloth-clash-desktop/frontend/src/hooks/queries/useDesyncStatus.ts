@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import {
   AddDesyncCustomDomain,
+  AddDesyncPreset,
   GetDesyncAutoStatus,
   GetDesyncStatus,
   RemoveDesyncCustomDomain,
@@ -122,6 +123,29 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     (domain: string) => write(() => AddDesyncCustomDomain(domain)),
     [write],
   )
+  /**
+   * Add catalog preset `id`. Resolves to the domains of the plain entries it
+   * replaced (the backend drops those the preset covers), or false when
+   * another write is in flight.
+   */
+  const addPreset = useCallback(
+    async (id: string): Promise<string[] | false> => {
+      let replaced: string[] = []
+      const ok = await write(async () => {
+        const before =
+          qc.getQueryData<DesyncSnapshot>(DESYNC_STATUS_KEY)?.status.settings
+            .custom ?? []
+        const next = await AddDesyncPreset(id)
+        const kept = new Set((next.settings.custom ?? []).map((e) => e.id))
+        replaced = before
+          .filter((e) => !e.preset && !kept.has(e.id))
+          .map((e) => e.domain)
+        return next
+      })
+      return ok ? replaced : false
+    },
+    [qc, write],
+  )
   const removeCustom = useCallback(
     (id: string) => write(() => RemoveDesyncCustomDomain(id)),
     [write],
@@ -145,6 +169,7 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     error: q.error ? String(q.error) : '',
     save,
     addCustom,
+    addPreset,
     removeCustom,
     setCustomEnabled,
     retry,

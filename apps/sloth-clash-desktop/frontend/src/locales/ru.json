@@ -165,7 +165,10 @@
       "hint": "Новые серверы Xray (26.9.8+) требуют ключ ML-KEM, старые (до 25.x) его отбрасывают. В режиме «Авто» ядро пробует один вариант, запоминает, что принимает каждый сервер, и переключается после сбоя. Версию клиента проверяют серверы с minClientVer / maxClientVer; оставьте поле пустым, если провайдер не просит конкретную.",
       "applyHint": "Сохраняется сразу. При активном подключении ядро перезагружает конфиг, и новые соединения используют новую настройку."
     },
-    "coreBuildPatched": "mihomo {{version}} + патчи SlothClash: {{count}}",
+    "coreBuildPatched_one": "mihomo {{version}} + {{count}} патч SlothClash",
+    "coreBuildPatched_few": "mihomo {{version}} + {{count}} патча SlothClash",
+    "coreBuildPatched_many": "mihomo {{version}} + {{count}} патчей SlothClash",
+    "coreBuildPatched_other": "mihomo {{version}} + {{count}} патча SlothClash",
     "coreBuildStock": "mihomo {{version}} (стоковое, без патчей SlothClash)",
     "coreBuildLocal": "mihomo {{version}}, локальная сборка ядра",
     "coreBuildPatches": "Патчи",
@@ -811,8 +814,11 @@
         "builtin": "Этот домен уже покрывает встроенный переключатель YouTube или Discord.",
         "duplicate": "Этот домен уже в списке.",
         "limit": "Можно добавить не больше {{limit}} доменов.",
-        "not_found": "Такой записи уже нет. Список обновлён."
-      }
+        "not_found": "Такой записи уже нет. Список обновлён.",
+        "preset_overlap": "Уже покрывается пресетом {{name}}.",
+        "unknown_preset": "Этого пресета нет в этой версии."
+      },
+      "ownTitle": "Другие сайты"
     },
     "lead": "Разблокирует YouTube, Discord и добавленные сайты без VPN.",
     "servicesTitle": "Сервисы",
@@ -837,6 +843,22 @@
       "created": "«{{name}}» активен: Desync включён.",
       "saveBusy": "Предыдущее изменение ещё сохраняется. Попробуй ещё раз.",
       "notCreated": "Профиль не создан. Попробуй ещё раз."
+    },
+    "presets": {
+      "title": "Популярные",
+      "more": "ещё {{count}}",
+      "less": "Скрыть",
+      "shared": "Через этот маршрут идёт и {{domains}}: он общий с {{names}}, так что картинки {{names}} на других сайтах тоже пойдут здесь.",
+      "replaced_one": "{{domains}} заменён — его покрывает пресет {{name}}.",
+      "replaced_few": "{{domains}} заменены — их покрывает пресет {{name}}.",
+      "replaced_many": "{{domains}} заменены — их покрывает пресет {{name}}.",
+      "replaced_other": "{{domains}} заменены — их покрывает пресет {{name}}.",
+      "error": {
+        "duplicate": "Этот пресет уже в списке.",
+        "limit": "Не больше {{limit}} записей вместе с пресетами. Сначала удали какой-нибудь домен.",
+        "not_found": "Такой записи пресета уже нет. Список обновлён.",
+        "unknown_preset": "Этого пресета нет в этой версии."
+      }
     }
   }
 }

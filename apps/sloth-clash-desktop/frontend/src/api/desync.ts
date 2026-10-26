@@ -1,5 +1,7 @@
 import {
   AddDesyncCustomDomain as addCustom,
+  AddDesyncPreset as addPreset,
+  ListDesyncPresets as listPresets,
   RemoveDesyncCustomDomain as removeCustom,
   SetDesyncCustomDomainEnabled as setCustomEnabled,
   GetDesyncStatus as getStatus,
@@ -26,11 +28,25 @@ export interface DesyncSettings {
   custom?: DesyncCustomEntry[]
 }
 
-/** One custom domain routed through Desync (its subdomains included). */
+/**
+ * One custom entry routed through Desync: a domain (its subdomains included)
+ * or a catalog preset (`preset` set, `domain` empty: its domains come from the
+ * catalog, see ListDesyncPresets).
+ */
 export interface DesyncCustomEntry {
   id: string
   domain: string
+  /** Catalog preset ID; absent for a plain domain entry. */
+  preset?: string
   enabled: boolean
+}
+
+/** One catalog preset: a service whose pages and media span several domains. */
+export interface DesyncPreset {
+  id: string
+  name: string
+  /** Every domain the preset routes (each with its subdomains). */
+  domains: string[]
 }
 
 export interface DesyncStatus {
@@ -80,6 +96,11 @@ export const SetDesyncSettings = (
   setSettings(main.DesyncSettings.createFrom(settings))
 export const AddDesyncCustomDomain = (domain: string): Promise<DesyncStatus> =>
   addCustom(domain)
+/** Add catalog preset `id` as one enabled entry; it replaces plain entries it covers. */
+export const AddDesyncPreset = (id: string): Promise<DesyncStatus> =>
+  addPreset(id)
+/** The preset catalog, in precedence order (fixed per build). */
+export const ListDesyncPresets = (): Promise<DesyncPreset[]> => listPresets()
 export const RemoveDesyncCustomDomain = (id: string): Promise<DesyncStatus> =>
   removeCustom(id)
 export const SetDesyncCustomDomainEnabled = (

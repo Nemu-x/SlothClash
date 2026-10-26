@@ -32,6 +32,7 @@ export function DesyncModal({
   refresh,
   onClose,
   onCreated,
+  fallbackFocus,
 }: {
   view: DesyncPanelVariant
   connected: boolean
@@ -43,6 +44,11 @@ export function DesyncModal({
   onClose: () => void
   /** A Desync-only profile was created and activated. */
   onCreated: (name: string) => void
+  /**
+   * Where focus goes on close when the element that opened the dialog is
+   * gone, e.g. the empty-Home link replaced by the created profile's Home.
+   */
+  fallbackFocus?: () => HTMLElement | null | undefined
 }) {
   const { t } = useTranslation()
   const baseId = useId()
@@ -61,7 +67,7 @@ export function DesyncModal({
   const createdRef = useRef<CreatedProfile | null>(null)
 
   const close = busy ? undefined : onClose
-  useDialogFocus(cardRef, true, close)
+  useDialogFocus(cardRef, true, close, fallbackFocus)
 
   const status = snapshot?.status ?? null
   const hasSelection = status ? desyncHasSelection(status.settings) : false

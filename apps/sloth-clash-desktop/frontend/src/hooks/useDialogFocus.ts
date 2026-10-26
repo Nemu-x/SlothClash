@@ -23,18 +23,23 @@ function focusables(root: HTMLElement): HTMLElement[] {
  * - Tab / Shift+Tab cycle inside the dialog;
  * - Escape calls `onEscape` (pass undefined while the dialog must stay, e.g.
  *   during a save);
- * - on close, focus returns to the element that had it before opening.
+ * - on close, focus returns to the element that had it before opening; when
+ *   that element is gone (the dialog's action replaced it), to the one
+ *   `fallbackFocus` returns instead of being lost to <body>.
  */
 export function useDialogFocus(
   ref: RefObject<HTMLElement | null>,
   open: boolean,
   onEscape?: () => void,
+  fallbackFocus?: () => HTMLElement | null | undefined,
 ): void {
-  // Latest handler without re-running the open effect (that would steal
+  // Latest handlers without re-running the open effect (that would steal
   // focus back to the autofocus target on every render).
   const escapeRef = useRef(onEscape)
+  const fallbackRef = useRef(fallbackFocus)
   useEffect(() => {
     escapeRef.current = onEscape
+    fallbackRef.current = fallbackFocus
   })
 
   useEffect(() => {
@@ -80,6 +85,7 @@ export function useDialogFocus(
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       if (previous?.isConnected) previous.focus()
+      else fallbackRef.current?.()?.focus()
     }
   }, [open, ref])
 }

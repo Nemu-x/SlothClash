@@ -103,6 +103,30 @@
   background: #3d2c3e;
 }
 
+/* Text-only action (secondary to a .btn): accent, underlined. Contexts may
+   tune its size. */
+.linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linkBtn:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+}
+
+.linkBtn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
 .collapsibleCard {
   padding: 8px 12px;
 }

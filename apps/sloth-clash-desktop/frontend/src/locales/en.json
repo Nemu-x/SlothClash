@@ -357,7 +357,9 @@
       "desyncOnlyRuleOnly": "A Desync-only profile works in Rule mode only: its Desync routes are rules, and there is no server for Global mode",
       "desyncOnlyRuleHint": "Rule only",
       "proxyServers": "Proxy servers",
-      "desyncOnlyNoServers": "None · Desync routes only"
+      "desyncOnlyNoServers": "None · Desync routes only",
+      "desyncAltQuestion": "No VPN subscription?",
+      "desyncAltLink": "Unblock YouTube & Discord without VPN"
     },
     "profiles": {
       "title": "Profiles",
@@ -401,10 +403,11 @@
         "namePlaceholderPaste": "Empty = \"Local config\"",
         "pasteFromClipboard": "Paste from clipboard",
         "loadFromFile": "Load from file…",
-        "tabDesync": "Desync only (no VPN)",
-        "desyncBlurb": "For when you have no VPN subscription. YouTube, Discord and your custom domains go through Desync; everything else connects directly. The services are chosen in Settings → Desync.",
-        "namePlaceholderDesync": "Empty = “Desync only”",
-        "create": "Create"
+        "sourceAria": "Import from",
+        "helperUrl": "The https:// link from your provider.",
+        "helperPaste": "A Clash / mihomo YAML config, or share links one per line.",
+        "desyncAltQuestion": "No VPN subscription?",
+        "desyncAltLink": "Desync only (no VPN)"
       },
       "editInfo": {
         "title": "Edit profile info",
@@ -515,7 +518,9 @@
         "enableBody": "This profile has no VPN servers. Without Desync all traffic goes directly and nothing is unblocked.",
         "enable": "Turn on Desync",
         "notNow": "Not now",
-        "editBlurb": "A Desync-only profile has no subscription, so only its name can be changed."
+        "editBlurb": "A Desync-only profile has no subscription, so only its name can be changed.",
+        "configure": "Set up",
+        "configureAria": "Desync settings"
       }
     },
     "proxies": {
@@ -788,7 +793,7 @@
       "failed_direct": "Desync unavailable · retrying automatically"
     },
     "copyFailed": "Could not copy diagnostics",
-    "homeChipAria": "Desync status · open settings",
+    "homeChipAria": "Desync status · open Desync",
     "custom": {
       "title": "Custom domains",
       "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",
@@ -809,6 +814,30 @@
         "limit": "You can add up to {{limit}} domains.",
         "not_found": "This entry no longer exists. The list was refreshed."
       }
+    },
+    "lead": "Unblocks YouTube, Discord and the sites you add, without a VPN.",
+    "servicesTitle": "Services",
+    "summary": {
+      "status": "Status",
+      "covers": "Covers",
+      "nothing": "Nothing selected",
+      "open": "Open"
+    },
+    "onboarding": {
+      "title": "Unblock without VPN",
+      "lead": "YouTube, Discord and the sites you add will go through Desync. Everything else connects directly.",
+      "hint": {
+        "youtube": "Videos and the website",
+        "discord": "Chat and voice"
+      },
+      "nameLabel": "Profile name",
+      "namePlaceholder": "Empty = “Desync only”",
+      "needSelection": "Turn on a service or add a site.",
+      "create": "Create profile",
+      "creating": "Creating…",
+      "created": "“{{name}}” is active: Desync is on.",
+      "saveBusy": "Another change is still being saved. Try again.",
+      "notCreated": "The profile was not created. Try again."
     }
   }
 }

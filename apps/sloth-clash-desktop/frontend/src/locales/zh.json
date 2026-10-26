@@ -356,7 +356,9 @@
       "desyncOnlyRuleOnly": "仅 Desync 配置只能使用规则模式：Desync 路由本身就是规则，全局模式没有可用的服务器",
       "desyncOnlyRuleHint": "仅规则",
       "proxyServers": "代理服务器",
-      "desyncOnlyNoServers": "无 · 仅 Desync 路由"
+      "desyncOnlyNoServers": "无 · 仅 Desync 路由",
+      "desyncAltQuestion": "没有 VPN 订阅？",
+      "desyncAltLink": "无需 VPN 解锁 YouTube 和 Discord"
     },
     "profiles": {
       "title": "配置",
@@ -400,10 +402,11 @@
         "namePlaceholderPaste": "留空 = “本地配置”",
         "pasteFromClipboard": "从剪贴板粘贴",
         "loadFromFile": "从文件加载…",
-        "tabDesync": "仅 Desync（无 VPN）",
-        "desyncBlurb": "适用于没有 VPN 订阅的情况。YouTube、Discord 和自定义域名通过 Desync 访问，其余流量直连。在“设置 → Desync”中选择服务。",
-        "namePlaceholderDesync": "留空 = “Desync only”",
-        "create": "创建"
+        "sourceAria": "导入来源",
+        "helperUrl": "服务商提供的 https:// 链接。",
+        "helperPaste": "Clash / mihomo YAML 配置，或分享链接（每行一条）。",
+        "desyncAltQuestion": "没有 VPN 订阅？",
+        "desyncAltLink": "仅 Desync（无 VPN）"
       },
       "editInfo": {
         "title": "编辑配置信息",
@@ -514,7 +517,9 @@
         "enableBody": "此配置没有 VPN 服务器。不开启 Desync 时所有流量直连，不会解锁任何内容。",
         "enable": "开启 Desync",
         "notNow": "暂不",
-        "editBlurb": "仅 Desync 配置没有订阅，只能修改名称。"
+        "editBlurb": "仅 Desync 配置没有订阅，只能修改名称。",
+        "configure": "设置",
+        "configureAria": "Desync 设置"
       }
     },
     "proxies": {
@@ -787,7 +792,7 @@
       "failed_direct": "Desync 不可用 · 将自动重试"
     },
     "copyFailed": "无法复制诊断信息",
-    "homeChipAria": "Desync 状态 · 打开设置",
+    "homeChipAria": "Desync 状态 · 打开 Desync",
     "custom": {
       "title": "自定义域名",
       "hint": "包含所有子域名。每个网站会单独自动测试策略。",
@@ -808,6 +813,30 @@
         "limit": "最多可以添加 {{limit}} 个域名。",
         "not_found": "该条目已不存在，列表已刷新。"
       }
+    },
+    "lead": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站。",
+    "servicesTitle": "服务",
+    "summary": {
+      "status": "状态",
+      "covers": "范围",
+      "nothing": "未选择",
+      "open": "打开"
+    },
+    "onboarding": {
+      "title": "无需 VPN 解锁",
+      "lead": "YouTube、Discord 和你添加的网站将通过 Desync 访问，其余流量直连。",
+      "hint": {
+        "youtube": "视频和网站",
+        "discord": "聊天和语音"
+      },
+      "nameLabel": "配置名称",
+      "namePlaceholder": "留空 = “Desync only”",
+      "needSelection": "请开启一个服务或添加一个网站。",
+      "create": "创建配置",
+      "creating": "正在创建…",
+      "created": "“{{name}}”已启用：Desync 已开启。",
+      "saveBusy": "上一次更改仍在保存，请重试。",
+      "notCreated": "配置未创建，请重试。"
     }
   }
 }

@@ -78,7 +78,10 @@ export function DesyncPanel({
   const [saving, setSaving] = useState(false)
   const [domainInput, setDomainInput] = useState('')
   const [customError, setCustomError] = useState('')
-  const [presetError, setPresetError] = useState('')
+  const [presetError, setPresetError] = useState<{
+    id: string
+    text: string
+  } | null>(null)
   const [replaced, setReplaced] = useState<{
     id: string
     domains: string[]
@@ -121,16 +124,17 @@ export function DesyncPanel({
 
   /**
    * One custom-list write. A domain write's validation error shows under the
-   * field, a preset switch's under the Popular list.
+   * field, a preset switch's (`preset` = its catalog ID) under the Popular
+   * list.
    */
   async function writeCustom(
     call: () => Promise<boolean>,
-    scope: 'domain' | 'preset' = 'domain',
+    preset?: string,
   ): Promise<boolean> {
     if (!status || busy) return false
     setSaving(true)
     setCustomError('')
-    setPresetError('')
+    setPresetError(null)
     setReplaced(null)
     try {
       return await call()
@@ -138,9 +142,9 @@ export function DesyncPanel({
       if (mountedRef.current) {
         const text = customDomainErrorText(t, err, {
           presetName,
-          forPreset: scope === 'preset',
+          forPreset: preset !== undefined,
         })
-        if (scope === 'preset') setPresetError(text)
+        if (preset !== undefined) setPresetError({ id: preset, text })
         else setCustomError(text)
       }
       return false
@@ -161,7 +165,7 @@ export function DesyncPanel({
       if (result.length > 0 && mountedRef.current)
         setReplaced({ id: view.id, domains: result })
       return true
-    }, 'preset')
+    }, view.id)
   }
 
   async function submitDomain() {

@@ -15,6 +15,9 @@ type profilesPersisted struct {
 	Traffic           string    `json:"traffic,omitempty"`
 	Mode              string    `json:"mode,omitempty"`
 	LastNonDirectMode string    `json:"lastNonDirectMode,omitempty"`
+	// ModeBeforeDesyncOnly is the mode a Desync-only profile overrode with
+	// Rule; it is restored when a profile with servers is active again.
+	ModeBeforeDesyncOnly string `json:"modeBeforeDesyncOnly,omitempty"`
 }
 
 func profilesStorePath() (string, error) {
@@ -68,6 +71,10 @@ func (a *App) loadProfilesFromDisk() {
 	if a.state.Mode.Current == "direct" && strings.TrimSpace(a.state.Mode.LastNonDirectMode) == "" {
 		a.state.Mode.LastNonDirectMode = "rule"
 	}
+	switch m := strings.ToLower(strings.TrimSpace(disk.ModeBeforeDesyncOnly)); m {
+	case "global", "direct":
+		a.modeBeforeDesyncOnly = m
+	}
 	a.enforceDesyncOnlyModeLocked()
 	// Hydrate the active profile's sticky pick into ProxyState so the
 	// UI and the auto-select routine can read it synchronously on next
@@ -103,6 +110,8 @@ func (a *App) persistProfilesLocked() error {
 		Traffic:           a.state.Traffic,
 		Mode:              a.state.Mode.Current,
 		LastNonDirectMode: a.state.Mode.LastNonDirectMode,
+
+		ModeBeforeDesyncOnly: a.modeBeforeDesyncOnly,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

@@ -350,7 +350,13 @@
       "insightExit": "出口",
       "insightDirect": "直连",
       "insightLatency": "延迟",
-      "insightSpeed": "速度"
+      "insightSpeed": "速度",
+      "desyncOnlySubtitle": "仅 Desync · 无 VPN",
+      "desyncOnlyOff": "Desync 已关闭：所有流量直连。去开启",
+      "desyncOnlyRuleOnly": "仅 Desync 配置只能使用规则模式：Desync 路由本身就是规则，全局模式没有可用的服务器",
+      "desyncOnlyRuleHint": "仅规则",
+      "proxyServers": "代理服务器",
+      "desyncOnlyNoServers": "无 · 仅 Desync 路由"
     },
     "profiles": {
       "title": "配置",
@@ -393,7 +399,11 @@
         "namePlaceholderUrl": "留空 = 使用服务端 Profile-Title",
         "namePlaceholderPaste": "留空 = “本地配置”",
         "pasteFromClipboard": "从剪贴板粘贴",
-        "loadFromFile": "从文件加载…"
+        "loadFromFile": "从文件加载…",
+        "tabDesync": "仅 Desync（无 VPN）",
+        "desyncBlurb": "适用于没有 VPN 订阅的情况。YouTube、Discord 和自定义域名通过 Desync 访问，其余流量直连。在“设置 → Desync”中选择服务。",
+        "namePlaceholderDesync": "留空 = “Desync only”",
+        "create": "创建"
       },
       "editInfo": {
         "title": "编辑配置信息",
@@ -494,6 +504,17 @@
         "savedBanner": "脚本已保存",
         "clearedBanner": "脚本已清除",
         "badgeTitle": "该配置文件的脚本在上次运行时失败"
+      },
+      "desyncOnly": {
+        "badge": "仅 Desync",
+        "badgeTitle": "没有 VPN 服务器：仅 Desync 路由，其余流量直连",
+        "desyncOn": "无 VPN · Desync 已开启",
+        "desyncOff": "无 VPN · Desync 已关闭",
+        "enableTitle": "开启 Desync？",
+        "enableBody": "此配置没有 VPN 服务器。不开启 Desync 时所有流量直连，不会解锁任何内容。",
+        "enable": "开启 Desync",
+        "notNow": "暂不",
+        "editBlurb": "仅 Desync 配置没有订阅，只能修改名称。"
       }
     },
     "proxies": {
@@ -532,7 +553,8 @@
       "densityCompact": "紧凑",
       "densityComfortable": "宽松",
       "hiddenChip": "隐藏",
-      "hiddenChipHint": "此分组被订阅标记为隐藏。"
+      "hiddenChipHint": "此分组被订阅标记为隐藏。",
+      "desyncOnlyEmpty": "此配置没有代理服务器——只有 Desync 路由，其余流量直连。"
     },
     "rules": {
       "title": "规则",
@@ -760,7 +782,9 @@
       "profile_failed": "订阅备用线路不可用 · 正在重试",
       "queued": "等待检测",
       "not_needed": "未被封锁 · 无需 Desync",
-      "unavailable": "Desync 无法解锁此网站"
+      "unavailable": "Desync 无法解锁此网站",
+      "no_strategy": "没有可用的策略 · 暂时直连，将自动重试",
+      "failed_direct": "Desync 不可用 · 将自动重试"
     },
     "copyFailed": "无法复制诊断信息",
     "homeChipAria": "Desync 状态 · 打开设置",

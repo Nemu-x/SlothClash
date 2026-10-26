@@ -75,6 +75,11 @@ const PHASE_TONE: Record<string, DesyncTone> = {
   // Custom domain: no strategy works (likely blocked by IP); the profile
   // carries it.
   unavailable: 'problem',
+  // Desync-only profile (no reserve): no strategy works, the route goes
+  // direct while the search repeats.
+  no_strategy: 'problem',
+  // Desync-only profile: "failed" there has no reserve to mention.
+  failed_direct: 'problem',
   // Not active (switched off, or a precondition the UI explains).
   disabled: 'off',
   connect: 'off',
@@ -84,6 +89,14 @@ const PHASE_TONE: Record<string, DesyncTone> = {
 
 export function desyncPhaseTone(phase: string): DesyncTone {
   return PHASE_TONE[phase] ?? 'pending'
+}
+
+/**
+ * The phase key a line shows. A Desync-only profile has no subscription
+ * reserve, so the generic failure is worded without one.
+ */
+function shownPhase(phase: string, desyncOnly: boolean): string {
+  return desyncOnly && phase === 'failed' ? 'failed_direct' : phase
 }
 
 function phaseView(phase: string, state?: DesyncAutoService): DesyncPhaseView {
@@ -109,6 +122,7 @@ export function desyncServiceViews(
   const ruleMode = ctx.mode.toLowerCase() === 'rule'
   const supported = status.coreSupported === true
   const discordOn = s.discord || s.discordUDP
+  const desyncOnly = status.desyncOnly === true
 
   const gate = (checked: boolean, state?: DesyncAutoService) =>
     phaseView(
@@ -118,7 +132,7 @@ export function desyncServiceViews(
           ? 'connect'
           : !ruleMode
             ? 'rule'
-            : state?.phase || 'queued',
+            : shownPhase(state?.phase || 'queued', desyncOnly),
       state,
     )
 
@@ -153,7 +167,10 @@ export function desyncServiceViews(
                     ? 'rule'
                     : ctx.traffic !== 'tun'
                       ? 'needs_tun'
-                      : automatic?.voice?.phase || 'waiting',
+                      : shownPhase(
+                          automatic?.voice?.phase || 'waiting',
+                          desyncOnly,
+                        ),
               automatic?.voice,
             )
           : null,

@@ -170,6 +170,18 @@
   opacity: 0.9;
 }
 
+/* Desync-only kind: a name, not a lowercase type token. */
+.profileTypeChip.profileKindDesync {
+  text-transform: none;
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+/* A Desync-only profile has nothing to refresh. */
+.profileRefreshIcon[hidden] {
+  display: none;
+}
+
 .profileRefreshIcon {
   flex-shrink: 0;
   width: 34px;

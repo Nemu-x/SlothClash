@@ -351,7 +351,13 @@
       "insightExit": "Exit",
       "insightDirect": "Direct",
       "insightLatency": "Latency",
-      "insightSpeed": "Speed"
+      "insightSpeed": "Speed",
+      "desyncOnlySubtitle": "Desync only · no VPN",
+      "desyncOnlyOff": "Desync is off: all traffic goes directly. Turn it on",
+      "desyncOnlyRuleOnly": "A Desync-only profile works in Rule mode only: its Desync routes are rules, and there is no server for Global mode",
+      "desyncOnlyRuleHint": "Rule only",
+      "proxyServers": "Proxy servers",
+      "desyncOnlyNoServers": "None · Desync routes only"
     },
     "profiles": {
       "title": "Profiles",
@@ -394,7 +400,11 @@
         "namePlaceholderUrl": "Empty = use Profile-Title from server",
         "namePlaceholderPaste": "Empty = \"Local config\"",
         "pasteFromClipboard": "Paste from clipboard",
-        "loadFromFile": "Load from file…"
+        "loadFromFile": "Load from file…",
+        "tabDesync": "Desync only (no VPN)",
+        "desyncBlurb": "For when you have no VPN subscription. YouTube, Discord and your custom domains go through Desync; everything else connects directly. The services are chosen in Settings → Desync.",
+        "namePlaceholderDesync": "Empty = “Desync only”",
+        "create": "Create"
       },
       "editInfo": {
         "title": "Edit profile info",
@@ -495,6 +505,17 @@
         "savedBanner": "Script saved",
         "clearedBanner": "Script cleared",
         "badgeTitle": "This profile’s script failed on the last run"
+      },
+      "desyncOnly": {
+        "badge": "Desync only",
+        "badgeTitle": "No VPN servers: Desync routes only, everything else connects directly",
+        "desyncOn": "No VPN · Desync on",
+        "desyncOff": "No VPN · Desync is off",
+        "enableTitle": "Turn on Desync?",
+        "enableBody": "This profile has no VPN servers. Without Desync all traffic goes directly and nothing is unblocked.",
+        "enable": "Turn on Desync",
+        "notNow": "Not now",
+        "editBlurb": "A Desync-only profile has no subscription, so only its name can be changed."
       }
     },
     "proxies": {
@@ -533,7 +554,8 @@
       "densityCompact": "Compact",
       "densityComfortable": "Comfortable",
       "hiddenChip": "hidden",
-      "hiddenChipHint": "This group is marked hidden by the subscription."
+      "hiddenChipHint": "This group is marked hidden by the subscription.",
+      "desyncOnlyEmpty": "This profile has no proxy servers — only Desync routes. Everything else connects directly."
     },
     "rules": {
       "title": "Rules",
@@ -761,7 +783,9 @@
       "profile_failed": "Subscription reserve unavailable · retrying",
       "queued": "Waiting for a check",
       "not_needed": "Not blocked · Desync not needed",
-      "unavailable": "Desync can't unblock this site"
+      "unavailable": "Desync can't unblock this site",
+      "no_strategy": "No working strategy · connecting directly, retrying automatically",
+      "failed_direct": "Desync unavailable · retrying automatically"
     },
     "copyFailed": "Could not copy diagnostics",
     "homeChipAria": "Desync status · open settings",

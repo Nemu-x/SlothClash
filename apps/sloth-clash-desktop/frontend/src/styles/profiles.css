@@ -177,6 +177,19 @@
   border-color: currentColor;
 }
 
+/* Desync-only card: "Set up ›" opens the Desync modal, in the slot a
+   subscription card uses for its update time. */
+.profileHostRow .profileDesyncLink {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+
+.profileHostRow .profileDesyncLink:hover {
+  text-decoration: underline;
+}
+
 /* A Desync-only profile has nothing to refresh. */
 .profileRefreshIcon[hidden] {
   display: none;

@@ -107,7 +107,7 @@ export function HomePage({
   // is connected; nothing at all otherwise.
   corpConnected?: boolean
   onOpenCorp?: () => void
-  // Desync chip (shown only while Desync is on) opens Settings.
+  // Desync chip (shown only while Desync is on) opens the Desync modal.
   onOpenDesync?: () => void
   onConnectClick: () => void
   onInstallService: () => void

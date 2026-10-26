@@ -6,7 +6,7 @@ import { desyncAuto, desyncService, desyncStatus } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
 
-import { DesyncSettingsCard } from './DesyncSettingsCard'
+import { DesyncPanel } from './DesyncPanel'
 
 type Ctx = { connected: boolean; mode: string; traffic: string }
 const CONNECTED: Ctx = { connected: true, mode: 'rule', traffic: 'tun' }
@@ -22,7 +22,7 @@ function stubBackend(
 }
 
 async function renderCard(ctx: Ctx = CONNECTED) {
-  renderWithProviders(<DesyncSettingsCard {...ctx} />)
+  renderWithProviders(<DesyncPanel {...ctx} />)
   // Rows render once the first poll lands.
   await screen.findByRole('switch', { name: 'YouTube' })
 }
@@ -39,7 +39,7 @@ function chips(service: 'youtube' | 'discord') {
   return [...serviceRow(service).querySelectorAll<HTMLElement>('.desyncChip')]
 }
 
-describe('DesyncSettingsCard: controls', () => {
+describe('DesyncPanel: controls', () => {
   it('uses switches for the master toggle and every service, no checkboxes', async () => {
     stubBackend()
     await renderCard()
@@ -183,7 +183,7 @@ describe('DesyncSettingsCard: controls', () => {
   })
 })
 
-describe('DesyncSettingsCard: status chips', () => {
+describe('DesyncPanel: status chips', () => {
   const cases: {
     title: string
     ctx?: Ctx
@@ -343,7 +343,7 @@ describe('DesyncSettingsCard: status chips', () => {
   })
 })
 
-describe('DesyncSettingsCard: actions', () => {
+describe('DesyncPanel: actions', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -366,7 +366,7 @@ describe('DesyncSettingsCard: actions', () => {
   it('Check again is disabled when not connected or not in Rule mode', async () => {
     stubBackend()
     renderWithProviders(
-      <DesyncSettingsCard connected={false} mode="rule" traffic="tun" />,
+      <DesyncPanel connected={false} mode="rule" traffic="tun" />,
     )
     await screen.findByRole('switch', { name: 'YouTube' })
     expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled()
@@ -407,15 +407,13 @@ describe('DesyncSettingsCard: actions', () => {
   })
 })
 
-describe('DesyncSettingsCard: shared poll', () => {
+describe('DesyncPanel: shared poll', () => {
   it('a poll that started before a save cannot revert the saved result', async () => {
     const before = desyncStatus()
     const getStatus = wailsApp.stub('GetDesyncStatus', () => before)
     wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
     wailsApp.stub('SetDesyncSettings', (s) => desyncStatus({ settings: s }))
-    const { queryClient } = renderWithProviders(
-      <DesyncSettingsCard {...CONNECTED} />,
-    )
+    const { queryClient } = renderWithProviders(<DesyncPanel {...CONNECTED} />)
     await screen.findByRole('switch', { name: 'YouTube' })
 
     // A slow poll is in flight (pre-save snapshot) ...

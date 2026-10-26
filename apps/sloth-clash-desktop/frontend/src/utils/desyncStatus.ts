@@ -1,6 +1,9 @@
+import type { TFunction } from 'i18next'
+
 import type {
   DesyncAutoService,
   DesyncAutoStatus,
+  DesyncCustomEntry,
   DesyncStatus,
 } from '../api/desync'
 
@@ -56,6 +59,8 @@ const PHASE_TONE: Record<string, DesyncTone> = {
   transport: 'ok',
   receiving: 'ok',
   media: 'ok',
+  // Custom domain reachable without Desync (routed directly).
+  not_needed: 'ok',
   // In progress / waiting for traffic.
   queued: 'pending',
   testing: 'pending',
@@ -67,6 +72,9 @@ const PHASE_TONE: Record<string, DesyncTone> = {
   failed: 'problem',
   profile_failed: 'problem',
   interrupted: 'problem',
+  // Custom domain: no strategy works (likely blocked by IP); the profile
+  // carries it.
+  unavailable: 'problem',
   // Not active (switched off, or a precondition the UI explains).
   disabled: 'off',
   connect: 'off',
@@ -170,4 +178,86 @@ export function desyncServiceTone(view: DesyncServiceView): DesyncTone {
   const voice = view.voice?.tone
   if (!voice || voice === 'off' || base === 'off') return base
   return TONE_RANK[voice] > TONE_RANK[base] ? voice : base
+}
+
+export type DesyncCustomView = {
+  id: string
+  domain: string
+  /** The entry switch as the user sees it. */
+  checked: boolean
+  status: DesyncPhaseView
+}
+
+/**
+ * One row per custom-domain entry, gated like the built-in services. The
+ * calibration state comes from automatic.custom[id].
+ */
+export function desyncCustomViews(
+  snapshot: DesyncSnapshot,
+  ctx: DesyncContext,
+): DesyncCustomView[] {
+  const { status, automatic } = snapshot
+  const enabled = status.settings.enabled === true
+  const ruleMode = ctx.mode.toLowerCase() === 'rule'
+  const entries: DesyncCustomEntry[] = status.settings.custom ?? []
+  return entries.map((e) => {
+    const state = automatic?.custom?.[e.id]
+    return {
+      id: e.id,
+      domain: e.domain,
+      checked: e.enabled,
+      status: phaseView(
+        !enabled || !e.enabled
+          ? 'disabled'
+          : !ctx.connected
+            ? 'connect'
+            : !ruleMode
+              ? 'rule'
+              : state?.phase || 'queued',
+        state,
+      ),
+    }
+  })
+}
+
+/**
+ * The single tone of all switched-on custom entries on Home. Red only when
+ * Desync can unblock none of them; a mix of working and unavailable entries
+ * is a partial state (pending), never a problem.
+ */
+export function desyncCustomTone(views: DesyncCustomView[]): DesyncTone {
+  const tones = views.filter((v) => v.checked).map((v) => v.status.tone)
+  if (tones.length === 0) return 'off'
+  if (tones.every((t) => t === 'off')) return 'off'
+  const active = tones.filter((t) => t !== 'off')
+  if (active.every((t) => t === 'problem')) return 'problem'
+  if (active.every((t) => t === 'ok')) return 'ok'
+  return 'pending'
+}
+
+/** Mirrors desyncCustomLimit (desync_custom.go). */
+export const DESYNC_CUSTOM_LIMIT = 32
+
+const CUSTOM_ERROR_CODES = new Set([
+  'empty',
+  'invalid',
+  'ip',
+  'wildcard',
+  'public_suffix',
+  'builtin',
+  'duplicate',
+  'limit',
+  'not_found',
+])
+
+/**
+ * The backend rejects a custom domain with "custom domain: <code>"; show the
+ * translated reason, or the raw error for anything else.
+ */
+export function customDomainErrorText(t: TFunction, err: unknown): string {
+  const raw = String(err)
+  const code = /custom domain: ([a-z_]+)/.exec(raw)?.[1]
+  return code && CUSTOM_ERROR_CODES.has(code)
+    ? t(`desync.custom.error.${code}`, { limit: DESYNC_CUSTOM_LIMIT })
+    : raw
 }

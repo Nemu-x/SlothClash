@@ -95,14 +95,45 @@
 
 /* Import dialog: title, blurb, the source switch (the Home segmented
    control), fields with a helper line, actions, then the quiet Desync-only
-   line under a hairline. */
+   line under a hairline.
+
+   On a short window the dialog keeps to the viewport (like the Desync
+   modal): the head and the actions stay put and only the fields scroll. */
+.importModal {
+  display: flex;
+  flex-direction: column;
+  max-height: min(calc(88vh / var(--ui-zoom, 1)), 760px);
+}
+
+.importModal:focus {
+  outline: none;
+}
+
+.importModal > * {
+  flex: 0 0 auto;
+}
+
+.importModal > .importPanel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* A permanent scrollbar gutter inside the card's side padding, so the
+     fields keep their width when the panel starts to scroll (10px bar + 4px),
+     and 4px around for the focus rings a scroller would clip. */
+  scrollbar-gutter: stable;
+  margin: 0 -14px -4px -4px;
+  padding: 0 4px 4px;
+}
+
 .importModal .importBlurb {
   margin: 0;
 }
 
+/* No bottom margin: the panel is a scroller now, so the first field's top
+   margin no longer collapses into this one; the gap stays 12px. */
 .importModeSwitch {
   max-width: 320px;
-  margin: var(--space-4) 0 var(--space-1);
+  margin: var(--space-4) 0 0;
 }
 
 .importModeSwitch .segmentInsetBtn {

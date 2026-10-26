@@ -107,7 +107,7 @@ import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { ImportModalReason, Screen } from './types/app'
 import { deriveAccentVars, normalizeHex, resolveAccent } from './utils/accent'
-import { isDesyncOnlyProfile } from './utils/profileKind'
+import { activateProfileThenOfferDesync } from './utils/profileKind'
 import { DEFAULT_SETTINGS } from './utils/settings'
 
 function App() {
@@ -643,14 +643,18 @@ function App() {
     void SetUiLanguage(lang).catch(() => {})
   }, [lang])
 
-  const run = async (action: () => Promise<any>) => {
+  // Resolves to whether the action succeeded; its error is shown either way.
+  const run = async (action: () => Promise<any>): Promise<boolean> => {
     setError('')
+    let ok = true
     try {
       await action()
     } catch (e: any) {
       setError(String(e))
+      ok = false
     }
     await refresh()
+    return ok
   }
 
   const refreshAllSubscriptions = async () => {
@@ -814,13 +818,12 @@ function App() {
   const [desyncOnlyPrompt, setDesyncOnlyPrompt] =
     useState<DesyncSettings | null>(null)
   const [desyncOnlyBusy, setDesyncOnlyBusy] = useState(false)
-  const activateProfile = async (id: string) => {
-    await run(() => ActivateProfile(id))
-    const target = (state?.profile?.profiles ?? []).find(
-      (p: any) => p.id === id,
+  const activateProfile = (id: string) =>
+    activateProfileThenOfferDesync(
+      (state?.profile?.profiles ?? []).find((p: any) => p.id === id),
+      () => run(() => ActivateProfile(id)),
+      promptDesyncIfOff,
     )
-    if (isDesyncOnlyProfile(target)) await promptDesyncIfOff()
-  }
   const promptDesyncIfOff = async () => {
     try {
       const status = await GetDesyncStatus()

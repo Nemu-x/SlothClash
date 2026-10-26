@@ -66,7 +66,7 @@ export function ProfileModalsHost({
   proxyGroups: any[] | undefined
   hidePaste?: boolean
   /** App's action wrapper: clears the error, runs, surfaces a failure, refreshes. */
-  run: (action: () => Promise<any>) => Promise<void>
+  run: (action: () => Promise<any>) => Promise<unknown>
   refresh: () => Promise<void>
   setError: (msg: string) => void
   /** Settings status line. */

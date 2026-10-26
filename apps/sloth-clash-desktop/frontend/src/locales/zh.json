@@ -758,9 +758,32 @@
       "checking": "正在确认连接故障",
       "profile": "使用订阅备用线路",
       "profile_failed": "订阅备用线路不可用 · 正在重试",
-      "queued": "等待检测"
+      "queued": "等待检测",
+      "not_needed": "未被封锁 · 无需 Desync",
+      "unavailable": "Desync 无法解锁此网站"
     },
     "copyFailed": "无法复制诊断信息",
-    "homeChipAria": "Desync 状态 · 打开设置"
+    "homeChipAria": "Desync 状态 · 打开设置",
+    "custom": {
+      "title": "自定义域名",
+      "hint": "包含所有子域名。每个网站会单独自动测试策略。",
+      "inputLabel": "域名",
+      "add": "添加",
+      "remove": "移除 {{domain}}",
+      "ipHint": "很可能按 IP 地址封锁；流量将按配置文件的规则走。",
+      "limitReached": "最多 {{limit}} 个域名。",
+      "homeItem": "网站 {{count}}",
+      "error": {
+        "empty": "请输入域名，例如 example.com。",
+        "invalid": "这不是有效的域名。",
+        "ip": "请输入域名，而不是 IP 地址。",
+        "wildcard": "请输入不带 * 或 +. 的域名，子域名会自动包含。",
+        "public_suffix": "请输入网站的域名，而不是 com 或 co.uk 这样的整个后缀。",
+        "builtin": "该域名已由内置的 YouTube 或 Discord 开关覆盖。",
+        "duplicate": "该域名已在列表中。",
+        "limit": "最多可以添加 {{limit}} 个域名。",
+        "not_found": "该条目已不存在，列表已刷新。"
+      }
+    }
   }
 }

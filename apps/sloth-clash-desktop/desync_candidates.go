@@ -80,6 +80,22 @@ func saveDesyncSelection(network, service, id string) {
 	}
 	entry.Network = network
 	entry.Updated = time.Now().Unix()
+	if domain, ok := desync.CustomServiceDomain(service); ok {
+		// Keep winners of current entries only, so the cache stays bounded
+		// by the entry cap.
+		current := map[string]bool{}
+		for _, e := range sanitizeDesyncCustom(prefsCurrent.Desync.Custom) {
+			current[e.Domain] = true
+		}
+		custom := map[string]string{}
+		for d, winner := range entry.Custom {
+			if current[d] {
+				custom[d] = winner
+			}
+		}
+		custom[domain] = id
+		entry.Custom = custom
+	}
 	switch service {
 	case "youtube":
 		entry.YouTube = id

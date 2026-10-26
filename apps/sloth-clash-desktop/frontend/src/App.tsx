@@ -176,6 +176,7 @@ function App() {
   const [showBuiltinProxyGroups, setShowBuiltinProxyGroups] = useState(false)
   const [homeActiveNodeOpen, setHomeActiveNodeOpen] = useState(false)
   const homeActiveNodeRef = useRef<HTMLDivElement | null>(null)
+  const homeConnectRef = useRef<HTMLButtonElement | null>(null)
   // Live corp-VPN connection state, for the nav dot + Home indicator.
   const [corpConnected, setCorpConnected] = useState<boolean>(false)
   const [updateProgress, setUpdateProgress] = useState<{
@@ -1201,6 +1202,7 @@ function App() {
               connectBusy={connectBusy}
               homeActiveNodeOpen={homeActiveNodeOpen}
               homeActiveNodeRef={homeActiveNodeRef}
+              connectButtonRef={homeConnectRef}
               showBuiltinProxyGroups={showBuiltinProxyGroups}
               onOpenImport={(reason) => openImportModal(reason)}
               onOpenSupport={(url) => void BrowserOpenURL(url)}
@@ -1568,6 +1570,9 @@ function App() {
           profiles={state?.profile?.profiles}
           refresh={refresh}
           onClose={desyncModal.close}
+          // Onboarding from an empty Home: the link that opened it is gone
+          // once the profile exists; Connect is the next step.
+          fallbackFocus={() => homeConnectRef.current}
           onCreated={(name) => {
             dismissSpotlight()
             pushToast({

@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { DesyncStatus } from '../api/desync'
@@ -316,6 +317,109 @@ function ModalHost({
     </>
   )
 }
+
+/**
+ * App on an empty Home: "No VPN subscription?" opens the onboarding, and
+ * Create replaces the empty Home (and with it the link) by the new profile's.
+ */
+function EmptyHomeHost({ withFallback }: { withFallback: boolean }) {
+  const modal = useDesyncModal()
+  const connectRef = useRef<HTMLButtonElement>(null)
+  const [profiles, setProfiles] = useState<any[]>([])
+  const state = {
+    profile: { activeProfileId: profiles[0]?.id ?? '', profiles },
+    connection: { status: 'disconnected' },
+    mode: { current: 'rule' },
+    traffic: 'tun',
+  }
+  const vm = useHomeViewModel({
+    state,
+    connectBusy: false,
+    optimisticMode: null,
+    optimisticTraffic: null,
+    updateSnap: null,
+  })
+  return (
+    <>
+      <HomePage
+        state={state}
+        vm={vm}
+        service={null}
+        linkToast=""
+        error={null}
+        updateSnap={null}
+        connectBusy={false}
+        homeActiveNodeOpen={false}
+        homeActiveNodeRef={null}
+        connectButtonRef={connectRef}
+        showBuiltinProxyGroups={false}
+        onOpenOperator={noop}
+        onOpenImport={noop}
+        onOpenSupport={noop}
+        onOpenUpdate={noop}
+        onSetMode={noop}
+        onSwitchTraffic={noop}
+        onStartDesyncOnly={modal.openOnboarding}
+        onConnectClick={noop}
+        onInstallService={noop}
+        onRefreshService={noop}
+        onSelectGroup={noop}
+        onSelectNode={noop}
+        onToggleActiveNodeOpen={noop}
+      />
+      {modal.view ? (
+        <DesyncModal
+          view={modal.view}
+          connected={false}
+          mode="rule"
+          traffic="tun"
+          profiles={profiles}
+          refresh={async () =>
+            setProfiles([
+              {
+                id: NEW_ID,
+                name: 'Desync only',
+                type: 'local',
+                kind: 'desync-only',
+              },
+            ])
+          }
+          onClose={modal.close}
+          onCreated={noop}
+          fallbackFocus={withFallback ? () => connectRef.current : undefined}
+        />
+      ) : null}
+    </>
+  )
+}
+
+describe('DesyncModal: focus after creating from an empty Home', () => {
+  async function createFromEmptyHome(withFallback: boolean) {
+    stubStatus(desyncStatus())
+    stubCreate(NEW_ID)
+    renderWithProviders(<EmptyHomeHost withFallback={withFallback} />)
+    const link = screen.getByRole('button', {
+      name: /Unblock YouTube & Discord without VPN/,
+    })
+    link.focus()
+    fireEvent.click(link)
+    await screen.findByRole('switch', { name: 'YouTube' })
+    fireEvent.click(createButton())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The link that opened the dialog is gone with the empty Home.
+    expect(link.isConnected).toBe(false)
+  }
+
+  it('lands on Connect, not on the page body', async () => {
+    await createFromEmptyHome(true)
+    expect(screen.getByRole('button', { name: 'Connect' })).toHaveFocus()
+  })
+
+  it('without a fallback focus would be lost (the case it fixes)', async () => {
+    await createFromEmptyHome(false)
+    expect(document.activeElement).toBe(document.body)
+  })
+})
 
 const HOME_STATE = {
   profile: { activeProfileId: 'p1', profiles: [SUB] },

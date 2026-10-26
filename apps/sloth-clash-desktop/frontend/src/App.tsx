@@ -12,7 +12,6 @@ import {
   SetTrafficMode,
 } from './api/core'
 import { GetCorpVpnStatus } from './api/corp'
-import { type DesyncSettings, GetDesyncStatus } from './api/desync'
 import {
   GetRuntimeDiagEvents,
   OpenPathInExplorer,
@@ -74,6 +73,7 @@ import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useDesktopPrefs } from './hooks/useDesktopPrefs'
 import { useDesyncModal } from './hooks/useDesyncModal'
+import { useDesyncOnlyPrompt } from './hooks/useDesyncOnlyPrompt'
 import { useHomeViewModel } from './hooks/useHomeViewModel'
 import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
@@ -821,42 +821,21 @@ function App() {
 
   // Activating a Desync-only profile while Desync is off offers to turn it
   // on: without it the profile routes everything directly.
-  const [desyncOnlyPrompt, setDesyncOnlyPrompt] =
-    useState<DesyncSettings | null>(null)
-  const [desyncOnlyBusy, setDesyncOnlyBusy] = useState(false)
+  const desyncOnlyPrompt = useDesyncOnlyPrompt({
+    save: saveDesyncSettings,
+    onFailed: (e) => {
+      // Typically no service selected: the Desync modal is where that is
+      // fixed.
+      setError(String(e))
+      desyncModal.openManage()
+    },
+  })
   const activateProfile = (id: string) =>
     activateProfileThenOfferDesync(
       (state?.profile?.profiles ?? []).find((p: any) => p.id === id),
       () => run(() => ActivateProfile(id)),
-      promptDesyncIfOff,
+      desyncOnlyPrompt.offer,
     )
-  const promptDesyncIfOff = async () => {
-    try {
-      const status = await GetDesyncStatus()
-      if (status.settings.enabled !== true) setDesyncOnlyPrompt(status.settings)
-    } catch {
-      // No status: Home and the card still show that Desync is off.
-    }
-  }
-  const enableDesyncForProfile = async () => {
-    if (!desyncOnlyPrompt) return
-    setDesyncOnlyBusy(true)
-    setError('')
-    try {
-      // false: another Desync write is in flight; the dialog stays for a retry.
-      if (await saveDesyncSettings({ ...desyncOnlyPrompt, enabled: true })) {
-        setDesyncOnlyPrompt(null)
-      }
-    } catch (e: any) {
-      // Typically no service selected: the Desync modal is where that is
-      // fixed.
-      setDesyncOnlyPrompt(null)
-      setError(String(e))
-      desyncModal.openManage()
-    } finally {
-      setDesyncOnlyBusy(false)
-    }
-  }
 
   // Home screen derivations (status label, active node, tooltips …).
   const homeVm = useHomeViewModel({
@@ -1600,10 +1579,13 @@ function App() {
       ) : null}
 
       <DesyncOnlyEnableModal
-        open={desyncOnlyPrompt !== null}
-        busy={desyncOnlyBusy}
-        onClose={() => setDesyncOnlyPrompt(null)}
-        onEnable={() => void enableDesyncForProfile()}
+        open={desyncOnlyPrompt.open}
+        busy={desyncOnlyPrompt.busy}
+        onClose={desyncOnlyPrompt.dismiss}
+        onEnable={() => {
+          setError('')
+          void desyncOnlyPrompt.enable()
+        }}
       />
 
       <SettingsResetModal

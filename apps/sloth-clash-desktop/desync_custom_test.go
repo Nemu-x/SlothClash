@@ -7,7 +7,47 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"SlothClashDesktop/internal/desync"
 )
+
+func TestDesyncSaveSelectionPrunesRemovedCustomWinners(t *testing.T) {
+	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+		{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+		{ID: "5a6b7c8d", Domain: "off.example.net", Enabled: false},
+	}})
+	stale := map[string]string{"example.org": "r3", "off.example.net": "split"}
+	for i := range 40 {
+		stale[fmt.Sprintf("gone%d.example.com", i)] = "r1"
+	}
+	prefsMu.Lock()
+	prefsCurrent.DesyncCache = []DesyncNetworkCache{
+		{Network: "net-a", YouTube: "r2", Custom: stale},
+		{Network: "net-b", Custom: map[string]string{"gone0.example.com": "r1"}},
+	}
+	prefsMu.Unlock()
+
+	saveDesyncSelection("net-a", desync.CustomService("example.org"), "r4")
+	var a, b DesyncNetworkCache
+	for _, c := range currentDesktopPrefs().DesyncCache {
+		switch c.Network {
+		case "net-a":
+			a = c
+		case "net-b":
+			b = c
+		}
+	}
+	// Removed entries' winners are dropped; a switched-off entry keeps its
+	// winner (it is still in the list), and the built-in winner stays.
+	want := map[string]string{"example.org": "r4", "off.example.net": "split"}
+	if !reflect.DeepEqual(a.Custom, want) || a.YouTube != "r2" {
+		t.Fatalf("net-a cache: %+v", a)
+	}
+	// Only the saved network is rewritten.
+	if len(b.Custom) != 1 {
+		t.Fatalf("net-b cache changed: %+v", b)
+	}
+}
 
 func TestDesyncCustomDomainNormalization(t *testing.T) {
 	cases := []struct {

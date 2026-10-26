@@ -69,8 +69,10 @@ type DesyncSettings struct {
 }
 
 // DesyncCustomRoute is one enabled custom-domain entry: its stable ID (which
-// names the group) and its normalized domain.
+// names the group) and its normalized domain, or the ID of a catalog preset
+// (desync.Presets; Domain is then empty and the domains are the catalog's).
 type DesyncCustomRoute struct {
 	ID     string
 	Domain string
+	Preset string
 }

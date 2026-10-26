@@ -112,7 +112,7 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 	// fall through to the profile's rules).
 	for _, entry := range s.Custom {
 		route := desync.CustomRoute(entry.ID)
-		cached := desync.CachedSelection(cache, network, desync.CustomService(entry.Domain))
+		cached := desync.CachedSelection(cache, network, desync.CustomService(desync.CustomEntryKey(entry.Domain, entry.Preset)))
 		names := []string{}
 		for _, c := range desync.OrderedCustom(s.FakeTTL, cached) {
 			proxies = append(proxies, c.Proxy(route))
@@ -131,23 +131,47 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 	m["rules"] = append(generated, rules...)
 }
 
-// customDesyncRules routes each entry like a built-in service (TCP, plus
-// UDP/443 so the candidates can reject QUIC and the browser falls back to
-// TCP, where the transform applies). A more specific entry
+// customDesyncRules routes each entry's domains like a built-in service (TCP,
+// plus UDP/443 so the candidates can reject QUIC and the browser falls back
+// to TCP, where the transform applies). A more specific domain
 // (sub.example.org) goes before a broader one (example.org) so both work;
-// entries of equal depth keep the user's order.
+// domains of equal depth keep the user's entry order, then the catalog order
+// within a preset.
 func customDesyncRules(entries []DesyncCustomRoute) []any {
-	ordered := append([]DesyncCustomRoute(nil), entries...)
+	type routed struct{ domain, route string }
+	var ordered []routed
+	for _, entry := range entries {
+		for _, domain := range customDesyncDomains(entry, entries) {
+			ordered = append(ordered, routed{domain, desync.CustomRoute(entry.ID)})
+		}
+	}
 	sort.SliceStable(ordered, func(i, j int) bool {
-		return strings.Count(ordered[i].Domain, ".") > strings.Count(ordered[j].Domain, ".")
+		return strings.Count(ordered[i].domain, ".") > strings.Count(ordered[j].domain, ".")
 	})
 	var out []any
-	for _, entry := range ordered {
-		for _, r := range desync.Rules([]string{entry.Domain}, desync.CustomRoute(entry.ID)) {
-			out = append(out, r)
+	for _, r := range ordered {
+		for _, rule := range desync.Rules([]string{r.domain}, r.route) {
+			out = append(out, rule)
 		}
 	}
 	return out
+}
+
+// customDesyncDomains is the domains entry routes among the enabled entries:
+// its own domain, or the preset's catalog domains minus those an enabled
+// preset earlier in the catalog also lists (desync.PresetOwnedDomains), so a
+// shared domain is in exactly one group.
+func customDesyncDomains(entry DesyncCustomRoute, entries []DesyncCustomRoute) []string {
+	if entry.Preset == "" {
+		return []string{entry.Domain}
+	}
+	var enabled []string
+	for _, e := range entries {
+		if e.Preset != "" {
+			enabled = append(enabled, e.Preset)
+		}
+	}
+	return desync.PresetOwnedDomains(entry.Preset, enabled)
 }
 
 // isCustomDesyncRule reports a rule targeting a custom-domain group. The

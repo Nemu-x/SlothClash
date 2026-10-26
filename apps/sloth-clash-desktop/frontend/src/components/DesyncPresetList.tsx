@@ -29,7 +29,8 @@ export function DesyncPresetList({
   supported: boolean
   /** The last preset switched on and the plain domains it replaced. */
   replaced: { id: string; domains: string[] } | null
-  error: string
+  /** Why the last switch of preset `id` failed; it describes that switch. */
+  error: { id: string; text: string } | null
   onToggle: (view: DesyncPresetView) => void
 }) {
   const { t } = useTranslation()
@@ -53,14 +54,14 @@ export function DesyncPresetList({
             onboarding={onboarding}
             disabled={busy || (!supported && !view.checked)}
             replaced={replaced?.id === view.id ? replaced.domains : []}
-            errorId={error ? errorId : undefined}
+            errorId={error?.id === view.id ? errorId : undefined}
             onToggle={() => onToggle(view)}
           />
         ))}
       </ul>
       {error ? (
         <p id={errorId} className="error small desyncPresetError" role="alert">
-          {error}
+          {error.text}
         </p>
       ) : null}
     </div>

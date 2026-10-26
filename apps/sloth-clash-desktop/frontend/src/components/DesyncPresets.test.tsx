@@ -231,6 +231,10 @@ describe('DesyncPanel: presets', () => {
     expect(presetSwitch('Instagram')).toHaveAccessibleDescription(
       `instagram.com, cdninstagram.com ${text}`,
     )
+    // Only the switch that failed is described by the error.
+    expect(presetSwitch('Facebook')).toHaveAccessibleDescription(
+      'facebook.com, fbcdn.net',
+    )
     // The domain field is not blamed for a preset error.
     expect(screen.getByRole('textbox', { name: 'Domain' })).not.toHaveAttribute(
       'aria-invalid',

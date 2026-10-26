@@ -755,6 +755,7 @@
       "profile_failed": "订阅备用线路不可用 · 正在重试",
       "queued": "等待检测"
     },
-    "copyFailed": "无法复制诊断信息"
+    "copyFailed": "无法复制诊断信息",
+    "homeChipAria": "Desync 状态 · 打开设置"
   }
 }

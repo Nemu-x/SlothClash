@@ -2,16 +2,39 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
-import {
-  GetDesyncAutoStatus,
-  GetDesyncDiagnosticReport,
-  GetDesyncStatus,
-  RetryDesyncAuto,
-  SetDesyncSettings,
-  type DesyncAutoStatus,
-  type DesyncSettings,
-  type DesyncStatus,
-} from '../api/desync'
+import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
+import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
+import { desyncServiceViews, type DesyncPhaseView } from '../utils/desyncStatus'
+
+/** Inline status chip: a toned dot plus the phase text. */
+export function DesyncStatusChip({
+  view,
+  prefix,
+  sub,
+}: {
+  view: DesyncPhaseView
+  prefix?: string
+  sub?: boolean
+}) {
+  const { t } = useTranslation()
+  const text = t(`desync.phase.${view.phase}`, {
+    attempt: view.attempt,
+    total: view.total,
+  })
+  return (
+    <span
+      className={`desyncChip${sub ? ' desyncChipSub' : ''}`}
+      data-tone={view.tone}
+      data-phase={view.phase}
+      role="status"
+    >
+      <span className="desyncChipDot" aria-hidden />
+      <span className="desyncChipText">
+        {prefix ? `${prefix}: ${text}` : text}
+      </span>
+    </span>
+  )
+}
 
 export function DesyncSettingsCard({
   connected,
@@ -23,85 +46,44 @@ export function DesyncSettingsCard({
   traffic: string
 }) {
   const { t } = useTranslation()
-  const [status, setStatus] = useState<DesyncStatus | null>(null)
-  const [automatic, setAutomatic] = useState<DesyncAutoStatus | null>(null)
+  const {
+    snapshot,
+    error: pollError,
+    save: saveSettings,
+    retry: retryAuto,
+  } = useDesyncStatus({ connected, mode, traffic })
+  const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
-  const lifeRef = useRef({
-    mounted: true,
-    generation: 0,
-    revision: 0,
-    saving: false,
-  })
-
+  const mountedRef = useRef(true)
   useEffect(() => {
-    const life = lifeRef.current
-    life.mounted = true
-    const generation = ++life.generation
-    let pending = false
-    async function refresh() {
-      if (pending || life.saving) return
-      pending = true
-      const revision = life.revision
-      try {
-        const [next, auto] = await Promise.all([
-          GetDesyncStatus(),
-          GetDesyncAutoStatus(),
-        ])
-        if (
-          life.mounted &&
-          life.generation === generation &&
-          revision === life.revision &&
-          !life.saving
-        ) {
-          setStatus(next)
-          setAutomatic(auto)
-        }
-      } catch (err: unknown) {
-        if (life.mounted && life.generation === generation)
-          setError(String(err))
-      } finally {
-        pending = false
-      }
-    }
-    void refresh()
-    const timer = setInterval(() => void refresh(), 2500)
+    mountedRef.current = true
     return () => {
-      life.generation++
-      life.mounted = false
-      clearInterval(timer)
+      mountedRef.current = false
     }
-  }, [connected, mode, traffic])
+  }, [])
 
   async function save(patch: Partial<DesyncSettings>) {
-    if (!status) return
-    const life = lifeRef.current
-    if (life.saving) return
-    life.revision++
-    const generation = life.generation
-    life.saving = true
+    if (!status || saving) return
     setSaving(true)
     setError('')
     try {
-      const next = await SetDesyncSettings({ ...status.settings, ...patch })
-      if (life.mounted && life.generation === generation) setStatus(next)
+      await saveSettings({ ...status.settings, ...patch })
     } catch (err: unknown) {
-      if (life.mounted && life.generation === generation) setError(String(err))
+      if (mountedRef.current) setError(String(err))
     } finally {
-      life.saving = false
-      if (life.mounted) setSaving(false)
+      if (mountedRef.current) setSaving(false)
     }
   }
 
   async function retry() {
     setError('')
     try {
-      const next = await RetryDesyncAuto()
-      if (lifeRef.current.mounted) setAutomatic(next)
+      await retryAuto()
     } catch (err: unknown) {
-      if (lifeRef.current.mounted) setError(String(err))
+      if (mountedRef.current) setError(String(err))
     }
   }
 
@@ -113,53 +95,32 @@ export function DesyncSettingsCard({
       const text = await GetDesyncDiagnosticReport()
       if (!(await ClipboardSetText(text)))
         throw new Error(t('desync.copyFailed'))
-      if (lifeRef.current.mounted) setCopied(true)
+      if (mountedRef.current) setCopied(true)
     } catch (err: unknown) {
-      if (lifeRef.current.mounted) setError(String(err))
+      if (mountedRef.current) setError(String(err))
     } finally {
-      if (lifeRef.current.mounted) setCopying(false)
+      if (mountedRef.current) setCopying(false)
     }
   }
 
   const enabled = status?.settings.enabled === true
   const ruleMode = mode.toLowerCase() === 'rule'
   const supported = status?.coreSupported === true
-  const rows = status
-    ? [
-        {
-          key: 'youtube',
-          name: 'YouTube',
-          checked: status.settings.youtube,
-          supported,
-          state: automatic?.youtube,
-          patch: { youtube: !status.settings.youtube },
-        },
-        {
-          key: 'discord',
-          name: 'Discord',
-          checked: status.settings.discord || status.settings.discordUDP,
-          supported: supported && status.platform === 'windows',
-          state: automatic?.discord,
-          patch: {
-            discord: !(status.settings.discord || status.settings.discordUDP),
-            discordUDP:
-              !(status.settings.discord || status.settings.discordUDP) &&
-              status.udpCoreSupported,
-          },
-        },
-      ]
+  const rows = snapshot
+    ? desyncServiceViews(snapshot, { connected, mode, traffic })
     : []
+  const shownError = error || pollError
 
   return (
     <div className="homeCard settingsCardCompact desyncSettingsCard">
-      <h3 className="homeCardTitle">{t('desync.title')}</h3>
-      <div className="settingsToggleRow">
-        <span>{t('desync.enabled')}</span>
+      <div className="desyncHead">
+        <h3 className="homeCardTitle">{t('desync.title')}</h3>
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
           aria-label={t('desync.enabled')}
+          title={t('desync.enabled')}
           className={`settingsSwitch${enabled ? ' on' : ''}`}
           disabled={saving || !status || (!supported && !enabled)}
           onClick={() =>
@@ -180,69 +141,41 @@ export function DesyncSettingsCard({
         <p className="error small">{t('desync.unsupportedCore')}</p>
       ) : null}
       {status ? (
-        rows.map((row) => {
-          const phase =
-            !enabled || !row.checked
-              ? 'disabled'
-              : !connected
-                ? 'connect'
-                : !ruleMode
-                  ? 'rule'
-                  : row.state?.phase || 'queued'
-          return (
-            <div key={row.key}>
-              <label className="settingsToggleRow">
-                <span>{row.name}</span>
-                <input
-                  type="checkbox"
-                  checked={row.checked}
-                  disabled={saving || (!row.supported && !row.checked)}
-                  onChange={() => void save(row.patch)}
-                />
-              </label>
-              {enabled && row.checked ? (
-                <p
-                  className={`small ${phase === 'failed' ? 'error' : 'muted'}`}
-                  role="status"
-                >
-                  {t(`desync.phase.${phase}`, {
-                    attempt: row.state?.attempt || 1,
-                    total: row.state?.total || 1,
-                  })}
-                </p>
-              ) : null}
-              {enabled && row.key === 'discord' && row.checked ? (
-                <p className="small muted" role="status">
-                  {t('desync.voice')}:{' '}
-                  {t(
-                    `desync.phase.${
-                      !status.settings.discordUDP
-                        ? 'disabled'
-                        : !connected
-                          ? 'connect'
-                          : !ruleMode
-                            ? 'rule'
-                            : traffic !== 'tun'
-                              ? 'needs_tun'
-                              : automatic?.voice.phase || 'waiting'
-                    }`,
-                    {
-                      attempt: automatic?.voice.attempt || 1,
-                      total: automatic?.voice.total || 1,
-                    },
-                  )}
-                </p>
-              ) : null}
-            </div>
-          )
-        })
+        <ul className="desyncServices">
+          {rows.map((row) => (
+            <li key={row.key} className="desyncService" data-service={row.key}>
+              <span className="desyncServiceName">{row.name}</span>
+              <div className="desyncServiceStatus">
+                <DesyncStatusChip view={row.status} />
+                {row.voice ? (
+                  <DesyncStatusChip
+                    view={row.voice}
+                    prefix={t('desync.voice')}
+                    sub
+                  />
+                ) : null}
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={row.checked}
+                aria-label={row.name}
+                className={`settingsSwitch${row.checked ? ' on' : ''}`}
+                disabled={saving || (!row.supported && !row.checked)}
+                onClick={() => void save(row.patch)}
+              >
+                <span className="settingsSwitchKnob" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="small muted">{t('desync.loading')}</p>
       )}
-      <div className="row">
+      <div className="desyncActions">
         <button
           type="button"
-          className="btn"
+          className="btn primary"
           disabled={!enabled || !connected || !ruleMode || saving}
           onClick={() => void retry()}
         >
@@ -250,7 +183,7 @@ export function DesyncSettingsCard({
         </button>
         <button
           type="button"
-          className="btn ghost"
+          className="linkBtn"
           disabled={copying}
           onClick={() => void copyReport()}
         >
@@ -263,9 +196,9 @@ export function DesyncSettingsCard({
           )}
         </button>
       </div>
-      {error ? (
+      {shownError ? (
         <p className="error small" role="alert">
-          {error}
+          {shownError}
         </p>
       ) : null}
     </div>

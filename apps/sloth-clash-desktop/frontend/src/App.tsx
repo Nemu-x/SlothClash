@@ -61,6 +61,7 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
+import { useDesyncStatus } from './hooks/queries/useDesyncStatus'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
 import { useUpdateState } from './hooks/queries/useUpdateState'
@@ -794,6 +795,15 @@ function App() {
     }
   }
 
+  // Desync summary for Home: same shared poll as the Settings card, active
+  // only while Home is shown (the card keeps it alive on Settings).
+  const { snapshot: desyncSnapshot } = useDesyncStatus({
+    connected: state?.connection?.status === 'connected',
+    mode: String(state?.mode?.current ?? ''),
+    traffic: String(state?.traffic ?? ''),
+    enabled: screen === 'home',
+  })
+
   // Home screen derivations (status label, active node, tooltips …).
   const homeVm = useHomeViewModel({
     state,
@@ -801,6 +811,7 @@ function App() {
     optimisticMode,
     optimisticTraffic,
     updateSnap,
+    desync: desyncSnapshot,
   })
   const { hasAnyProfile, hasActiveProfile, activeProfile, displayMode } = homeVm
 
@@ -1177,6 +1188,7 @@ function App() {
               onSwitchTraffic={(m) => switchTraffic(m)}
               corpConnected={corpVpnEnabled && corpConnected}
               onOpenCorp={() => setScreen('corp')}
+              onOpenDesync={() => setScreen('settings')}
               onConnectClick={connectAction}
               onInstallService={() => void installService()}
               onRefreshService={() =>

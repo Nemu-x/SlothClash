@@ -5,6 +5,7 @@ import { CopyTunDiagnostics } from '../api/diagnostics'
 import type { main } from '../api/models'
 import { FlagMark } from '../components/FlagMark'
 import type { HomeViewModel } from '../hooks/useHomeViewModel'
+import type { DesyncTone } from '../utils/desyncStatus'
 import { formatSpeedKbps } from '../utils/format'
 import {
   decodeSubscriptionAnnouncementDisplay,
@@ -40,6 +41,14 @@ function SubscriptionAnnouncement({ text }: { text: string }) {
 
 export type HomeUpdateSnap = { hasUpdate?: boolean }
 
+/** Home Desync chip: one glyph per tone (the full status is in the tooltip). */
+const DESYNC_MARK: Record<DesyncTone, string> = {
+  ok: '✓',
+  pending: '…',
+  problem: '!',
+  off: '–',
+}
+
 export function HomePage({
   state,
   vm,
@@ -63,6 +72,7 @@ export function HomePage({
   onSwitchTraffic,
   corpConnected,
   onOpenCorp,
+  onOpenDesync,
   onConnectClick,
   onInstallService,
   onRefreshService,
@@ -97,6 +107,8 @@ export function HomePage({
   // is connected; nothing at all otherwise.
   corpConnected?: boolean
   onOpenCorp?: () => void
+  // Desync chip (shown only while Desync is on) opens Settings.
+  onOpenDesync?: () => void
   onConnectClick: () => void
   onInstallService: () => void
   onRefreshService: () => void
@@ -119,6 +131,7 @@ export function HomePage({
     nodePickerGroup,
     activeNode,
     activeNodeVisual,
+    desyncChip,
   } = vm
   const [diagCopied, setDiagCopied] = useState(false)
   const onCopyDiagnostics = async () => {
@@ -200,6 +213,35 @@ export function HomePage({
             >
               <span className="homeCorpDot" aria-hidden />
               {t('corp.homeIndicator')}
+            </button>
+          ) : null}
+          {desyncChip ? (
+            <button
+              type="button"
+              className="homeDesyncChip"
+              onClick={() => onOpenDesync?.()}
+              title={desyncChip.tooltip}
+              aria-label={`${t('desync.homeChipAria')}: ${desyncChip.tooltip.split('\n').join('; ')}`}
+            >
+              <span className="homeDesyncChipLabel">{t('desync.title')}:</span>
+              {desyncChip.services.map((s, i) => (
+                <span key={s.key} className="homeDesyncChipItem">
+                  {i > 0 ? (
+                    <span className="homeDesyncChipSep" aria-hidden>
+                      ·
+                    </span>
+                  ) : null}
+                  <span className="homeDesyncChipService" data-tone={s.tone}>
+                    {s.name}
+                    <span className="homeDesyncChipMark" aria-hidden>
+                      {DESYNC_MARK[s.tone]}
+                    </span>
+                  </span>
+                </span>
+              ))}
+              <span className="homeDesyncChipArrow" aria-hidden>
+                ›
+              </span>
             </button>
           ) : null}
         </div>

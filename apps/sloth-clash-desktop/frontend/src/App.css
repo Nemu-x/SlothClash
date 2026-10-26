@@ -25,6 +25,7 @@
 @import "./styles/brand-debug.css";
 @import "./styles/operator.css";
 @import "./styles/settings-controls.css";
+@import "./styles/desync.css";
 @import "./styles/devices.css";
 @import "./styles/install-config.css";
 @import "./styles/connections.css";

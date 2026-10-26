@@ -200,6 +200,10 @@ func readDesyncVoiceActivity(ctx context.Context, endpoint, secret, selected str
 	return all, nil
 }
 
+// desyncVoiceTick is the voice observation interval; a variable so tests can
+// shorten it.
+var desyncVoiceTick = 4 * time.Second
+
 // noReserve (Desync-only profile): a PASS selection is left by applying the
 // first candidate instead of being watched as a reserve, and a failed search
 // reports no_strategy instead of trying the subscription.
@@ -211,7 +215,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 	// keeps saying so until traffic recovers or another candidate is selected.
 	noStrategy := ""
 	var retryAt, graceUntil time.Time
-	ticker := time.NewTicker(4 * time.Second)
+	ticker := time.NewTicker(desyncVoiceTick)
 	defer ticker.Stop()
 	for {
 		one, cancel := context.WithTimeout(ctx, 5*time.Second)

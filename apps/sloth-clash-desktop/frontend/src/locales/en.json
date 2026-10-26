@@ -756,6 +756,7 @@
       "profile_failed": "Subscription reserve unavailable · retrying",
       "queued": "Waiting for a check"
     },
-    "copyFailed": "Could not copy diagnostics"
+    "copyFailed": "Could not copy diagnostics",
+    "homeChipAria": "Desync status · open settings"
   }
 }

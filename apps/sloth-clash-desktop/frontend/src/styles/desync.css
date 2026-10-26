@@ -1,0 +1,164 @@
+/* ── Desync: Settings card (service rows) + Home summary chip ───── */
+
+/* Tone → color, tokens only so both themes follow. */
+.desyncChip,
+.homeDesyncChipService {
+  --desync-tone: var(--text-muted);
+}
+.desyncChip[data-tone="ok"],
+.homeDesyncChipService[data-tone="ok"] {
+  --desync-tone: var(--ok);
+}
+.desyncChip[data-tone="pending"],
+.homeDesyncChipService[data-tone="pending"] {
+  --desync-tone: var(--warn);
+}
+.desyncChip[data-tone="problem"],
+.homeDesyncChipService[data-tone="problem"] {
+  --desync-tone: var(--danger);
+}
+
+/* Header: card title with the master switch on the same line. */
+.desyncSettingsCard .desyncHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.desyncSettingsCard .desyncHead .homeCardTitle {
+  margin: 0;
+}
+
+/* Same fixed name column on every row so chips and switches line up. */
+.desyncSettingsCard .desyncServices {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.desyncSettingsCard .desyncService {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: start;
+}
+.desyncSettingsCard .desyncServiceName {
+  font-size: var(--font-size-sm);
+  line-height: 22px;
+  color: var(--text);
+}
+.desyncSettingsCard .desyncServiceStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.desyncSettingsCard .desyncService .settingsSwitch {
+  align-self: start;
+}
+
+.desyncChip {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  /* First line sits on the 22px row line (name + switch); wrapped lines stay
+     tight. */
+  padding-top: 4px;
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+.desyncChip[data-tone="ok"] {
+  color: var(--text);
+}
+.desyncChip[data-tone="problem"] {
+  color: var(--danger);
+}
+.desyncChipSub {
+  padding-top: 0;
+}
+.desyncChipDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.25em;
+  border-radius: 50%;
+  background: var(--desync-tone);
+}
+.desyncChipText {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* Actions: primary check, quiet link for diagnostics. */
+.desyncSettingsCard .desyncActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+.desyncSettingsCard .linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.desyncSettingsCard .linkBtn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ── Home: compact summary, same footprint as the corp-VPN pill ── */
+.homeDesyncChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 10px;
+  margin-top: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--panel-deep);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.homeCorpPill + .homeDesyncChip {
+  margin-left: var(--space-2);
+}
+.homeDesyncChip:hover {
+  border-color: var(--accent-muted);
+}
+.homeDesyncChipLabel {
+  color: var(--text-muted);
+}
+.homeDesyncChipItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.homeDesyncChipSep,
+.homeDesyncChipArrow {
+  color: var(--text-muted);
+}
+.homeDesyncChipService {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.homeDesyncChipMark {
+  color: var(--desync-tone);
+  font-weight: var(--weight-semibold);
+}

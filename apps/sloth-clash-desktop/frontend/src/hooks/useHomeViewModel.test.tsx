@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import {
+  desyncAuto,
+  desyncService,
+  desyncSnapshot,
+  desyncStatus,
+} from '../test/desyncFixtures'
 import { renderHookWithProviders } from '../test/render'
 
 import { useHomeViewModel } from './useHomeViewModel'
@@ -222,5 +228,97 @@ describe('useHomeViewModel: update tooltip', () => {
       vm({ updateSnap: { hasUpdate: false, latestVersion: '1.0.0' } })
         .homeUpdateTooltip,
     ).toBe('')
+  })
+})
+
+describe('useHomeViewModel: Desync chip', () => {
+  const rule = (extra = {}) =>
+    connected({}, { mode: { current: 'rule' }, traffic: 'tun', ...extra })
+
+  it('is hidden without a snapshot, with Desync off, or with no service on', () => {
+    expect(vm({ state: rule() }).desyncChip).toBeNull()
+    expect(
+      vm({
+        state: rule(),
+        desync: desyncSnapshot(desyncStatus({ settings: { enabled: false } })),
+      }).desyncChip,
+    ).toBeNull()
+    expect(
+      vm({
+        state: rule(),
+        desync: desyncSnapshot(
+          desyncStatus({
+            settings: { youtube: false, discord: false, discordUDP: false },
+          }),
+        ),
+      }).desyncChip,
+    ).toBeNull()
+  })
+
+  it('lists enabled services with their tone and the full status as tooltip', () => {
+    const chip = vm({
+      state: rule(),
+      desync: desyncSnapshot(
+        desyncStatus(),
+        desyncAuto({
+          youtube: desyncService('ready'),
+          discord: desyncService('testing', { attempt: 1, total: 3 }),
+        }),
+      ),
+    }).desyncChip
+    expect(chip?.services).toEqual([
+      { key: 'youtube', name: 'YouTube', tone: 'ok' },
+      { key: 'discord', name: 'Discord', tone: 'pending' },
+    ])
+    expect(chip?.tooltip).toBe(
+      [
+        'YouTube: HTTPS available · automatic',
+        'Discord: Finding a strategy · 1/3',
+        'Discord voice: UDP exchange detected',
+      ].join('\n'),
+    )
+  })
+
+  it('skips a service that is switched off', () => {
+    const chip = vm({
+      state: rule(),
+      desync: desyncSnapshot(desyncStatus({ settings: { youtube: false } })),
+    }).desyncChip
+    expect(chip?.services.map((s) => s.key)).toEqual(['discord'])
+  })
+
+  it('a failing voice line raises Discord to a problem', () => {
+    const chip = vm({
+      state: rule(),
+      desync: desyncSnapshot(
+        desyncStatus(),
+        desyncAuto({ voice: desyncService('interrupted') }),
+      ),
+    }).desyncChip
+    expect(chip?.services[1]).toMatchObject({ key: 'discord', tone: 'problem' })
+  })
+
+  it('voice needing TUN does not mark a working Discord as a problem', () => {
+    const chip = vm({
+      state: rule({ traffic: 'proxy' }),
+      desync: desyncSnapshot(),
+    }).desyncChip
+    expect(chip?.services[1]).toMatchObject({ key: 'discord', tone: 'ok' })
+    expect(chip?.tooltip).toContain('Discord voice: Enable TUN for voice')
+  })
+
+  it('gates on connection and Rule mode like the Settings card', () => {
+    const off = vm({
+      state: { ...rule(), connection: { status: 'disconnected' } },
+      desync: desyncSnapshot(),
+    }).desyncChip
+    expect(off?.services.map((s) => s.tone)).toEqual(['off', 'off'])
+    expect(off?.tooltip).toContain('YouTube: Connect on Home')
+
+    const global = vm({
+      state: rule({ mode: { current: 'global' } }),
+      desync: desyncSnapshot(),
+    }).desyncChip
+    expect(global?.tooltip).toContain('YouTube: Select Rule mode')
   })
 })

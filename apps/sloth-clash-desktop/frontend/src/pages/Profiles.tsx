@@ -26,17 +26,20 @@ export function ProfilesPage({
   onActivate,
   onRefresh,
   onContextMenu,
+  onOpenDesync,
 }: {
   profiles: any[]
   activeProfileId: string
   refreshBusyId: string | null
-  /** Desync switched on (Settings); undefined while not known yet. */
+  /** Desync switched on; undefined while not known yet. */
   desyncEnabled?: boolean
   error: string | null
   onImport: () => void
   onActivate: (id: string) => void
   onRefresh: (id: string) => void
   onContextMenu: (target: ProfileMenuTarget) => void
+  /** Opens the Desync modal (from a Desync-only profile card). */
+  onOpenDesync?: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -186,6 +189,23 @@ export function ProfilesPage({
                           : t('ui.profiles.localNoUrl'))}
                   </span>
                   {ago ? <span className="profileUpdated">{ago}</span> : null}
+                  {desyncOnly && onOpenDesync ? (
+                    <button
+                      type="button"
+                      className="linkBtn profileDesyncLink"
+                      aria-label={t('ui.profiles.desyncOnly.configureAria')}
+                      title={t('ui.profiles.desyncOnly.configureAria')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onOpenDesync()
+                      }}
+                      // The card activates on Enter / Space: keep those here.
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {t('ui.profiles.desyncOnly.configure')}
+                      <span aria-hidden> ›</span>
+                    </button>
+                  ) : null}
                 </div>
                 {trafficPair ? (
                   <div

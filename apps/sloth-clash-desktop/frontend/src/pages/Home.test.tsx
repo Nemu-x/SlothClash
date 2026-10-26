@@ -121,7 +121,7 @@ describe('Home Desync chip', () => {
       'Discord: Desync and reserve unavailable · retrying automatically',
     )
     expect(
-      screen.getByRole('button', { name: /Desync status · open settings/ }),
+      screen.getByRole('button', { name: /Desync status · open Desync/ }),
     ).toBe(el)
   })
 

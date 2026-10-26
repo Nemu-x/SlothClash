@@ -1,4 +1,4 @@
-/* ── Desync: Settings card (service rows) + Home summary chip ───── */
+/* ── Desync: modal (panel rows), Settings summary, Home chip ───── */
 
 /* Tone → color, tokens only so both themes follow. */
 .desyncChip,
@@ -18,19 +18,93 @@
   --desync-tone: var(--danger);
 }
 
-/* Header: card title with the master switch on the same line. */
-.desyncSettingsCard .desyncHead {
+/* ── Modal frame: fixed header and footer, the body scrolls ── */
+.desyncModal {
+  width: min(560px, 100%);
+  max-height: min(calc(88vh / var(--ui-zoom, 1)), 760px);
+  display: flex;
+  flex-direction: column;
+}
+.desyncModal:focus {
+  outline: none;
+}
+.desyncModalHead {
+  flex: 0 0 auto;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.desyncModalHead .modalTitle {
+  margin: 0;
+}
+.desyncModalLead {
+  margin: var(--space-1) 0 0;
+  max-width: 52ch;
+}
+
+.desyncPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.desyncPanelBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the scrollbar without shifting the rows when it appears. */
+  margin-right: calc(-1 * var(--space-2));
+  padding-right: var(--space-2);
+  scrollbar-gutter: stable;
+}
+.desyncPanelError {
+  flex: 0 0 auto;
+  margin: var(--space-3) 0 0;
+}
+.desyncPanel .desyncPanelFooter {
+  flex: 0 0 auto;
+  margin-top: var(--space-3);
+}
+.desyncFooterNote {
+  color: var(--text-muted);
+}
+
+/* Master switch: the first row, a touch stronger than the service rows. */
+.desyncPanel .desyncMaster {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--hairline);
 }
-.desyncSettingsCard .desyncHead .homeCardTitle {
+.desyncPanel .desyncMasterLabel {
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+.desyncPanel .desyncMaster + .error {
+  margin: var(--space-2) 0 0;
+}
+
+/* Sections: a small title, then rows; hairlines between sections. */
+.desyncPanel .desyncSection {
+  padding: var(--space-3) 0;
+}
+.desyncPanel .desyncSection + .desyncSection {
+  border-top: 1px solid var(--hairline);
+}
+.desyncPanel .desyncSectionTitle {
   margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+.desyncPanel .desyncLoading {
+  margin: var(--space-3) 0;
 }
 
 /* Same fixed name column on every row so chips and switches line up. */
-.desyncSettingsCard .desyncServices {
+.desyncPanel .desyncServices {
   list-style: none;
   margin: var(--space-2) 0 0;
   padding: 0;
@@ -38,25 +112,31 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.desyncSettingsCard .desyncService {
+.desyncPanel .desyncService {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) auto;
   column-gap: var(--space-3);
   align-items: start;
 }
-.desyncSettingsCard .desyncServiceName {
+.desyncPanel .desyncServiceName {
   font-size: var(--font-size-sm);
   line-height: 22px;
   color: var(--text);
 }
-.desyncSettingsCard .desyncServiceStatus {
+.desyncPanel .desyncServiceStatus {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
-.desyncSettingsCard .desyncService .settingsSwitch {
+.desyncPanel .desyncService .settingsSwitch {
   align-self: start;
+}
+/* Onboarding: what the service covers, in place of the live status. */
+.desyncPanel .desyncServiceHint {
+  font-size: var(--font-size-xs);
+  line-height: 22px;
+  color: var(--text-muted);
 }
 
 .desyncChip {
@@ -95,40 +175,29 @@
 
 /* Custom domains: same row vocabulary, a wider name column for domains and
    a remove control beside the switch. */
-.desyncSettingsCard .desyncCustom {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--hairline);
-}
-.desyncSettingsCard .desyncCustomTitle {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-}
-.desyncSettingsCard .desyncCustomHint {
+.desyncPanel .desyncCustomHint {
   margin: 2px 0 0;
 }
-.desyncSettingsCard .desyncCustomRow {
+.desyncPanel .desyncCustomRow {
   grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) auto;
 }
-.desyncSettingsCard .desyncCustomDomain {
+.desyncPanel .desyncCustomDomain {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.desyncSettingsCard .desyncCustomNote {
+.desyncPanel .desyncCustomNote {
   font-size: var(--font-size-xs);
   line-height: var(--leading-tight);
   color: var(--text-muted);
   padding-left: 13px; /* under the chip text, past the dot */
 }
-.desyncSettingsCard .desyncCustomControls {
+.desyncPanel .desyncCustomControls {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.desyncSettingsCard .desyncCustomRemove {
+.desyncPanel .desyncCustomRemove {
   width: 22px;
   height: 22px;
   padding: 0;
@@ -141,51 +210,40 @@
   line-height: 1;
   cursor: pointer;
 }
-.desyncSettingsCard .desyncCustomRemove:hover:not(:disabled) {
+.desyncPanel .desyncCustomRemove:hover:not(:disabled) {
   color: var(--text);
   background: var(--panel-deep);
 }
-.desyncSettingsCard .desyncCustomRemove:focus-visible {
+.desyncPanel .desyncCustomRemove:focus-visible {
   outline: 2px solid var(--accent-muted);
   outline-offset: 1px;
 }
-.desyncSettingsCard .desyncCustomRemove:disabled {
+.desyncPanel .desyncCustomRemove:disabled {
   cursor: default;
   opacity: 0.5;
 }
-.desyncSettingsCard .desyncCustomAdd {
+.desyncPanel .desyncCustomAdd {
   display: flex;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
 }
-.desyncSettingsCard .desyncCustomAdd .input {
+.desyncPanel .desyncCustomAdd .input {
   flex: 1 1 auto;
   min-width: 0;
 }
+.desyncPanel .desyncCustom .error,
+.desyncPanel .desyncCustom .desyncCustomAdd + .small {
+  margin: var(--space-2) 0 0;
+}
 
-/* Actions: primary check, quiet link for diagnostics. */
-.desyncSettingsCard .desyncActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  margin-top: var(--space-3);
-}
-.desyncSettingsCard .linkBtn {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--accent);
-  font: inherit;
+/* Diagnostics: a quiet link on the footer's left. */
+.desyncPanel .linkBtn {
   font-size: var(--font-size-xs);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
-.desyncSettingsCard .linkBtn:disabled {
-  color: var(--text-muted);
-  cursor: default;
+
+/* ── Settings: summary card (the controls live in the modal) ── */
+.desyncSummaryCard .desyncSummaryState[data-on="true"] {
+  color: var(--ok);
 }
 
 /* ── Home: compact summary, same footprint as the corp-VPN pill ── */

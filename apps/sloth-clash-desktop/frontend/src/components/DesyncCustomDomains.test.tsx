@@ -10,7 +10,7 @@ import { desyncAuto, desyncService, desyncStatus } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
 
-import { DesyncSettingsCard } from './DesyncSettingsCard'
+import { DesyncPanel } from './DesyncPanel'
 
 const CONNECTED = { connected: true, mode: 'rule', traffic: 'tun' }
 const ORG: DesyncCustomEntry = {
@@ -33,7 +33,7 @@ function stubBackend(
 }
 
 async function renderCard() {
-  renderWithProviders(<DesyncSettingsCard {...CONNECTED} />)
+  renderWithProviders(<DesyncPanel {...CONNECTED} />)
   await screen.findByRole('switch', { name: 'YouTube' })
 }
 
@@ -51,7 +51,7 @@ function chip(id: string) {
   return el
 }
 
-describe('DesyncSettingsCard: custom domains', () => {
+describe('DesyncPanel: custom domains', () => {
   it('adds a domain through the backend and clears the field', async () => {
     stubBackend()
     const add = wailsApp.stub('AddDesyncCustomDomain', () =>

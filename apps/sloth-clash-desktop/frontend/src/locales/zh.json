@@ -356,7 +356,9 @@
       "desyncOnlyRuleOnly": "仅 Desync 配置只能使用规则模式：Desync 路由本身就是规则，全局模式没有可用的服务器",
       "desyncOnlyRuleHint": "仅规则",
       "proxyServers": "代理服务器",
-      "desyncOnlyNoServers": "无 · 仅 Desync 路由"
+      "desyncOnlyNoServers": "无 · 仅 Desync 路由",
+      "desyncAltQuestion": "没有 VPN 订阅？",
+      "desyncAltLink": "无需 VPN 解锁 YouTube 和 Discord"
     },
     "profiles": {
       "title": "配置",
@@ -400,10 +402,11 @@
         "namePlaceholderPaste": "留空 = “本地配置”",
         "pasteFromClipboard": "从剪贴板粘贴",
         "loadFromFile": "从文件加载…",
-        "tabDesync": "仅 Desync（无 VPN）",
-        "desyncBlurb": "适用于没有 VPN 订阅的情况。YouTube、Discord 和自定义域名通过 Desync 访问，其余流量直连。在“设置 → Desync”中选择服务。",
-        "namePlaceholderDesync": "留空 = “Desync only”",
-        "create": "创建"
+        "sourceAria": "导入来源",
+        "helperUrl": "服务商提供的 https:// 链接。",
+        "helperPaste": "Clash / mihomo YAML 配置，或分享链接（每行一条）。",
+        "desyncAltQuestion": "没有 VPN 订阅？",
+        "desyncAltLink": "仅 Desync（无 VPN）"
       },
       "editInfo": {
         "title": "编辑配置信息",

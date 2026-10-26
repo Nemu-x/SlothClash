@@ -93,20 +93,49 @@
   gap: 10px;
 }
 
-.importModeTabs {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: var(--space-1) 0 var(--space-4);
-  padding: var(--space-1);
-  border-radius: var(--radius-pill);
-  background: rgba(0, 0, 0, 0.22);
+/* Import dialog: title, blurb, the source switch (the Home segmented
+   control), fields with a helper line, actions, then the quiet Desync-only
+   line under a hairline. */
+.importModal .importBlurb {
+  margin: 0;
 }
 
-.importModeTabs .btn {
-  padding: var(--space-1) var(--space-3);
+.importModeSwitch {
+  max-width: 320px;
+  margin: var(--space-4) 0 var(--space-1);
+}
+
+.importModeSwitch .segmentInsetBtn {
+  padding: 7px 10px;
   font-size: var(--font-size-sm);
-  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.importModeSwitch .segmentInsetBtn:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 1px;
+}
+
+.importHelper {
+  margin: 0;
+  min-height: calc(1em * var(--leading-tight));
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+
+.importModal .importFooter {
+  margin-top: var(--space-5);
+  padding-top: 0;
+  border-top: 0;
+}
+
+.importModal .importAlt {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
 }
 
 .importTextarea {

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 
 import {
   ConfirmInstallConfigFromLink,
-  CreateDesyncOnlyProfile,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,
@@ -59,7 +58,7 @@ export function ProfileModalsHost({
   setBanner,
   pushToast,
   onImported,
-  onDesyncOnlyActivated,
+  onStartDesyncOnly,
 }: {
   modals: ProfileModals
   profiles: any[] | undefined
@@ -74,8 +73,11 @@ export function ProfileModalsHost({
   pushToast: (toast: Omit<Toast, 'id'>) => number
   /** A profile was imported from the import dialog. */
   onImported: () => void
-  /** A created Desync-only profile became the active one (the first profile). */
-  onDesyncOnlyActivated?: () => void
+  /**
+   * "No VPN subscription?" in the import dialog: it closes, and the
+   * Desync-only onboarding (the Desync modal) takes over.
+   */
+  onStartDesyncOnly?: () => void
 }) {
   const { t } = useTranslation()
   const [importName, setImportName] = useState('')
@@ -236,21 +238,13 @@ export function ProfileModalsHost({
     setImportBusy(true)
     try {
       const name = importName.trim()
-      let desyncOnlyActive = false
-      if (importMode === 'desync' && !hidePaste) {
-        const st = await CreateDesyncOnlyProfile(name)
-        const activeId = st?.profile?.activeProfileId
-        desyncOnlyActive = isDesyncOnlyProfile(
-          st?.profile?.profiles?.find((x: any) => x.id === activeId),
-        )
-      } else if (importMode === 'paste' && !hidePaste) {
+      if (importMode === 'paste' && !hidePaste) {
         await ImportProfileFromText(name, importContent.trim())
       } else {
         await ImportProfileFromURL(name, importUrl.trim())
       }
       await refresh()
       onImported()
-      if (desyncOnlyActive) onDesyncOnlyActivated?.()
       setImportUrl('')
       setImportName('')
       setImportContent('')
@@ -299,6 +293,14 @@ export function ProfileModalsHost({
         onPasteFromClipboard={() => pasteFromClipboard()}
         onClose={closeImportModal}
         onSubmit={() => performImportAndClose()}
+        onStartDesyncOnly={
+          onStartDesyncOnly
+            ? () => {
+                closeImportModal()
+                onStartDesyncOnly()
+              }
+            : undefined
+        }
       />
 
       <ProfileMergeModal

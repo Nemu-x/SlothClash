@@ -267,23 +267,22 @@ func TestDesyncCustomWorkerWaitsForBuiltinsAndServesOneEntryAtATime(t *testing.T
 func TestDesyncReportHashesCustomDomains(t *testing.T) {
 	core := newCustomFakeCore(t, func(name, _ string) bool { return name == "DIRECT" })
 	a, network := customTestApp(t, core, customEntry)
+	secret := strings.Repeat("ab", 32)
+	withDesyncReportKey(t, secret)
 	a.calibrateDesyncCustom(context.Background(), 1, network, a.core.listen, "", customEntry, &desyncCustomPlan{})
 	a.state.Connection.Status = "disconnected"
 	text := a.GetDesyncDiagnosticReport()
 	if strings.Contains(text, "example.org") {
 		t.Fatalf("custom domain leaked into the report: %s", text)
 	}
-	sum := sha256.Sum256([]byte(network + "example.org"))
-	digest := hex.EncodeToString(sum[:6])
-	var report struct {
-		Custom    []map[string]any `json:"customDomains"`
-		Automatic DesyncAutoStatus `json:"automatic"`
+	if strings.Contains(strings.ToLower(text), secret) {
+		t.Fatalf("report secret leaked into the report: %s", text)
 	}
-	if err := json.Unmarshal([]byte(text), &report); err != nil {
-		t.Fatal(err)
-	}
+	key, _ := hex.DecodeString(secret)
+	digest := desyncReportDigest(key, "example.org")
+	report := parseDesyncReport(t, text)
 	if len(report.Custom) != 1 || report.Custom[0]["domain"] != digest || report.Custom[0]["id"] != customEntry.ID {
-		t.Fatalf("custom entries: %v", report.Custom)
+		t.Fatalf("custom entries: %v (want digest %s)", report.Custom, digest)
 	}
 	matched := 0
 	for _, attempt := range report.Automatic.Attempts {
@@ -294,4 +293,67 @@ func TestDesyncReportHashesCustomDomains(t *testing.T) {
 	if matched == 0 || report.Automatic.Custom[customEntry.ID].Phase != "not_needed" {
 		t.Fatalf("attempts do not match the entry digest: %+v", report.Automatic)
 	}
+	// Stable across reports on one install.
+	if again := parseDesyncReport(t, a.GetDesyncDiagnosticReport()); again.Custom[0]["domain"] != digest {
+		t.Fatalf("digest changed between reports: %v", again.Custom)
+	}
+	// Nothing in the report reproduces the digest: neither the old network
+	// salt nor any value the report carries works as a key or salt.
+	for _, v := range desyncReportStrings(t, text) {
+		salted := sha256.Sum256([]byte(v + "example.org"))
+		if hex.EncodeToString(salted[:6]) == digest || desyncReportDigest([]byte(v), "example.org") == digest {
+			t.Fatalf("digest reproducible from report value %q", v)
+		}
+	}
+	if salted := sha256.Sum256([]byte(network + "example.org")); hex.EncodeToString(salted[:6]) == digest {
+		t.Fatal("digest reproducible from the network key")
+	}
+	// Another install (another secret) yields another digest.
+	withDesyncReportKey(t, strings.Repeat("cd", 32))
+	if other := parseDesyncReport(t, a.GetDesyncDiagnosticReport()); other.Custom[0]["domain"] == digest {
+		t.Fatalf("a different secret produced the same digest %s", digest)
+	}
+}
+
+type parsedDesyncReport struct {
+	Custom    []map[string]any `json:"customDomains"`
+	Automatic DesyncAutoStatus `json:"automatic"`
+}
+
+func parseDesyncReport(t *testing.T, text string) parsedDesyncReport {
+	t.Helper()
+	var report parsedDesyncReport
+	if err := json.Unmarshal([]byte(text), &report); err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+// desyncReportStrings returns every string (and every object key) in the
+// report, plus "" (an empty salt / key).
+func desyncReportStrings(t *testing.T, text string) []string {
+	t.Helper()
+	var root any
+	if err := json.Unmarshal([]byte(text), &root); err != nil {
+		t.Fatal(err)
+	}
+	out := []string{""}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			out = append(out, x)
+		case []any:
+			for _, e := range x {
+				walk(e)
+			}
+		case map[string]any:
+			for k, e := range x {
+				out = append(out, k)
+				walk(e)
+			}
+		}
+	}
+	walk(root)
+	return out
 }

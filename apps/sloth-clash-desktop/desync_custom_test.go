@@ -4,9 +4,50 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	"SlothClashDesktop/internal/desync"
 )
+
+func TestDesyncSaveSelectionPrunesRemovedCustomWinners(t *testing.T) {
+	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+		{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
+		{ID: "5a6b7c8d", Domain: "off.example.net", Enabled: false},
+	}})
+	stale := map[string]string{"example.org": "r3", "off.example.net": "split"}
+	for i := range 40 {
+		stale[fmt.Sprintf("gone%d.example.com", i)] = "r1"
+	}
+	prefsMu.Lock()
+	prefsCurrent.DesyncCache = []DesyncNetworkCache{
+		{Network: "net-a", YouTube: "r2", Custom: stale},
+		{Network: "net-b", Custom: map[string]string{"gone0.example.com": "r1"}},
+	}
+	prefsMu.Unlock()
+
+	saveDesyncSelection("net-a", desync.CustomService("example.org"), "r4")
+	var a, b DesyncNetworkCache
+	for _, c := range currentDesktopPrefs().DesyncCache {
+		switch c.Network {
+		case "net-a":
+			a = c
+		case "net-b":
+			b = c
+		}
+	}
+	// Removed entries' winners are dropped; a switched-off entry keeps its
+	// winner (it is still in the list), and the built-in winner stays.
+	want := map[string]string{"example.org": "r4", "off.example.net": "split"}
+	if !reflect.DeepEqual(a.Custom, want) || a.YouTube != "r2" {
+		t.Fatalf("net-a cache: %+v", a)
+	}
+	// Only the saved network is rewritten.
+	if len(b.Custom) != 1 {
+		t.Fatalf("net-b cache changed: %+v", b)
+	}
+}
 
 func TestDesyncCustomDomainNormalization(t *testing.T) {
 	cases := []struct {
@@ -187,6 +228,29 @@ func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
 	}
 	if status, _ = a.SetDesyncCustomDomainEnabled(id, false); status.Settings.Enabled {
 		t.Fatal("Desync stayed on with nothing selected")
+	}
+}
+
+// withDesyncCoreFeatures pretends the embedded core reports features.
+func withDesyncCoreFeatures(t *testing.T, features ...string) {
+	t.Helper()
+	embeddedCoreFeatures() // settle the once before overriding its value
+	previous := embeddedCoreFeaturesValue
+	embeddedCoreFeaturesValue = features
+	t.Cleanup(func() { embeddedCoreFeaturesValue = previous })
+}
+
+func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
+	withDesyncCoreFeatures(t, "desync")
+	stored := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Enabled: true}}
+	withDesyncPrefs(t, DesyncSettings{DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 1, Custom: stored})
+	// The UI sends the toggles only: no YouTube/Discord and no Custom field.
+	status, err := (&App{}).SetDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4})
+	if err != nil || !status.Settings.Enabled {
+		t.Fatalf("enabling with only stored custom domains failed: %+v %v", status.Settings, err)
+	}
+	if !reflect.DeepEqual(status.Settings.Custom, stored) || !reflect.DeepEqual(currentDesyncSettings().Custom, stored) {
+		t.Fatalf("custom list not kept: status %+v, prefs %+v", status.Settings.Custom, currentDesyncSettings().Custom)
 	}
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -158,6 +157,10 @@ func (c *desyncController) setService(lease uint64, service string, state Desync
 // recordAttempt appends attempt to the session history (stamped and with its
 // target hashed) and returns the stored copy; ok=false for a stale lease.
 func (c *desyncController) recordAttempt(lease uint64, attempt DesyncAutoAttempt) (DesyncAutoAttempt, bool) {
+	if attempt.Target != "" {
+		// Before c.mu: the first use takes prefsMu to create the key.
+		attempt.Target = desyncReportDigest(desyncReportKey(), attempt.Target)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.epoch != lease {
@@ -165,10 +168,6 @@ func (c *desyncController) recordAttempt(lease uint64, attempt DesyncAutoAttempt
 	}
 	attempt.At = time.Now().Unix()
 	attempt.Network = c.status.Network
-	if attempt.Target != "" {
-		sum := sha256.Sum256([]byte(attempt.Network + attempt.Target))
-		attempt.Target = hex.EncodeToString(sum[:6])
-	}
 	history := append(c.status.Attempts, attempt)
 	if len(history) > 128 {
 		history = history[len(history)-128:]
@@ -675,12 +674,12 @@ func (a *App) GetDesyncDiagnosticReport() string {
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
 	report["controllerRevision"] = 5
 	report["desyncOnly"] = status.DesyncOnly
-	// Custom domains appear only hashed, with the same keyed digest as probe
-	// targets (so an entry matches its attempts); the IDs are random.
+	// Custom domains appear only as the install-keyed digest probe targets
+	// use (so an entry matches its attempts); the IDs are random.
+	key := desyncReportKey()
 	custom := []map[string]any{}
 	for _, e := range status.Settings.Custom {
-		sum := sha256.Sum256([]byte(auto.Network + e.Domain))
-		custom = append(custom, map[string]any{"id": e.ID, "domain": hex.EncodeToString(sum[:6]), "enabled": e.Enabled})
+		custom = append(custom, map[string]any{"id": e.ID, "domain": desyncReportDigest(key, e.Domain), "enabled": e.Enabled})
 	}
 	report["customDomains"] = custom
 	if build, ok := debug.ReadBuildInfo(); ok {
@@ -708,7 +707,6 @@ func (a *App) GetDesyncDiagnosticReport() string {
 				if !isDiscordUDPConnection(c) || len(flows) >= 64 {
 					continue
 				}
-				sum := sha256.Sum256([]byte(auto.Network + netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)))
 				route, candidate := "profile", ""
 				for _, name := range c.Chains {
 					if name == desync.DiscordUDPRoute {
@@ -718,7 +716,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 						candidate = strings.TrimPrefix(name, desync.DiscordUDPRoute+"-")
 					}
 				}
-				flows = append(flows, map[string]any{"endpoint": hex.EncodeToString(sum[:6]), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
+				flows = append(flows, map[string]any{"endpoint": desyncReportDigest(key, netipEndpoint(c.Metadata.DestinationIP, c.Metadata.DestinationPort)), "route": route, "candidate": candidate, "upload": c.Upload, "download": c.Download})
 			}
 			report["udpFlows"] = flows
 		}
@@ -727,8 +725,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 			var proxy desyncUDPProxy
 			if autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(group.Now), nil, &proxy) == nil && proxy.UDP != nil {
 				for i := range proxy.UDP.Activity {
-					sum := sha256.Sum256([]byte(auto.Network + proxy.UDP.Activity[i].Endpoint))
-					proxy.UDP.Activity[i].Endpoint = hex.EncodeToString(sum[:6])
+					proxy.UDP.Activity[i].Endpoint = desyncReportDigest(key, proxy.UDP.Activity[i].Endpoint)
 				}
 				report["udp"] = proxy.UDP
 			}

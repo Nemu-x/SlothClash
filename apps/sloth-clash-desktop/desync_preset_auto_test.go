@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"SlothClashDesktop/internal/desync"
 )
@@ -101,6 +102,44 @@ func TestDesyncPresetTargetsFollowOwnership(t *testing.T) {
 	}
 	if got := desyncCustomTargets(customEntry, nil); !reflect.DeepEqual(got, []string{"https://example.org/"}) {
 		t.Fatalf("plain: %v", got)
+	}
+}
+
+// One calibration step gets desyncCustomBudget per probed host; a plain
+// entry (one host) keeps exactly the base budget.
+func TestDesyncCustomStepBudgetScalesWithTargets(t *testing.T) {
+	for targets, want := range map[int]time.Duration{0: desyncCustomBudget, 1: desyncCustomBudget, 3: 3 * desyncCustomBudget, 4: 4 * desyncCustomBudget} {
+		if got := desyncCustomStepBudget(targets); got != want {
+			t.Fatalf("budget(%d) = %v, want %v", targets, got, want)
+		}
+	}
+}
+
+// On a slow network the passing candidate of a preset (2 rounds x page and
+// CDN hosts) takes longer than one plain-entry budget. The step budget scales
+// with the hosts, so it completes instead of being cut off at the deadline
+// and retried forever.
+func TestDesyncPresetSlowPassingCandidateFitsTheBudget(t *testing.T) {
+	const perProbe = 30 * time.Millisecond
+	// A plain budget fits fewer than the 6 probes of the winner (3 hosts x
+	// 2 rounds); three of them fit it with room to spare.
+	withShortCustomTimers(t, 4*perProbe, time.Hour, time.Millisecond)
+	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-split") })
+	core.delay.Store(int64(perProbe))
+	a, network := customTestApp(t, core, presetEntry)
+	if n := len(desyncCustomTargets(presetEntry, enabledDesyncCustom())); n != 3 {
+		t.Fatalf("facebook probes %d hosts, the test assumes 3", n)
+	}
+	plan := &desyncCustomPlan{phase: "queued"}
+	for range 30 {
+		a.calibrateDesyncCustom(context.Background(), 1, network, a.core.listen, "", presetEntry, plan)
+		if plan.phase != "searching" {
+			break
+		}
+	}
+	state := a.GetDesyncAutoStatus().Custom[presetEntry.ID]
+	if plan.phase != "ready" || state.Phase != "ready" || state.Candidate != "split" {
+		t.Fatalf("plan %+v state %+v: the passing candidate never completed within a step", plan, state)
 	}
 }
 

@@ -255,3 +255,83 @@ func TestDesyncTCPNoReserveRetriesQuietly(t *testing.T) {
 		t.Fatalf("selections = %v, want PASS then a strategy", got)
 	}
 }
+
+// Voice, no reserve: a stalled call whose strategy search finds nothing keeps
+// the current candidate (plain UDP is no better), never tries a reserve and
+// reports no_strategy until application traffic recovers.
+func TestDesyncVoiceNoReserveNoStrategyKeepsCandidate(t *testing.T) {
+	tick := desyncVoiceTick
+	desyncVoiceTick = 100 * time.Millisecond
+	t.Cleanup(func() { desyncVoiceTick = tick })
+	prefsMu.Lock()
+	previous := prefsCurrent
+	prefsCurrent.Desync = DesyncSettings{Enabled: true, DiscordUDP: true}
+	prefsCurrent.DesyncCache = nil
+	prefsMu.Unlock()
+	t.Cleanup(func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() })
+
+	selected := desync.DiscordUDPRoute + "-f4"
+	started := time.Now()
+	var healthy atomic.Bool
+	var puts, probes, reserve atomic.Int32
+	var reads atomic.Uint64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut:
+			puts.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/profile-probe"):
+			reserve.Add(1)
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case strings.HasSuffix(r.URL.Path, "/udp-probe"):
+			probes.Add(1)
+			fmt.Fprint(w, `{"sent":12,"received":0,"maxConsecutiveLoss":12,"durationMS":2200}`)
+		case r.URL.Path == "/connections":
+			_ = json.NewEncoder(w).Encode(map[string]any{"connections": []ConnectionItem{monitorConnection("104.29.1.1")}})
+		case r.URL.Path == "/proxies/"+desync.DiscordUDPRoute:
+			fmt.Fprintf(w, `{"type":"Selector","now":%q}`, selected)
+		default:
+			// The candidate's activity: sending, nothing received for 30 s
+			// (stalled), or receiving again once healthy.
+			n := reads.Add(1)
+			now := time.Now().UnixMilli()
+			p := desyncUDPActivity{Endpoint: "104.29.1.1:19330", FirstMS: started.Add(-time.Minute).UnixMilli(), LastTXMS: now, LastRXMS: started.Add(-30 * time.Second).UnixMilli(), TXPackets: 100 + n, RXPackets: 10, TXBytes: 6000, RXBytes: 600, DiscoveryRX: 3}
+			if healthy.Load() {
+				p.LastRXMS, p.RXPackets = now, 10+n
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"desyncUDP": map[string]any{"activity": []desyncUDPActivity{p}}})
+		}
+	}))
+	t.Cleanup(server.Close)
+	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
+	a.desyncCtl.epoch = 1
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.runDesyncVoiceService(ctx, 1, desyncNetworkKey(), a.core.listen, "", true)
+	}()
+	defer func() { cancel(); <-done }()
+
+	// The stall needs 8 s of separated samples before the search.
+	waitPhase(t, "voice no_strategy", 20*time.Second, func() bool { return a.GetDesyncAutoStatus().Voice.Phase == "no_strategy" })
+	state := a.GetDesyncAutoStatus().Voice
+	if state.Candidate != "f4" || state.Route != "desync" || state.Code == "" {
+		t.Fatalf("voice state = %+v, want the kept candidate f4 on the Desync route with a reason", state)
+	}
+	if probes.Load() == 0 {
+		t.Fatal("no strategy search ran")
+	}
+	// The line keeps saying so while the call stays stalled.
+	seen := reads.Load()
+	waitPhase(t, "more observations", 5*time.Second, func() bool { return reads.Load() >= seen+5 })
+	if phase := a.GetDesyncAutoStatus().Voice.Phase; phase != "no_strategy" {
+		t.Fatalf("voice phase %q while still stalled, want no_strategy", phase)
+	}
+	// Traffic recovers: the status follows it again.
+	healthy.Store(true)
+	waitPhase(t, "voice recovery", 5*time.Second, func() bool { return a.GetDesyncAutoStatus().Voice.Phase == "transport" })
+	if puts.Load() != 0 || reserve.Load() != 0 {
+		t.Fatalf("selector writes = %d, reserve probes = %d; want the candidate kept and no reserve", puts.Load(), reserve.Load())
+	}
+}

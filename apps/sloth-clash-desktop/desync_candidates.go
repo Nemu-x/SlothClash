@@ -17,7 +17,8 @@ type DesyncNetworkCache struct {
 	YouTube string `json:"youtube,omitempty"`
 	Discord string `json:"discord,omitempty"`
 	Voice   string `json:"voice,omitempty"`
-	// Custom maps a custom domain to its winner (desync.CacheEntry.Custom).
+	// Custom maps a custom entry key (domain, or preset:<id>) to its winner
+	// (desync.CacheEntry.Custom).
 	Custom  map[string]string `json:"custom,omitempty"`
 	Updated int64             `json:"updated"`
 }
@@ -85,7 +86,7 @@ func saveDesyncSelection(network, service, id string) {
 		// by the entry cap.
 		current := map[string]bool{}
 		for _, e := range sanitizeDesyncCustom(prefsCurrent.Desync.Custom) {
-			current[e.Domain] = true
+			current[e.key()] = true
 		}
 		custom := map[string]string{}
 		for d, winner := range entry.Custom {

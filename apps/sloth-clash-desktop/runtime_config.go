@@ -49,7 +49,7 @@ func runtimeConfigPrefsFrom(p DesktopPrefs) runtimecfg.Prefs {
 func desyncCustomRoutes(entries []DesyncCustomEntry) []runtimecfg.DesyncCustomRoute {
 	var out []runtimecfg.DesyncCustomRoute
 	for _, e := range entries {
-		if e.Enabled {
+		if e.Enabled && e.Preset == "" { // preset entries: not generated yet
 			out = append(out, runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain})
 		}
 	}

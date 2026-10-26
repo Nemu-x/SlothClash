@@ -93,7 +93,15 @@ func (a *App) CreateDesyncOnlyProfile(name string) (AppState, error) {
 		Kind:        profileKindDesyncOnly,
 		LastUpdated: time.Now().Unix(),
 	}
-	a.profiles = append(a.profiles, p)
+	// What the creation changes in memory, restored when it cannot be
+	// persisted: a profile that is not on disk must not stay in the list, or
+	// a retry would add a second one (and a restart would drop the first).
+	profiles, listed := a.profiles, a.state.Profile.Profiles
+	active, mode, group := a.state.Profile.ActiveProfileID, a.state.Mode.Current, a.state.Proxy.ActiveGroup
+	modeBefore, updated := a.modeBeforeDesyncOnly, a.state.UpdatedAt
+	// A fresh slice: appending in place could write into the backing array
+	// `profiles` still shares.
+	a.profiles = append(append(make([]Profile, 0, len(profiles)+1), profiles...), p)
 	a.state.Profile.Profiles = a.profiles
 	if a.state.Profile.ActiveProfileID == "" {
 		a.state.Profile.ActiveProfileID = p.ID
@@ -101,6 +109,9 @@ func (a *App) CreateDesyncOnlyProfile(name string) (AppState, error) {
 	}
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
+		a.profiles, a.state.Profile.Profiles = profiles, listed
+		a.state.Profile.ActiveProfileID, a.state.Mode.Current, a.state.Proxy.ActiveGroup = active, mode, group
+		a.modeBeforeDesyncOnly, a.state.UpdatedAt = modeBefore, updated
 		return a.state, err
 	}
 	return a.state, nil

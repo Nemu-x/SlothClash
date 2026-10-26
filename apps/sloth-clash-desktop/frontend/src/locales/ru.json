@@ -165,7 +165,10 @@
       "hint": "Новые серверы Xray (26.9.8+) требуют ключ ML-KEM, старые (до 25.x) его отбрасывают. В режиме «Авто» ядро пробует один вариант, запоминает, что принимает каждый сервер, и переключается после сбоя. Версию клиента проверяют серверы с minClientVer / maxClientVer; оставьте поле пустым, если провайдер не просит конкретную.",
       "applyHint": "Сохраняется сразу. При активном подключении ядро перезагружает конфиг, и новые соединения используют новую настройку."
     },
-    "coreBuildPatched": "mihomo {{version}} + патчи SlothClash: {{count}}",
+    "coreBuildPatched_one": "mihomo {{version}} + {{count}} патч SlothClash",
+    "coreBuildPatched_few": "mihomo {{version}} + {{count}} патча SlothClash",
+    "coreBuildPatched_many": "mihomo {{version}} + {{count}} патчей SlothClash",
+    "coreBuildPatched_other": "mihomo {{version}} + {{count}} патча SlothClash",
     "coreBuildStock": "mihomo {{version}} (стоковое, без патчей SlothClash)",
     "coreBuildLocal": "mihomo {{version}}, локальная сборка ядра",
     "coreBuildPatches": "Патчи",

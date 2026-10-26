@@ -165,7 +165,7 @@
       "hint": "新版 Xray 服务器（26.9.8+）要求 ML-KEM 密钥交换，旧版（25.x 之前）会丢弃它。自动模式先尝试一种，记住每个服务器接受的方式，失败后切换。设置了 minClientVer / maxClientVer 的服务器会检查客户端版本；除非服务商要求，否则请留空。",
       "applyHint": "立即保存。已连接时内核会重新加载配置，新连接将使用新设置。"
     },
-    "coreBuildPatched": "mihomo {{version}} + {{count}} 个 SlothClash 补丁",
+    "coreBuildPatched_other": "mihomo {{version}} + {{count}} 个 SlothClash 补丁",
     "coreBuildStock": "mihomo {{version}}（原版，未含 SlothClash 补丁）",
     "coreBuildLocal": "mihomo {{version}}，本地构建内核",
     "coreBuildPatches": "补丁",

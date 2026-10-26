@@ -1,16 +1,20 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { DesyncPreset } from '../api/desync'
 import {
   type DesyncSnapshot,
   type DesyncTone,
   desyncCustomTone,
   desyncCustomViews,
+  desyncPresetViews,
   desyncServiceTone,
   desyncServiceViews,
 } from '../utils/desyncStatus'
 import { isDesyncOnlyProfile } from '../utils/profileKind'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from '../utils/proxyNames'
+
+const NO_PRESETS: DesyncPreset[] = []
 
 export type HomeActiveNodeVisual = { iso: string; text: string }
 
@@ -60,6 +64,7 @@ export function useHomeViewModel({
   optimisticTraffic,
   updateSnap,
   desync = null,
+  desyncPresets = NO_PRESETS,
 }: {
   state: any
   connectBusy: boolean
@@ -68,6 +73,8 @@ export function useHomeViewModel({
   updateSnap: any
   /** Shared Desync snapshot (useDesyncStatus), the same one the card shows. */
   desync?: DesyncSnapshot | null
+  /** Desync preset catalog (useDesyncPresets): names the preset items. */
+  desyncPresets?: DesyncPreset[]
 }): HomeViewModel {
   const { t } = useTranslation()
 
@@ -237,8 +244,12 @@ export function useHomeViewModel({
       traffic: trafficCurrent,
     }
     const views = desyncServiceViews(desync, ctx).filter((v) => v.checked)
+    const presets = desyncPresetViews(desync, ctx, desyncPresets).filter(
+      (v) => v.checked,
+    )
     const custom = desyncCustomViews(desync, ctx).filter((v) => v.checked)
-    if (views.length === 0 && custom.length === 0) return null
+    if (views.length === 0 && presets.length === 0 && custom.length === 0)
+      return null
     const phaseText = (v: { phase: string; attempt: number; total: number }) =>
       t(`desync.phase.${v.phase}`, { attempt: v.attempt, total: v.total })
     const lines: string[] = []
@@ -246,12 +257,21 @@ export function useHomeViewModel({
       lines.push(`${v.name}: ${phaseText(v.status)}`)
       if (v.voice) lines.push(`${t('desync.voice')}: ${phaseText(v.voice)}`)
     }
+    for (const v of presets) lines.push(`${v.name}: ${phaseText(v.status)}`)
     for (const v of custom) lines.push(`${v.domain}: ${phaseText(v.status)}`)
     const services: HomeDesyncChip['services'] = views.map((v) => ({
       key: v.key,
       name: v.name,
       tone: desyncServiceTone(v),
     }))
+    // Each preset is named like a service ("Facebook"), in catalog order.
+    for (const v of presets) {
+      services.push({
+        key: `preset:${v.id}`,
+        name: v.name,
+        tone: v.status.tone,
+      })
+    }
     // All custom domains share one item: "Sites 3" with their combined tone.
     if (custom.length > 0) {
       services.push({
@@ -261,7 +281,7 @@ export function useHomeViewModel({
       })
     }
     return { services, tooltip: lines.join('\n') }
-  }, [desync, connectionStatus, modeCurrent, trafficCurrent, t])
+  }, [desync, desyncPresets, connectionStatus, modeCurrent, trafficCurrent, t])
 
   return {
     hasAnyProfile,

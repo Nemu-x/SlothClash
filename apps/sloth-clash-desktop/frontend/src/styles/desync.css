@@ -239,6 +239,82 @@
   margin: var(--space-2) 0 0;
 }
 
+/* Custom domains, two quiet subgroups: "Popular" (presets) above the user's
+   own sites. A muted label, the same rows below it. */
+.desyncPanel .desyncSubgroup + .desyncSubgroup {
+  margin-top: var(--space-2);
+}
+.desyncPanel .desyncSubTitle {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+.desyncPanel .desyncSubTitle + .desyncCustomAdd {
+  margin-top: var(--space-2);
+}
+
+/* Preset rows: name over a one-line domain summary, status, switch; notes
+   (full list, shared domain, replaced entries) span the row underneath. */
+.desyncPanel .desyncPresetRow {
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto;
+  row-gap: 2px;
+}
+.desyncPanel .desyncPresetInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.desyncPanel .desyncPresetDomains {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+.desyncPanel .desyncPresetDomainsText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desyncPanel .desyncPresetMore {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  margin: 0 -2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.desyncPanel .desyncPresetMore:hover {
+  text-decoration: underline;
+}
+.desyncPanel .desyncPresetMore:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 1px;
+}
+.desyncPanel .desyncPresetNote {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.desyncPanel .desyncPresetNote[hidden] {
+  display: none;
+}
+.desyncPanel .desyncPresets .desyncPresetError {
+  margin: var(--space-2) 0 0;
+}
+
 /* Diagnostics: a quiet link on the footer's left. */
 .desyncPanel .linkBtn {
   font-size: var(--font-size-xs);

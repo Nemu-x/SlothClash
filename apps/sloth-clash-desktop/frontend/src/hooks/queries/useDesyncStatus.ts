@@ -18,6 +18,9 @@ import type { DesyncContext, DesyncSnapshot } from '../../utils/desyncStatus'
 
 export const DESYNC_STATUS_KEY = ['desync-status'] as const
 const REFETCH_INTERVAL = 2_500
+// While Desync is off nothing is calibrating; poll just often enough to
+// notice it being enabled elsewhere (Home observes this query too).
+const REFETCH_INTERVAL_DISABLED = 15_000
 
 /**
  * Write bookkeeping per QueryClient. A poll that started before (or runs
@@ -52,7 +55,8 @@ async function fetchSnapshot(qc: QueryClient): Promise<DesyncSnapshot> {
 }
 
 /**
- * Desync status + automatic calibration, polled every 2.5 s while any
+ * Desync status + automatic calibration, polled every 2.5 s (15 s while
+ * Desync is off) while any
  * `enabled` observer is mounted (the Settings card, and App while Home is
  * shown). Re-polls at once when connection / mode / traffic change, since
  * those gate the calibration.
@@ -66,7 +70,12 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     queryKey: DESYNC_STATUS_KEY,
     queryFn: () => fetchSnapshot(qc),
     enabled,
-    refetchInterval: enabled ? REFETCH_INTERVAL : false,
+    refetchInterval: (query) => {
+      if (!enabled) return false
+      return query.state.data?.status.settings.enabled === false
+        ? REFETCH_INTERVAL_DISABLED
+        : REFETCH_INTERVAL
+    },
     refetchIntervalInBackground: false,
   })
 

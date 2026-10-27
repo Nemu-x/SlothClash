@@ -106,4 +106,22 @@ describe('useConnectionsView', () => {
     expect(close).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
   })
+
+  it('closeByIds refetches even when the backend reports a failure', async () => {
+    const fetch = wailsApp.stub('FetchConnectionsOverview', () =>
+      connectionsOverview(2),
+    )
+    const close = wailsApp.stub('CloseConnections', () =>
+      Promise.reject(new Error('close b: HTTP 500')),
+    )
+    const { result } = renderHookWithProviders(() => useConnectionsView(true))
+    await waitFor(() => expect(result.current.filtered).toHaveLength(2))
+    // The error still reaches the caller (App's run() shows it)...
+    await act(() =>
+      expect(result.current.closeByIds(['a', 'b'])).rejects.toThrow('HTTP 500'),
+    )
+    expect(close).toHaveBeenCalledWith(['a', 'b'])
+    // ...but the ids that did close must still disappear from the list.
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+  })
 })

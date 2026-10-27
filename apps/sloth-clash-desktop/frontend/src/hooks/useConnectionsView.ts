@@ -31,6 +31,8 @@ export type ConnectionsView = {
   onSearchChange: (next: string) => void
   onRefresh: () => void
   closeAll: () => Promise<void>
+  /** Close specific connections (one row, or every row matching the search). */
+  closeByIds: (ids: string[]) => Promise<void>
 }
 
 /**
@@ -40,7 +42,8 @@ export type ConnectionsView = {
  * screen switch and the search must survive leaving and re-opening it.
  */
 export function useConnectionsView(enabled: boolean): ConnectionsView {
-  const { overview, busy, refresh, closeAll } = useConnectionsOverview(enabled)
+  const { overview, busy, refresh, closeAll, closeByIds } =
+    useConnectionsOverview(enabled)
   const [search, setSearch] = useState('')
   const filtered = useMemo(
     () => filterConnections(overview?.connections ?? [], search),
@@ -54,5 +57,6 @@ export function useConnectionsView(enabled: boolean): ConnectionsView {
     onSearchChange: setSearch,
     onRefresh: refresh,
     closeAll,
+    closeByIds,
   }
 }

@@ -597,6 +597,8 @@
       "refresh": "Refresh",
       "refreshing": "Refreshing...",
       "closeAll": "Close all",
+      "closeShown": "Close shown ({{count}})",
+      "close": "Close connection",
       "searchPlaceholder": "Search host / process / rule",
       "upload": "Uploaded",
       "download": "Downloaded",

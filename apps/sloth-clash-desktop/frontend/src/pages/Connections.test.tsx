@@ -13,7 +13,13 @@ const CONN_COUNT = 5_000
 // The Connections wiring from App.tsx: the real useConnectionsView.
 function ConnectionsScreen() {
   const view = useConnectionsView(true)
-  return <ConnectionsPage view={view} onCloseAll={() => void view.closeAll()} />
+  return (
+    <ConnectionsPage
+      view={view}
+      onCloseAll={() => void view.closeAll()}
+      onClose={(ids) => void view.closeByIds(ids)}
+    />
+  )
 }
 
 function bodyRows(container: HTMLElement) {
@@ -107,5 +113,53 @@ describe('ConnectionsPage with a large connection list', () => {
       expect(fetch.mock.calls.length).toBeGreaterThan(fetchesBeforeClose),
     )
     expect(closeAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes a single connection from its row', async () => {
+    const fetch = wailsApp.stub('FetchConnectionsOverview', () =>
+      connectionsOverview(3),
+    )
+    const close = wailsApp.stub('CloseConnections', () => 1)
+    const closeAll = wailsApp.stub('CloseAllConnections', () => undefined)
+    const { container } = renderWithProviders(<ConnectionsScreen />)
+    await waitFor(() => expect(rowCount(container)).toBe(3))
+    const ids = (connectionsOverview(3).connections ?? []).map((c) => c.id)
+
+    const fetchesBeforeClose = fetch.mock.calls.length
+    const row = bodyRows(container)[1]
+    if (!row) throw new Error('row 1 not rendered')
+    fireEvent.click(
+      within(row).getByRole('button', { name: 'Close connection' }),
+    )
+    await waitFor(() =>
+      expect(fetch.mock.calls.length).toBeGreaterThan(fetchesBeforeClose),
+    )
+    expect(close).toHaveBeenCalledWith([ids[1]])
+    expect(closeAll).not.toHaveBeenCalled()
+  })
+
+  it('closes only the connections matching the search', async () => {
+    wailsApp.stub('FetchConnectionsOverview', () => connectionsOverview(4))
+    const close = wailsApp.stub('CloseConnections', () => 2)
+    const { container } = renderWithProviders(<ConnectionsScreen />)
+    await waitFor(() => expect(rowCount(container)).toBe(4))
+    // No search -> no "close shown": it would just duplicate "Close all".
+    expect(screen.queryByRole('button', { name: /Close shown/ })).toBeNull()
+
+    fireEvent.change(
+      screen.getByPlaceholderText('Search host / process / rule'),
+      {
+        target: { value: 'discord.exe' },
+      },
+    )
+    await waitFor(() => expect(rowCount(container)).toBe(2))
+    const shownIds = [...bodyRows(container)].map(
+      (r) => r.cells[0]?.textContent ?? '',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close shown (2)' }))
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(1))
+    const sent = close.mock.calls[0]?.[0] as string[]
+    expect(sent).toHaveLength(2)
+    expect(sent.map((id) => id.slice(0, 8))).toEqual(shownIds)
   })
 })

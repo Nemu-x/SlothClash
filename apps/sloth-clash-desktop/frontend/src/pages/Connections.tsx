@@ -23,14 +23,19 @@ function chainPath(chains: string[] | undefined): string {
 export function ConnectionsPage({
   view,
   onCloseAll,
+  onClose,
 }: {
   // Snapshot + search (useConnectionsView, owned by App so the search
   // survives leaving the screen).
   view: ConnectionsView
   onCloseAll: () => void
+  /** Close the given connections (a row's ✕, or "close shown"). */
+  onClose: (ids: string[]) => void
 }) {
   const { overview, filtered, busy, search, onSearchChange, onRefresh } = view
   const { t } = useTranslation()
+  const searching = search.trim() !== ''
+  const totalCount = (overview?.connections ?? []).length
   return (
     <div className="panel rulesPanel">
       <div className="rulesPanelHead">
@@ -46,6 +51,15 @@ export function ConnectionsPage({
               ? t('ui.connections.refreshing')
               : t('ui.connections.refresh')}
           </button>
+          {searching && filtered.length > 0 && filtered.length < totalCount ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => onClose(filtered.map((c) => c.id))}
+            >
+              {t('ui.connections.closeShown', { count: filtered.length })}
+            </button>
+          ) : null}
           <button type="button" className="btn" onClick={onCloseAll}>
             {t('ui.connections.closeAll')}
           </button>
@@ -64,8 +78,7 @@ export function ConnectionsPage({
           {formatBytesSmart(Number(overview?.downloadTotal ?? 0))}
         </span>
         <span className="rulesSummaryChip">
-          {t('ui.connections.total')}: {filtered.length}/
-          {(overview?.connections ?? []).length}
+          {t('ui.connections.total')}: {filtered.length}/{totalCount}
         </span>
       </div>
       <input
@@ -84,6 +97,7 @@ export function ConnectionsPage({
               <th>{t('ui.connections.rule')}</th>
               <th>{t('ui.connections.node')}</th>
               <th>{t('ui.connections.traffic')}</th>
+              <th aria-label={t('ui.connections.close')} />
             </tr>
           </thead>
           <tbody>
@@ -124,6 +138,17 @@ export function ConnectionsPage({
                   <td>
                     ↑ {formatBytesSmart(Number(c.upload ?? 0))} / ↓{' '}
                     {formatBytesSmart(Number(c.download ?? 0))}
+                  </td>
+                  <td className="connCloseCell">
+                    <button
+                      type="button"
+                      className="connCloseBtn"
+                      title={t('ui.connections.close')}
+                      aria-label={t('ui.connections.close')}
+                      onClick={() => onClose([c.id])}
+                    >
+                      ✕
+                    </button>
                   </td>
                 </tr>
               )

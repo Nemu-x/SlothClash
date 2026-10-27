@@ -596,6 +596,8 @@
       "refresh": "刷新",
       "refreshing": "刷新中...",
       "closeAll": "关闭全部",
+      "closeShown": "关闭所显示 ({{count}})",
+      "close": "关闭连接",
       "searchPlaceholder": "搜索主机 / 进程 / 规则",
       "upload": "上传",
       "download": "下载",

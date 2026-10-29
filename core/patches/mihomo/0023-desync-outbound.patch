@@ -1,0 +1,2336 @@
+diff --git a/adapter/outbound/desync.go b/adapter/outbound/desync.go
+new file mode 100644
+index 0000000..ada3dc8
+--- /dev/null
++++ b/adapter/outbound/desync.go
+@@ -0,0 +1,708 @@
++package outbound
++
++// SlothClash core patch 0023: a first-class "desync" outbound.
++//
++// It is a DIRECT connection whose first TLS ClientHello is transformed by
++// github.com/Nemu-x/desync, the same client-side library the named
++// direct.desync outbounds of patches 0017-0022 use. Those keep working
++// unchanged during the migration; this type exposes every option of the
++// library release the series pins and reuses Direct for name resolution,
++// loopback detection, the profile DNS fallback (0019), the UDP burst with
++// its counters and activity diagnostics (0019/0020), the stable UDP binding
++// pool (0021) and reject-quic (0022). Keys, values, validation and the
++// /proxies fields inside "desync" match Citrus' adapter/outbound/desync.go
++// (getmikan/Citrus#172, desync v0.1.0), so one config serves both cores;
++// dns-fallback, reject-quic and udp.stable-binding are SlothClash-only.
++// Citrus' egress guard does not exist in mihomo and is not part of it.
++//
++// Remove when the migrated client no longer generates direct.desync and
++// mihomo carries an equivalent outbound; no upstream issue is claimed.
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"net"
++	"strings"
++	"sync/atomic"
++	"time"
++
++	N "github.com/metacubex/mihomo/common/net"
++	"github.com/metacubex/mihomo/component/dialer"
++	"github.com/metacubex/mihomo/component/loopback"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
++
++	"github.com/Nemu-x/desync"
++)
++
++// Bounds of the options given in milliseconds. The library accepts longer
++// values; a configuration that needs them is almost certainly a mistake.
++const (
++	desyncMaxSplitDelay       = time.Second
++	desyncMaxFakeTimeout      = time.Minute
++	desyncMaxSplitWaitTimeout = time.Minute
++)
++
++// The library's defaults, shown in the API.
++const (
++	desyncDefaultFakeTimeout      = 3 * time.Second
++	desyncDefaultSplitWaitTimeout = 2 * time.Second
++)
++
++// desyncCaps is what the library implements on this OS. Validation takes it
++// as a parameter, so that the per-OS errors can be tested on any OS.
++var desyncCaps = desync.PlatformCapabilities()
++
++// DesyncOption is the configuration of a "desync" outbound. Keys and units
++// are Citrus' (milliseconds, comma-separated positions).
++type DesyncOption struct {
++	BasicOption
++	Name string `proxy:"name"`
++	// TLSRec and Split are comma-separated positions: "3" is byte 3 of the
++	// TLS wire input, "1+s" one byte after the start of the server name.
++	TLSRec     string `proxy:"tlsrec,omitempty"`
++	Split      string `proxy:"split,omitempty"`
++	SplitDelay int    `proxy:"split-delay,omitempty"` // milliseconds between split writes
++	// SplitWait is "sent" or "acked": before each further split piece, wait
++	// until the kernel reports the earlier bytes as transmitted or
++	// acknowledged. It is never replaced by a timed pause.
++	SplitWait        string `proxy:"split-wait,omitempty"`
++	SplitWaitTimeout int    `proxy:"split-wait-timeout,omitempty"` // milliseconds per wait; 0 = 2 s
++	// Disorder sends the first split piece with hop limit 1 (ByeDPI --disorder).
++	Disorder bool `proxy:"disorder,omitempty"`
++	// OOB sends one urgent byte after the first split piece (ByeDPI --oob).
++	OOB     bool                `proxy:"oob,omitempty"`
++	OOBByte string              `proxy:"oob-byte,omitempty"` // one character; empty = "a"
++	Random  *DesyncRandomOption `proxy:"random,omitempty"`
++	Fake    *DesyncFakeOption   `proxy:"fake,omitempty"`
++	UDP     *DesyncUDPOption    `proxy:"udp,omitempty"`
++	// SlothClash only: DNSFallback retries an empty direct-nameserver answer
++	// with the profile's resolver (patch 0019); RejectQUIC rejects UDP/443
++	// through this outbound, so browsers fall back to TCP (patch 0022).
++	DNSFallback bool `proxy:"dns-fallback,omitempty"`
++	RejectQUIC  bool `proxy:"reject-quic,omitempty"`
++}
++
++// DesyncRandomOption adds random record and write cuts, drawn per
++// connection, to the fixed tlsrec and split positions.
++type DesyncRandomOption struct {
++	TLSRec []DesyncRandomCut `proxy:"tlsrec,omitempty"`
++	Split  []DesyncRandomCut `proxy:"split,omitempty"`
++	Seed   uint64            `proxy:"seed,omitempty"` // 0 = a new seed per connection
++}
++
++// DesyncRandomCut draws count cuts from the inclusive range from..to, both
++// positions absolute or both relative to the server name ("+s"), at least
++// min-piece bytes apart.
++type DesyncRandomCut struct {
++	From     string `proxy:"from"`
++	To       string `proxy:"to"`
++	Count    int    `proxy:"count,omitempty"`     // 0 = 1
++	MinPiece int    `proxy:"min-piece,omitempty"` // 0 = 1
++}
++
++// DesyncFakeOption sends a low-TTL decoy as the first transmission of the
++// ClientHello prefix, or of the split piece that ends at the prefix.
++// Windows, Linux and Android.
++type DesyncFakeOption struct {
++	TTL     int                  `proxy:"ttl,omitempty"` // with auto-ttl the fallback; 0 = none
++	AutoTTL *DesyncAutoTTLOption `proxy:"auto-ttl,omitempty"`
++	Prefix  int                  `proxy:"prefix,omitempty"`  // after record fragmentation; negative counts from the end, 0 = -1
++	Timeout int                  `proxy:"timeout,omitempty"` // milliseconds for the native send; 0 = library default (3 s)
++	// Decoy ClientHello: another server name (one drawn per connection;
++	// '*', '?' and '#' are random), fresh random values, built from the
++	// connection's own hello, started at a later byte.
++	SNI          []string `proxy:"sni,omitempty"`
++	Randomize    bool     `proxy:"randomize,omitempty"`
++	FromOriginal bool     `proxy:"from-original,omitempty"`
++	Offset       int      `proxy:"offset,omitempty"`
++}
++
++// DesyncAutoTTLOption derives the fake's TTL from the server's SYN-ACK:
++// hops - delta, clamped to min..max. Zero fields are the defaults 1, 3, 20.
++type DesyncAutoTTLOption struct {
++	Delta int `proxy:"delta,omitempty"`
++	Min   int `proxy:"min,omitempty"`
++	Max   int `proxy:"max,omitempty"`
++}
++
++// DesyncUDPOption sends a bounded burst of low-TTL datagrams before the first
++// datagrams to each peer. Without it UDP is plain DIRECT.
++type DesyncUDPOption struct {
++	TTL      int    `proxy:"ttl"`
++	Repeats  int    `proxy:"repeats,omitempty"`   // 0 = 6
++	Packets  int    `proxy:"packets,omitempty"`   // 0 = 3
++	Template string `proxy:"template,omitempty"`  // zero (64 zero bytes, default) or quic (a QUIC v1 Initial)
++	SNI      string `proxy:"sni,omitempty"`       // server name of the quic template
++	QUICOnly bool   `proxy:"quic-only,omitempty"` // burst only before datagrams that look like a QUIC Initial
++	// SlothClash only: one native socket per Discord voice association
++	// across local port replacement (patch 0021).
++	StableBinding bool `proxy:"stable-binding,omitempty"`
++}
++
++// desyncStrategy picks the TCP transformation of one connection. Options is
++// called on every dial, so it must answer from configuration or a cache and
++// never run discovery itself. The only implementation today is the static,
++// explicitly configured one; a strategy controller (desync/controller) can
++// take its place later without touching the dial path.
++type desyncStrategy interface {
++	Options(metadata *C.Metadata) desync.Options
++	String() string
++}
++
++type staticDesyncStrategy struct{ opts desync.Options }
++
++func (s staticDesyncStrategy) Options(*C.Metadata) desync.Options { return s.opts }
++
++func (s staticDesyncStrategy) String() string { return "static" }
++
++// Desync is a DIRECT outbound that applies a desync transformation to its
++// connections. It owns the TCP dial so that the transformer is in place
++// before the first byte is written; UDP is Direct's path with the 0019-0022
++// options set from this configuration.
++type Desync struct {
++	*Direct
++	strategy desyncStrategy
++	tcp      desync.Options // the configured options, for the API
++	// lastFakeTTL is the TTL of the latest fake, with desyncAutoTTLFlag when
++	// auto-ttl derived it; 0 until a fake was sent.
++	lastFakeTTL atomic.Int32
++}
++
++const desyncAutoTTLFlag = 1 << 8
++
++// DialContext implements C.ProxyAdapter
++func (d *Desync) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
++	tcpOpts := d.strategy.Options(metadata)
++	var extra []dialer.Option
++	autoTTL := tcpOpts.Fake != nil && tcpOpts.Fake.AutoTTL != nil
++	if autoTTL {
++		// Before connect, so that the TTL of the SYN-ACK is recorded
++		// (Linux/Android IPv6; a no-op elsewhere). The dialer copies this
++		// net.Dialer and chains the interface, routing mark and socket hook
++		// controls after it.
++		extra = append(extra, dialer.WithNetDialer(&net.Dialer{Control: desync.ControlAutoTTL}))
++	}
++	c, err := d.dialTCP(ctx, metadata, extra...)
++	if err != nil {
++		return nil, err
++	}
++	if !tcpOpts.Enabled() {
++		return d.loopBack.NewConn(NewConn(c, d)), nil
++	}
++	dc := &desyncConn{Conn: desync.WrapConn(c, tcpOpts), socket: c}
++	if tcpOpts.Fake != nil {
++		dc.lastFakeTTL, dc.autoTTL = &d.lastFakeTTL, autoTTL
++	}
++	return d.loopBack.NewConn(newDesyncConn(dc, d)), nil
++}
++
++// MarshalJSON implements C.ProxyAdapter
++func (d *Desync) MarshalJSON() ([]byte, error) {
++	o := d.tcp
++	tcp := map[string]any{
++		"tlsrec":             desyncPositions(o.TLSRec),
++		"split":              desyncPositions(o.Split),
++		"split-delay":        o.SplitDelay.Milliseconds(),
++		"split-wait":         o.SplitWait.String(),
++		"split-wait-timeout": int64(0),
++		"disorder":           o.Disorder,
++		"oob":                nil,
++		"random":             nil,
++		"fake":               nil,
++	}
++	if o.SplitWait != desync.SplitWaitNone || o.Disorder {
++		timeout := o.SplitWaitTimeout
++		if timeout == 0 {
++			timeout = desyncDefaultSplitWaitTimeout
++		}
++		tcp["split-wait-timeout"] = timeout.Milliseconds()
++	}
++	if o.OOB != nil {
++		b := o.OOB.Byte
++		if b == 0 {
++			b = desync.DefaultOOBByte
++		}
++		tcp["oob"] = map[string]any{"byte": string(rune(b))}
++	}
++	if r := o.Random; r != nil {
++		tcp["random"] = map[string]any{
++			"tlsrec": desyncRandomCuts(r.TLSRec),
++			"split":  desyncRandomCuts(r.Split),
++			"seed":   r.Seed,
++		}
++	}
++	if fake := o.Fake; fake != nil {
++		timeout := fake.Timeout
++		if timeout == 0 {
++			timeout = desyncDefaultFakeTimeout
++		}
++		info := map[string]any{
++			"ttl":           fake.TTL,
++			"auto-ttl":      nil,
++			"prefix":        fake.Prefix,
++			"timeout":       timeout.Milliseconds(),
++			"sni":           append([]string{}, fake.SNI...),
++			"randomize":     fake.Randomize,
++			"from-original": fake.FromOriginal,
++			"offset":        fake.Offset,
++			"last-ttl":      nil,
++		}
++		if a := fake.AutoTTL; a != nil {
++			info["auto-ttl"] = map[string]any{"delta": a.Delta, "min": a.Min, "max": a.Max}
++		}
++		if v := d.lastFakeTTL.Load(); v != 0 {
++			info["last-ttl"] = map[string]any{"ttl": v &^ desyncAutoTTLFlag, "auto": v&desyncAutoTTLFlag != 0}
++		}
++		tcp["fake"] = info
++	}
++	var udp any
++	if u := d.desyncUDP; u != nil {
++		udp = map[string]any{
++			"ttl":            u.TTL,
++			"repeats":        u.Repeats,
++			"packets":        u.Packets,
++			"template":       desyncTemplateName(u.Template),
++			"sni":            u.SNI,
++			"quic-only":      u.QUICOnly,
++			"counters":       u.Counters.Snapshot(),
++			"stable-binding": d.desyncBindings != nil, // SlothClash only
++		}
++	}
++	// One key of its own: Proxy.MarshalJSON adds "udp" and others next to
++	// it. strategy/tcp/udp are Citrus'; dns-fallback and reject-quic are
++	// SlothClash's. The 0019-0022 diagnostics keep the top-level keys of a
++	// direct.desync outbound, so the client reads both kinds the same way.
++	out := map[string]any{
++		"type": d.Type().String(),
++		"id":   d.Id(),
++		"desync": map[string]any{
++			"strategy":     d.strategy.String(),
++			"tcp":          tcp,
++			"udp":          udp,
++			"dns-fallback": d.desyncDNSFallback,
++			"reject-quic":  d.desyncRejectQUIC,
++		},
++	}
++	if d.desyncDNSFallback {
++		out["desyncDNSFallbacks"] = d.desyncDNSFallbacks.Load()
++	}
++	if u := d.desyncUDP; u != nil {
++		diag := map[string]any{"ttl": u.TTL, "repeats": u.Repeats, "packets": u.Packets, "counters": u.Counters.Snapshot(), "activity": d.desyncActivity.snapshot()}
++		if d.desyncBindings != nil {
++			diag["binding"] = d.desyncBindings.snapshot()
++		}
++		out["desyncUDP"] = diag
++	}
++	return json.Marshal(out)
++}
++
++func desyncTemplateName(t desync.UDPTemplate) string {
++	if t == desync.UDPTemplateQUICInitial {
++		return "quic"
++	}
++	return "zero"
++}
++
++func desyncPositions(positions []desync.Pos) []string {
++	out := make([]string, 0, len(positions))
++	for _, p := range positions {
++		out = append(out, p.String())
++	}
++	return out
++}
++
++// desyncOr is cmp.Or, which the module's go 1.20 language version lacks.
++func desyncOr(v, fallback int) int {
++	if v == 0 {
++		return fallback
++	}
++	return v
++}
++
++func desyncRandomCuts(cuts []desync.RandomCut) []map[string]any {
++	out := make([]map[string]any, 0, len(cuts))
++	for _, c := range cuts {
++		out = append(out, map[string]any{
++			"from":      c.From.String(),
++			"to":        c.To.String(),
++			"count":     desyncOr(c.Count, 1),
++			"min-piece": desyncOr(c.MinPiece, 1),
++		})
++	}
++	return out
++}
++
++func desyncMilliseconds(name string, ms int, limit time.Duration) (time.Duration, error) {
++	d := time.Duration(ms) * time.Millisecond
++	if ms < 0 || d > limit {
++		return 0, fmt.Errorf("%s must be between 0 and %d ms", name, limit.Milliseconds())
++	}
++	return d, nil
++}
++
++// desyncUnsupported is the configuration error for a method that the
++// library does not implement on this OS, with the library's reason.
++func desyncUnsupported(caps desync.Capabilities, option, method string, sentinel error) error {
++	reason := caps.Unsupported[method]
++	if reason == "" {
++		reason = "not implemented"
++	}
++	return fmt.Errorf("%s is not supported on %s (%s): %w", option, caps.OS, reason, sentinel)
++}
++
++func parseDesyncRandomCuts(name string, cuts []DesyncRandomCut) ([]desync.RandomCut, error) {
++	var out []desync.RandomCut
++	for i, c := range cuts {
++		from, err := desync.ParsePos(c.From)
++		if err != nil {
++			return nil, fmt.Errorf("random %s[%d] from: %w", name, i, err)
++		}
++		to, err := desync.ParsePos(c.To)
++		if err != nil {
++			return nil, fmt.Errorf("random %s[%d] to: %w", name, i, err)
++		}
++		if c.Count < 0 || c.MinPiece < 0 {
++			return nil, fmt.Errorf("random %s[%d]: count and min-piece must not be negative", name, i)
++		}
++		out = append(out, desync.RandomCut{From: from, To: to, Count: c.Count, MinPiece: c.MinPiece})
++	}
++	return out, nil
++}
++
++func (o DesyncOption) tcpOptions(caps desync.Capabilities) (opts desync.Options, err error) {
++	if opts.TLSRec, err = parseDirectDesyncPositions(o.TLSRec); err != nil {
++		return opts, fmt.Errorf("tlsrec: %w", err)
++	}
++	if opts.Split, err = parseDirectDesyncPositions(o.Split); err != nil {
++		return opts, fmt.Errorf("split: %w", err)
++	}
++	if r := o.Random; r != nil {
++		opts.Random = &desync.RandomOptions{Seed: r.Seed}
++		if opts.Random.TLSRec, err = parseDesyncRandomCuts("tlsrec", r.TLSRec); err != nil {
++			return opts, err
++		}
++		if opts.Random.Split, err = parseDesyncRandomCuts("split", r.Split); err != nil {
++			return opts, err
++		}
++		if len(opts.Random.TLSRec) == 0 && len(opts.Random.Split) == 0 {
++			return opts, errors.New("random needs tlsrec or split ranges")
++		}
++	}
++	splits := len(opts.Split) > 0 || opts.Random != nil && len(opts.Random.Split) > 0
++	if opts.SplitDelay, err = desyncMilliseconds("split-delay", o.SplitDelay, desyncMaxSplitDelay); err != nil {
++		return opts, err
++	}
++	if opts.SplitDelay > 0 && !splits {
++		return opts, errors.New("split-delay needs split positions")
++	}
++
++	if opts.SplitWait, err = desync.ParseSplitWait(o.SplitWait); err != nil {
++		return opts, fmt.Errorf(`split-wait must be "sent" or "acked", not %q`, o.SplitWait)
++	}
++	if opts.SplitWaitTimeout, err = desyncMilliseconds("split-wait-timeout", o.SplitWaitTimeout, desyncMaxSplitWaitTimeout); err != nil {
++		return opts, err
++	}
++	if opts.SplitWaitTimeout > 0 && opts.SplitWait == desync.SplitWaitNone && !o.Disorder {
++		return opts, errors.New("split-wait-timeout needs split-wait or disorder")
++	}
++	if opts.SplitWait != desync.SplitWaitNone {
++		if !splits {
++			return opts, errors.New("split-wait needs split positions")
++		}
++		if !caps.Ack.Supports(opts.SplitWait) {
++			return opts, fmt.Errorf("split-wait %s is not supported on %s (%s): %w",
++				opts.SplitWait, caps.OS, desyncAckReason(caps.Ack), desync.ErrSplitWaitUnsupported)
++		}
++	}
++
++	opts.Disorder = o.Disorder
++	if o.Disorder {
++		if !splits {
++			return opts, errors.New("disorder needs split positions: it acts on the first split piece")
++		}
++		if !caps.Disorder.Supported {
++			return opts, desyncUnsupported(caps, "disorder", "disorder", desync.ErrDisorderUnsupported)
++		}
++	}
++	if o.OOBByte != "" && !o.OOB {
++		return opts, errors.New("oob-byte needs oob")
++	}
++	if o.OOB {
++		if !splits {
++			return opts, errors.New("oob needs split positions: the urgent byte follows the first split piece")
++		}
++		if !caps.OOB {
++			return opts, desyncUnsupported(caps, "oob", "oob", desync.ErrOOBUnsupported)
++		}
++		opts.OOB = &desync.OOBOptions{}
++		if o.OOBByte != "" {
++			if len(o.OOBByte) != 1 || o.OOBByte[0] == 0 || o.OOBByte[0] > 0x7f {
++				return opts, fmt.Errorf("oob-byte must be one ASCII character, not %q", o.OOBByte)
++			}
++			opts.OOB.Byte = o.OOBByte[0]
++		}
++	}
++
++	if f := o.Fake; f != nil {
++		if !caps.FakeTCP {
++			return opts, desyncUnsupported(caps, "fake", "fake-tcp", desync.ErrFakeUnsupported)
++		}
++		if f.AutoTTL == nil && f.TTL == 0 {
++			return opts, errors.New("fake needs ttl (1-255) or auto-ttl")
++		}
++		timeout, err := desyncMilliseconds("fake timeout", f.Timeout, desyncMaxFakeTimeout)
++		if err != nil {
++			return opts, err
++		}
++		opts.Fake = &desync.FakeOptions{
++			TTL:          f.TTL,
++			Prefix:       f.Prefix,
++			Timeout:      timeout,
++			SNI:          f.SNI,
++			Randomize:    f.Randomize,
++			FromOriginal: f.FromOriginal,
++			Offset:       f.Offset,
++		}
++		if a := f.AutoTTL; a != nil {
++			auto := desync.AutoTTL{Delta: a.Delta, Min: a.Min, Max: a.Max}
++			if err := auto.Validate(); err != nil {
++				return opts, fmt.Errorf("fake auto-ttl: %w", err)
++			}
++			// The library's defaults, filled in here so that the API shows them.
++			auto.Delta, auto.Min, auto.Max = desyncOr(auto.Delta, 1), desyncOr(auto.Min, 3), desyncOr(auto.Max, 20)
++			opts.Fake.AutoTTL = &auto
++			if err := o.checkAutoTTL(caps); err != nil {
++				return opts, err
++			}
++		}
++	}
++	return opts, opts.Validate()
++}
++
++// checkAutoTTL rejects an auto-ttl that can never derive a TTL here and has
++// no fallback ttl, and logs where it falls back for one address family.
++func (o DesyncOption) checkAutoTTL(caps desync.Capabilities) error {
++	ttl := o.Fake.TTL
++	v4, v6 := caps.AutoTTL.IPv4, caps.AutoTTL.IPv6
++	switch o.IPVersion {
++	case C.IPv4Only:
++		v6 = false
++	case C.IPv6Only:
++		v4 = false
++	}
++	if !v4 && !v6 {
++		reason := caps.Unsupported["auto-ttl-ipv4"]
++		if o.IPVersion == C.IPv6Only || reason == "" {
++			reason = caps.Unsupported["auto-ttl-ipv6"]
++		}
++		if ttl == 0 {
++			return fmt.Errorf("fake auto-ttl cannot observe the path on %s (%s); set ttl as the fallback: %w",
++				caps.OS, reason, desync.ErrAutoTTLUnsupported)
++		}
++		log.Warnln("[desync] %s: auto-ttl cannot observe the path on %s (%s); every fake uses ttl %d",
++			o.Name, caps.OS, reason, ttl)
++		return nil
++	}
++	if !v4 && o.IPVersion != C.IPv6Only {
++		if ttl == 0 {
++			log.Warnln("[desync] %s: auto-ttl observes only IPv6 on %s (%s); IPv4 connections fail without a fallback ttl",
++				o.Name, caps.OS, caps.Unsupported["auto-ttl-ipv4"])
++		} else {
++			log.Infoln("[desync] %s: auto-ttl observes only IPv6 on %s; IPv4 connections use ttl %d", o.Name, caps.OS, ttl)
++		}
++	}
++	return nil
++}
++
++// desyncAckReason says which split-wait modes this OS can observe.
++func desyncAckReason(a desync.AckCapability) string {
++	if a.Mechanism == "" {
++		return "the send queue cannot be observed"
++	}
++	var modes []string
++	for _, m := range []desync.SplitWait{desync.SplitWaitSent, desync.SplitWaitAcked} {
++		if a.Supports(m) {
++			modes = append(modes, m.String())
++		}
++	}
++	return fmt.Sprintf("%s observes only %s", a.Mechanism, strings.Join(modes, ", "))
++}
++
++func (o DesyncOption) udpOptions(caps desync.Capabilities) (*desync.UDPOptions, error) {
++	u := o.UDP
++	if u == nil {
++		return nil, nil
++	}
++	if !caps.FakeUDP {
++		return nil, desyncUnsupported(caps, "udp", "fake-udp", desync.ErrUDPFakeUnsupported)
++	}
++	opts := desync.UDPOptions{TTL: u.TTL, Repeats: u.Repeats, Packets: u.Packets, SNI: u.SNI, QUICOnly: u.QUICOnly}
++	switch u.Template {
++	case "", "zero":
++	case "quic":
++		opts.Template = desync.UDPTemplateQUICInitial
++	default:
++		return nil, fmt.Errorf(`udp template must be "zero" or "quic", not %q`, u.Template)
++	}
++	if opts.SNI != "" && opts.Template != desync.UDPTemplateQUICInitial {
++		return nil, errors.New("udp sni needs template: quic")
++	}
++	if err := opts.Validate(); err != nil {
++		return nil, err
++	}
++	// The library's defaults, filled in here so that the API shows them.
++	opts.Repeats = desyncOr(opts.Repeats, 6)
++	opts.Packets = desyncOr(opts.Packets, 3)
++	if opts.Template == desync.UDPTemplateQUICInitial && opts.SNI == "" {
++		opts.SNI = desync.DefaultQUICSNI
++	}
++	opts.Counters = &desync.UDPCounters{} // shared by all sockets of the outbound
++	return &opts, nil
++}
++
++// NewDesync validates the options; anything the platform or the library
++// cannot do is a configuration error naming the outbound, never a silent
++// plain DIRECT.
++func NewDesync(option DesyncOption) (*Desync, error) {
++	d, err := newDesync(option, desyncCaps)
++	if err != nil {
++		return nil, fmt.Errorf("desync %q: %w", option.Name, err)
++	}
++	return d, nil
++}
++
++func newDesync(option DesyncOption, caps desync.Capabilities) (*Desync, error) {
++	// TFO sends the first write with the SYN, before the transformer could
++	// cut it; MPTCP spreads it over subflows that no longer match the cuts,
++	// and the socket methods (fake, disorder, oob, split-wait, auto-ttl)
++	// need a plain TCP socket.
++	if option.TFO {
++		return nil, errors.New("tfo is not supported: the ClientHello would leave with the SYN")
++	}
++	if option.MPTCP {
++		return nil, errors.New("mptcp is not supported")
++	}
++	if option.DialerProxy != "" {
++		return nil, errors.New("dialer-proxy is not supported: desync dials directly")
++	}
++	tcp, err := option.tcpOptions(caps)
++	if err != nil {
++		return nil, err
++	}
++	udp, err := option.udpOptions(caps)
++	if err != nil {
++		return nil, err
++	}
++	if !tcp.Enabled() && udp == nil {
++		return nil, errors.New("set at least one of tlsrec, split, random, fake or udp")
++	}
++	direct := &Direct{
++		Base: NewBase(BaseOption{
++			Name:         option.Name,
++			Type:         C.Desync,
++			ProviderName: option.ProviderName,
++			UDP:          true,
++			Interface:    option.Interface,
++			RoutingMark:  option.RoutingMark,
++			Prefer:       option.IPVersion,
++		}),
++		// its own detector: a desync connection coming back through a
++		// listener is refused like a DIRECT one
++		loopBack:          loopback.NewDetector(),
++		desyncUDP:         udp,
++		desyncDNSFallback: option.DNSFallback,
++		desyncRejectQUIC:  option.RejectQUIC,
++	}
++	if udp != nil {
++		direct.desyncActivity = &directUDPActivity{}
++		if option.UDP.StableBinding {
++			direct.desyncBindings = newDesyncBindingPool()
++		}
++	}
++	return &Desync{
++		Direct:   direct,
++		strategy: staticDesyncStrategy{tcp},
++		tcp:      tcp,
++	}, nil
++}
++
++// desyncConn is the transformed side of a desync TCP connection.
++//
++// The transformer must see the ClientHello, so no relay fast path may write
++// to the socket underneath it: desyncConn exposes neither the socket
++// (NetConn, Upstream, SyscallConn: splice, sendfile, writev batching) nor a
++// replaceable writer. It stays on the write path for the whole connection,
++// not just the ClientHello: the native fake may still own the socket after
++// the hello was accepted, and an extra copy of the upload is cheap next to a
++// bypass. Reads are untouched by desync, so the reader is replaceable and the
++// relay reads the socket directly (splice of the download on Linux).
++type desyncConn struct {
++	net.Conn          // *desync.Conn
++	socket   net.Conn // the dialed socket, for reading only
++
++	// With a fake: where to report the TTL it was sent with, and whether
++	// the socket records received hop limits for auto-ttl.
++	lastFakeTTL *atomic.Int32
++	autoTTL     bool
++	reported    atomic.Bool
++	written     atomic.Bool
++}
++
++func newDesyncConn(dc *desyncConn, a C.ProxyAdapter) C.Conn {
++	// Not NewConn: the deadline wrapper it adds for outbound conns is not
++	// needed (deadlines go to the transformer and the socket) and would hide
++	// the raw reader.
++	cc := &conn{ExtendedConn: N.NewExtendedConn(dc), adapterAddr: a.Addr()}
++	cc.AppendToChains(a)
++	return cc
++}
++
++func (c *desyncConn) Write(p []byte) (int, error) {
++	n, err := c.Conn.Write(p)
++	if c.lastFakeTTL != nil && len(p) > 0 && !c.reported.Load() {
++		c.reportFake(p)
++	}
++	return n, err
++}
++
++// reportFake publishes the TTL the connection's fake was sent with. A
++// connection whose first write is not a TLS handshake record gets no fake:
++// the hop limit recording that auto-ttl enabled is turned off then, as the
++// transformer does once it read the value.
++func (c *desyncConn) reportFake(p []byte) {
++	if tc, ok := c.Conn.(*desync.Conn); ok {
++		if ttl, auto := tc.FakeTTL(); ttl != 0 {
++			v := int32(ttl)
++			if auto {
++				v |= desyncAutoTTLFlag
++			}
++			c.lastFakeTTL.Store(v)
++			c.reported.Store(true)
++			return
++		}
++	}
++	if !c.written.Swap(true) && p[0] != 0x16 {
++		c.reported.Store(true)
++		if c.autoTTL {
++			desyncStopHopRecording(c.socket)
++		}
++	}
++}
++
++// UpstreamReader implements network.WithUpstreamReader
++func (c *desyncConn) UpstreamReader() any { return c.socket }
++
++// ReaderReplaceable implements network.ReaderWithUpstream
++func (c *desyncConn) ReaderReplaceable() bool { return true }
++
++// CloseWrite half-closes the socket. A ClientHello still being assembled at
++// that point is incomplete and is dropped, as it would be on Close.
++func (c *desyncConn) CloseWrite() error {
++	if cw, ok := c.socket.(interface{ CloseWrite() error }); ok {
++		return cw.CloseWrite()
++	}
++	return c.Conn.Close()
++}
+diff --git a/adapter/outbound/desync_fake_test.go b/adapter/outbound/desync_fake_test.go
+new file mode 100644
+index 0000000..063ee46
+--- /dev/null
++++ b/adapter/outbound/desync_fake_test.go
+@@ -0,0 +1,69 @@
++//go:build windows || linux
++
++package outbound
++
++import (
++	"context"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// The native fake through the outbound's own dial (Windows; Linux and
++// Android since desync v0.1.0). On loopback a low TTL never expires, so the
++// fake bytes reach the server: the decoy is set to the real bytes, which
++// keeps the stream verifiable, as the library's own native tests do.
++func TestDesyncFakeThroughOutbound(t *testing.T) {
++	record := captureClientHello(t)
++	fragments := expectedFragments(t, record)
++	for name, tc := range map[string]struct {
++		option  DesyncOption
++		want    []byte
++		payload []byte
++		offset  int
++	}{
++		"prefix":       {option: DesyncOption{TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1, Timeout: 3000}}, want: fragments, payload: fragments},
++		"split piece":  {option: DesyncOption{Split: "40", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1}}, want: record, payload: record, offset: 40},
++		"auto fallbck": {option: DesyncOption{Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{}}}, want: record, payload: record},
++	} {
++		t.Run(name, func(t *testing.T) {
++			ln, err := net.Listen("tcp4", "127.0.0.1:0")
++			require.NoError(t, err)
++			defer ln.Close()
++			got := make(chan []byte, 1)
++			go func() {
++				c, err := ln.Accept()
++				if err != nil {
++					got <- nil
++					return
++				}
++				defer c.Close()
++				_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++				buf := make([]byte, len(tc.want))
++				_, _ = io.ReadFull(c, buf)
++				got <- buf
++			}()
++
++			d := newTestDesync(t, tc.option)
++			opts := d.tcp
++			fake := *opts.Fake
++			fake.Payload, fake.Offset = tc.payload, tc.offset
++			opts.Fake = &fake
++			d.strategy = staticDesyncStrategy{opts}
++
++			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++			defer cancel()
++			conn, err := d.DialContext(ctx, desyncMetadata(ln.Addr()))
++			require.NoError(t, err)
++			defer conn.Close()
++			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
++			_, err = conn.Write(record)
++			require.NoError(t, err)
++			assert.Equal(t, tc.want, <-got)
++		})
++	}
++}
+diff --git a/adapter/outbound/desync_hop_linux.go b/adapter/outbound/desync_hop_linux.go
+new file mode 100644
+index 0000000..0bacb24
+--- /dev/null
++++ b/adapter/outbound/desync_hop_linux.go
+@@ -0,0 +1,34 @@
++//go:build linux
++
++package outbound
++
++import (
++	"net"
++	"syscall"
++)
++
++// ipv6RecvHopLimit is IPV6_RECVHOPLIMIT from in6.h, the same on every Linux
++// architecture.
++const ipv6RecvHopLimit = 0x33
++
++// desyncStopHopRecording turns off the received hop limit recording that
++// desync.ControlAutoTTL enabled before connect: while it is on, the kernel
++// clones every received in-order segment. Errors are ignored; an IPv4
++// socket never had it on.
++func desyncStopHopRecording(c net.Conn) {
++	for i := 0; i < 8 && c != nil; i++ {
++		if sc, ok := c.(syscall.Conn); ok {
++			if raw, err := sc.SyscallConn(); err == nil {
++				_ = raw.Control(func(fd uintptr) {
++					_ = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, ipv6RecvHopLimit, 0)
++				})
++			}
++			return
++		}
++		u, ok := c.(interface{ NetConn() net.Conn })
++		if !ok {
++			return
++		}
++		c = u.NetConn()
++	}
++}
+diff --git a/adapter/outbound/desync_hop_other.go b/adapter/outbound/desync_hop_other.go
+new file mode 100644
+index 0000000..8149520
+--- /dev/null
++++ b/adapter/outbound/desync_hop_other.go
+@@ -0,0 +1,9 @@
++//go:build !linux
++
++package outbound
++
++import "net"
++
++// desyncStopHopRecording has nothing to turn off: desync.ControlAutoTTL
++// changes a socket only on Linux.
++func desyncStopHopRecording(net.Conn) {}
+diff --git a/adapter/outbound/desync_linux_test.go b/adapter/outbound/desync_linux_test.go
+new file mode 100644
+index 0000000..5ca3cda
+--- /dev/null
++++ b/adapter/outbound/desync_linux_test.go
+@@ -0,0 +1,169 @@
++//go:build linux
++
++package outbound
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net"
++	"syscall"
++	"testing"
++	"time"
++
++	N "github.com/metacubex/mihomo/common/net"
++	"github.com/metacubex/mihomo/component/resolver"
++
++	"github.com/Nemu-x/desync"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// hopLimitListener listens on IPv6 loopback with hop limit hl, which the
++// SYN-ACK inherits, so the loopback path looks like 128 - hl hops (for hl
++// above 96) to the client.
++func hopLimitListener(t *testing.T, hl int) net.Listener {
++	t.Helper()
++	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
++		var opErr error
++		if err := c.Control(func(fd uintptr) {
++			opErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_UNICAST_HOPS, hl)
++		}); err != nil {
++			return err
++		}
++		return opErr
++	}}
++	ln, err := lc.Listen(context.Background(), "tcp6", "[::1]:0")
++	if err != nil {
++		t.Skipf("IPv6 loopback unavailable: %v", err)
++	}
++	t.Cleanup(func() { _ = ln.Close() })
++	withIPv6(t)
++	return ln
++}
++
++func hopRecording(t *testing.T, conn net.Conn) int {
++	t.Helper()
++	dc, ok := N.UnwrapWriter(conn).(*desyncConn)
++	require.True(t, ok)
++	raw, err := dc.socket.(syscall.Conn).SyscallConn()
++	require.NoError(t, err)
++	var on int
++	var opErr error
++	require.NoError(t, raw.Control(func(fd uintptr) {
++		on, opErr = syscall.GetsockoptInt(int(fd), syscall.IPPROTO_IPV6, ipv6RecvHopLimit)
++	}))
++	require.NoError(t, opErr)
++	return on
++}
++
++// The outbound's dial prepares the socket with ControlAutoTTL: the TTL of
++// the SYN-ACK (hop limit 120: 8 hops) gives the fake TTL 7, which the API
++// reports, and the recording is off once it was read.
++func TestDesyncLinuxAutoTTL(t *testing.T) {
++	ln := hopLimitListener(t, 120)
++	record := captureClientHello(t)
++	got := readFirst(ln, len(record))
++
++	d := newTestDesync(t, DesyncOption{TLSRec: "", Fake: &DesyncFakeOption{AutoTTL: &DesyncAutoTTLOption{}}})
++	withVerifiableFake(d, record, 0)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	conn, err := d.DialContext(ctx, desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++	assert.Equal(t, 1, hopRecording(t, conn), "dialed with ControlAutoTTL")
++
++	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
++	_, err = conn.Write(record)
++	require.NoError(t, err)
++	assert.Equal(t, record, <-got)
++	assert.Equal(t, 0, hopRecording(t, conn), "the recording is off after the fake")
++
++	raw, err := d.MarshalJSON()
++	require.NoError(t, err)
++	var v struct {
++		Desync struct {
++			TCP struct {
++				Fake struct {
++					LastTTL struct {
++						TTL  int  `json:"ttl"`
++						Auto bool `json:"auto"`
++					} `json:"last-ttl"`
++				} `json:"fake"`
++			} `json:"tcp"`
++		} `json:"desync"`
++	}
++	require.NoError(t, json.Unmarshal(raw, &v))
++	assert.Equal(t, 7, v.Desync.TCP.Fake.LastTTL.TTL)
++	assert.True(t, v.Desync.TCP.Fake.LastTTL.Auto, "derived from the path")
++}
++
++// A connection that does not start with a ClientHello gets no fake; the
++// outbound turns the hop limit recording off itself.
++func TestDesyncLinuxAutoTTLNonTLS(t *testing.T) {
++	ln := hopLimitListener(t, 120)
++	request := []byte("GET / HTTP/1.1\r\n\r\n")
++	got := readFirst(ln, len(request))
++	d := newTestDesync(t, DesyncOption{Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{}}})
++	conn, err := d.DialContext(context.Background(), desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++	require.Equal(t, 1, hopRecording(t, conn))
++	_, err = conn.Write(request)
++	require.NoError(t, err)
++	assert.Equal(t, request, <-got)
++	assert.Equal(t, 0, hopRecording(t, conn))
++	assert.Equal(t, int32(0), d.lastFakeTTL.Load())
++}
++
++// Without auto-ttl the socket is not prepared.
++func TestDesyncLinuxNoAutoTTLControl(t *testing.T) {
++	ln := hopLimitListener(t, 120)
++	_ = readFirst(ln, 1)
++	d := newTestDesync(t, DesyncOption{Fake: &DesyncFakeOption{TTL: 4}})
++	conn, err := d.DialContext(context.Background(), desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++	assert.Equal(t, 0, hopRecording(t, conn))
++	_, err = desync.ObserveHops(N.UnwrapWriter(conn).(*desyncConn).socket)
++	assert.ErrorIs(t, err, desync.ErrAutoTTLUnobserved)
++}
++
++// Helpers of Citrus' desync_methods_test.go and desync_native_test.go that
++// the tests above use.
++
++func withIPv6(t *testing.T) {
++	t.Helper()
++	old := resolver.DisableIPv6
++	resolver.DisableIPv6 = false
++	t.Cleanup(func() { resolver.DisableIPv6 = old })
++}
++
++// withVerifiableFake makes the fake's decoy the real bytes: on loopback a low
++// TTL never expires, so the decoy reaches the server.
++func withVerifiableFake(d *Desync, wire []byte, offset int) {
++	opts := d.tcp
++	fake := *opts.Fake
++	fake.Payload, fake.Offset = wire, offset
++	opts.Fake = &fake
++	d.strategy = staticDesyncStrategy{opts}
++}
++
++// readFirst reads n bytes from the first connection accepted by ln.
++func readFirst(ln net.Listener, n int) <-chan []byte {
++	got := make(chan []byte, 1)
++	go func() {
++		c, err := ln.Accept()
++		if err != nil {
++			got <- nil
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		buf := make([]byte, n)
++		k, _ := io.ReadFull(c, buf)
++		got <- buf[:k]
++	}()
++	return got
++}
+diff --git a/adapter/outbound/desync_test.go b/adapter/outbound/desync_test.go
+new file mode 100644
+index 0000000..0bb16f4
+--- /dev/null
++++ b/adapter/outbound/desync_test.go
+@@ -0,0 +1,840 @@
++package outbound
++
++import (
++	"bytes"
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/binary"
++	"encoding/json"
++	"errors"
++	"io"
++	"math/big"
++	"net"
++	"net/netip"
++	"syscall"
++	"testing"
++	"time"
++
++	N "github.com/metacubex/mihomo/common/net"
++	"github.com/metacubex/mihomo/component/loopback"
++	"github.com/metacubex/mihomo/component/resolver"
++	C "github.com/metacubex/mihomo/constant"
++
++	"github.com/Nemu-x/desync"
++	"github.com/metacubex/sing/common"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++const desyncTestSNI = "www.youtube.test"
++
++func newTestDesync(t *testing.T, option DesyncOption) *Desync {
++	t.Helper()
++	if option.Name == "" {
++		option.Name = "desync-test"
++	}
++	d, err := NewDesync(option)
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = d.Close() })
++	return d
++}
++
++func desyncMetadata(addr net.Addr) *C.Metadata {
++	ap := addr.(*net.TCPAddr).AddrPort()
++	return &C.Metadata{NetWork: C.TCP, DstIP: ap.Addr().Unmap(), DstPort: ap.Port()}
++}
++
++// captureClientHello returns the first record of a real crypto/tls
++// handshake, which holds the whole ClientHello.
++func captureClientHello(t *testing.T) []byte {
++	t.Helper()
++	client, server := net.Pipe()
++	defer server.Close()
++	go func() {
++		defer client.Close()
++		_ = tls.Client(client, &tls.Config{ServerName: desyncTestSNI, InsecureSkipVerify: true}).Handshake()
++	}()
++	require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
++	header := make([]byte, 5)
++	_, err := io.ReadFull(server, header)
++	require.NoError(t, err)
++	record := make([]byte, 5+int(binary.BigEndian.Uint16(header[3:])))
++	copy(record, header)
++	_, err = io.ReadFull(server, record[5:])
++	require.NoError(t, err)
++	return record
++}
++
++// readHelloRecords reads TLS handshake records from r until they carry the
++// whole first handshake message, and returns their wire bytes and the
++// equivalent single record.
++func readHelloRecords(r io.Reader) (wire, joined []byte, records int, err error) {
++	var payload []byte
++	for {
++		header := make([]byte, 5)
++		if _, err = io.ReadFull(r, header); err != nil {
++			return
++		}
++		if header[0] != 0x16 {
++			return wire, nil, records, errors.New("not a handshake record")
++		}
++		body := make([]byte, binary.BigEndian.Uint16(header[3:]))
++		if _, err = io.ReadFull(r, body); err != nil {
++			return
++		}
++		wire = append(append(wire, header...), body...)
++		payload = append(payload, body...)
++		records++
++		if len(payload) >= 4 && len(payload) >= 4+(int(payload[1])<<16|int(payload[2])<<8|int(payload[3])) {
++			joined = append([]byte{0x16, header[1], header[2], byte(len(payload) >> 8), byte(len(payload))}, payload...)
++			return
++		}
++	}
++}
++
++// expectedFragments is what the "1+s" cut makes of a single-record hello.
++func expectedFragments(t *testing.T, record []byte) []byte {
++	t.Helper()
++	h, err := desync.ParseHello(record)
++	require.NoError(t, err)
++	require.Equal(t, desyncTestSNI, h.SNI)
++	return desync.FragmentRecord(record, []int{h.SNIOffset + 1})
++}
++
++// prefixConn replays bytes already read from a connection.
++type prefixConn struct {
++	net.Conn
++	r io.Reader
++}
++
++func (c *prefixConn) Read(p []byte) (int, error) { return c.r.Read(p) }
++
++func selfSignedCert(t *testing.T) tls.Certificate {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	require.NoError(t, err)
++	tmpl := &x509.Certificate{
++		SerialNumber: big.NewInt(1),
++		DNSNames:     []string{desyncTestSNI},
++		NotBefore:    time.Now().Add(-time.Hour),
++		NotAfter:     time.Now().Add(time.Hour),
++	}
++	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
++	require.NoError(t, err)
++	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
++}
++
++type helloResult struct {
++	wire, joined []byte
++	records      int
++	err          error
++}
++
++// tlsServer accepts one connection, records the ClientHello records as they
++// arrived on its raw socket, completes the handshake and writes "ok".
++func tlsServer(t *testing.T) (net.Listener, <-chan helloResult) {
++	t.Helper()
++	ln, err := net.Listen("tcp4", "127.0.0.1:0")
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = ln.Close() })
++	cert := selfSignedCert(t)
++	done := make(chan helloResult, 1)
++	go func() {
++		c, err := ln.Accept()
++		if err != nil {
++			done <- helloResult{err: err}
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		wire, joined, records, err := readHelloRecords(c)
++		if err == nil {
++			s := tls.Server(&prefixConn{Conn: c, r: io.MultiReader(bytes.NewReader(wire), c)}, &tls.Config{Certificates: []tls.Certificate{cert}})
++			if err = s.Handshake(); err == nil {
++				_, err = s.Write([]byte("ok"))
++			}
++		}
++		done <- helloResult{wire, joined, records, err}
++	}()
++	return ln, done
++}
++
++// handshake runs a TLS client through the outbound against ln.
++func handshake(t *testing.T, d *Desync, ln net.Listener) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	conn, err := d.DialContext(ctx, desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++	assert.Equal(t, []string{d.Name()}, []string(conn.Chains()))
++	client := tls.Client(conn, &tls.Config{ServerName: desyncTestSNI, InsecureSkipVerify: true})
++	require.NoError(t, client.HandshakeContext(ctx))
++	got := make([]byte, 2)
++	_, err = io.ReadFull(client, got)
++	require.NoError(t, err)
++	assert.Equal(t, "ok", string(got))
++}
++
++// The outbound dials a local TLS server: the server's raw socket sees the
++// ClientHello split into records at the configured position, and the
++// handshake still completes.
++func TestDesyncTLSHandshakeFragmentsClientHello(t *testing.T) {
++	ln, done := tlsServer(t)
++	handshake(t, newTestDesync(t, DesyncOption{TLSRec: "1+s"}), ln)
++	r := <-done
++	require.NoError(t, r.err)
++	assert.Equal(t, 2, r.records, "one cut, two records")
++	assert.Equal(t, expectedFragments(t, r.joined), r.wire, "the cut is one byte into the server name")
++}
++
++// Every TCP method of the library that this OS implements, through the
++// outbound's own dial, against a real TLS server: the server reassembles the
++// identical handshake. Methods the OS lacks are configuration errors, which
++// TestDesyncPlatformErrors covers.
++func TestDesyncTCPMethodsCompleteHandshake(t *testing.T) {
++	caps := desync.PlatformCapabilities()
++	for name, tc := range map[string]struct {
++		option DesyncOption
++		skip   bool
++	}{
++		"split+delay":     {option: DesyncOption{Split: "1+s", SplitDelay: 5}},
++		"tlsrec+split":    {option: DesyncOption{TLSRec: "1+s", Split: "3,2+s"}},
++		"split-wait sent": {option: DesyncOption{Split: "1+s", SplitWait: "sent", SplitWaitTimeout: 2000}, skip: !caps.Ack.Sent},
++		"split-wait ackd": {option: DesyncOption{Split: "1+s", SplitWait: "acked"}, skip: !caps.Ack.Acked},
++		"disorder":        {option: DesyncOption{Split: "1+s", Disorder: true}, skip: !caps.Disorder.Supported},
++		"oob":             {option: DesyncOption{Split: "3", OOB: true, OOBByte: "z"}, skip: !caps.OOB},
++		"disoob":          {option: DesyncOption{TLSRec: "1+s", Split: "1+s", Disorder: true, OOB: true}, skip: !caps.OOB || !caps.Disorder.Supported},
++		"random": {option: DesyncOption{TLSRec: "1+s", Random: &DesyncRandomOption{
++			TLSRec: []DesyncRandomCut{{From: "-8+s", To: "8+s", Count: 2, MinPiece: 2}},
++			Split:  []DesyncRandomCut{{From: "1", To: "120"}},
++			Seed:   42,
++		}}},
++	} {
++		t.Run(name, func(t *testing.T) {
++			if tc.skip {
++				t.Skipf("not implemented on %s", caps.OS)
++			}
++			ln, done := tlsServer(t)
++			handshake(t, newTestDesync(t, tc.option), ln)
++			r := <-done
++			require.NoError(t, r.err)
++		})
++	}
++}
++
++// A fixed seed reproduces the random record cuts on every connection.
++func TestDesyncRandomSeedIsReproducible(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{Random: &DesyncRandomOption{
++		TLSRec: []DesyncRandomCut{{From: "-8+s", To: "8+s", Count: 3}}, Seed: 7,
++	}})
++	var wires [][]byte
++	for i := 0; i < 2; i++ {
++		ln, done := tlsServer(t)
++		handshake(t, d, ln)
++		r := <-done
++		require.NoError(t, r.err)
++		assert.Greater(t, r.records, 1)
++		h, err := desync.ParseHello(r.joined)
++		require.NoError(t, err)
++		// the random part of the hello differs, the cuts do not
++		wires = append(wires, append([]byte{}, r.wire[:h.SNIOffset+16]...))
++	}
++	assert.Equal(t, recordLengths(wires[0]), recordLengths(wires[1]))
++}
++
++func recordLengths(wire []byte) (out []int) {
++	for len(wire) >= 5 {
++		n := int(binary.BigEndian.Uint16(wire[3:]))
++		out = append(out, n)
++		if len(wire) < 5+n {
++			break
++		}
++		wire = wire[5+n:]
++	}
++	return
++}
++
++// Traffic that does not start with a ClientHello is not touched.
++func TestDesyncPassesThroughNonTLS(t *testing.T) {
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer ln.Close()
++	request := []byte("GET / HTTP/1.1\r\nHost: www.youtube.test\r\n\r\n")
++	received := make(chan []byte, 1)
++	go func() {
++		c, err := ln.Accept()
++		if err != nil {
++			received <- nil
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		buf := make([]byte, len(request))
++		_, _ = io.ReadFull(c, buf)
++		received <- buf
++	}()
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s", Split: "2"})
++	conn, err := d.DialContext(context.Background(), desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++	_, err = conn.Write(request)
++	require.NoError(t, err)
++	assert.Equal(t, request, <-received)
++}
++
++// The relay must not reach the socket under the transformer for writes:
++// neither by unwrapping the writer nor by an upstream cast to the socket
++// (splice, sendfile, writev batching). Reads may go to the socket.
++func TestDesyncConnHidesSocketFromWriteFastPaths(t *testing.T) {
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer ln.Close()
++	go func() {
++		if c, err := ln.Accept(); err == nil {
++			defer c.Close()
++			_, _ = io.Copy(io.Discard, c)
++		}
++	}()
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s"})
++	conn, err := d.DialContext(context.Background(), desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer conn.Close()
++
++	w := N.UnwrapWriter(conn)
++	_, isSyscall := w.(syscall.Conn)
++	assert.False(t, isSyscall, "the writer unwraps to a socket: %T", w)
++	_, isDesync := w.(*desyncConn)
++	assert.True(t, isDesync, "the writer unwraps past the transformer: %T", w)
++	_, found := N.FindUpstream[*net.TCPConn](conn, nil)
++	assert.False(t, found, "FindUpstream reaches the socket")
++	_, found = N.FindUpstream[*desync.Conn](conn, nil)
++	assert.False(t, found, "FindUpstream reaches the transformer, and NetConn below it")
++	_, found = common.Cast[syscall.Conn](conn)
++	assert.False(t, found, "common.Cast reaches the socket")
++
++	_, isTCP := N.UnwrapReader(conn).(*net.TCPConn)
++	assert.True(t, isTCP, "reads go to the socket directly")
++	_, hasCloseWrite := common.Cast[interface{ CloseWrite() error }](conn)
++	assert.True(t, hasCloseWrite, "half-close is kept")
++}
++
++// A real relay between two TCP sockets, each of which could use splice or
++// writev: the first bytes still arrive transformed.
++func TestDesyncRelayKeepsTransformer(t *testing.T) {
++	record := captureClientHello(t)
++	want := expectedFragments(t, record)
++
++	target, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer target.Close()
++	got := make(chan []byte, 1)
++	go func() {
++		c, err := target.Accept()
++		if err != nil {
++			got <- nil
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		buf := make([]byte, len(want))
++		_, _ = io.ReadFull(c, buf)
++		got <- buf
++	}()
++
++	// the client's side: a TCP connection accepted by an inbound
++	inbound, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer inbound.Close()
++	app, err := net.Dial("tcp", inbound.Addr().String())
++	require.NoError(t, err)
++	defer app.Close()
++	accepted, err := inbound.Accept()
++	require.NoError(t, err)
++
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s"})
++	remote, err := d.DialContext(context.Background(), desyncMetadata(target.Addr()))
++	require.NoError(t, err)
++	go N.Relay(accepted, remote)
++
++	_, err = app.Write(record)
++	require.NoError(t, err)
++	assert.Equal(t, want, <-got, "the relay bypassed the transformer")
++}
++
++// blockingResolver answers only when the lookup's context ends.
++type blockingResolver struct{ desyncDNSStub }
++
++func (*blockingResolver) LookupIP(ctx context.Context, _ string) ([]netip.Addr, error) {
++	<-ctx.Done()
++	return nil, ctx.Err()
++}
++
++func (r *blockingResolver) LookupIPv4(ctx context.Context, host string) ([]netip.Addr, error) {
++	return r.LookupIP(ctx, host)
++}
++
++func (r *blockingResolver) LookupIPv6(ctx context.Context, host string) ([]netip.Addr, error) {
++	return r.LookupIP(ctx, host)
++}
++
++func TestDesyncDialRespectsContext(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s"})
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	_, err := d.DialContext(ctx, &C.Metadata{NetWork: C.TCP, DstIP: netip.MustParseAddr("127.0.0.1"), DstPort: 9})
++	assert.ErrorIs(t, err, context.Canceled)
++
++	// cancelled while the dial is in progress: the name lookup blocks
++	// until the context ends
++	old := resolver.DirectHostResolver
++	resolver.DirectHostResolver = &blockingResolver{}
++	defer func() { resolver.DirectHostResolver = old }()
++	ctx, cancel = context.WithCancel(context.Background())
++	time.AfterFunc(100*time.Millisecond, cancel)
++	start := time.Now()
++	_, err = d.DialContext(ctx, &C.Metadata{NetWork: C.TCP, Host: "slow.example", DstPort: 443})
++	assert.ErrorIs(t, err, context.Canceled)
++	assert.Less(t, time.Since(start), 3*time.Second)
++}
++
++// dns-fallback (patch 0019) works for the outbound as for direct.desync.
++func TestDesyncDNSFallback(t *testing.T) {
++	oldDirect, oldDefault, oldDisabled := resolver.DirectHostResolver, resolver.DefaultResolver, resolver.DisableIPv6
++	t.Cleanup(func() {
++		resolver.DirectHostResolver, resolver.DefaultResolver, resolver.DisableIPv6 = oldDirect, oldDefault, oldDisabled
++	})
++	resolver.DisableIPv6 = true
++	for _, enabled := range []bool{false, true} {
++		ln, err := net.Listen("tcp4", "127.0.0.1:0")
++		require.NoError(t, err)
++		go func() {
++			if c, err := ln.Accept(); err == nil {
++				_ = c.Close()
++			}
++		}()
++		resolver.DirectHostResolver = &desyncDNSStub{err: resolver.ErrIPNotFound}
++		resolver.DefaultResolver = &desyncDNSStub{ips: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
++		d := newTestDesync(t, DesyncOption{TLSRec: "1+s", DNSFallback: enabled})
++		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++		conn, err := d.DialContext(ctx, &C.Metadata{NetWork: C.TCP, Host: "cold.youtube.test", DstPort: uint16(ln.Addr().(*net.TCPAddr).Port)})
++		cancel()
++		if enabled {
++			require.NoError(t, err)
++			_ = conn.Close()
++			assert.EqualValues(t, 1, d.desyncDNSFallbacks.Load())
++		} else {
++			assert.Error(t, err, "without dns-fallback an empty direct answer stays an error")
++		}
++		_ = ln.Close()
++	}
++}
++
++// Like DIRECT, the outbound refuses a connection that is its own coming
++// back through a listener.
++func TestDesyncRejectsLoop(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s"})
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer ln.Close()
++	accepted := make(chan net.Conn, 1)
++	go func() {
++		if c, err := ln.Accept(); err == nil {
++			accepted <- c
++		}
++	}()
++	out, err := d.DialContext(context.Background(), desyncMetadata(ln.Addr()))
++	require.NoError(t, err)
++	defer out.Close()
++	in := <-accepted
++	defer in.Close()
++	src := in.RemoteAddr().(*net.TCPAddr).AddrPort()
++	inAddr := in.LocalAddr().(*net.TCPAddr).AddrPort()
++	_, err = d.DialContext(context.Background(), &C.Metadata{
++		NetWork: C.TCP, SrcIP: src.Addr().Unmap(), SrcPort: src.Port(),
++		InIP: inAddr.Addr().Unmap(), InPort: inAddr.Port(), Host: "example.com", DstPort: 443,
++	})
++	assert.ErrorIs(t, err, loopback.ErrReject)
++}
++
++func TestDesyncOptionValidation(t *testing.T) {
++	cut := []DesyncRandomCut{{From: "1", To: "20"}}
++	for name, option := range map[string]DesyncOption{
++		"nothing":               {},
++		"only dns-fallback":     {DNSFallback: true, RejectQUIC: true},
++		"bad position":          {TLSRec: "x"},
++		"bad split":             {Split: "1+q"},
++		"empty position":        {TLSRec: "1+s,"},
++		"negative delay":        {Split: "2", SplitDelay: -1},
++		"long delay":            {Split: "2", SplitDelay: 1001},
++		"delay alone":           {TLSRec: "1+s", SplitDelay: 10},
++		"tfo":                   {BasicOption: BasicOption{TFO: true}, TLSRec: "1+s"},
++		"mptcp":                 {BasicOption: BasicOption{MPTCP: true}, TLSRec: "1+s"},
++		"dialer-proxy":          {BasicOption: BasicOption{DialerProxy: "vpn"}, TLSRec: "1+s"},
++		"split-wait unknown":    {Split: "2", SplitWait: "later"},
++		"split-wait alone":      {TLSRec: "1+s", SplitWait: "sent"},
++		"split-wait timeout":    {Split: "2", SplitWait: "sent", SplitWaitTimeout: 60001},
++		"timeout without wait":  {Split: "2", SplitWaitTimeout: 100},
++		"disorder alone":        {TLSRec: "1+s", Disorder: true},
++		"disorder acked":        {Split: "2", Disorder: true, SplitWait: "acked"},
++		"oob alone":             {TLSRec: "1+s", OOB: true},
++		"oob-byte without oob":  {Split: "2", OOBByte: "a"},
++		"oob-byte two chars":    {Split: "2", OOB: true, OOBByte: "ab"},
++		"random empty":          {Random: &DesyncRandomOption{Seed: 1}},
++		"random bad from":       {Random: &DesyncRandomOption{TLSRec: []DesyncRandomCut{{From: "x", To: "2"}}}},
++		"random reversed":       {Random: &DesyncRandomOption{TLSRec: []DesyncRandomCut{{From: "9", To: "2"}}}},
++		"random mixed anchors":  {Random: &DesyncRandomOption{Split: []DesyncRandomCut{{From: "1", To: "2+s"}}}},
++		"random count":          {Random: &DesyncRandomOption{TLSRec: []DesyncRandomCut{{From: "1", To: "9", Count: 65}}}},
++		"random delay no split": {Random: &DesyncRandomOption{TLSRec: cut}, SplitDelay: 5},
++		"fake ttl":              {Fake: &DesyncFakeOption{TTL: 0}},
++		"fake ttl 256":          {Fake: &DesyncFakeOption{TTL: 256}},
++		"fake timeout":          {Fake: &DesyncFakeOption{TTL: 4, Timeout: 60001}},
++		"fake auto-ttl delta":   {Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{Delta: 300}}},
++		"fake auto-ttl min>max": {Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{Min: 9, Max: 5}}},
++		"oob-byte non-ascii":    {Split: "2", OOB: true, OOBByte: "\xff"},
++		"random negative count": {Random: &DesyncRandomOption{TLSRec: []DesyncRandomCut{{From: "1", To: "9", Count: -1}}}},
++		"udp quic-initial name": {UDP: &DesyncUDPOption{TTL: 4, Template: "quic-initial"}},
++		"fake bad sni":          {Fake: &DesyncFakeOption{TTL: 4, SNI: []string{"1.2.3.4"}}},
++		"fake from-original":    {Fake: &DesyncFakeOption{TTL: 4, FromOriginal: true}},
++		"fake offset":           {Fake: &DesyncFakeOption{TTL: 4, Offset: 70000}},
++		"fake split acked":      {Split: "2", SplitWait: "acked", Fake: &DesyncFakeOption{TTL: 4}},
++		"udp ttl":               {UDP: &DesyncUDPOption{TTL: 0}},
++		"udp repeats":           {UDP: &DesyncUDPOption{TTL: 4, Repeats: 17}},
++		"udp packets":           {UDP: &DesyncUDPOption{TTL: 4, Packets: 9}},
++		"udp negative ttl":      {UDP: &DesyncUDPOption{TTL: -1}},
++		"udp template":          {UDP: &DesyncUDPOption{TTL: 4, Template: "dns"}},
++		"udp sni without quic":  {UDP: &DesyncUDPOption{TTL: 4, SNI: "www.example.com"}},
++		"udp bad sni":           {UDP: &DesyncUDPOption{TTL: 4, Template: "quic", SNI: "bad_name"}},
++	} {
++		option.Name = name
++		d, err := NewDesync(option)
++		if assert.Error(t, err, name) {
++			assert.Contains(t, err.Error(), `desync "`+name+`"`, "the error names the outbound")
++		} else {
++			_ = d.Close()
++		}
++	}
++
++	caps := desync.PlatformCapabilities()
++	for name, tc := range map[string]struct {
++		option DesyncOption
++		skip   bool
++	}{
++		"tlsrec":       {option: DesyncOption{TLSRec: "1+s"}},
++		"many":         {option: DesyncOption{TLSRec: "1+s, 3, -2+s"}},
++		"split":        {option: DesyncOption{Split: "2", SplitDelay: 5}},
++		"both":         {option: DesyncOption{TLSRec: "1+s", Split: "1"}},
++		"ip-version":   {option: DesyncOption{BasicOption: BasicOption{IPVersion: C.IPv4Only, RoutingMark: 7}, TLSRec: "1+s"}},
++		"random split": {option: DesyncOption{Random: &DesyncRandomOption{Split: cut}, SplitDelay: 5}},
++		"disorder timeout": {option: DesyncOption{Split: "2", Disorder: true, SplitWaitTimeout: 500},
++			skip: !caps.Disorder.Supported},
++		"fake":       {option: DesyncOption{TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1, Timeout: 3000}}, skip: !caps.FakeTCP},
++		"fake split": {option: DesyncOption{Split: "1+s", Disorder: true, Fake: &DesyncFakeOption{TTL: 4}}, skip: !caps.FakeTCP || !caps.Disorder.Supported},
++		"fake decoy": {option: DesyncOption{Fake: &DesyncFakeOption{TTL: 4, SNI: []string{"www.example.com", "cdn-##.example.net"}, Randomize: true, Offset: 2}},
++			skip: !caps.FakeTCP},
++		"fake orig":  {option: DesyncOption{Fake: &DesyncFakeOption{TTL: 4, FromOriginal: true, Randomize: true}}, skip: !caps.FakeTCP},
++		"udp":        {option: DesyncOption{UDP: &DesyncUDPOption{TTL: 4}}, skip: !caps.FakeUDP},
++		"udp quic":   {option: DesyncOption{UDP: &DesyncUDPOption{TTL: 4, Template: "quic", SNI: "www.example.com", QUICOnly: true}}, skip: !caps.FakeUDP},
++		"udp stable": {option: DesyncOption{UDP: &DesyncUDPOption{TTL: 4, StableBinding: true}, DNSFallback: true}, skip: !caps.FakeUDP},
++	} {
++		if tc.skip {
++			continue
++		}
++		tc.option.Name = name
++		d, err := NewDesync(tc.option)
++		require.NoError(t, err, name)
++		assert.Equal(t, C.Desync, d.Type())
++		assert.True(t, d.SupportUDP())
++		_ = d.Close()
++	}
++}
++
++// fakePlatform is the capability report of another OS, as the library
++// gives it on that OS (desync v0.1.0, docs/connection-io.md).
++func fakePlatform(os string) desync.Capabilities {
++	switch os {
++	case "darwin":
++		return desync.Capabilities{OS: "darwin", FakeUDP: true, TTLControl: true, OOB: true,
++			Disorder: desync.DisorderCapability{Supported: true, Mechanism: "SO_NWRITE"},
++			Ack:      desync.AckCapability{Mechanism: "SO_NWRITE", Acked: true, Reliable: true},
++			Unsupported: map[string]string{"fake-tcp": "no splice: a retransmission cannot carry other bytes",
++				"auto-ttl-ipv4": "tcp_input saves no control data", "auto-ttl-ipv6": "tcp_input saves no control data"}}
++	case "windows":
++		return desync.Capabilities{OS: "windows", FakeTCP: true, FakeUDP: true, TTLControl: true, OOB: true,
++			Disorder:    desync.DisorderCapability{Supported: true, Mechanism: "SIO_TCP_INFO", Observed: true},
++			Ack:         desync.AckCapability{Mechanism: "SIO_TCP_INFO", Sent: true, Acked: true},
++			Unsupported: map[string]string{"auto-ttl-ipv4": "no received TTL for TCP", "auto-ttl-ipv6": "no received hop limit for TCP"}}
++	case "linux":
++		return desync.Capabilities{OS: "linux", FakeTCP: true, FakeUDP: true, TTLControl: true, OOB: true,
++			Disorder:    desync.DisorderCapability{Supported: true, Mechanism: "SIOCOUTQNSD", Observed: true, Reliable: true},
++			Ack:         desync.AckCapability{Mechanism: "SIOCOUTQ/SIOCOUTQNSD", Sent: true, Acked: true, Reliable: true},
++			AutoTTL:     desync.AutoTTLCapability{Mechanism: "IPV6_RECVHOPLIMIT", IPv6: true},
++			Unsupported: map[string]string{"auto-ttl-ipv4": "tcp_v4_do_rcv records no TTL"}}
++	}
++	return desync.Capabilities{OS: os, Unsupported: map[string]string{}}
++}
++
++// What an OS cannot do is a configuration error that names the method, the
++// OS and why, with the library's sentinel error.
++func TestDesyncPlatformErrors(t *testing.T) {
++	for _, tc := range []struct {
++		os     string
++		option DesyncOption
++		is     error
++		says   string
++	}{
++		{"darwin", DesyncOption{TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4}}, desync.ErrFakeUnsupported, "fake is not supported on darwin (no splice"},
++		{"darwin", DesyncOption{Split: "2", SplitWait: "sent"}, desync.ErrSplitWaitUnsupported, "split-wait sent is not supported on darwin (SO_NWRITE observes only acked)"},
++		{"windows", DesyncOption{Fake: &DesyncFakeOption{AutoTTL: &DesyncAutoTTLOption{}}}, desync.ErrAutoTTLUnsupported, "fake auto-ttl cannot observe the path on windows (no received TTL for TCP); set ttl as the fallback"},
++		{"linux", DesyncOption{BasicOption: BasicOption{IPVersion: C.IPv4Only}, Fake: &DesyncFakeOption{AutoTTL: &DesyncAutoTTLOption{}}}, desync.ErrAutoTTLUnsupported, "fake auto-ttl cannot observe the path on linux (tcp_v4_do_rcv records no TTL)"},
++		{"darwin", DesyncOption{BasicOption: BasicOption{IPVersion: C.IPv6Only}, Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{}}}, desync.ErrFakeUnsupported, "fake is not supported on darwin"},
++		{"plan9", DesyncOption{Split: "2", Disorder: true}, desync.ErrDisorderUnsupported, "disorder is not supported on plan9 (not implemented)"},
++		{"plan9", DesyncOption{Split: "2", OOB: true}, desync.ErrOOBUnsupported, "oob is not supported on plan9"},
++		{"plan9", DesyncOption{UDP: &DesyncUDPOption{TTL: 4}}, desync.ErrUDPFakeUnsupported, "udp is not supported on plan9"},
++	} {
++		tc.option.Name = tc.os
++		_, err := newDesync(tc.option, fakePlatform(tc.os))
++		if assert.Error(t, err, tc.says) {
++			if tc.is != nil {
++				assert.ErrorIs(t, err, tc.is)
++			}
++			assert.Contains(t, err.Error(), tc.says)
++		}
++	}
++}
++
++// On this OS: the methods it lacks fail, the ones it has load.
++func TestDesyncPlatformMethods(t *testing.T) {
++	caps := desync.PlatformCapabilities()
++	check := func(ok bool, sentinel error, option DesyncOption) {
++		t.Helper()
++		d, err := NewDesync(option)
++		if ok {
++			if assert.NoError(t, err, option.Name) {
++				_ = d.Close()
++			}
++		} else {
++			assert.ErrorIs(t, err, sentinel, option.Name)
++		}
++	}
++	check(caps.FakeTCP, desync.ErrFakeUnsupported, DesyncOption{Name: "fake", TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1, Timeout: 3000}})
++	check(caps.FakeUDP, desync.ErrUDPFakeUnsupported, DesyncOption{Name: "udp", UDP: &DesyncUDPOption{TTL: 4}})
++	check(caps.Disorder.Supported, desync.ErrDisorderUnsupported, DesyncOption{Name: "disorder", Split: "1+s", Disorder: true})
++	check(caps.OOB, desync.ErrOOBUnsupported, DesyncOption{Name: "oob", Split: "1+s", OOB: true})
++	check(caps.Ack.Sent, desync.ErrSplitWaitUnsupported, DesyncOption{Name: "sent", Split: "1+s", SplitWait: "sent"})
++	check(caps.Ack.Acked, desync.ErrSplitWaitUnsupported, DesyncOption{Name: "acked", Split: "1+s", SplitWait: "acked"})
++	if caps.FakeTCP {
++		// with a fallback TTL auto-ttl loads wherever one family is observable
++		// with a fallback ttl auto-ttl loads wherever the fake exists (as in
++		// Citrus it only logs where the path cannot be observed); without
++		// one it needs an observable family
++		check(true, nil, DesyncOption{Name: "auto-ttl", Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{Delta: 2, Min: 3, Max: 12}}})
++		check(caps.AutoTTL.IPv4 || caps.AutoTTL.IPv6, desync.ErrAutoTTLUnsupported,
++			DesyncOption{Name: "auto-ttl only", Fake: &DesyncFakeOption{AutoTTL: &DesyncAutoTTLOption{}}})
++	}
++}
++
++func TestDesyncMarshalJSON(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s,3", Split: "2", SplitDelay: 5, DNSFallback: true,
++		Random: &DesyncRandomOption{TLSRec: []DesyncRandomCut{{From: "-4+s", To: "4+s", Count: 2, MinPiece: 1}}, Seed: 9}})
++	raw, err := d.MarshalJSON()
++	require.NoError(t, err)
++	var v struct {
++		Type   string `json:"type"`
++		ID     string `json:"id"`
++		Desync struct {
++			Strategy string `json:"strategy"`
++			TCP      struct {
++				TLSRec     []string `json:"tlsrec"`
++				Split      []string `json:"split"`
++				SplitDelay int      `json:"split-delay"`
++				SplitWait  string   `json:"split-wait"`
++				Disorder   bool     `json:"disorder"`
++				OOB        any      `json:"oob"`
++				Random     struct {
++					TLSRec []map[string]any `json:"tlsrec"`
++					Seed   uint64           `json:"seed"`
++				} `json:"random"`
++				Fake any `json:"fake"`
++			} `json:"tcp"`
++			UDP         any  `json:"udp"`
++			DNSFallback bool `json:"dns-fallback"`
++		} `json:"desync"`
++		Fallbacks *uint64 `json:"desyncDNSFallbacks"`
++	}
++	require.NoError(t, json.Unmarshal(raw, &v))
++	assert.Equal(t, "Desync", v.Type)
++	assert.NotEmpty(t, v.ID)
++	assert.Equal(t, "static", v.Desync.Strategy)
++	assert.Equal(t, []string{"1+s", "3"}, v.Desync.TCP.TLSRec)
++	assert.Equal(t, []string{"2"}, v.Desync.TCP.Split)
++	assert.Equal(t, 5, v.Desync.TCP.SplitDelay)
++	assert.Equal(t, "none", v.Desync.TCP.SplitWait)
++	assert.Nil(t, v.Desync.TCP.OOB)
++	assert.Equal(t, uint64(9), v.Desync.TCP.Random.Seed)
++	assert.Equal(t, []map[string]any{{"from": "-4+s", "to": "4+s", "count": 2.0, "min-piece": 1.0}}, v.Desync.TCP.Random.TLSRec)
++	assert.Nil(t, v.Desync.TCP.Fake)
++	assert.Nil(t, v.Desync.UDP)
++	assert.True(t, v.Desync.DNSFallback)
++	if assert.NotNil(t, v.Fallbacks, "the 0019 counter key of direct.desync") {
++		assert.Zero(t, *v.Fallbacks)
++	}
++}
++
++// Without udp options, UDP is the plain DIRECT path.
++func TestDesyncPlainUDP(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s"})
++	server, err := net.ListenPacket("udp4", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer server.Close()
++	ap := server.LocalAddr().(*net.UDPAddr).AddrPort()
++	pc, err := d.ListenPacketContext(context.Background(), &C.Metadata{NetWork: C.UDP, DstIP: ap.Addr(), DstPort: ap.Port()})
++	require.NoError(t, err)
++	defer pc.Close()
++	assert.Equal(t, []string{"desync-test"}, []string(pc.Chains()))
++	_, err = pc.WriteTo([]byte("datagram"), server.LocalAddr())
++	require.NoError(t, err)
++	buf := make([]byte, 64)
++	require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
++	n, _, err := server.ReadFrom(buf)
++	require.NoError(t, err)
++	assert.Equal(t, "datagram", string(buf[:n]))
++	assert.False(t, d.DesyncUDPProbeEnabled(), "no UDP probe without the burst")
++}
++
++// reject-quic (patch 0022) rejects UDP/443 only.
++func TestDesyncRejectQUIC(t *testing.T) {
++	d := newTestDesync(t, DesyncOption{TLSRec: "1+s", RejectQUIC: true})
++	pc, err := d.ListenPacketContext(context.Background(), &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.1"), DstPort: 443})
++	require.NoError(t, err)
++	defer pc.Close()
++	_, _, err = pc.ReadFrom(make([]byte, 1))
++	assert.ErrorIs(t, err, io.EOF, "UDP/443 is rejected")
++
++	server, err := net.ListenPacket("udp4", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer server.Close()
++	ap := server.LocalAddr().(*net.UDPAddr).AddrPort()
++	other, err := d.ListenPacketContext(context.Background(), &C.Metadata{NetWork: C.UDP, DstIP: ap.Addr(), DstPort: ap.Port()})
++	require.NoError(t, err)
++	defer other.Close()
++	_, err = other.WriteTo([]byte("dns"), server.LocalAddr())
++	require.NoError(t, err)
++	require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
++	n, _, err := server.ReadFrom(make([]byte, 16))
++	require.NoError(t, err, "other UDP ports stay plain DIRECT")
++	assert.Equal(t, 3, n)
++}
++
++// The UDP burst through ListenPacketContext on every OS that has it: repeats
++// fake datagrams, then the unchanged original, and nothing in the packet path
++// reaches the socket. The counters and activity keep the keys the client
++// reads for direct.desync (0019/0020).
++func TestDesyncUDPBurst(t *testing.T) {
++	if !desync.PlatformCapabilities().FakeUDP {
++		t.Skip("no UDP burst on this OS")
++	}
++	for _, tc := range []struct {
++		name   string
++		option DesyncUDPOption
++		fake   func([]byte) bool
++	}{
++		{"zero", DesyncUDPOption{TTL: 4, Repeats: 2, Packets: 1}, func(b []byte) bool { return bytes.Equal(b, make([]byte, 64)) }},
++		{"quic", DesyncUDPOption{TTL: 4, Repeats: 2, Packets: 1, Template: "quic", SNI: "www.example.com"},
++			func(b []byte) bool {
++				return len(b) == 1200 && b[0]&0xc0 == 0xc0 && binary.BigEndian.Uint32(b[1:5]) == 1
++			}},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			option := tc.option
++			d := newTestDesync(t, DesyncOption{UDP: &option})
++			assert.True(t, d.DesyncUDPProbeEnabled())
++			server, err := net.ListenPacket("udp4", "127.0.0.1:0")
++			require.NoError(t, err)
++			defer server.Close()
++			ap := server.LocalAddr().(*net.UDPAddr).AddrPort()
++			pc, err := d.ListenPacketContext(context.Background(), &C.Metadata{NetWork: C.UDP, DstIP: ap.Addr(), DstPort: ap.Port()})
++			require.NoError(t, err)
++			defer pc.Close()
++			_, found := N.FindUpstream[*net.UDPConn](pc, nil)
++			assert.False(t, found, "the packet path can reach the socket")
++			_, found = N.FindUpstream[*desync.PacketConn](pc, nil)
++			assert.False(t, found, "the packet path can reach the wrapper")
++
++			for i := 0; i < 2; i++ {
++				_, err = pc.WriteTo([]byte("original"), server.LocalAddr())
++				require.NoError(t, err)
++			}
++			require.NoError(t, server.SetReadDeadline(time.Now().Add(3*time.Second)))
++			for i := 0; i < 4; i++ {
++				buf := make([]byte, 2048)
++				n, _, err := server.ReadFrom(buf)
++				require.NoError(t, err)
++				if i < 2 {
++					assert.True(t, tc.fake(buf[:n]), "datagram %d is not the decoy: %d bytes", i, n)
++				} else {
++					assert.Equal(t, "original", string(buf[:n]), "datagram %d", i)
++				}
++			}
++
++			raw, err := d.MarshalJSON()
++			require.NoError(t, err)
++			var v struct {
++				Desync struct {
++					UDP struct {
++						TTL      int                `json:"ttl"`
++						Repeats  int                `json:"repeats"`
++						Packets  int                `json:"packets"`
++						Template string             `json:"template"`
++						Counters desync.UDPSnapshot `json:"counters"`
++					} `json:"udp"`
++				} `json:"desync"`
++				DesyncUDP struct {
++					Counters desync.UDPSnapshot `json:"counters"`
++					Activity []map[string]any   `json:"activity"`
++				} `json:"desyncUDP"`
++			}
++			require.NoError(t, json.Unmarshal(raw, &v))
++			assert.Equal(t, 4, v.Desync.UDP.TTL)
++			assert.Equal(t, 2, v.Desync.UDP.Repeats)
++			assert.Equal(t, 1, v.Desync.UDP.Packets)
++			assert.Equal(t, tc.name, v.Desync.UDP.Template)
++			want := desync.UDPSnapshot{Packets: 2, FakePackets: 2, Peers: 1}
++			assert.Equal(t, want, v.Desync.UDP.Counters)
++			assert.Equal(t, want, v.DesyncUDP.Counters)
++			if assert.Len(t, v.DesyncUDP.Activity, 1) {
++				assert.EqualValues(t, 2, v.DesyncUDP.Activity[0]["txPackets"])
++			}
++		})
++	}
++}
++
++// udp stable-binding (patch 0021) gives the outbound the same Discord voice
++// binding pool as direct.desync, owned and closed by the outbound.
++func TestDesyncStableBinding(t *testing.T) {
++	if !desync.PlatformCapabilities().FakeUDP {
++		t.Skip("no UDP burst on this OS")
++	}
++	d, err := NewDesync(DesyncOption{Name: "SLOTH-DESYNC-DISCORD-UDP-test", UDP: &DesyncUDPOption{TTL: 4, Repeats: 1, StableBinding: true}})
++	require.NoError(t, err)
++	require.NotNil(t, d.desyncBindings)
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	metadata := &C.Metadata{NetWork: C.UDP, Type: C.TUN, Process: "Discord.exe", SrcIP: netip.MustParseAddr("192.168.20.2"), SrcPort: 12345, DstIP: netip.MustParseAddr("1.1.1.1"), DstPort: 19330}
++	_, err = d.ListenPacketContext(ctx, metadata)
++	assert.ErrorIs(t, err, context.Canceled)
++	assert.Zero(t, d.desyncBindings.snapshot().NativeSockets, "a canceled listen created a native socket")
++	raw, err := d.MarshalJSON()
++	require.NoError(t, err)
++	assert.Contains(t, string(raw), `"binding"`)
++	assert.Contains(t, string(raw), `"stable-binding":true`)
++	require.NoError(t, d.Close())
++	d.desyncBindings.mu.Lock()
++	closed := d.desyncBindings.closed
++	d.desyncBindings.mu.Unlock()
++	assert.True(t, closed, "the outbound's Close shuts the pool down")
++}
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index a1fd9df..d256818 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -36,15 +36,31 @@ type DirectOption struct {
+ 
+ // DialContext implements C.ProxyAdapter
+ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
++	c, err := d.dialTCP(ctx, metadata)
++	if err != nil {
++		return nil, err
++	}
++	if d.desync != nil {
++		// Keep the first-write transformation in the buffered relay path.
++		// Expose net.Conn only, so generic upstream/socket casts cannot skip it.
++		c = &directDesyncConn{Conn: desync.WrapConn(c, *d.desync)}
++	}
++	return d.loopBack.NewConn(NewConn(c, d)), nil
++}
++
++// dialTCP is the loopback-checked direct TCP dial with the optional desync
++// profile DNS fallback, shared by named direct.desync outbounds and the
++// desync outbound (patch 0023). extra options go before the resolver.
++func (d *Direct) dialTCP(ctx context.Context, metadata *C.Metadata, extra ...dialer.Option) (net.Conn, error) {
+ 	if err := d.loopBack.CheckConn(metadata); err != nil {
+ 		return nil, err
+ 	}
+-	opts := d.DialOptions()
++	opts := append(d.DialOptions(), extra...)
+ 	opts = append(opts, dialer.WithResolver(resolver.DirectHostResolver))
+ 	c, err := dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
+ 	if d.shouldFallbackDesyncDNS(ctx, err) {
+ 		directErr := err
+-		opts = append(d.DialOptions(), dialer.WithResolver(resolver.DefaultResolver))
++		opts = append(append(d.DialOptions(), extra...), dialer.WithResolver(resolver.DefaultResolver))
+ 		c, err = dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
+ 		if err != nil {
+ 			return nil, fmt.Errorf("desync profile DNS fallback failed (direct DNS: %v): %w", directErr, err)
+@@ -52,15 +68,7 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
+ 		d.desyncDNSFallbacks.Add(1)
+ 		log.Infoln("[desync DNS] %s resolved %s through profile DNS after empty direct DNS", d.Name(), metadata.Host)
+ 	}
+-	if err != nil {
+-		return nil, err
+-	}
+-	if d.desync != nil {
+-		// Keep the first-write transformation in the buffered relay path.
+-		// Expose net.Conn only, so generic upstream/socket casts cannot skip it.
+-		c = &directDesyncConn{Conn: desync.WrapConn(c, *d.desync)}
+-	}
+-	return d.loopBack.NewConn(NewConn(c, d)), nil
++	return c, err
+ }
+ 
+ // ListenPacketContext implements C.ProxyAdapter
+diff --git a/adapter/parser.go b/adapter/parser.go
+index 9a0d9c7..4eca551 100644
+--- a/adapter/parser.go
++++ b/adapter/parser.go
+@@ -132,6 +132,13 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 			break
+ 		}
+ 		proxy, err = outbound.NewDirectWithDesyncOption(*directOption)
++	case "desync":
++		desyncOption := &outbound.DesyncOption{BasicOption: basicOption}
++		err = decoder.Decode(mapping, desyncOption)
++		if err != nil {
++			break
++		}
++		proxy, err = outbound.NewDesync(*desyncOption)
+ 	case "dns":
+ 		dnsOptions := &outbound.DnsOption{BasicOption: basicOption}
+ 		err = decoder.Decode(mapping, dnsOptions)
+diff --git a/adapter/parser_desync_test.go b/adapter/parser_desync_test.go
+new file mode 100644
+index 0000000..1dbb148
+--- /dev/null
++++ b/adapter/parser_desync_test.go
+@@ -0,0 +1,195 @@
++package adapter
++
++import (
++	"context"
++	"encoding/binary"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	C "github.com/metacubex/mihomo/constant"
++
++	"github.com/Nemu-x/desync"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestParseDesync(t *testing.T) {
++	p, err := ParseProxy(map[string]any{
++		"name":           "desync-yt",
++		"type":           "desync",
++		"tlsrec":         "1+s",
++		"split":          2, // a YAML number is a single position
++		"split-delay":    5,
++		"interface-name": "",
++		"routing-mark":   0,
++		"ip-version":     "ipv4-prefer",
++		"dns-fallback":   true,
++		"reject-quic":    true,
++		"random": map[string]any{
++			"tlsrec": []any{map[string]any{"from": "-8+s", "to": "8+s", "count": 2, "min-piece": 2}},
++			"split":  []any{map[string]any{"from": 1, "to": 120}},
++			"seed":   42,
++		},
++	})
++	require.NoError(t, err)
++	assert.Equal(t, "desync-yt", p.Name())
++	assert.Equal(t, C.Desync, p.Type())
++	assert.Equal(t, "Desync", p.Type().String())
++	assert.True(t, p.SupportUDP())
++
++	raw, err := json.Marshal(p)
++	require.NoError(t, err)
++	var v map[string]any
++	require.NoError(t, json.Unmarshal(raw, &v))
++	assert.Equal(t, "Desync", v["type"])
++	assert.Equal(t, "desync-yt", v["name"])
++	assert.Equal(t, true, v["udp"], "UDP is supported, plain without udp options")
++	info, _ := v["desync"].(map[string]any)
++	assert.Equal(t, "static", info["strategy"])
++	assert.Equal(t, true, info["dns-fallback"])
++	assert.Equal(t, true, info["reject-quic"])
++	tcp, _ := info["tcp"].(map[string]any)
++	assert.Equal(t, []any{"1+s"}, tcp["tlsrec"])
++	assert.Equal(t, []any{"2"}, tcp["split"])
++	assert.EqualValues(t, 5, tcp["split-delay"])
++	random, _ := tcp["random"].(map[string]any)
++	assert.EqualValues(t, 42, random["seed"])
++	assert.Equal(t, []any{map[string]any{"from": "1", "to": "120", "count": 1.0, "min-piece": 1.0}}, random["split"], "the defaults are shown")
++	assert.Contains(t, info, "udp")
++	assert.Nil(t, info["udp"])
++}
++
++// The options that exist only on some OSes, in their YAML form.
++func TestParseDesyncPlatformMethods(t *testing.T) {
++	caps := desync.PlatformCapabilities()
++	for _, tc := range []struct {
++		ok      bool
++		is      error
++		mapping map[string]any
++	}{
++		{caps.FakeTCP, desync.ErrFakeUnsupported, map[string]any{"split": "1+s", "disorder": true,
++			"fake": map[string]any{"ttl": 4, "prefix": -1, "timeout": 3000, "sni": []any{"www.example.com", "cdn-##.example.net"}, "randomize": true, "offset": 0}}},
++		{caps.FakeUDP, desync.ErrUDPFakeUnsupported, map[string]any{"tlsrec": "1+s",
++			"udp": map[string]any{"ttl": 4, "repeats": 6, "packets": 3, "template": "quic", "sni": "www.example.com", "quic-only": true, "stable-binding": true}}},
++		{caps.Ack.Sent, desync.ErrSplitWaitUnsupported, map[string]any{"split": "1+s", "split-wait": "sent", "split-wait-timeout": 1000}},
++		{caps.OOB && caps.Disorder.Supported, desync.ErrOOBUnsupported, map[string]any{"split": "1+s", "disorder": true, "oob": true, "oob-byte": "a"}},
++	} {
++		tc.mapping["name"], tc.mapping["type"] = "platform", "desync"
++		_, err := ParseProxy(tc.mapping)
++		if tc.ok {
++			assert.NoError(t, err, "%v", tc.mapping)
++		} else {
++			assert.Error(t, err, "%v", tc.mapping)
++		}
++	}
++}
++
++func TestParseDesyncInvalid(t *testing.T) {
++	for name, extra := range map[string]map[string]any{
++		"no method":            {},
++		"bad position":         {"tlsrec": "1+x"},
++		"long delay":           {"split": "2", "split-delay": 5000},
++		"tfo":                  {"tlsrec": "1+s", "tfo": true},
++		"mptcp":                {"tlsrec": "1+s", "mptcp": true},
++		"dialer-proxy":         {"tlsrec": "1+s", "dialer-proxy": "vpn"},
++		"fake ttl":             {"tlsrec": "1+s", "fake": map[string]any{"ttl": 999}},
++		"fake sni":             {"fake": map[string]any{"ttl": 4, "sni": "not-a-list.example"}},
++		"udp repeats":          {"udp": map[string]any{"ttl": 4, "repeats": 100}},
++		"split-wait":           {"split": "2", "split-wait": "soon"},
++		"random":               {"random": map[string]any{"tlsrec": "1..8"}},
++		"auto-ttl bool":        {"fake": map[string]any{"ttl": 4, "auto-ttl": true}},
++		"udp template":         {"udp": map[string]any{"ttl": 4, "template": "quic-initial"}},
++		"timeout without wait": {"split": "2", "split-wait": "none", "split-wait-timeout": 100},
++	} {
++		mapping := map[string]any{"name": name, "type": "desync"}
++		for k, v := range extra {
++			mapping[k] = v
++		}
++		_, err := ParseProxy(mapping)
++		assert.Error(t, err, name)
++	}
++}
++
++// auto-ttl is a mapping: {} means the defaults, absent means off.
++func TestParseDesyncAutoTTL(t *testing.T) {
++	if !desync.PlatformCapabilities().FakeTCP {
++		t.Skip("no fake on this OS")
++	}
++	for _, auto := range []map[string]any{{}, {"delta": 2, "min": 4, "max": 12}} {
++		p, err := ParseProxy(map[string]any{"name": "auto", "type": "desync", "fake": map[string]any{"ttl": 4, "auto-ttl": auto}})
++		require.NoError(t, err)
++		raw, err := json.Marshal(p)
++		require.NoError(t, err)
++		var v struct {
++			Desync struct {
++				TCP struct {
++					Fake struct {
++						AutoTTL map[string]int `json:"auto-ttl"`
++					} `json:"fake"`
++				} `json:"tcp"`
++			} `json:"desync"`
++		}
++		require.NoError(t, json.Unmarshal(raw, &v))
++		want := map[string]int{"delta": 1, "min": 3, "max": 20}
++		if len(auto) > 0 {
++			want = map[string]int{"delta": 2, "min": 4, "max": 12}
++		}
++		assert.Equal(t, want, v.Desync.TCP.Fake.AutoTTL)
++	}
++}
++
++// The legacy direct.desync form of patches 0017-0022 still loads next to
++// the new type, unchanged.
++func TestParseDirectDesyncStillLoads(t *testing.T) {
++	p, err := ParseProxy(map[string]any{"name": "SLOTH-DESYNC-YOUTUBE-1", "type": "direct",
++		"desync": map[string]any{"tlsrec": "1+s", "split": "1+s", "split-delay-ms": 5, "dns-fallback": true, "reject-quic": true}})
++	require.NoError(t, err)
++	assert.Equal(t, C.Direct, p.Type())
++}
++
++// A URL test of the outbound dials through the transformer: the test
++// server's raw socket receives a fragmented ClientHello. The handshake
++// itself fails on the self-made server, which does not matter here.
++func TestDesyncURLTestGoesThroughTransformer(t *testing.T) {
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer ln.Close()
++	records := make(chan int, 1)
++	go func() {
++		c, err := ln.Accept()
++		if err != nil {
++			records <- -1
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		header := make([]byte, 5)
++		if _, err := io.ReadFull(c, header); err != nil || header[0] != 0x16 {
++			records <- -1
++			return
++		}
++		body := make([]byte, binary.BigEndian.Uint16(header[3:]))
++		if _, err := io.ReadFull(c, body); err != nil {
++			records <- -1
++			return
++		}
++		// the first record's handshake length announces more than it holds
++		if len(body) < 4 || len(body) < 4+(int(body[1])<<16|int(body[2])<<8|int(body[3])) {
++			records <- 2
++		} else {
++			records <- 1
++		}
++	}()
++
++	// an IP literal sends no server name, so cut at an absolute position
++	p, err := ParseProxy(map[string]any{"name": "desync-yt", "type": "desync", "tlsrec": "1+s,8"})
++	require.NoError(t, err)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	_, _ = p.URLTest(ctx, fmt.Sprintf("https://127.0.0.1:%d/generate_204", ln.Addr().(*net.TCPAddr).Port), nil)
++	assert.Equal(t, 2, <-records, "the URL test's ClientHello was not fragmented")
++}
+diff --git a/constant/adapters.go b/constant/adapters.go
+index d91ef81..b595c23 100644
+--- a/constant/adapters.go
++++ b/constant/adapters.go
+@@ -24,6 +24,7 @@ const (
+ 	PassRule
+ 	Rematch
+ 	Dns
++	Desync // SlothClash core patch 0023
+ 
+ 	Relay
+ 	Selector
+@@ -196,6 +197,8 @@ func (at AdapterType) String() string {
+ 		return "Rematch"
+ 	case Dns:
+ 		return "Dns"
++	case Desync:
++		return "Desync"
+ 	case Shadowsocks:
+ 		return "Shadowsocks"
+ 	case ShadowsocksR:
+diff --git a/go.mod b/go.mod
+index 2ffc91b..7a422d1 100644
+--- a/go.mod
++++ b/go.mod
+@@ -3,7 +3,7 @@ module github.com/metacubex/mihomo
+ go 1.20
+ 
+ require (
+-	github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e
++	github.com/Nemu-x/desync v0.1.0
+ 	github.com/bahlo/generic-list-go v0.2.0
+ 	github.com/coreos/go-iptables v0.8.0
+ 	github.com/dlclark/regexp2 v1.12.0
+diff --git a/go.sum b/go.sum
+index b2384a1..a034ad1 100644
+--- a/go.sum
++++ b/go.sum
+@@ -1,7 +1,5 @@
+-github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74 h1:5jEzEoI2rYOxEk2rzauD8+EbcA6P83M37SrDJKhzgnI=
+-github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
+-github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e h1:yYLGt9g/zY1uXhSku56cXLV483MDgCAVYO0XbEz5Nhs=
+-github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
++github.com/Nemu-x/desync v0.1.0 h1:FMWTAX90URFF6w2fFbaot1VYBz+O5wG8NHFRETyGp9U=
++github.com/Nemu-x/desync v0.1.0/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
+ github.com/RyuaNerin/go-krypto v1.3.0 h1:smavTzSMAx8iuVlGb4pEwl9MD2qicqMzuXR2QWp2/Pg=
+ github.com/RyuaNerin/go-krypto v1.3.0/go.mod h1:9R9TU936laAIqAmjcHo/LsaXYOZlymudOAxjaBf62UM=
+ github.com/RyuaNerin/testingutil v0.1.0 h1:IYT6JL57RV3U2ml3dLHZsVtPOP6yNK7WUVdzzlpNrss=
+diff --git a/hub/route/desync_profile.go b/hub/route/desync_profile.go
+index 36ff06d..f6696ee 100644
+--- a/hub/route/desync_profile.go
++++ b/hub/route/desync_profile.go
+@@ -69,7 +69,7 @@ func desyncProfileKind(p C.Proxy, m *C.Metadata) string {
+ 			return "no_udp"
+ 		}
+ 		switch p.Type() {
+-		case C.Direct, C.Compatible:
++		case C.Direct, C.Compatible, C.Desync:
+ 			return "direct"
+ 		case C.Reject, C.RejectDrop, C.Pass, C.PassRule, C.Rematch, C.Dns:
+ 			return "blocked"
+diff --git a/hub/route/desync_profile_test.go b/hub/route/desync_profile_test.go
+index 8e3b59b..019a4de 100644
+--- a/hub/route/desync_profile_test.go
++++ b/hub/route/desync_profile_test.go
+@@ -120,6 +120,7 @@ func TestDesyncReserveRejectsUnknownTargetsAndUnsuitableUDP(t *testing.T) {
+ 		kind string
+ 	}{
+ 		{&reserveTestProxy{name: "direct", kind: C.Direct, udp: true}, "direct"},
++		{&reserveTestProxy{name: "desync", kind: C.Desync, udp: true}, "direct"}, // patch 0023: a desync outbound is no remote reserve
+ 		{&reserveTestProxy{name: "reject", kind: C.Reject, udp: true}, "blocked"},
+ 		{&reserveTestProxy{name: "tcp-only", kind: C.Socks5}, "no_udp"},
+ 	} {
+diff --git a/tunnel/desync_route_test.go b/tunnel/desync_route_test.go
+new file mode 100644
+index 0000000..b899f07
+--- /dev/null
++++ b/tunnel/desync_route_test.go
+@@ -0,0 +1,118 @@
++package tunnel_test
++
++import (
++	"context"
++	"crypto/tls"
++	"encoding/binary"
++	"io"
++	"net"
++	"net/netip"
++	"strconv"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/adapter"
++	"github.com/metacubex/mihomo/adapter/outbound"
++	C "github.com/metacubex/mihomo/constant"
++	R "github.com/metacubex/mihomo/rules"
++	"github.com/metacubex/mihomo/tunnel"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// firstRecord reads the first TLS record of the connection ln accepts and
++// reports whether it holds the whole ClientHello.
++func firstRecord(ln net.Listener) <-chan bool {
++	whole := make(chan bool, 1)
++	go func() {
++		c, err := ln.Accept()
++		if err != nil {
++			close(whole)
++			return
++		}
++		defer c.Close()
++		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++		header := make([]byte, 5)
++		if _, err := io.ReadFull(c, header); err != nil || header[0] != 0x16 {
++			close(whole)
++			return
++		}
++		body := make([]byte, binary.BigEndian.Uint16(header[3:]))
++		if _, err := io.ReadFull(c, body); err != nil {
++			close(whole)
++			return
++		}
++		whole <- len(body) >= 4 && len(body) >= 4+(int(body[1])<<16|int(body[2])<<8|int(body[3]))
++	}()
++	return whole
++}
++
++// routeHello sends a ClientHello for host through the tunnel to ln.
++func routeHello(t *testing.T, ln net.Listener, host string) <-chan bool {
++	t.Helper()
++	whole := firstRecord(ln)
++	client, server := net.Pipe()
++	t.Cleanup(func() { _ = client.Close() })
++	ap := ln.Addr().(*net.TCPAddr).AddrPort()
++	metadata := &C.Metadata{
++		NetWork: C.TCP,
++		Type:    C.SOCKS5,
++		SrcIP:   netip.MustParseAddr("192.0.2.1"),
++		SrcPort: 40000,
++		DstIP:   ap.Addr().Unmap(),
++		DstPort: ap.Port(),
++	}
++	go tunnel.Tunnel.HandleTCPConn(server, metadata)
++	go func() {
++		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++		defer cancel()
++		_ = tls.Client(client, &tls.Config{ServerName: host, InsecureSkipVerify: true}).HandshakeContext(ctx)
++	}()
++	return whole
++}
++
++// A rule sends one destination to the desync outbound (patch 0023), the
++// rest to DIRECT: only the first arrives with its ClientHello split into
++// records.
++func TestDesyncRuleRouting(t *testing.T) {
++	desyncLn, err := net.Listen("tcp4", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer desyncLn.Close()
++	directLn, err := net.Listen("tcp4", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer directLn.Close()
++
++	oldProxies, oldMode, oldStatus := tunnel.Proxies(), tunnel.Mode(), tunnel.Status()
++	oldRules := tunnel.Rules()
++	t.Cleanup(func() {
++		tunnel.UpdateProxies(oldProxies, tunnel.Providers())
++		tunnel.UpdateRules(oldRules, nil, tunnel.RuleProviders())
++		tunnel.SetMode(oldMode)
++		if oldStatus == tunnel.Suspend {
++			tunnel.OnSuspend()
++		}
++	})
++	rule, err := R.ParseRule("DST-PORT", strconv.Itoa(desyncLn.Addr().(*net.TCPAddr).Port), "desync-yt", nil, nil)
++	require.NoError(t, err)
++	match, err := R.ParseRule("MATCH", "", "DIRECT", nil, nil)
++	require.NoError(t, err)
++	desync, err := adapter.ParseProxy(map[string]any{"name": "desync-yt", "type": "desync", "tlsrec": "1+s"})
++	require.NoError(t, err)
++	tunnel.UpdateProxies(map[string]C.Proxy{
++		"DIRECT":    adapter.NewProxy(outbound.NewDirect()),
++		"REJECT":    adapter.NewProxy(outbound.NewReject()),
++		"desync-yt": desync,
++	}, nil)
++	tunnel.UpdateRules([]C.Rule{rule, match}, nil, nil)
++	tunnel.SetMode(tunnel.Rule)
++	tunnel.OnRunning()
++
++	whole, ok := <-routeHello(t, desyncLn, "www.youtube.test")
++	require.True(t, ok, "the desync connection did not arrive")
++	assert.False(t, whole, "a rule-routed desync connection must arrive fragmented")
++
++	whole, ok = <-routeHello(t, directLn, "other.test")
++	require.True(t, ok, "the DIRECT connection did not arrive")
++	assert.True(t, whole, "DIRECT must stay untouched")
++}

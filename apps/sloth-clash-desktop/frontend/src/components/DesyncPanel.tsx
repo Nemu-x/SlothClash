@@ -5,6 +5,7 @@ import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
 import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
+import type { DesyncDraft } from '../hooks/useDesyncDraft'
 import {
   customDomainErrorText,
   DESYNC_CUSTOM_LIMIT,
@@ -31,7 +32,8 @@ export type DesyncPanelVariant = 'manage' | 'onboarding'
 
 /**
  * The Desync controls, laid out for the Desync modal: a scrolling body and a
- * modal footer. Every switch saves at once into the active profile.
+ * modal footer. Every switch saves at once into the active profile, or, with
+ * `draft` (onboarding), only changes the draft.
  */
 export function DesyncPanel({
   connected,
@@ -44,6 +46,7 @@ export function DesyncPanel({
   footerNote,
   children,
   onSavingChange,
+  draft,
 }: {
   connected: boolean
   mode: string
@@ -61,19 +64,30 @@ export function DesyncPanel({
   children?: ReactNode
   /** A settings write started / finished. */
   onSavingChange?: (saving: boolean) => void
+  /** Edit this draft instead of the active profile's settings. */
+  draft?: DesyncDraft
 }) {
   const { t } = useTranslation()
   const baseId = useId()
+  const live = useDesyncStatus({ connected, mode, traffic })
+  const { error: pollError, retry: retryAuto } = live
   const {
-    snapshot,
-    error: pollError,
     save: saveSettings,
     addCustom,
     addService,
     removeCustom,
     setCustomEnabled,
-    retry: retryAuto,
-  } = useDesyncStatus({ connected, mode, traffic })
+  } = draft ?? live
+  // A draft is shown with the live status' platform and core support.
+  const snapshot =
+    draft && live.snapshot
+      ? draft.settings
+        ? {
+            ...live.snapshot,
+            status: { ...live.snapshot.status, settings: draft.settings },
+          }
+        : null
+      : live.snapshot
   const catalog = useDesyncServices()
   const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)

@@ -287,25 +287,30 @@ func (a *App) AddDesyncCustomDomain(input string) (DesyncStatus, error) {
 		return a.GetDesyncStatus(), err
 	}
 	return a.updateDesyncCustom("add", func(entries []DesyncCustomEntry) ([]DesyncCustomEntry, error) {
-		for _, e := range entries {
-			if e.Domain == domain {
-				return nil, customDomainError("duplicate")
-			}
-		}
-		// A service in the list (on or off) already covers its domains; a
-		// second group for the same names would split their traffic.
-		if service := serviceOverlap(entries, domain); service != "" {
-			return nil, &desyncCustomError{Code: "service_overlap", Detail: service}
-		}
-		if len(entries) >= desyncCustomLimit {
-			return nil, customDomainError("limit")
-		}
-		id, err := newDesyncCustomID(entries)
-		if err != nil {
-			return nil, err
-		}
-		return append(entries, DesyncCustomEntry{ID: id, Domain: domain, Enabled: true}), nil
+		return addDesyncCustomDomain(entries, domain)
 	})
+}
+
+// addDesyncCustomDomain appends the (normalized) domain to entries, enabled.
+func addDesyncCustomDomain(entries []DesyncCustomEntry, domain string) ([]DesyncCustomEntry, error) {
+	for _, e := range entries {
+		if e.Domain == domain {
+			return nil, customDomainError("duplicate")
+		}
+	}
+	// A service in the list (on or off) already covers its domains; a
+	// second group for the same names would split their traffic.
+	if service := serviceOverlap(entries, domain); service != "" {
+		return nil, &desyncCustomError{Code: "service_overlap", Detail: service}
+	}
+	if len(entries) >= desyncCustomLimit {
+		return nil, customDomainError("limit")
+	}
+	id, err := newDesyncCustomID(entries)
+	if err != nil {
+		return nil, err
+	}
+	return append(entries, DesyncCustomEntry{ID: id, Domain: domain, Enabled: true}), nil
 }
 
 // ListDesyncServices returns the popular-service catalog (ID, name, every
@@ -325,30 +330,75 @@ func (a *App) ListDesyncServices() []DesyncService {
 // put one name in two groups. RemoveDesyncCustomDomain and
 // SetDesyncCustomDomainEnabled take the service entry's ID like any other.
 func (a *App) AddDesyncService(id string) (DesyncStatus, error) {
-	service, ok := desync.ServiceByID(id)
-	if !ok {
+	if _, ok := desync.ServiceByID(id); !ok {
 		return a.GetDesyncStatus(), customDomainError("unknown_service")
 	}
 	return a.updateDesyncCustom("add_service", func(entries []DesyncCustomEntry) ([]DesyncCustomEntry, error) {
-		kept := entries[:0:0]
-		for _, e := range entries {
-			if e.Service == service.ID {
-				return nil, customDomainError("duplicate")
-			}
-			if e.Service == "" && serviceOverlap([]DesyncCustomEntry{{Service: service.ID}}, e.Domain) != "" {
-				continue // replaced by the service
-			}
-			kept = append(kept, e)
-		}
-		if len(kept) >= desyncCustomLimit {
-			return nil, customDomainError("limit")
-		}
-		entryID, err := newDesyncCustomID(entries)
-		if err != nil {
-			return nil, err
-		}
-		return append(kept, DesyncCustomEntry{ID: entryID, Service: service.ID, Enabled: true}), nil
+		return addDesyncService(entries, id)
 	})
+}
+
+// addDesyncService appends the popular service id to entries, enabled,
+// dropping the plain entries it covers.
+func addDesyncService(entries []DesyncCustomEntry, id string) ([]DesyncCustomEntry, error) {
+	service, ok := desync.ServiceByID(id)
+	if !ok {
+		return nil, customDomainError("unknown_service")
+	}
+	kept := entries[:0:0]
+	for _, e := range entries {
+		if e.Service == service.ID {
+			return nil, customDomainError("duplicate")
+		}
+		if e.Service == "" && serviceOverlap([]DesyncCustomEntry{{Service: service.ID}}, e.Domain) != "" {
+			continue // replaced by the service
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) >= desyncCustomLimit {
+		return nil, customDomainError("limit")
+	}
+	entryID, err := newDesyncCustomID(entries)
+	if err != nil {
+		return nil, err
+	}
+	return append(kept, DesyncCustomEntry{ID: entryID, Service: service.ID, Enabled: true}), nil
+}
+
+// The onboarding builds a new Desync-only profile's selection before the
+// profile exists: nothing is saved until CreateDesyncOnlyProfile, so Cancel
+// leaves every profile as it was. These methods apply the same rules as the
+// saved list to a draft the UI holds (removing and switching an entry need
+// no rules and are done there).
+
+// NewDesyncDraft is the selection the onboarding starts from: a new
+// profile's defaults.
+func (a *App) NewDesyncDraft() DesyncSettings {
+	return defaultDesyncSettings()
+}
+
+// DraftDesyncAddCustomDomain is AddDesyncCustomDomain on a draft.
+func (a *App) DraftDesyncAddCustomDomain(draft DesyncSettings, input string) (DesyncSettings, error) {
+	domain, err := normalizeDesyncCustomDomain(input)
+	if err != nil {
+		return draft, err
+	}
+	entries, err := addDesyncCustomDomain(sanitizeDesyncCustom(draft.Custom), domain)
+	if err != nil {
+		return draft, err
+	}
+	draft.Custom = entries
+	return draft, nil
+}
+
+// DraftDesyncAddService is AddDesyncService on a draft.
+func (a *App) DraftDesyncAddService(draft DesyncSettings, id string) (DesyncSettings, error) {
+	entries, err := addDesyncService(sanitizeDesyncCustom(draft.Custom), id)
+	if err != nil {
+		return draft, err
+	}
+	draft.Custom = entries
+	return draft, nil
 }
 
 // RemoveDesyncCustomDomain removes the entry with the given ID.

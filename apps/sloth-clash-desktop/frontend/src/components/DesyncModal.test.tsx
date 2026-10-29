@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { DesyncStatus } from '../api/desync'
+import type { DesyncSettings, DesyncStatus } from '../api/desync'
 import { useDesyncModal } from '../hooks/useDesyncModal'
 import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { HomePage } from '../pages/Home'
@@ -10,6 +10,7 @@ import { ProfilesPage } from '../pages/Profiles'
 import {
   DESYNC_SERVICES,
   desyncAuto,
+  desyncSettings,
   desyncSnapshot,
   desyncStatus,
 } from '../test/desyncFixtures'
@@ -28,6 +29,24 @@ const noop = () => undefined
 function stubStatus(status: DesyncStatus = desyncStatus()) {
   wailsApp.stub('GetDesyncStatus', () => status)
   wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
+}
+
+/** What the onboarding starts from (NewDesyncDraft): a new profile's defaults. */
+function stubDraft(over: Partial<DesyncSettings> = {}) {
+  return wailsApp.stub('NewDesyncDraft', () =>
+    desyncSettings({ enabled: false, discordUDP: false, ...over }),
+  )
+}
+
+/** Every call that would save Desync settings for an existing profile. */
+function stubSavingCalls() {
+  return [
+    'SetDesyncSettings',
+    'AddDesyncCustomDomain',
+    'AddDesyncService',
+    'RemoveDesyncCustomDomain',
+    'SetDesyncCustomDomainEnabled',
+  ].map((name) => wailsApp.stub(name, () => desyncStatus()))
 }
 
 /** CreateDesyncOnlyProfile appending a profile; `activeId` = what it left active. */
@@ -121,6 +140,7 @@ describe('DesyncModal: manage', () => {
 describe('DesyncModal: onboarding', () => {
   it('asks only what to unblock: no master switch, status or diagnostics', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
+    stubDraft()
     renderModal('onboarding')
     expect(
       screen.getByRole('dialog', { name: 'Unblock without VPN' }),
@@ -137,14 +157,12 @@ describe('DesyncModal: onboarding', () => {
   })
 
   it('Create makes a Desync-only profile with the selection and activates it', async () => {
-    const status = desyncStatus({
-      udpCoreSupported: true,
-      settings: { enabled: false, discord: true, discordUDP: false },
-    })
-    stubStatus(status)
-    const set = wailsApp.stub('SetDesyncSettings', (s) =>
-      desyncStatus({ settings: s }),
+    // The active profile has Desync off; the draft starts from the defaults.
+    stubStatus(
+      desyncStatus({ udpCoreSupported: true, settings: { enabled: false } }),
     )
+    stubDraft({ youtube: true, discord: true, discordUDP: false })
+    const [set] = stubSavingCalls()
     const create = stubCreate('p1')
     const activate = wailsApp.stub('ActivateProfile', () => ({}))
     const props = renderModal('onboarding')
@@ -159,7 +177,7 @@ describe('DesyncModal: onboarding', () => {
     // Same patch as the master switch: Discord gets voice when supported.
     // The settings go into the new profile; the active one is not touched.
     expect(create).toHaveBeenCalledWith('Home', {
-      ...status.settings,
+      ...desyncSettings({ enabled: false, discordUDP: false }),
       enabled: true,
       discord: true,
       discordUDP: true,
@@ -173,23 +191,70 @@ describe('DesyncModal: onboarding', () => {
     expect(props.onCreated).toHaveBeenCalledWith('Home')
   })
 
-  it('leaves Desync settings alone when it is already on', async () => {
-    stubStatus(desyncStatus())
-    const set = wailsApp.stub('SetDesyncSettings', (s) =>
-      desyncStatus({ settings: s }),
+  it('keeps the choices locally and saves them in one call on Create', async () => {
+    stubStatus(desyncStatus({ settings: { enabled: false } }))
+    stubDraft({ youtube: true, discord: false })
+    const saving = stubSavingCalls()
+    const addSite = wailsApp.stub(
+      'DraftDesyncAddCustomDomain',
+      (draft: DesyncSettings, domain: string) => ({
+        ...draft,
+        custom: [
+          ...(draft.custom ?? []),
+          { id: 'a1b2c3d4', domain, enabled: true },
+        ],
+      }),
     )
-    stubCreate('p1')
+    const create = stubCreate('p1')
     wailsApp.stub('ActivateProfile', () => ({}))
     const props = renderModal('onboarding')
     await screen.findByRole('switch', { name: 'YouTube' })
+
+    fireEvent.click(screen.getByRole('switch', { name: 'YouTube' }))
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'YouTube' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      ),
+    )
+    fireEvent.change(screen.getByLabelText('Domain'), {
+      target: { value: 'example.org' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await screen.findByText('example.org')
+    expect(addSite).toHaveBeenCalledWith(
+      expect.objectContaining({ youtube: false }),
+      'example.org',
+    )
+    // Turn the new site off and on again: still nothing saved.
+    const site = screen.getByRole('switch', { name: 'example.org' })
+    fireEvent.click(site)
+    await waitFor(() => expect(site).toHaveAttribute('aria-checked', 'false'))
+    fireEvent.click(site)
+    await waitFor(() => expect(site).toHaveAttribute('aria-checked', 'true'))
+    for (const call of saving) expect(call).not.toHaveBeenCalled()
+
+    // Enabled again once the last edit settled.
+    await waitFor(() => expect(createButton()).toBeEnabled())
     fireEvent.click(createButton())
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
-    expect(set).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(create).toHaveBeenCalledWith(
+      'Desync only',
+      expect.objectContaining({
+        enabled: true,
+        youtube: false,
+        custom: [{ id: 'a1b2c3d4', domain: 'example.org', enabled: true }],
+      }),
+    )
+    for (const call of saving) expect(call).not.toHaveBeenCalled()
+    // An empty name gets the localized default.
     expect(props.onCreated).toHaveBeenCalledWith('Desync only')
   })
 
   it('does not activate again a profile the backend already made active', async () => {
     stubStatus(desyncStatus())
+    stubDraft()
     stubCreate(NEW_ID)
     const activate = wailsApp.stub('ActivateProfile', () => ({}))
     const props = renderModal('onboarding')
@@ -201,6 +266,7 @@ describe('DesyncModal: onboarding', () => {
 
   it('activates the new profile, not an older Desync-only one', async () => {
     stubStatus(desyncStatus())
+    stubDraft()
     wailsApp.stub('CreateDesyncOnlyProfile', () => ({
       profile: {
         activeProfileId: 'p1',
@@ -221,29 +287,62 @@ describe('DesyncModal: onboarding', () => {
     expect(props.onCreated).toHaveBeenCalledWith('New')
   })
 
-  it('Cancel creates nothing', async () => {
+  it('Cancel after changing the choices changes nothing', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
-    const set = wailsApp.stub('SetDesyncSettings', () => desyncStatus())
+    stubDraft({ youtube: true, discord: false })
+    const saving = stubSavingCalls()
+    wailsApp.stub('DraftDesyncAddCustomDomain', (draft: DesyncSettings) => ({
+      ...draft,
+      custom: [{ id: 'a1b2c3d4', domain: 'example.org', enabled: true }],
+    }))
     const create = stubCreate()
     const props = renderModal('onboarding')
     await screen.findByRole('switch', { name: 'YouTube' })
+    for (const name of ['YouTube', 'Discord']) {
+      const before = screen.getByRole('switch', { name }).ariaChecked
+      fireEvent.click(screen.getByRole('switch', { name }))
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name }).ariaChecked).not.toBe(
+          before,
+        ),
+      )
+    }
+    fireEvent.change(screen.getByLabelText('Domain'), {
+      target: { value: 'example.org' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await screen.findByText('example.org')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove example.org' }))
+    await waitFor(() => expect(screen.queryByText('example.org')).toBeNull())
+
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(props.onClose).toHaveBeenCalledTimes(1)
     expect(create).not.toHaveBeenCalled()
-    expect(set).not.toHaveBeenCalled()
+    for (const call of saving) expect(call).not.toHaveBeenCalled()
   })
 
-  it('cannot create without a service or a site', async () => {
+  it('starts from the defaults, not from the active profile', async () => {
     stubStatus(
       desyncStatus({
         settings: {
-          enabled: false,
           youtube: false,
           discord: false,
           discordUDP: false,
+          custom: [{ id: 'a1', domain: 'example.org', enabled: true }],
         },
       }),
     )
+    stubDraft({ youtube: true, discord: false })
+    renderModal('onboarding')
+    expect(
+      await screen.findByRole('switch', { name: 'YouTube' }),
+    ).toHaveAttribute('aria-checked', 'true')
+    expect(screen.queryByText('example.org')).toBeNull()
+  })
+
+  it('cannot create without a service or a site', async () => {
+    stubStatus(desyncStatus({ settings: { enabled: false } }))
+    stubDraft({ youtube: false, discord: false, discordUDP: false })
     const create = stubCreate()
     renderModal('onboarding')
     await screen.findByRole('switch', { name: 'YouTube' })
@@ -255,6 +354,7 @@ describe('DesyncModal: onboarding', () => {
 
   it('a failed activation keeps the dialog; a retry does not create twice', async () => {
     stubStatus(desyncStatus())
+    stubDraft()
     const create = stubCreate('p1')
     const activate = wailsApp.stub('ActivateProfile', () =>
       Promise.reject(new Error('core start failed')),
@@ -276,6 +376,7 @@ describe('DesyncModal: onboarding', () => {
 
   it('a refused creation keeps the dialog and shows the reason', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
+    stubDraft()
     const activate = wailsApp.stub('ActivateProfile', () => ({}))
     wailsApp.stub('CreateDesyncOnlyProfile', () =>
       Promise.reject(new Error('the embedded core does not support desync')),
@@ -399,6 +500,7 @@ function EmptyHomeHost({ withFallback }: { withFallback: boolean }) {
 describe('DesyncModal: focus after creating from an empty Home', () => {
   async function createFromEmptyHome(withFallback: boolean) {
     stubStatus(desyncStatus())
+    stubDraft()
     stubCreate(NEW_ID)
     renderWithProviders(<EmptyHomeHost withFallback={withFallback} />)
     const link = screen.getByRole('button', {

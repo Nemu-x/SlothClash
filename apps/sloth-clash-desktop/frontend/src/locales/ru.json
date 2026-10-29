@@ -832,7 +832,7 @@
         "discord": "Чат и голос"
       },
       "nameLabel": "Имя профиля",
-      "namePlaceholder": "Пусто = «Desync only»",
+      "defaultName": "Только Desync",
       "needSelection": "Включи сервис или добавь сайт.",
       "create": "Создать профиль",
       "creating": "Создаём…",

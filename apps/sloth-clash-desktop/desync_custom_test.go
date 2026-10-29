@@ -106,7 +106,7 @@ func TestDesyncCustomDomainNormalization(t *testing.T) {
 			}
 			continue
 		}
-		var custom *desyncCustomError
+		var custom *desyncError
 		if !errors.As(err, &custom) || custom.Code != c.code {
 			t.Errorf("%q: got %q, %v; want error %s", c.in, got, err, c.code)
 		}
@@ -167,7 +167,7 @@ func TestDesyncCustomEntryLifecycle(t *testing.T) {
 	if !status.Settings.YouTube || status.Settings.Enabled {
 		t.Fatalf("defaults lost: %+v", status.Settings)
 	}
-	if _, err := a.AddDesyncCustomDomain("EXAMPLE.org"); !isCustomCode(err, "duplicate") {
+	if _, err := a.AddDesyncCustomDomain("EXAMPLE.org"); !isDesyncCode(err, "duplicate") {
 		t.Fatalf("duplicate: %v", err)
 	}
 	status, _ = a.AddDesyncCustomDomain("other.example.net")
@@ -189,7 +189,7 @@ func TestDesyncCustomEntryLifecycle(t *testing.T) {
 	if err != nil || len(status.Settings.Custom) != 1 || status.Settings.Custom[0].Domain != "other.example.net" {
 		t.Fatalf("remove: %+v %v", status.Settings.Custom, err)
 	}
-	if _, err := a.RemoveDesyncCustomDomain(entry.ID); !isCustomCode(err, "not_found") {
+	if _, err := a.RemoveDesyncCustomDomain(entry.ID); !isDesyncCode(err, "not_found") {
 		t.Fatalf("remove twice: %v", err)
 	}
 	// Stored as JSON the prefs file round-trips; an old file without the key
@@ -259,7 +259,7 @@ func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
 	}
 }
 
-func isCustomCode(err error, code string) bool {
-	var custom *desyncCustomError
+func isDesyncCode(err error, code string) bool {
+	var custom *desyncError
 	return errors.As(err, &custom) && custom.Code == code
 }

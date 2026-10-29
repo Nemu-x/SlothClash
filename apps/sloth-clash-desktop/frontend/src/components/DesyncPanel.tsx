@@ -7,7 +7,7 @@ import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import type { DesyncDraft } from '../hooks/useDesyncDraft'
 import {
-  customDomainErrorText,
+  desyncErrorText,
   DESYNC_CUSTOM_LIMIT,
   desyncCustomViews,
   desyncEnablePatch,
@@ -129,7 +129,7 @@ export function DesyncPanel({
     try {
       await saveSettings({ ...status.settings, ...patch })
     } catch (err: unknown) {
-      if (mountedRef.current) setError(String(err))
+      if (mountedRef.current) setError(desyncErrorText(t, err))
     } finally {
       if (mountedRef.current) setSaving(false)
     }
@@ -155,7 +155,7 @@ export function DesyncPanel({
       return await call()
     } catch (err: unknown) {
       if (mountedRef.current) {
-        const text = customDomainErrorText(t, err, {
+        const text = desyncErrorText(t, err, {
           serviceName,
           forService: service !== undefined,
         })

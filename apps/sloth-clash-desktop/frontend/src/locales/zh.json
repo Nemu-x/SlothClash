@@ -789,6 +789,13 @@
     },
     "copyFailed": "无法复制诊断信息",
     "homeChipAria": "Desync 状态 · 打开 Desync",
+    "error": {
+      "unsupported_core": "此版本的内核不支持 Desync。",
+      "unsupported_udp_core": "此版本的内核不支持通过 Desync 的 Discord 语音。",
+      "no_selection": "请先开启一个服务或添加一个网站。",
+      "discord_platform": "通过 Desync 的 Discord 仅支持 Windows。",
+      "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。"
+    },
     "custom": {
       "title": "自定义域名",
       "hint": "包含所有子域名。每个网站会单独自动测试策略。",

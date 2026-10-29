@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -72,13 +71,13 @@ func desyncUDPCoreSupported() bool {
 func validateDesyncSettings(s DesyncSettings, platform string, coreSupported bool) (DesyncSettings, error) {
 	if s.Enabled {
 		if !coreSupported {
-			return s, fmt.Errorf("the embedded core does not support desync")
+			return s, desyncErr("unsupported_core")
 		}
 		if !desyncHasSelection(s) {
-			return s, fmt.Errorf("select YouTube, Discord or a custom domain before enabling desync")
+			return s, desyncErr("no_selection")
 		}
 		if (s.Discord || s.DiscordUDP) && platform != "windows" {
-			return s, fmt.Errorf("the Discord fake method currently requires Windows")
+			return s, desyncErr("discord_platform")
 		}
 	}
 	return s, nil
@@ -96,21 +95,32 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 
 // SetDesyncSettings applies the switches of next (on/off, YouTube, Discord)
 // to the active profile. Its custom list is kept: it has its own methods.
+//
+// Turning off the last selected service while Desync is on turns Desync off,
+// as removing or switching off the last custom entry does
+// (updateDesyncCustom): an enabled Desync with nothing selected is not a
+// valid state. Switching Desync on with nothing selected is refused
+// (no_selection). A Desync-only profile stays on and may select nothing.
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	a.desyncCtl.invalidate()
 	next, err := a.updateActiveDesync(func(current DesyncSettings, desyncOnly bool) (DesyncSettings, error) {
 		// A settings object the UI read before an add/remove must not roll
 		// the list back.
 		next.Custom = current.Custom
-		if desyncOnly {
+		check := next
+		switch {
+		case desyncOnly:
 			next.Enabled = true
+			check.Enabled = desyncHasSelection(next)
+		case next.Enabled && current.Enabled && !desyncHasSelection(next):
+			next.Enabled = false
+			check.Enabled = false
 		}
-		next, err := validateDesyncSettings(next, runtime.GOOS, desyncCoreSupported())
-		if err != nil {
+		if _, err := validateDesyncSettings(check, runtime.GOOS, desyncCoreSupported()); err != nil {
 			return current, err
 		}
-		if next.Enabled && next.DiscordUDP && !desyncUDPCoreSupported() {
-			return current, fmt.Errorf("the embedded core does not support desync UDP")
+		if check.Enabled && next.DiscordUDP && !desyncUDPCoreSupported() {
+			return current, desyncErr("unsupported_udp_core")
 		}
 		return next, nil
 	})
@@ -124,7 +134,7 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 
 // errNoDesyncProfile: Desync settings belong to a profile, and none is
 // active.
-var errNoDesyncProfile = errors.New("no active profile for the Desync settings")
+var errNoDesyncProfile = desyncErr("no_profile")
 
 // updateActiveDesync applies change to the active profile's effective Desync
 // settings (a copy; desyncOnly tells whether it is a Desync-only profile)

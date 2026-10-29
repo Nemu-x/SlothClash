@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -96,7 +95,7 @@ func (a *App) CreateDesyncOnlyProfile(name string, settings DesyncSettings) (App
 		return a.GetAppState(), err
 	}
 	if settings.DiscordUDP && !desyncUDPCoreSupported() {
-		return a.GetAppState(), fmt.Errorf("the embedded core does not support desync UDP")
+		return a.GetAppState(), desyncErr("unsupported_udp_core")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

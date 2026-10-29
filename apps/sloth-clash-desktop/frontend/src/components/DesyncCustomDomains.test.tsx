@@ -71,7 +71,7 @@ describe('DesyncPanel: custom domains', () => {
   it('shows a translated validation error and keeps the input', async () => {
     stubBackend()
     wailsApp.stub('AddDesyncCustomDomain', () => {
-      throw 'custom domain: builtin'
+      throw 'desync: builtin'
     })
     await renderCard()
     const input = screen.getByRole('textbox', { name: 'Domain' })

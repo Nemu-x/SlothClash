@@ -216,14 +216,14 @@ describe('DesyncPanel: services', () => {
 
   it.each([
     [
-      'custom domain: limit',
+      'desync: limit',
       'Up to 32 entries, popular services included. Remove a site first.',
     ],
     [
-      'custom domain: unknown_service',
+      'desync: unknown_service',
       'This service is not available in this version.',
     ],
-    ['custom domain: duplicate', 'This service is already on the list.'],
+    ['desync: duplicate', 'This service is already on the list.'],
   ])('shows %s as a sentence under Popular services', async (raw, text) => {
     stubBackend()
     wailsApp.stub('AddDesyncService', () => {
@@ -251,7 +251,7 @@ describe('DesyncPanel: services', () => {
   it('a typed domain a service covers names the service', async () => {
     stubBackend(withCustom([FB]))
     wailsApp.stub('AddDesyncCustomDomain', () => {
-      throw 'custom domain: service_overlap: facebook'
+      throw 'desync: service_overlap: facebook'
     })
     await renderPanel()
     const input = screen.getByRole('textbox', { name: 'Domain' })

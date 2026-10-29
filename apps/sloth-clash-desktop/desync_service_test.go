@@ -10,8 +10,8 @@ import (
 	"SlothClashDesktop/internal/desync"
 )
 
-func customError(err error) *desyncCustomError {
-	custom, _ := err.(*desyncCustomError)
+func customError(err error) *desyncError {
+	custom, _ := err.(*desyncError)
 	return custom
 }
 
@@ -34,7 +34,7 @@ func TestDesyncServiceListMatchesCatalog(t *testing.T) {
 
 func TestDesyncServiceLifecycle(t *testing.T) {
 	a := desyncProfileApp(t, nil, nil)
-	if _, err := a.AddDesyncService("myspace"); !isCustomCode(err, "unknown_service") {
+	if _, err := a.AddDesyncService("myspace"); !isDesyncCode(err, "unknown_service") {
 		t.Fatalf("unknown service: %v", err)
 	}
 	status, err := a.AddDesyncService("facebook")
@@ -45,7 +45,7 @@ func TestDesyncServiceLifecycle(t *testing.T) {
 	if entry.Service != "facebook" || entry.Domain != "" || !entry.Enabled || !validDesyncCustomID(entry.ID) || entry.key() != "preset:facebook" {
 		t.Fatalf("entry: %+v", entry)
 	}
-	if _, err := a.AddDesyncService("facebook"); !isCustomCode(err, "duplicate") {
+	if _, err := a.AddDesyncService("facebook"); !isDesyncCode(err, "duplicate") {
 		t.Fatalf("duplicate service: %v", err)
 	}
 	// A user domain the service covers is rejected, naming the service, while
@@ -56,7 +56,7 @@ func TestDesyncServiceLifecycle(t *testing.T) {
 		}
 		for _, domain := range []string{"facebook.com", "https://scontent-ams2-1.xx.fbcdn.net/v/x.jpg", "m.me"} {
 			_, err := a.AddDesyncCustomDomain(domain)
-			if c := customError(err); c == nil || c.Code != "service_overlap" || c.Detail != "facebook" || err.Error() != "custom domain: service_overlap: facebook" {
+			if c := customError(err); c == nil || c.Code != "service_overlap" || c.Detail != "facebook" || err.Error() != "desync: service_overlap: facebook" {
 				t.Fatalf("enabled=%t %s: %v", enabled, domain, err)
 			}
 		}
@@ -140,10 +140,10 @@ func TestDesyncServiceCountsAsOneEntryTowardTheCap(t *testing.T) {
 	if _, err := a.AddDesyncService("x"); err != nil {
 		t.Fatalf("service as the last entry: %v", err)
 	}
-	if _, err := a.AddDesyncService("facebook"); !isCustomCode(err, "limit") {
+	if _, err := a.AddDesyncService("facebook"); !isDesyncCode(err, "limit") {
 		t.Fatalf("over the cap: %v", err)
 	}
-	if _, err := a.AddDesyncCustomDomain("other.example.net"); !isCustomCode(err, "limit") {
+	if _, err := a.AddDesyncCustomDomain("other.example.net"); !isDesyncCode(err, "limit") {
 		t.Fatalf("plain over the cap: %v", err)
 	}
 	// Replacing a covered entry frees its slot.

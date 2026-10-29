@@ -65,19 +65,25 @@ type DesyncService struct {
 	Domains []string `json:"domains"`
 }
 
-// desyncCustomError is a validation failure; Code is stable for the UI.
-// Detail, when set, names what the failure refers to (a service ID), never a
-// user domain.
-type desyncCustomError struct{ Code, Detail string }
+// desyncError is a Desync settings failure the UI translates: "desync:
+// <code>" or "desync: <code>: <detail>". Code is stable for the UI. Detail,
+// when set, names what the failure refers to (a service ID), never a user
+// domain.
+//
+// Codes: the custom list's (empty, invalid, ip, wildcard, public_suffix,
+// builtin, duplicate, limit, not_found, service_overlap, unknown_service)
+// and the settings' (unsupported_core, unsupported_udp_core, no_selection,
+// discord_platform, no_profile).
+type desyncError struct{ Code, Detail string }
 
-func (e *desyncCustomError) Error() string {
+func (e *desyncError) Error() string {
 	if e.Detail != "" {
-		return "custom domain: " + e.Code + ": " + e.Detail
+		return "desync: " + e.Code + ": " + e.Detail
 	}
-	return "custom domain: " + e.Code
+	return "desync: " + e.Code
 }
 
-func customDomainError(code string) error { return &desyncCustomError{Code: code} }
+func desyncErr(code string) error { return &desyncError{Code: code} }
 
 // serviceOverlap returns the service ID among entries whose catalog domains
 // overlap domain, or "". Every catalog domain counts, not only the ones the
@@ -104,12 +110,12 @@ func serviceOverlap(entries []DesyncCustomEntry, domain string) string {
 func normalizeDesyncCustomDomain(input string) (string, error) {
 	host := strings.TrimSpace(input)
 	if host == "" {
-		return "", customDomainError("empty")
+		return "", desyncErr("empty")
 	}
 	if strings.Contains(host, "://") {
 		u, err := url.Parse(host)
 		if err != nil || u.Host == "" {
-			return "", customDomainError("invalid")
+			return "", desyncErr("invalid")
 		}
 		host = u.Host
 	} else if i := strings.IndexAny(host, "/?#"); i >= 0 {
@@ -119,48 +125,48 @@ func normalizeDesyncCustomDomain(input string) (string, error) {
 		host = host[i+1:]
 	}
 	if strings.HasPrefix(host, "[") {
-		return "", customDomainError("ip")
+		return "", desyncErr("ip")
 	}
 	if strings.Count(host, ":") > 1 {
 		if _, err := netip.ParseAddr(host); err == nil {
-			return "", customDomainError("ip")
+			return "", desyncErr("ip")
 		}
-		return "", customDomainError("invalid")
+		return "", desyncErr("invalid")
 	}
 	if h, port, ok := strings.Cut(host, ":"); ok {
 		if port == "" || strings.Trim(port, "0123456789") != "" {
-			return "", customDomainError("invalid")
+			return "", desyncErr("invalid")
 		}
 		host = h
 	}
 	if strings.ContainsAny(host, "*") || strings.HasPrefix(host, "+.") {
-		return "", customDomainError("wildcard")
+		return "", desyncErr("wildcard")
 	}
 	host = strings.TrimPrefix(strings.TrimSuffix(host, "."), ".")
 	if _, err := netip.ParseAddr(host); err == nil {
-		return "", customDomainError("ip")
+		return "", desyncErr("ip")
 	}
 	ascii, err := idna.Lookup.ToASCII(host)
 	if err != nil || ascii == "" || len(ascii) > 253 {
-		return "", customDomainError("invalid")
+		return "", desyncErr("invalid")
 	}
 	labels := strings.Split(ascii, ".")
 	if len(labels) < 2 {
-		return "", customDomainError("public_suffix")
+		return "", desyncErr("public_suffix")
 	}
 	for _, label := range labels {
 		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") || strings.Trim(label, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
-			return "", customDomainError("invalid")
+			return "", desyncErr("invalid")
 		}
 	}
 	if strings.Trim(labels[len(labels)-1], "0123456789") == "" {
-		return "", customDomainError("ip") // e.g. 1.2.3 — not a name
+		return "", desyncErr("ip") // e.g. 1.2.3 — not a name
 	}
 	if suffix, _ := publicsuffix.PublicSuffix(ascii); suffix == ascii {
-		return "", customDomainError("public_suffix")
+		return "", desyncErr("public_suffix")
 	}
 	if desync.BuiltinDomainFor(ascii) != "" {
-		return "", customDomainError("builtin")
+		return "", desyncErr("builtin")
 	}
 	return ascii, nil
 }
@@ -295,16 +301,16 @@ func (a *App) AddDesyncCustomDomain(input string) (DesyncStatus, error) {
 func addDesyncCustomDomain(entries []DesyncCustomEntry, domain string) ([]DesyncCustomEntry, error) {
 	for _, e := range entries {
 		if e.Domain == domain {
-			return nil, customDomainError("duplicate")
+			return nil, desyncErr("duplicate")
 		}
 	}
 	// A service in the list (on or off) already covers its domains; a
 	// second group for the same names would split their traffic.
 	if service := serviceOverlap(entries, domain); service != "" {
-		return nil, &desyncCustomError{Code: "service_overlap", Detail: service}
+		return nil, &desyncError{Code: "service_overlap", Detail: service}
 	}
 	if len(entries) >= desyncCustomLimit {
-		return nil, customDomainError("limit")
+		return nil, desyncErr("limit")
 	}
 	id, err := newDesyncCustomID(entries)
 	if err != nil {
@@ -331,7 +337,7 @@ func (a *App) ListDesyncServices() []DesyncService {
 // SetDesyncCustomDomainEnabled take the service entry's ID like any other.
 func (a *App) AddDesyncService(id string) (DesyncStatus, error) {
 	if _, ok := desync.ServiceByID(id); !ok {
-		return a.GetDesyncStatus(), customDomainError("unknown_service")
+		return a.GetDesyncStatus(), desyncErr("unknown_service")
 	}
 	return a.updateDesyncCustom("add_service", func(entries []DesyncCustomEntry) ([]DesyncCustomEntry, error) {
 		return addDesyncService(entries, id)
@@ -343,12 +349,12 @@ func (a *App) AddDesyncService(id string) (DesyncStatus, error) {
 func addDesyncService(entries []DesyncCustomEntry, id string) ([]DesyncCustomEntry, error) {
 	service, ok := desync.ServiceByID(id)
 	if !ok {
-		return nil, customDomainError("unknown_service")
+		return nil, desyncErr("unknown_service")
 	}
 	kept := entries[:0:0]
 	for _, e := range entries {
 		if e.Service == service.ID {
-			return nil, customDomainError("duplicate")
+			return nil, desyncErr("duplicate")
 		}
 		if e.Service == "" && serviceOverlap([]DesyncCustomEntry{{Service: service.ID}}, e.Domain) != "" {
 			continue // replaced by the service
@@ -356,7 +362,7 @@ func addDesyncService(entries []DesyncCustomEntry, id string) ([]DesyncCustomEnt
 		kept = append(kept, e)
 	}
 	if len(kept) >= desyncCustomLimit {
-		return nil, customDomainError("limit")
+		return nil, desyncErr("limit")
 	}
 	entryID, err := newDesyncCustomID(entries)
 	if err != nil {
@@ -409,7 +415,7 @@ func (a *App) RemoveDesyncCustomDomain(id string) (DesyncStatus, error) {
 				return append(entries[:i], entries[i+1:]...), nil
 			}
 		}
-		return nil, customDomainError("not_found")
+		return nil, desyncErr("not_found")
 	})
 }
 
@@ -422,6 +428,6 @@ func (a *App) SetDesyncCustomDomainEnabled(id string, enabled bool) (DesyncStatu
 				return entries, nil
 			}
 		}
-		return nil, customDomainError("not_found")
+		return nil, desyncErr("not_found")
 	})
 }

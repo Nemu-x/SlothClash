@@ -39,7 +39,7 @@ func TestDesyncPresetOverlayRoutesCatalogDomains(t *testing.T) {
 	fb, ig := desync.CustomRoute("fb01"), desync.CustomRoute("ig01")
 	// Every catalog domain is routed once; the shared CDN goes to Facebook
 	// (catalog order) although Instagram is first in the list.
-	for _, p := range desync.Presets[:2] {
+	for _, p := range desync.Services[:2] {
 		for _, d := range p.Domains {
 			if len(routes[d]) != 1 {
 				t.Fatalf("%s routed by %v", d, routes[d])

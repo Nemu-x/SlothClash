@@ -239,7 +239,7 @@
   margin: var(--space-2) 0 0;
 }
 
-/* Custom domains, two quiet subgroups: "Popular" (presets) above the user's
+/* Custom domains, two quiet subgroups: "Popular" (services) above the user's
    own sites. A muted label, the same rows below it. */
 .desyncPanel .desyncSubgroup + .desyncSubgroup {
   margin-top: var(--space-2);
@@ -255,18 +255,18 @@
   margin-top: var(--space-2);
 }
 
-/* Preset rows: name over a one-line domain summary, status, switch; notes
+/* Service rows: name over a one-line domain summary, status, switch; notes
    (full list, shared domain, replaced entries) span the row underneath. */
-.desyncPanel .desyncPresetRow {
+.desyncPanel .desyncPopularRow {
   grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto;
   row-gap: 2px;
 }
-.desyncPanel .desyncPresetInfo {
+.desyncPanel .desyncPopularInfo {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.desyncPanel .desyncPresetDomains {
+.desyncPanel .desyncPopularDomains {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -275,13 +275,13 @@
   line-height: var(--leading-tight);
   color: var(--text-muted);
 }
-.desyncPanel .desyncPresetDomainsText {
+.desyncPanel .desyncPopularDomainsText {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.desyncPanel .desyncPresetMore {
+.desyncPanel .desyncPopularMore {
   flex: 0 0 auto;
   padding: 0 2px;
   margin: 0 -2px;
@@ -293,14 +293,14 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.desyncPanel .desyncPresetMore:hover {
+.desyncPanel .desyncPopularMore:hover {
   text-decoration: underline;
 }
-.desyncPanel .desyncPresetMore:focus-visible {
+.desyncPanel .desyncPopularMore:focus-visible {
   outline: 2px solid var(--accent-muted);
   outline-offset: 1px;
 }
-.desyncPanel .desyncPresetNote {
+.desyncPanel .desyncPopularNote {
   grid-column: 1 / -1;
   margin: 0;
   font-size: var(--font-size-xs);
@@ -308,10 +308,10 @@
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
-.desyncPanel .desyncPresetNote[hidden] {
+.desyncPanel .desyncPopularNote[hidden] {
   display: none;
 }
-.desyncPanel .desyncPresets .desyncPresetError {
+.desyncPanel .desyncPopulars .desyncPopularError {
   margin: var(--space-2) 0 0;
 }
 

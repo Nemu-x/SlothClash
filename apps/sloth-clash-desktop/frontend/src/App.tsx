@@ -63,7 +63,7 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
-import { useDesyncPresets } from './hooks/queries/useDesyncPresets'
+import { useDesyncServices } from './hooks/queries/useDesyncServices'
 import { useDesyncStatus } from './hooks/queries/useDesyncStatus'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
@@ -818,7 +818,7 @@ function App() {
       traffic: String(state?.traffic ?? ''),
       enabled: screen === 'home' || screen === 'profiles',
     })
-  const desyncPresets = useDesyncPresets()
+  const desyncServices = useDesyncServices()
 
   // Activating a Desync-only profile while Desync is off offers to turn it
   // on: without it the profile routes everything directly.
@@ -846,7 +846,7 @@ function App() {
     optimisticTraffic,
     updateSnap,
     desync: desyncSnapshot,
-    desyncPresets,
+    desyncServices,
   })
   const { hasAnyProfile, hasActiveProfile, activeProfile, displayMode } = homeVm
 

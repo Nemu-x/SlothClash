@@ -2,13 +2,13 @@ package desync
 
 import "strings"
 
-// Preset is a curated custom-domain entry for a service whose pages and media
-// live on several registrable domains (a plain entry covers one domain and
-// its subdomains: "facebook.com" loads the page but not the images, which
-// come from fbcdn.net). A preset entry stores only its ID; the domains and
+// Service is a "popular service": a curated custom entry for a service whose
+// pages and media live on several registrable domains (a plain entry covers
+// one domain and its subdomains: "facebook.com" loads the page but not the images, which
+// come from fbcdn.net). A service entry stores only its ID; the domains and
 // probes are read from this catalog when the config is generated and when the
 // entry is calibrated, so catalog updates reach existing entries.
-type Preset struct {
+type Service struct {
 	ID   string
 	Name string
 	// Domains are routed through the entry's group (each with its
@@ -17,7 +17,7 @@ type Preset struct {
 	Domains []string
 	// Probes are the hosts the calibration checks over HTTPS. Every one must
 	// pass (page AND CDN): a strategy that opens the page but not its media is
-	// exactly the half-working state a preset exists to avoid. Each is a
+	// exactly the half-working state a service exists to avoid. Each is a
 	// concrete host that serves HTTPS with a certificate valid for that exact
 	// name (a bare CDN apex such as cdninstagram.com or twimg.com has none and
 	// would fail every probe). The reachable probe accepts any HTTP status, so
@@ -26,9 +26,9 @@ type Preset struct {
 	Probes []string
 }
 
-// Presets is the catalog, in precedence order: a domain listed by two presets
-// (see PresetOwnedDomains) belongs to the first enabled one.
-var Presets = []Preset{
+// Services is the catalog, in precedence order: a domain listed by two services
+// (see ServiceOwnedDomains) belongs to the first enabled one.
+var Services = []Service{
 	{
 		ID:   "facebook",
 		Name: "Facebook",
@@ -84,14 +84,14 @@ var Presets = []Preset{
 	},
 }
 
-// PresetByID returns the catalog preset with the given ID.
-func PresetByID(id string) (Preset, bool) {
-	for _, p := range Presets {
+// ServiceByID returns the catalog service with the given ID.
+func ServiceByID(id string) (Service, bool) {
+	for _, p := range Services {
 		if p.ID == id {
 			return p, true
 		}
 	}
-	return Preset{}, false
+	return Service{}, false
 }
 
 // CoversDomain reports whether domain equals, or is a subdomain of, base.
@@ -103,10 +103,10 @@ func CoversDomain(base, domain string) bool {
 // entries for them would route the same names.
 func DomainsOverlap(a, b string) bool { return CoversDomain(a, b) || CoversDomain(b, a) }
 
-// PresetForDomain returns the ID of the first catalog preset with a domain
+// ServiceForDomain returns the ID of the first catalog service with a domain
 // overlapping domain, or "".
-func PresetForDomain(domain string) string {
-	for _, p := range Presets {
+func ServiceForDomain(domain string) string {
+	for _, p := range Services {
 		for _, d := range p.Domains {
 			if DomainsOverlap(d, domain) {
 				return p.ID
@@ -116,18 +116,18 @@ func PresetForDomain(domain string) string {
 	return ""
 }
 
-// PresetOwnedDomains returns the domains preset id routes while the presets
+// ServiceOwnedDomains returns the domains service id routes while the services
 // in enabled are on (id itself is assumed on): its catalog domains minus
-// those an enabled preset earlier in the catalog also lists. A domain belongs
+// those an enabled service earlier in the catalog also lists. A domain belongs
 // to at most one group, and which one does not depend on the user's list
 // order. Unknown IDs have no domains.
-func PresetOwnedDomains(id string, enabled []string) []string {
+func ServiceOwnedDomains(id string, enabled []string) []string {
 	on := map[string]bool{id: true}
 	for _, e := range enabled {
 		on[e] = true
 	}
 	taken := map[string]bool{}
-	for _, p := range Presets {
+	for _, p := range Services {
 		if p.ID == id {
 			var out []string
 			for _, d := range p.Domains {
@@ -146,11 +146,11 @@ func PresetOwnedDomains(id string, enabled []string) []string {
 	return nil
 }
 
-// PresetProbes returns the probe hosts of preset id that lie under one of
-// owned (its PresetOwnedDomains): a probe of a domain another group carries
+// ServiceProbes returns the probe hosts of service id that lie under one of
+// owned (its ServiceOwnedDomains): a probe of a domain another group carries
 // says nothing about this group's strategy.
-func PresetProbes(id string, owned []string) []string {
-	p, ok := PresetByID(id)
+func ServiceProbes(id string, owned []string) []string {
+	p, ok := ServiceByID(id)
 	if !ok {
 		return nil
 	}
@@ -167,11 +167,13 @@ func PresetProbes(id string, owned []string) []string {
 }
 
 // CustomEntryKey is the cache key of a custom entry within CacheEntry.Custom:
-// the domain of a plain entry, "preset:<id>" of a preset one (a domain never
-// contains ':'). CustomService(CustomEntryKey(...)) is its service key.
-func CustomEntryKey(domain, preset string) string {
-	if preset != "" {
-		return "preset:" + preset
+// the domain of a plain entry, "preset:<id>" of a popular-service one (a
+// domain never contains ':'; the prefix predates the rename from "preset" and
+// stays, so cached winners survive). CustomService(CustomEntryKey(...)) is its
+// calibration service key.
+func CustomEntryKey(domain, service string) string {
+	if service != "" {
+		return "preset:" + service
 	}
 	return domain
 }

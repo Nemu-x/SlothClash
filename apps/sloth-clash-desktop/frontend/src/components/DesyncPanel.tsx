@@ -20,7 +20,8 @@ import { DesyncServiceList } from './DesyncServiceList'
 import { DesyncStatusChip } from './DesyncStatusChip'
 
 /**
- * - manage: the full controls — master switch, service rows and custom
+ * - manage: the active profile's controls — master switch (not for a
+ *   Desync-only profile, which is always on), service rows and custom
  *   domains with live status, Check again / Copy diagnostics.
  * - onboarding: choosing what a new Desync-only profile unblocks — the same
  *   rows without the master switch, status or diagnostics (Desync is turned
@@ -30,7 +31,7 @@ export type DesyncPanelVariant = 'manage' | 'onboarding'
 
 /**
  * The Desync controls, laid out for the Desync modal: a scrolling body and a
- * modal footer. Every switch saves at once (the settings are global prefs).
+ * modal footer. Every switch saves at once into the active profile.
  */
 export function DesyncPanel({
   connected,
@@ -223,7 +224,8 @@ export function DesyncPanel({
   return (
     <div className="desyncPanel" data-variant={variant}>
       <div className="desyncPanelBody">
-        {onboarding ? null : (
+        {/* A Desync-only profile is always on: no master switch. */}
+        {onboarding || status?.desyncOnly ? null : (
           <div className="desyncMaster">
             <span className="desyncMasterLabel">{t('desync.enabled')}</span>
             <button

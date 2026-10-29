@@ -33,8 +33,7 @@ func TestDesyncServiceListMatchesCatalog(t *testing.T) {
 }
 
 func TestDesyncServiceLifecycle(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{})
-	a := &App{}
+	a := desyncProfileApp(t, nil, nil)
 	if _, err := a.AddDesyncService("myspace"); !isCustomCode(err, "unknown_service") {
 		t.Fatalf("unknown service: %v", err)
 	}
@@ -109,13 +108,13 @@ func TestDesyncCustomEntryReadsLegacyPresetKey(t *testing.T) {
 // A plain entry the service covers is replaced by it (the owner's case: a
 // "facebook.com" typed before services existed); others stay in order.
 func TestDesyncServiceReplacesCoveredPlainEntries(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
 		{ID: "0a1b2c3d", Domain: "facebook.com", Enabled: true},
 		{ID: "1b2c3d4e", Domain: "example.org", Enabled: true},
 		{ID: "2c3d4e5f", Domain: "video.xx.fbcdn.net", Enabled: false},
 		{ID: "3d4e5f6a", Domain: "instagram.com", Enabled: true},
-	}})
-	status, err := (&App{}).AddDesyncService("facebook")
+	}}), nil)
+	status, err := a.AddDesyncService("facebook")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +125,7 @@ func TestDesyncServiceReplacesCoveredPlainEntries(t *testing.T) {
 	// Instagram shares fbcdn.net with Facebook: both services coexist (the
 	// overlap is resolved by catalog order at generation time), and the
 	// plain instagram.com entry is replaced.
-	status, err = (&App{}).AddDesyncService("instagram")
+	status, err = a.AddDesyncService("instagram")
 	if err != nil || len(status.Settings.Custom) != 3 || status.Settings.Custom[1].Service != "facebook" || status.Settings.Custom[2].Service != "instagram" {
 		t.Fatalf("instagram: %+v %v", status.Settings.Custom, err)
 	}
@@ -137,8 +136,7 @@ func TestDesyncServiceCountsAsOneEntryTowardTheCap(t *testing.T) {
 	for i := range desyncCustomLimit - 1 {
 		full = append(full, DesyncCustomEntry{ID: fmt.Sprintf("e%d", i), Domain: fmt.Sprintf("site%d.example.org", i), Enabled: true})
 	}
-	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: full})
-	a := &App{}
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: full}), nil)
 	if _, err := a.AddDesyncService("x"); err != nil {
 		t.Fatalf("service as the last entry: %v", err)
 	}
@@ -149,9 +147,9 @@ func TestDesyncServiceCountsAsOneEntryTowardTheCap(t *testing.T) {
 		t.Fatalf("plain over the cap: %v", err)
 	}
 	// Replacing a covered entry frees its slot.
-	prefsMu.Lock()
-	prefsCurrent.Desync.Custom[0] = DesyncCustomEntry{ID: "e0", Domain: "instagram.com", Enabled: true}
-	prefsMu.Unlock()
+	a.mu.Lock()
+	a.profiles[0].Desync.Custom[0] = DesyncCustomEntry{ID: "e0", Domain: "instagram.com", Enabled: true}
+	a.mu.Unlock()
 	if _, err := a.AddDesyncService("instagram"); err != nil {
 		t.Fatalf("replacing at the cap: %v", err)
 	}

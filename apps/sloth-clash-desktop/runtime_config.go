@@ -24,6 +24,18 @@ func currentRuntimeConfigEnv() runtimecfg.Env {
 	}
 }
 
+// runtimeConfigEnvFor is currentRuntimeConfigEnv with p's own Desync
+// settings: a snapshot or preview of a profile that is not active shows its
+// Desync routes, not the active profile's. For the active profile it is the
+// same env.
+func runtimeConfigEnvFor(p Profile) runtimecfg.Env {
+	env := currentRuntimeConfigEnv()
+	prefs := currentDesktopPrefs()
+	prefs.Desync = profileDesyncSettings(p)
+	env.Prefs = runtimeConfigPrefsFrom(prefs)
+	return env
+}
+
 // currentRuntimeConfigPrefs captures just the prefs part of the env.
 func currentRuntimeConfigPrefs() runtimecfg.Prefs {
 	return runtimeConfigPrefsFrom(currentDesktopPrefs())

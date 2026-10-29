@@ -31,8 +31,6 @@ export type HomeViewModel = {
   activeProfile: any
   /** The active profile is Desync-only: no nodes, Rule mode only. */
   isDesyncOnly: boolean
-  /** Desync-only profile with Desync switched off: everything goes direct. */
-  desyncOnlyOff: boolean
   /** Mode / traffic as shown: the optimistic pick while a switch is in flight. */
   displayMode: string
   displayTraffic: string
@@ -94,8 +92,6 @@ export function useHomeViewModel({
   }, [state])
 
   const isDesyncOnly = isDesyncOnlyProfile(activeProfile)
-  const desyncOnlyOff =
-    isDesyncOnly && desync?.status.settings.enabled === false
 
   const displayMode = optimisticMode ?? String(state?.mode?.current ?? 'rule')
   const displayTraffic = optimisticTraffic ?? String(state?.traffic ?? 'proxy')
@@ -289,7 +285,6 @@ export function useHomeViewModel({
     hasActiveProfile,
     activeProfile,
     isDesyncOnly,
-    desyncOnlyOff,
     displayMode,
     displayTraffic,
     connectionLabel,

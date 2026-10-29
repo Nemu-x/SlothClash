@@ -353,7 +353,6 @@
       "insightLatency": "Latency",
       "insightSpeed": "Speed",
       "desyncOnlySubtitle": "Desync only · no VPN",
-      "desyncOnlyOff": "Desync is off: all traffic goes directly. Turn it on",
       "desyncOnlyRuleOnly": "A Desync-only profile works in Rule mode only: its Desync routes are rules, and there is no server for Global mode",
       "desyncOnlyRuleHint": "Rule only",
       "proxyServers": "Proxy servers",
@@ -513,11 +512,6 @@
         "badge": "Desync only",
         "badgeTitle": "No VPN servers: Desync routes only, everything else connects directly",
         "desyncOn": "No VPN · Desync on",
-        "desyncOff": "No VPN · Desync is off",
-        "enableTitle": "Turn on Desync?",
-        "enableBody": "This profile has no VPN servers. Without Desync all traffic goes directly and nothing is unblocked.",
-        "enable": "Turn on Desync",
-        "notNow": "Not now",
         "editBlurb": "A Desync-only profile has no subscription, so only its name can be changed.",
         "configure": "Set up",
         "configureAria": "Desync settings"
@@ -841,7 +835,6 @@
       "create": "Create profile",
       "creating": "Creating…",
       "created": "“{{name}}” is active: Desync is on.",
-      "saveBusy": "Another change is still being saved. Try again.",
       "notCreated": "The profile was not created. Try again."
     },
     "services": {

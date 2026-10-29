@@ -63,11 +63,14 @@ async function fetchSnapshot(qc: QueryClient): Promise<DesyncSnapshot> {
  * Desync is off) while any
  * `enabled` observer is mounted (the Settings card, and App while Home is
  * shown). Re-polls at once when connection / mode / traffic change, since
- * those gate the calibration.
+ * those gate the calibration, and when `profileId` (the active profile,
+ * whose settings these are) changes.
  *
  * `save`, the custom-entry writes and `retry` are stable (useCallback) so they are safe effect deps.
  */
-export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
+export function useDesyncStatus(
+  ctx: DesyncContext & { enabled?: boolean; profileId?: string },
+) {
   const qc = useQueryClient()
   const enabled = ctx.enabled !== false
   const q = useQuery({
@@ -83,7 +86,7 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     refetchIntervalInBackground: false,
   })
 
-  const gateKey = `${ctx.connected}|${ctx.mode}|${ctx.traffic}`
+  const gateKey = `${ctx.connected}|${ctx.mode}|${ctx.traffic}|${ctx.profileId ?? ''}`
   const lastGateRef = useRef(gateKey)
   useEffect(() => {
     if (lastGateRef.current === gateKey) return

@@ -46,6 +46,10 @@ type App struct {
 	// modeBeforeDesyncOnly is the mode a Desync-only profile overrode with
 	// Rule ("global"/"direct", or ""); guarded by mu, persisted in profiles.json.
 	modeBeforeDesyncOnly string
+	// desyncPerProfile records that the legacy global Desync settings were
+	// moved into the profiles (desync_profile.go); persisted with
+	// profiles.json.
+	desyncPerProfile bool
 	quitRequested bool
 
 	emitStateMu           sync.Mutex

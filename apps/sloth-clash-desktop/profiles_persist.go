@@ -18,6 +18,10 @@ type profilesPersisted struct {
 	// ModeBeforeDesyncOnly is the mode a Desync-only profile overrode with
 	// Rule; it is restored when a profile with servers is active again.
 	ModeBeforeDesyncOnly string `json:"modeBeforeDesyncOnly,omitempty"`
+	// DesyncPerProfile marks that the legacy global Desync settings were
+	// copied into the profiles (migrateLegacyDesyncLocked). Absent in files
+	// written before settings were per profile.
+	DesyncPerProfile bool `json:"desyncPerProfile,omitempty"`
 }
 
 func profilesStorePath() (string, error) {
@@ -35,6 +39,11 @@ func (a *App) loadProfilesFromDisk() {
 	}
 	b, err := os.ReadFile(p)
 	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+		// No profiles: nothing for the legacy Desync settings to move into.
+		a.mu.Lock()
+		a.desyncPerProfile = true
+		a.syncActiveDesyncLocked()
+		a.mu.Unlock()
 		return
 	}
 	var disk profilesPersisted
@@ -43,6 +52,8 @@ func (a *App) loadProfilesFromDisk() {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// After the active profile is known: its settings become the live ones.
+	defer a.syncActiveDesyncLocked()
 	if len(disk.Profiles) > 0 {
 		// A hand-edited Desync-only profile loses what it cannot carry.
 		for i := range disk.Profiles {
@@ -76,6 +87,12 @@ func (a *App) loadProfilesFromDisk() {
 		a.modeBeforeDesyncOnly = m
 	}
 	a.enforceDesyncOnlyModeLocked()
+	a.desyncPerProfile = disk.DesyncPerProfile
+	if !a.desyncPerProfile && a.migrateLegacyDesyncLocked() {
+		// Best effort: on failure the copy stays in memory and is saved
+		// with the next change; the legacy object stays until then.
+		_ = a.persistProfilesLocked()
+	}
 	// Hydrate the active profile's sticky pick into ProxyState so the
 	// UI and the auto-select routine can read it synchronously on next
 	// connect — no waiting for /proxies, no heuristics. This is what
@@ -112,12 +129,20 @@ func (a *App) persistProfilesLocked() error {
 		LastNonDirectMode: a.state.Mode.LastNonDirectMode,
 
 		ModeBeforeDesyncOnly: a.modeBeforeDesyncOnly,
+		DesyncPerProfile:     a.desyncPerProfile,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(p, b, 0o644)
+	if err := atomicWriteFile(p, b, 0o644); err != nil {
+		return err
+	}
+	if a.desyncPerProfile {
+		// The profiles on disk carry the legacy settings' copy now.
+		dropLegacyDesyncPrefs()
+	}
+	return nil
 }
 
 // pruneOrphanRuntimeDirs deletes `runtime/<profile-id>/` directories that no

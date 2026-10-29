@@ -16,10 +16,9 @@ type CreatedProfile = { id: string; name: string; active: boolean }
  * Settings summary and a Desync-only profile card (manage), or from "No VPN
  * subscription?" in the import dialog and on an empty Home (onboarding).
  *
- * Onboarding ends in "Create profile": Desync is switched on (the intent is
- * explicit here), a Desync-only profile is created and becomes the active
- * one. Cancel creates nothing; the service switches are global settings and
- * stay as chosen.
+ * Onboarding ends in "Create profile": a Desync-only profile (always on) is
+ * created with the chosen services and becomes the active one. Cancel
+ * creates nothing.
  *
  * Rendered only while open (App), so every opening starts fresh.
  */
@@ -57,7 +56,7 @@ export function DesyncModal({
   const cardRef = useRef<HTMLDivElement>(null)
   const overlayDownRef = useRef(false)
   const onboarding = view === 'onboarding'
-  const { snapshot, save } = useDesyncStatus({ connected, mode, traffic })
+  const { snapshot } = useDesyncStatus({ connected, mode, traffic })
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [panelSaving, setPanelSaving] = useState(false)
@@ -81,7 +80,10 @@ export function DesyncModal({
   async function createProfile(): Promise<CreatedProfile> {
     if (createdRef.current) return createdRef.current
     const before = new Set((profiles ?? []).map((p: any) => String(p.id)))
-    const st = await CreateDesyncOnlyProfile(name.trim())
+    const st = await CreateDesyncOnlyProfile(name.trim(), {
+      ...status!.settings,
+      ...desyncEnablePatch(status!),
+    })
     const list: any[] = st?.profile?.profiles ?? []
     // The backend appends the new profile: the last Desync-only one that
     // was not there before (the last one at all if `profiles` was stale).
@@ -105,14 +107,6 @@ export function DesyncModal({
     setBusy(true)
     setError('')
     try {
-      if (status.settings.enabled !== true) {
-        const saved = await save({
-          ...status.settings,
-          ...desyncEnablePatch(status),
-        })
-        // false: another Desync write is still in flight.
-        if (!saved) throw new Error(t('desync.onboarding.saveBusy'))
-      }
       const created = await createProfile()
       if (!created.active) {
         await ActivateProfile(created.id)

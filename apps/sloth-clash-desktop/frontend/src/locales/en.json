@@ -790,6 +790,13 @@
     },
     "copyFailed": "Could not copy diagnostics",
     "homeChipAria": "Desync status · open Desync",
+    "error": {
+      "unsupported_core": "This build's core does not support Desync.",
+      "unsupported_udp_core": "This build's core does not support Discord voice through Desync.",
+      "no_selection": "Turn on a service or add a site first.",
+      "discord_platform": "Discord through Desync works on Windows only.",
+      "no_profile": "Add or choose a profile first: Desync settings belong to a profile."
+    },
     "custom": {
       "title": "Custom domains",
       "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",

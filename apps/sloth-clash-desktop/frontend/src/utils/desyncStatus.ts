@@ -367,13 +367,22 @@ const SERVICE_ERROR_CODES = new Set([
   'unknown_service',
 ])
 
+/** Settings failures (desync_settings.go), worded under desync.error.*. */
+const SETTINGS_ERROR_CODES = new Set([
+  'unsupported_core',
+  'unsupported_udp_core',
+  'no_selection',
+  'discord_platform',
+  'no_profile',
+])
+
 /**
- * The backend rejects a custom entry with "custom domain: <code>" (or
- * "custom domain: service_overlap: <service id>"); show the translated reason,
- * or the raw error for anything else. `serviceName` names a service ID;
- * `forService` words the reason for a service switch.
+ * The backend rejects a Desync change with "desync: <code>" (or
+ * "desync: service_overlap: <service id>"); show the translated reason, or
+ * the raw error for anything else. `serviceName` names a service ID;
+ * `forService` words the reason for a popular-service switch.
  */
-export function customDomainErrorText(
+export function desyncErrorText(
   t: TFunction,
   err: unknown,
   {
@@ -382,8 +391,9 @@ export function customDomainErrorText(
   }: { serviceName?: (id: string) => string; forService?: boolean } = {},
 ): string {
   const raw = String(err)
-  const m = /custom domain: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
+  const m = /desync: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
   const code = m?.[1]
+  if (code && SETTINGS_ERROR_CODES.has(code)) return t(`desync.error.${code}`)
   if (!code || !CUSTOM_ERROR_CODES.has(code)) return raw
   const scope =
     forService && SERVICE_ERROR_CODES.has(code) ? 'services' : 'custom'

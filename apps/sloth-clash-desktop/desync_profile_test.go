@@ -292,7 +292,7 @@ func TestDesyncDraftEditsSaveNothing(t *testing.T) {
 	if err != nil || len(draft.Custom) != 1 || draft.Custom[0].Domain != "facebook.com" {
 		t.Fatalf("add domain: %+v %v", draft.Custom, err)
 	}
-	if _, err := a.DraftDesyncAddCustomDomain(draft, "facebook.com"); !isCustomCode(err, "duplicate") {
+	if _, err := a.DraftDesyncAddCustomDomain(draft, "facebook.com"); !isDesyncCode(err, "duplicate") {
 		t.Fatalf("duplicate: %v", err)
 	}
 	// The service replaces the plain entry it covers, as on a profile.
@@ -300,10 +300,84 @@ func TestDesyncDraftEditsSaveNothing(t *testing.T) {
 	if err != nil || len(draft.Custom) != 1 || draft.Custom[0].Service != "facebook" {
 		t.Fatalf("add service: %+v %v", draft.Custom, err)
 	}
-	if _, err := a.DraftDesyncAddService(draft, "myspace"); !isCustomCode(err, "unknown_service") {
+	if _, err := a.DraftDesyncAddService(draft, "myspace"); !isDesyncCode(err, "unknown_service") {
 		t.Fatalf("unknown service: %v", err)
 	}
 	if !reflect.DeepEqual(currentDesyncSettings(), live) || !reflect.DeepEqual(a.profileDesync(t, "profile-1"), profileDesyncSettings(Profile{Desync: &sub})) {
 		t.Fatal("a draft edit changed saved settings")
+	}
+}
+
+// Settings failures reach the UI as codes it translates.
+func TestDesyncSettingsErrorCodes(t *testing.T) {
+	cases := []struct {
+		s        DesyncSettings
+		platform string
+		core     bool
+		code     string
+	}{
+		{DesyncSettings{Enabled: true, YouTube: true}, "windows", false, "unsupported_core"},
+		{DesyncSettings{Enabled: true}, "windows", true, "no_selection"},
+		{DesyncSettings{Enabled: true, Discord: true}, "linux", true, "discord_platform"},
+		{DesyncSettings{Enabled: true, DiscordUDP: true}, "darwin", true, "discord_platform"},
+	}
+	for _, c := range cases {
+		_, err := validateDesyncSettings(c.s, c.platform, c.core)
+		if !isDesyncCode(err, c.code) || err.Error() != "desync: "+c.code {
+			t.Errorf("%+v on %s: %v, want %s", c.s, c.platform, err, c.code)
+		}
+	}
+	if !isDesyncCode(errNoDesyncProfile, "no_profile") {
+		t.Fatal(errNoDesyncProfile)
+	}
+	withDesyncCoreFeatures(t, "desync")
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{}), nil)
+	a.state.Profile.ActiveProfileID = ""
+	if _, err := a.SetDesyncSettings(DesyncSettings{YouTube: true}); !isDesyncCode(err, "no_profile") {
+		t.Fatalf("without an active profile: %v", err)
+	}
+	if _, err := a.CreateDesyncOnlyProfile("x", DesyncSettings{}); !isDesyncCode(err, "no_selection") {
+		t.Fatalf("Desync-only profile with nothing selected: %v", err)
+	}
+	if _, err := a.CreateDesyncOnlyProfile("x", DesyncSettings{DiscordUDP: true}); err == nil {
+		t.Fatal("voice accepted without the core's UDP support")
+	}
+}
+
+// Turning off the last service turns Desync off, like turning off the last
+// custom entry; switching Desync on with nothing selected is refused.
+func TestDesyncLastServiceOffDisables(t *testing.T) {
+	withDesyncCoreFeatures(t, "desync")
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, YouTube: true}), nil)
+	status, err := a.SetDesyncSettings(DesyncSettings{Enabled: true})
+	if err != nil || status.Settings.Enabled || status.Settings.YouTube {
+		t.Fatalf("last service off: %+v %v", status.Settings, err)
+	}
+	if s := a.profileDesync(t, "profile-1"); s.Enabled {
+		t.Fatalf("stored: %+v", s)
+	}
+	if _, err := a.SetDesyncSettings(DesyncSettings{Enabled: true}); !isDesyncCode(err, "no_selection") {
+		t.Fatalf("enable with nothing selected: %v", err)
+	}
+	// The same through the custom list.
+	if _, err := a.SetDesyncSettings(DesyncSettings{Enabled: false, YouTube: false}); err != nil {
+		t.Fatal(err)
+	}
+	status, _ = a.AddDesyncCustomDomain("example.org")
+	if _, err := a.SetDesyncSettings(DesyncSettings{Enabled: true}); err != nil {
+		t.Fatalf("enable with a site: %v", err)
+	}
+	status, _ = a.SetDesyncCustomDomainEnabled(status.Settings.Custom[0].ID, false)
+	if status.Settings.Enabled {
+		t.Fatal("Desync stayed on after its last site was switched off")
+	}
+
+	// A Desync-only profile stays on and may select nothing.
+	if _, err := a.ActivateProfile("profile-2"); err != nil {
+		t.Fatal(err)
+	}
+	status, err = a.SetDesyncSettings(DesyncSettings{})
+	if err != nil || !status.Settings.Enabled || desyncHasSelection(status.Settings) {
+		t.Fatalf("Desync-only, nothing selected: %+v %v", status.Settings, err)
 	}
 }

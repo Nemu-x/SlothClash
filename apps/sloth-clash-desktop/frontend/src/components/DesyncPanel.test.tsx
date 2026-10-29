@@ -181,6 +181,25 @@ describe('DesyncPanel: controls', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'YouTube' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('boom')
   })
+
+  it('translates a refused save', async () => {
+    stubBackend(desyncStatus({ settings: { enabled: false } }))
+    wailsApp.stub('SetDesyncSettings', () =>
+      Promise.reject(new Error('desync: no_selection')),
+    )
+    await renderCard()
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable Desync' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Turn on a service or add a site first.',
+    )
+  })
+
+  it('has no master switch on a Desync-only profile (always on)', async () => {
+    stubBackend(desyncStatus({ desyncOnly: true }))
+    await renderCard()
+    expect(screen.queryByRole('switch', { name: 'Enable Desync' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'YouTube' })).toBeEnabled()
+  })
 })
 
 describe('DesyncPanel: status chips', () => {

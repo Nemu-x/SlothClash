@@ -6,7 +6,11 @@ import { ActivateProfile, CreateDesyncOnlyProfile } from '../api/profile'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import { useDesyncDraft } from '../hooks/useDesyncDraft'
 import { useDialogFocus } from '../hooks/useDialogFocus'
-import { desyncEnablePatch, desyncHasSelection } from '../utils/desyncStatus'
+import {
+  desyncEnablePatch,
+  desyncErrorText,
+  desyncHasSelection,
+} from '../utils/desyncStatus'
 import { isDesyncOnlyProfile } from '../utils/profileKind'
 
 import { DesyncPanel, type DesyncPanelVariant } from './DesyncPanel'
@@ -128,7 +132,7 @@ export function DesyncModal({
       onCreated(created.name)
       onClose()
     } catch (err: unknown) {
-      setError(String(err))
+      setError(desyncErrorText(t, err))
       setBusy(false)
       await refresh()
     }

@@ -10,9 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"time"
 
-	"SlothClashDesktop/internal/desync"
 	"SlothClashDesktop/internal/runtimecfg"
 )
 
@@ -44,15 +42,6 @@ type DesyncStatus struct {
 	// subscription reserve exists, so a route that finds no strategy goes
 	// direct (no_strategy) instead of to the reserve.
 	DesyncOnly bool `json:"desyncOnly"`
-}
-
-type DesyncProbeResult struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Route   string `json:"route"`
-	OK      bool   `json:"ok"`
-	DelayMS int    `json:"delayMS"`
-	Error   string `json:"error,omitempty"`
 }
 
 func currentDesyncSettings() DesyncSettings {
@@ -243,62 +232,4 @@ func probeDesyncOutboundMode(ctx context.Context, endpoint, secret, route, targe
 		return 0, err
 	}
 	return body.Delay, nil
-}
-
-// Fixed URLs are sent through the named core outbound. This checks that the
-// running patched core can use the method; it is not a browser/login/voice test.
-func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
-	status := a.GetDesyncStatus()
-	if !status.Connected {
-		return nil, fmt.Errorf("connect SlothClash before running diagnostics")
-	}
-	if !status.Settings.Enabled {
-		return nil, fmt.Errorf("enable desync before running diagnostics")
-	}
-	if !strings.EqualFold(status.Mode, "rule") {
-		return nil, fmt.Errorf("select Rule mode so service routes are active")
-	}
-	a.mu.RLock()
-	endpoint := a.effectiveCoreEndpointLocked()
-	secret := a.core.secret
-	a.mu.RUnlock()
-	var checks []DesyncProbeResult
-	if status.Settings.YouTube {
-		checks = append(checks, DesyncProbeResult{Name: "YouTube HTTPS", URL: "https://www.youtube.com/generate_204", Route: desync.YouTubeRoute})
-	}
-	if status.Settings.Discord {
-		checks = append(checks, DesyncProbeResult{Name: "Discord API", URL: "https://discord.com/api/v10/gateway", Route: desync.DiscordRoute}, DesyncProbeResult{Name: "Discord CDN", URL: "https://cdn.discordapp.com/embed/avatars/0.png", Route: desync.DiscordRoute})
-	}
-	parent := a.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
-	defer cancel()
-	for i := range checks {
-		probeCtx, probeCancel := context.WithTimeout(ctx, 11*time.Second)
-		var group desyncUDPProxy
-		err := autoCoreJSON(probeCtx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(checks[i].Route), nil, &group)
-		delay := 0
-		if err == nil && group.Now == desyncProfileSelection && status.DesyncOnly {
-			// No reserve: PASS ends at DIRECT, so test that path.
-			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, "DIRECT", checks[i].URL)
-			checks[i].Route = "direct"
-		} else if err == nil && group.Now == desyncProfileSelection {
-			var result desyncProfileProbe
-			result, err = probeDesyncProfile(probeCtx, endpoint, secret, checks[i].Route, "")
-			delay = int(result.DurationMS)
-			checks[i].Route = "profile"
-		} else if err == nil {
-			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, checks[i].Route, checks[i].URL)
-		}
-		probeCancel()
-		checks[i].DelayMS = delay
-		checks[i].OK = err == nil
-		if err != nil {
-			checks[i].Error = err.Error()
-		}
-		a.appendRuntimeDiag("desync.probe", fmt.Sprintf("route=%s target=%s ok=%t delay_ms=%d error=%q", checks[i].Route, checks[i].Name, checks[i].OK, delay, checks[i].Error))
-	}
-	return checks, nil
 }

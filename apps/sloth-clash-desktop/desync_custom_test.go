@@ -137,18 +137,24 @@ func TestDesyncCustomSanitizeDropsUnsafeStoredEntries(t *testing.T) {
 	}
 }
 
+// withDesyncPrefs sets the live Desync settings (the active profile's copy)
+// for one test; the prefs and the other profiles' cache keys are restored
+// afterwards.
 func withDesyncPrefs(t *testing.T, s DesyncSettings) {
 	t.Helper()
 	prefsMu.Lock()
-	previous := prefsCurrent
+	previous, others, legacy := prefsCurrent, desyncOtherProfileKeys, prefsLegacyDesync
 	prefsCurrent.Desync = s
 	prefsMu.Unlock()
-	t.Cleanup(func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() })
+	t.Cleanup(func() {
+		prefsMu.Lock()
+		prefsCurrent, desyncOtherProfileKeys, prefsLegacyDesync = previous, others, legacy
+		prefsMu.Unlock()
+	})
 }
 
 func TestDesyncCustomEntryLifecycle(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{})
-	a := &App{}
+	a := desyncProfileApp(t, nil, nil)
 	status, err := a.AddDesyncCustomDomain("https://Example.org/page")
 	if err != nil || len(status.Settings.Custom) != 1 {
 		t.Fatalf("add: %+v %v", status.Settings.Custom, err)
@@ -200,7 +206,7 @@ func TestDesyncCustomEntryLifecycle(t *testing.T) {
 }
 
 func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{Enabled: false, YouTube: false, Discord: false, DiscordTTL: 4})
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: false, YouTube: false, Discord: false, DiscordTTL: 4}), nil)
 	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4}, "linux", true); err == nil {
 		t.Fatal("empty selection accepted")
 	}
@@ -212,7 +218,6 @@ func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
 	if _, err := validateDesyncSettings(only, "linux", true); err == nil {
 		t.Fatal("only a disabled entry counted as a selection")
 	}
-	a := &App{}
 	status, _ := a.AddDesyncCustomDomain("example.org")
 	id := status.Settings.Custom[0].ID
 	settings := status.Settings
@@ -222,9 +227,9 @@ func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
 			t.Fatalf("enable with a custom entry: %v", err)
 		}
 		// Without the embedded core features enabling is refused anyway.
-		prefsMu.Lock()
-		prefsCurrent.Desync.Enabled = true
-		prefsMu.Unlock()
+		a.mu.Lock()
+		a.profiles[0].Desync.Enabled = true
+		a.mu.Unlock()
 	}
 	if status, _ = a.SetDesyncCustomDomainEnabled(id, false); status.Settings.Enabled {
 		t.Fatal("Desync stayed on with nothing selected")
@@ -243,9 +248,9 @@ func withDesyncCoreFeatures(t *testing.T, features ...string) {
 func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
 	withDesyncCoreFeatures(t, "desync")
 	stored := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Enabled: true}}
-	withDesyncPrefs(t, DesyncSettings{DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 1, Custom: stored})
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 1, Custom: stored}), nil)
 	// The UI sends the toggles only: no YouTube/Discord and no Custom field.
-	status, err := (&App{}).SetDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4})
+	status, err := a.SetDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4})
 	if err != nil || !status.Settings.Enabled {
 		t.Fatalf("enabling with only stored custom domains failed: %+v %v", status.Settings, err)
 	}

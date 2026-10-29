@@ -20,7 +20,6 @@ export function ProfilesPage({
   profiles,
   activeProfileId,
   refreshBusyId,
-  desyncEnabled,
   error,
   onImport,
   onActivate,
@@ -31,14 +30,12 @@ export function ProfilesPage({
   profiles: any[]
   activeProfileId: string
   refreshBusyId: string | null
-  /** Desync switched on; undefined while not known yet. */
-  desyncEnabled?: boolean
   error: string | null
   onImport: () => void
   onActivate: (id: string) => void
   onRefresh: (id: string) => void
   onContextMenu: (target: ProfileMenuTarget) => void
-  /** Opens the Desync modal (from a Desync-only profile card). */
+  /** Opens the Desync modal (from the active Desync-only profile's card). */
   onOpenDesync?: () => void
 }) {
   const { t } = useTranslation()
@@ -182,16 +179,15 @@ export function ProfilesPage({
                     title={p.url ? String(p.url) : undefined}
                   >
                     {desyncOnly
-                      ? desyncEnabled === false
-                        ? t('ui.profiles.desyncOnly.desyncOff')
-                        : t('ui.profiles.desyncOnly.desyncOn')
+                      ? t('ui.profiles.desyncOnly.desyncOn')
                       : host ||
                         (p.url
                           ? t('ui.common.subscription')
                           : t('ui.profiles.localNoUrl'))}
                   </span>
                   {ago ? <span className="profileUpdated">{ago}</span> : null}
-                  {desyncOnly && onOpenDesync ? (
+                  {/* The Desync window edits the active profile's settings. */}
+                  {desyncOnly && active && onOpenDesync ? (
                     <button
                       type="button"
                       className="linkBtn profileDesyncLink"

@@ -103,7 +103,10 @@ type DesktopPrefs struct {
 	Traffic      TrafficSettings      `json:"traffic"`
 	Connection   ConnectionSettings   `json:"connection"`
 	Reality      RealitySettings      `json:"reality"`
-	Desync       DesyncSettings       `json:"desync"`
+	// Desync is the active profile's effective Desync settings, an
+	// in-memory copy (desync_profile.go): settings are stored per profile,
+	// not in prefs.json.
+	Desync       DesyncSettings       `json:"-"`
 	DesyncCache  []DesyncNetworkCache `json:"desyncCache,omitempty"`
 	Privacy      PrivacySettings      `json:"privacy"`
 	AppUpdate    AppUpdateSettings    `json:"appUpdate"`
@@ -223,7 +226,10 @@ func loadDesktopPrefs() {
 		return
 	}
 	prefsMu.Lock()
+	desync := prefsCurrent.Desync // the active profile's, if loaded first
 	prefsCurrent = disk.DesktopPrefs
+	prefsCurrent.Desync = desync
+	prefsLegacyDesync = disk.LegacyDesync
 	prefsDesyncReportKey.Store(disk.DesyncReportKey)
 	prefsMu.Unlock()
 }
@@ -240,7 +246,7 @@ func saveDesktopPrefsLocked(prefs DesktopPrefs) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(desktopPrefsFile{DesktopPrefs: prefs, DesyncReportKey: storedDesyncReportKey()}, "", "  ")
+	b, err := json.MarshalIndent(desktopPrefsFile{DesktopPrefs: prefs, DesyncReportKey: storedDesyncReportKey(), LegacyDesync: prefsLegacyDesync}, "", "  ")
 	if err != nil {
 		return err
 	}

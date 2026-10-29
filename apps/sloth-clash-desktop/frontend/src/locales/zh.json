@@ -352,7 +352,6 @@
       "insightLatency": "延迟",
       "insightSpeed": "速度",
       "desyncOnlySubtitle": "仅 Desync · 无 VPN",
-      "desyncOnlyOff": "Desync 已关闭：所有流量直连。去开启",
       "desyncOnlyRuleOnly": "仅 Desync 配置只能使用规则模式：Desync 路由本身就是规则，全局模式没有可用的服务器",
       "desyncOnlyRuleHint": "仅规则",
       "proxyServers": "代理服务器",
@@ -512,11 +511,6 @@
         "badge": "仅 Desync",
         "badgeTitle": "没有 VPN 服务器：仅 Desync 路由，其余流量直连",
         "desyncOn": "无 VPN · Desync 已开启",
-        "desyncOff": "无 VPN · Desync 已关闭",
-        "enableTitle": "开启 Desync？",
-        "enableBody": "此配置没有 VPN 服务器。不开启 Desync 时所有流量直连，不会解锁任何内容。",
-        "enable": "开启 Desync",
-        "notNow": "暂不",
         "editBlurb": "仅 Desync 配置没有订阅，只能修改名称。",
         "configure": "设置",
         "configureAria": "Desync 设置"
@@ -840,7 +834,6 @@
       "create": "创建配置",
       "creating": "正在创建…",
       "created": "“{{name}}”已启用：Desync 已开启。",
-      "saveBusy": "上一次更改仍在保存，请重试。",
       "notCreated": "配置未创建，请重试。"
     },
     "services": {

@@ -136,7 +136,7 @@ describe('DesyncModal: onboarding', () => {
     expect(screen.getByLabelText('Domain')).toBeVisible()
   })
 
-  it('Create enables Desync, creates the profile and activates it', async () => {
+  it('Create makes a Desync-only profile with the selection and activates it', async () => {
     const status = desyncStatus({
       udpCoreSupported: true,
       settings: { enabled: false, discord: true, discordUDP: false },
@@ -157,18 +157,15 @@ describe('DesyncModal: onboarding', () => {
 
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
     // Same patch as the master switch: Discord gets voice when supported.
-    expect(set).toHaveBeenCalledWith({
+    // The settings go into the new profile; the active one is not touched.
+    expect(create).toHaveBeenCalledWith('Home', {
       ...status.settings,
       enabled: true,
       discord: true,
       discordUDP: true,
     })
-    expect(create).toHaveBeenCalledWith('Home')
+    expect(set).not.toHaveBeenCalled()
     expect(activate).toHaveBeenCalledWith(NEW_ID)
-    // Desync is on before the profile exists, the profile before activation.
-    expect(set.mock.invocationCallOrder[0]).toBeLessThan(
-      create.mock.invocationCallOrder[0],
-    )
     expect(create.mock.invocationCallOrder[0]).toBeLessThan(
       activate.mock.invocationCallOrder[0],
     )
@@ -277,19 +274,19 @@ describe('DesyncModal: onboarding', () => {
     expect(activate).toHaveBeenCalledTimes(2)
   })
 
-  it('a failed enable creates nothing and shows the reason', async () => {
+  it('a refused creation keeps the dialog and shows the reason', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
-    wailsApp.stub('SetDesyncSettings', () =>
+    const activate = wailsApp.stub('ActivateProfile', () => ({}))
+    wailsApp.stub('CreateDesyncOnlyProfile', () =>
       Promise.reject(new Error('the embedded core does not support desync')),
     )
-    const create = stubCreate()
     const props = renderModal('onboarding')
     await screen.findByRole('switch', { name: 'YouTube' })
     fireEvent.click(createButton())
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'does not support desync',
     )
-    expect(create).not.toHaveBeenCalled()
+    expect(activate).not.toHaveBeenCalled()
     expect(props.onClose).not.toHaveBeenCalled()
   })
 })
@@ -297,13 +294,19 @@ describe('DesyncModal: onboarding', () => {
 // The App wiring: every entry point opens the modal through useDesyncModal.
 function ModalHost({
   onActivate = noop,
+  profilesActive = 'p1',
 }: {
   onActivate?: (id: string) => void
+  profilesActive?: string
 }) {
   const modal = useDesyncModal()
   return (
     <>
-      <EntryPoints onOpen={modal.openManage} onActivate={onActivate} />
+      <EntryPoints
+        onOpen={modal.openManage}
+        onActivate={onActivate}
+        profilesActive={profilesActive}
+      />
       {modal.view ? (
         <DesyncModal
           view={modal.view}
@@ -431,9 +434,12 @@ const HOME_STATE = {
 function EntryPoints({
   onOpen,
   onActivate,
+  profilesActive,
 }: {
   onOpen: () => void
   onActivate: (id: string) => void
+  /** The active profile on the Profiles page. */
+  profilesActive: string
 }) {
   const vm = useHomeViewModel({
     state: HOME_STATE,
@@ -476,9 +482,8 @@ function EntryPoints({
           SUB,
           { id: 'p2', name: 'No VPN', type: 'local', kind: 'desync-only' },
         ]}
-        activeProfileId="p1"
+        activeProfileId={profilesActive}
         refreshBusyId={null}
-        desyncEnabled
         error={null}
         onImport={noop}
         onActivate={onActivate}
@@ -550,10 +555,10 @@ describe('Desync modal entry points', () => {
     ).toBeVisible()
   })
 
-  it('a Desync-only profile card opens the modal without activating', async () => {
+  it('the active Desync-only profile card opens the modal without activating', async () => {
     stubStatus()
     const activate = vi.fn()
-    renderWithProviders(<ModalHost onActivate={activate} />)
+    renderWithProviders(<ModalHost onActivate={activate} profilesActive="p2" />)
     const link = screen.getByRole('button', { name: 'Desync settings' })
     // Enter on the link must not reach the card (that activates it).
     fireEvent.keyDown(link, { key: 'Enter' })

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sync/atomic"
 )
 
@@ -22,6 +23,9 @@ import (
 type desktopPrefsFile struct {
 	DesktopPrefs
 	DesyncReportKey string `json:"desyncReportKey,omitempty"`
+	// LegacyDesync is the global Desync settings of builds before they
+	// moved into the profiles (desync_profile.go), kept until moved.
+	LegacyDesync json.RawMessage `json:"desync,omitempty"`
 }
 
 // prefsDesyncReportKey is the hex secret, saved with prefsCurrent. It is set

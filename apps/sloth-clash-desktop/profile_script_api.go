@@ -235,7 +235,7 @@ func (a *App) generatePreviewConfig(liveDir string, profile Profile, script stri
 		WithExternalController: false,
 		Traffic:                "proxy",
 		EnableTun:              false,
-		Env:                    currentRuntimeConfigEnv(),
+		Env:                    runtimeConfigEnvFor(profile),
 	}, &res); err != nil {
 		return "", scriptResult(res), err
 	}

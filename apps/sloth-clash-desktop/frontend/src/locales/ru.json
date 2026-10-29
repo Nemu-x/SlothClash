@@ -355,7 +355,6 @@
       "insightLatency": "Задержка",
       "insightSpeed": "Скорость",
       "desyncOnlySubtitle": "Только Desync · без VPN",
-      "desyncOnlyOff": "Desync выключен: весь трафик идёт напрямую. Включить",
       "desyncOnlyRuleOnly": "Профиль «Только Desync» работает только в режиме правил: маршруты Desync — это правила, а сервера для глобального режима нет",
       "desyncOnlyRuleHint": "Только правила",
       "proxyServers": "Прокси-серверы",
@@ -515,11 +514,6 @@
         "badge": "Только Desync",
         "badgeTitle": "Без VPN-серверов: только маршруты Desync, всё остальное напрямую",
         "desyncOn": "Без VPN · Desync включён",
-        "desyncOff": "Без VPN · Desync выключен",
-        "enableTitle": "Включить Desync?",
-        "enableBody": "В этом профиле нет VPN-серверов. Без Desync весь трафик идёт напрямую и ничего не разблокируется.",
-        "enable": "Включить Desync",
-        "notNow": "Не сейчас",
         "editBlurb": "У профиля «Только Desync» нет подписки, поэтому меняется только имя.",
         "configure": "Настроить",
         "configureAria": "Настройки Desync"
@@ -843,7 +837,6 @@
       "create": "Создать профиль",
       "creating": "Создаём…",
       "created": "«{{name}}» активен: Desync включён.",
-      "saveBusy": "Предыдущее изменение ещё сохраняется. Попробуй ещё раз.",
       "notCreated": "Профиль не создан. Попробуй ещё раз."
     },
     "services": {

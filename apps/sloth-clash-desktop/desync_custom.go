@@ -248,22 +248,23 @@ func desyncHasSelection(s DesyncSettings) bool {
 // the config but does not restart the running calibration: the controller
 // picks the new entry up and searches only for it.
 func (a *App) updateDesyncCustom(action string, change func([]DesyncCustomEntry) ([]DesyncCustomEntry, error)) (DesyncStatus, error) {
-	prefsMu.Lock()
-	next := effectiveDesyncSettings(prefsCurrent.Desync)
-	entries, err := change(append([]DesyncCustomEntry(nil), next.Custom...))
+	disabled := false
+	next, err := a.updateActiveDesync(func(next DesyncSettings, desyncOnly bool) (DesyncSettings, error) {
+		entries, err := change(next.Custom)
+		if err != nil {
+			return next, err
+		}
+		next.Custom = entries
+		if next.Enabled && !desyncOnly && !desyncHasSelection(next) {
+			next.Enabled = false
+			disabled = true
+		}
+		return next, nil
+	})
 	if err != nil {
-		prefsMu.Unlock()
 		return a.GetDesyncStatus(), err
 	}
-	next.Custom = entries
-	disabled := false
-	if next.Enabled && !desyncHasSelection(next) {
-		next.Enabled = false
-		disabled = true
-	}
-	prefsCurrent.Desync = next
-	savePrefsBestEffort(prefsCurrent)
-	prefsMu.Unlock()
+	entries := next.Custom
 	if disabled {
 		a.desyncCtl.invalidate()
 	}

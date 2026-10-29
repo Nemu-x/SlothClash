@@ -99,6 +99,11 @@
     {
       "file": "0022-desync-profile-reserve.patch",
       "sha256": "0355270d5fe881d33855a684de7a2f437bb785209504357e39539f6ea1628f06"
+    },
+    {
+      "file": "0023-desync-outbound.patch",
+      "sha256": "7e799f0bcbc0b10fbd5e79c2a0b63bb079c1ce039d23a68d7fd8710458cb2dac",
+      "feature": "desync-outbound"
     }
   ],
   "assets": {

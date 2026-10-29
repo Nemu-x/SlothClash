@@ -8,7 +8,7 @@ import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { HomePage } from '../pages/Home'
 import { ProfilesPage } from '../pages/Profiles'
 import {
-  DESYNC_PRESETS,
+  DESYNC_SERVICES,
   desyncAuto,
   desyncSnapshot,
   desyncStatus,
@@ -524,21 +524,21 @@ describe('Desync modal entry points', () => {
     expect(screen.getByRole('dialog', { name: 'Desync' })).toBeVisible()
   })
 
-  it('the Settings summary names switched-on presets', async () => {
+  it('the Settings summary names switched-on services', async () => {
     stubStatus(
       desyncStatus({
         settings: {
           custom: [
             { id: 'a1', domain: 'example.org', enabled: true },
-            { id: 'ig', domain: '', preset: 'instagram', enabled: true },
+            { id: 'ig', domain: '', service: 'instagram', enabled: true },
             { id: 'a2', domain: 'example.net', enabled: true },
-            { id: 'fb', domain: '', preset: 'facebook', enabled: true },
-            { id: 'xx', domain: '', preset: 'x', enabled: false },
+            { id: 'fb', domain: '', service: 'facebook', enabled: true },
+            { id: 'xx', domain: '', service: 'x', enabled: false },
           ],
         },
       }),
     )
-    wailsApp.stub('ListDesyncPresets', () => DESYNC_PRESETS)
+    wailsApp.stub('ListDesyncServices', () => DESYNC_SERVICES)
     renderWithProviders(
       <DesyncSummaryCard {...CONNECTED} onOpen={() => undefined} />,
     )

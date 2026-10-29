@@ -50,7 +50,7 @@ func desyncCustomRoutes(entries []DesyncCustomEntry) []runtimecfg.DesyncCustomRo
 	var out []runtimecfg.DesyncCustomRoute
 	for _, e := range entries {
 		if e.Enabled {
-			out = append(out, runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain, Preset: e.Preset})
+			out = append(out, runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain, Preset: e.Service})
 		}
 	}
 	return out

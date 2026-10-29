@@ -3,20 +3,20 @@ import { useTranslation } from 'react-i18next'
 
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
-import { useDesyncPresets } from '../hooks/queries/useDesyncPresets'
+import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import {
   customDomainErrorText,
   DESYNC_CUSTOM_LIMIT,
   desyncCustomViews,
   desyncEnablePatch,
-  desyncPresetName,
-  desyncPresetViews,
-  type DesyncPresetView,
+  desyncServiceName,
   desyncServiceViews,
+  type DesyncServiceView,
+  desyncBuiltinViews,
 } from '../utils/desyncStatus'
 
-import { DesyncPresetList } from './DesyncPresetList'
+import { DesyncServiceList } from './DesyncServiceList'
 import { DesyncStatusChip } from './DesyncStatusChip'
 
 /**
@@ -68,17 +68,17 @@ export function DesyncPanel({
     error: pollError,
     save: saveSettings,
     addCustom,
-    addPreset,
+    addService,
     removeCustom,
     setCustomEnabled,
     retry: retryAuto,
   } = useDesyncStatus({ connected, mode, traffic })
-  const catalog = useDesyncPresets()
+  const catalog = useDesyncServices()
   const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)
   const [domainInput, setDomainInput] = useState('')
   const [customError, setCustomError] = useState('')
-  const [presetError, setPresetError] = useState<{
+  const [serviceError, setServiceError] = useState<{
     id: string
     text: string
   } | null>(null)
@@ -120,31 +120,31 @@ export function DesyncPanel({
     }
   }
 
-  const presetName = (id: string) => desyncPresetName(catalog, id)
+  const serviceName = (id: string) => desyncServiceName(catalog, id)
 
   /**
    * One custom-list write. A domain write's validation error shows under the
-   * field, a preset switch's (`preset` = its catalog ID) under the Popular
+   * field, a service switch's (`service` = its catalog ID) under the Popular
    * list.
    */
   async function writeCustom(
     call: () => Promise<boolean>,
-    preset?: string,
+    service?: string,
   ): Promise<boolean> {
     if (!status || busy) return false
     setSaving(true)
     setCustomError('')
-    setPresetError(null)
+    setServiceError(null)
     setReplaced(null)
     try {
       return await call()
     } catch (err: unknown) {
       if (mountedRef.current) {
         const text = customDomainErrorText(t, err, {
-          presetName,
-          forPreset: preset !== undefined,
+          serviceName,
+          forService: service !== undefined,
         })
-        if (preset !== undefined) setPresetError({ id: preset, text })
+        if (service !== undefined) setServiceError({ id: service, text })
         else setCustomError(text)
       }
       return false
@@ -154,13 +154,13 @@ export function DesyncPanel({
   }
 
   /**
-   * Preset switch: ON adds the preset the first time, then re-enables its
+   * Service switch: ON adds the service the first time, then re-enables its
    * entry; OFF only disables it (the entry and its cached strategy stay).
    */
-  function togglePreset(view: DesyncPresetView) {
+  function toggleService(view: DesyncServiceView) {
     void writeCustom(async () => {
       if (view.entryId) return setCustomEnabled(view.entryId, !view.checked)
-      const result = await addPreset(view.id)
+      const result = await addService(view.id)
       if (result === false) return false
       if (result.length > 0 && mountedRef.current)
         setReplaced({ id: view.id, domains: result })
@@ -204,15 +204,15 @@ export function DesyncPanel({
   const ruleMode = mode.toLowerCase() === 'rule'
   const supported = status?.coreSupported === true
   const rows = snapshot
-    ? desyncServiceViews(snapshot, { connected, mode, traffic })
+    ? desyncBuiltinViews(snapshot, { connected, mode, traffic })
     : []
   const customRows = snapshot
     ? desyncCustomViews(snapshot, { connected, mode, traffic })
     : []
-  const presetRows = snapshot
-    ? desyncPresetViews(snapshot, { connected, mode, traffic }, catalog)
+  const serviceRows = snapshot
+    ? desyncServiceViews(snapshot, { connected, mode, traffic }, catalog)
     : []
-  // The cap counts every entry, presets included (desyncCustomLimit).
+  // The cap counts every entry, services included (desyncCustomLimit).
   const atLimit = (status?.settings.custom?.length ?? 0) >= DESYNC_CUSTOM_LIMIT
   const shownError = outerError || error || pollError
   const servicesTitleId = `${baseId}-services`
@@ -308,23 +308,23 @@ export function DesyncPanel({
             <p className="small muted desyncCustomHint">
               {t('desync.custom.hint')}
             </p>
-            {presetRows.length > 0 ? (
-              <DesyncPresetList
-                views={presetRows}
+            {serviceRows.length > 0 ? (
+              <DesyncServiceList
+                views={serviceRows}
                 onboarding={onboarding}
                 busy={busy}
                 supported={supported}
                 replaced={replaced}
-                error={presetError}
-                onToggle={togglePreset}
+                error={serviceError}
+                onToggle={toggleService}
               />
             ) : null}
             <div
               className="desyncSubgroup desyncOwnSites"
-              role={presetRows.length > 0 ? 'group' : undefined}
-              aria-labelledby={presetRows.length > 0 ? ownTitleId : undefined}
+              role={serviceRows.length > 0 ? 'group' : undefined}
+              aria-labelledby={serviceRows.length > 0 ? ownTitleId : undefined}
             >
-              {presetRows.length > 0 ? (
+              {serviceRows.length > 0 ? (
                 <h5 id={ownTitleId} className="desyncSubTitle">
                   {t('desync.custom.ownTitle')}
                 </h5>

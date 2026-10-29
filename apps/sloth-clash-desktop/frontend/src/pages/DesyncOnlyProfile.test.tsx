@@ -15,7 +15,7 @@ import {
 } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
-import { type DesyncSnapshot, desyncServiceViews } from '../utils/desyncStatus'
+import { type DesyncSnapshot, desyncBuiltinViews } from '../utils/desyncStatus'
 
 import { HomePage } from './Home'
 import { ProfilesPage } from './Profiles'
@@ -365,7 +365,7 @@ describe('Desync status lines without a reserve', () => {
         discord: desyncService('no_strategy'),
       }),
     )
-    const [youtube, discord] = desyncServiceViews(snap, ctx)
+    const [youtube, discord] = desyncBuiltinViews(snap, ctx)
     expect(youtube.status.phase).toBe('failed_direct')
     expect(youtube.status.tone).toBe('problem')
     expect(discord.status.phase).toBe('no_strategy')
@@ -377,6 +377,6 @@ describe('Desync status lines without a reserve', () => {
       desyncStatus(),
       desyncAuto({ youtube: desyncService('failed') }),
     )
-    expect(desyncServiceViews(snap, ctx)[0].status.phase).toBe('failed')
+    expect(desyncBuiltinViews(snap, ctx)[0].status.phase).toBe('failed')
   })
 })

@@ -1,7 +1,7 @@
 import {
   AddDesyncCustomDomain as addCustom,
-  AddDesyncPreset as addPreset,
-  ListDesyncPresets as listPresets,
+  AddDesyncService as addService,
+  ListDesyncServices as listServices,
   RemoveDesyncCustomDomain as removeCustom,
   SetDesyncCustomDomainEnabled as setCustomEnabled,
   GetDesyncStatus as getStatus,
@@ -28,22 +28,22 @@ export interface DesyncSettings {
 
 /**
  * One custom entry routed through Desync: a domain (its subdomains included)
- * or a catalog preset (`preset` set, `domain` empty: its domains come from the
- * catalog, see ListDesyncPresets).
+ * or a catalog service (`service` set, `domain` empty: its domains come from the
+ * catalog, see ListDesyncServices).
  */
 export interface DesyncCustomEntry {
   id: string
   domain: string
-  /** Catalog preset ID; absent for a plain domain entry. */
-  preset?: string
+  /** Catalog service ID; absent for a plain domain entry. */
+  service?: string
   enabled: boolean
 }
 
-/** One catalog preset: a service whose pages and media span several domains. */
-export interface DesyncPreset {
+/** One catalog service: a service whose pages and media span several domains. */
+export interface DesyncService {
   id: string
   name: string
-  /** Every domain the preset routes (each with its subdomains). */
+  /** Every domain the service routes (each with its subdomains). */
   domains: string[]
 }
 
@@ -69,11 +69,11 @@ export const SetDesyncSettings = (
   setSettings(main.DesyncSettings.createFrom(settings))
 export const AddDesyncCustomDomain = (domain: string): Promise<DesyncStatus> =>
   addCustom(domain)
-/** Add catalog preset `id` as one enabled entry; it replaces plain entries it covers. */
-export const AddDesyncPreset = (id: string): Promise<DesyncStatus> =>
-  addPreset(id)
-/** The preset catalog, in precedence order (fixed per build). */
-export const ListDesyncPresets = (): Promise<DesyncPreset[]> => listPresets()
+/** Add catalog service `id` as one enabled entry; it replaces plain entries it covers. */
+export const AddDesyncService = (id: string): Promise<DesyncStatus> =>
+  addService(id)
+/** The service catalog, in precedence order (fixed per build). */
+export const ListDesyncServices = (): Promise<DesyncService[]> => listServices()
 export const RemoveDesyncCustomDomain = (id: string): Promise<DesyncStatus> =>
   removeCustom(id)
 export const SetDesyncCustomDomainEnabled = (

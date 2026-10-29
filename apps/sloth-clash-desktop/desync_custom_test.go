@@ -12,7 +12,7 @@ import (
 )
 
 func TestDesyncSaveSelectionPrunesRemovedCustomWinners(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+	withDesyncPrefs(t, DesyncSettings{Enabled: true, Custom: []DesyncCustomEntry{
 		{ID: "0a1b2c3d", Domain: "example.org", Enabled: true},
 		{ID: "5a6b7c8d", Domain: "off.example.net", Enabled: false},
 	}})
@@ -164,7 +164,7 @@ func TestDesyncCustomEntryLifecycle(t *testing.T) {
 		t.Fatalf("entry: %+v", entry)
 	}
 	// Defaults of a never-touched config are kept when the list is created.
-	if !status.Settings.YouTube || status.Settings.DiscordTTL != 4 {
+	if !status.Settings.YouTube || status.Settings.Enabled {
 		t.Fatalf("defaults lost: %+v", status.Settings)
 	}
 	if _, err := a.AddDesyncCustomDomain("EXAMPLE.org"); !isCustomCode(err, "duplicate") {
@@ -206,11 +206,11 @@ func TestDesyncCustomEntryLifecycle(t *testing.T) {
 }
 
 func TestDesyncCustomOnlySelectionAndLastEntryDisables(t *testing.T) {
-	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: false, YouTube: false, Discord: false, DiscordTTL: 4}), nil)
-	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4}, "linux", true); err == nil {
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: false, YouTube: false, Discord: false}), nil)
+	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true}, "linux", true); err == nil {
 		t.Fatal("empty selection accepted")
 	}
-	only := DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{{ID: "a1", Domain: "example.org", Enabled: true}}}
+	only := DesyncSettings{Enabled: true, Custom: []DesyncCustomEntry{{ID: "a1", Domain: "example.org", Enabled: true}}}
 	if _, err := validateDesyncSettings(only, "linux", true); err != nil {
 		t.Fatalf("custom-only selection rejected: %v", err)
 	}
@@ -248,9 +248,9 @@ func withDesyncCoreFeatures(t *testing.T, features ...string) {
 func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
 	withDesyncCoreFeatures(t, "desync")
 	stored := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Enabled: true}}
-	a := desyncProfileApp(t, desyncPtr(DesyncSettings{DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: 1, Custom: stored}), nil)
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Custom: stored}), nil)
 	// The UI sends the toggles only: no YouTube/Discord and no Custom field.
-	status, err := a.SetDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4})
+	status, err := a.SetDesyncSettings(DesyncSettings{Enabled: true})
 	if err != nil || !status.Settings.Enabled {
 		t.Fatalf("enabling with only stored custom domains failed: %+v %v", status.Settings, err)
 	}

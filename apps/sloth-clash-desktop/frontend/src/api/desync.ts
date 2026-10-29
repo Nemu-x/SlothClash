@@ -21,10 +21,7 @@ export interface DesyncSettings {
   enabled: boolean
   youtube: boolean
   discord: boolean
-  discordTTL: number
   discordUDP: boolean
-  discordUDPTTL: number
-  discordUDPRepeats: number
   /** Custom domains; absent when there are none. */
   custom?: DesyncCustomEntry[]
 }

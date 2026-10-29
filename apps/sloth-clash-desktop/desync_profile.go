@@ -25,7 +25,7 @@ import (
 // changed uses: YouTube, plus Discord where its method works. Desync itself
 // is off (a Desync-only profile is always on, see profileDesyncSettings).
 func defaultDesyncSettings() DesyncSettings {
-	return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats}
+	return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows"}
 }
 
 // profileDesyncSettings is p's effective Desync settings: the stored ones
@@ -75,7 +75,8 @@ func (a *App) syncActiveDesyncLocked() {
 }
 
 // legacyDesyncSettings is prefs.json "desync" as builds before per-profile
-// settings wrote it.
+// settings wrote it. The TTL and repeat fields never reached the config; they
+// are read only to tell a saved object from an untouched one.
 type legacyDesyncSettings struct {
 	Enabled           bool                `json:"enabled"`
 	YouTube           bool                `json:"youtube"`
@@ -112,8 +113,7 @@ func legacyDesyncSelection(raw json.RawMessage) (DesyncSettings, bool) {
 		s.Custom = custom
 		return s, true
 	}
-	s := DesyncSettings{Enabled: l.Enabled, YouTube: l.YouTube, Discord: l.Discord, DiscordTTL: l.DiscordTTL, DiscordUDP: l.DiscordUDP, DiscordUDPTTL: l.DiscordUDPTTL, DiscordUDPRepeats: l.DiscordUDPRepeats, Custom: custom}
-	return effectiveDesyncSettings(s), true
+	return DesyncSettings{Enabled: l.Enabled, YouTube: l.YouTube, Discord: l.Discord, DiscordUDP: l.DiscordUDP, Custom: custom}, true
 }
 
 // migrateLegacyDesyncLocked copies the legacy global settings into every

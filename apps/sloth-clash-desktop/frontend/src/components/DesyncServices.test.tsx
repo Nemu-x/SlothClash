@@ -11,6 +11,7 @@ import {
   DESYNC_SERVICES,
   desyncAuto,
   desyncService,
+  desyncSettings,
   desyncStatus,
 } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
@@ -349,8 +350,15 @@ describe('DesyncModal onboarding: services', () => {
     )
   }
 
+  function stubDraft(custom: DesyncCustomEntry[]) {
+    wailsApp.stub('NewDesyncDraft', () =>
+      desyncSettings({ ...NOTHING, enabled: false, custom }),
+    )
+  }
+
   it('a switched-on service alone allows Create profile', async () => {
-    stubBackend(withCustom([FB], { ...NOTHING, enabled: false }))
+    stubBackend()
+    stubDraft([FB])
     renderOnboarding()
     await screen.findByRole('group', { name: 'Popular services' })
     expect(screen.getByRole('button', { name: 'Create profile' })).toBeEnabled()
@@ -358,14 +366,40 @@ describe('DesyncModal onboarding: services', () => {
   })
 
   it('a switched-off service does not', async () => {
-    stubBackend(
-      withCustom([{ ...FB, enabled: false }], { ...NOTHING, enabled: false }),
-    )
+    stubBackend()
+    stubDraft([{ ...FB, enabled: false }])
     renderOnboarding()
     await screen.findByRole('group', { name: 'Popular services' })
     expect(
       screen.getByRole('button', { name: 'Create profile' }),
     ).toBeDisabled()
     expect(screen.getByText('Turn on a service or add a site.')).toBeVisible()
+  })
+
+  it('switching a service on changes the draft only', async () => {
+    stubBackend()
+    stubDraft([])
+    const add = wailsApp.stub('DraftDesyncAddService', (draft, id) => ({
+      ...draft,
+      custom: [{ id: 'fb01fb01', domain: '', service: id, enabled: true }],
+    }))
+    const saved = wailsApp.stub('AddDesyncService', () => desyncStatus())
+    renderOnboarding()
+    await screen.findByRole('group', { name: 'Popular services' })
+    fireEvent.click(serviceSwitch('Facebook'))
+    await waitFor(() =>
+      expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
+    )
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ custom: [] }),
+      'facebook',
+    )
+    expect(saved).not.toHaveBeenCalled()
+    // Enabled once the edit settled (the panel's saving flag clears after).
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Create profile' }),
+      ).toBeEnabled(),
+    )
   })
 })

@@ -829,7 +829,7 @@
         "discord": "聊天和语音"
       },
       "nameLabel": "配置名称",
-      "namePlaceholder": "留空 = “Desync only”",
+      "defaultName": "仅 Desync",
       "needSelection": "请开启一个服务或添加一个网站。",
       "create": "创建配置",
       "creating": "正在创建…",

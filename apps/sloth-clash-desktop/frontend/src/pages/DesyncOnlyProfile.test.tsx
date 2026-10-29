@@ -10,6 +10,7 @@ import { useProfileModals } from '../hooks/useProfileModals'
 import {
   desyncAuto,
   desyncService,
+  desyncSettings,
   desyncSnapshot,
   desyncStatus,
 } from '../test/desyncFixtures'
@@ -84,6 +85,9 @@ describe('Add profile dialog: Desync only', () => {
       desyncStatus({ settings: { enabled: true } }),
     )
     wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
+    wailsApp.stub('NewDesyncDraft', () =>
+      desyncSettings({ enabled: false, youtube: true }),
+    )
     const create = wailsApp.stub('CreateDesyncOnlyProfile', () => ({
       // The first profile: the backend makes it the active one itself.
       profile: { activeProfileId: 'p2', profiles: [DESYNC_ONLY] },

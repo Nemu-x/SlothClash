@@ -277,3 +277,33 @@ func readPrefsFile(t *testing.T) string {
 	}
 	return string(b)
 }
+
+// The onboarding's draft edits follow the saved list's rules and save
+// nothing: no profile and no live setting changes.
+func TestDesyncDraftEditsSaveNothing(t *testing.T) {
+	sub := DesyncSettings{Enabled: true, YouTube: true}
+	a := desyncProfileApp(t, &sub, nil)
+	live := currentDesyncSettings()
+	draft := a.NewDesyncDraft()
+	if draft.Enabled || !draft.YouTube || len(draft.Custom) != 0 {
+		t.Fatalf("draft defaults: %+v", draft)
+	}
+	draft, err := a.DraftDesyncAddCustomDomain(draft, "https://Facebook.com/page")
+	if err != nil || len(draft.Custom) != 1 || draft.Custom[0].Domain != "facebook.com" {
+		t.Fatalf("add domain: %+v %v", draft.Custom, err)
+	}
+	if _, err := a.DraftDesyncAddCustomDomain(draft, "facebook.com"); !isCustomCode(err, "duplicate") {
+		t.Fatalf("duplicate: %v", err)
+	}
+	// The service replaces the plain entry it covers, as on a profile.
+	draft, err = a.DraftDesyncAddService(draft, "facebook")
+	if err != nil || len(draft.Custom) != 1 || draft.Custom[0].Service != "facebook" {
+		t.Fatalf("add service: %+v %v", draft.Custom, err)
+	}
+	if _, err := a.DraftDesyncAddService(draft, "myspace"); !isCustomCode(err, "unknown_service") {
+		t.Fatalf("unknown service: %v", err)
+	}
+	if !reflect.DeepEqual(currentDesyncSettings(), live) || !reflect.DeepEqual(a.profileDesync(t, "profile-1"), profileDesyncSettings(Profile{Desync: &sub})) {
+		t.Fatal("a draft edit changed saved settings")
+	}
+}

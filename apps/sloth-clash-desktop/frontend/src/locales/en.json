@@ -830,7 +830,7 @@
         "discord": "Chat and voice"
       },
       "nameLabel": "Profile name",
-      "namePlaceholder": "Empty = “Desync only”",
+      "defaultName": "Desync only",
       "needSelection": "Turn on a service or add a site.",
       "create": "Create profile",
       "creating": "Creating…",

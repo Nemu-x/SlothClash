@@ -10,6 +10,9 @@ import {
   RetryDesyncAuto as retryAuto,
   ReconnectDiscordUDP as reconnectUDP,
   SetDesyncSettings as setSettings,
+  NewDesyncDraft as newDraft,
+  DraftDesyncAddCustomDomain as draftAddCustom,
+  DraftDesyncAddService as draftAddService,
 } from '../../wailsjs/go/main/App'
 
 import { main } from './models'
@@ -67,6 +70,20 @@ export const SetDesyncSettings = (
   settings: DesyncSettings,
 ): Promise<DesyncStatus> =>
   setSettings(main.DesyncSettings.createFrom(settings))
+/** The selection a new Desync-only profile starts from (the defaults). */
+export const NewDesyncDraft = (): Promise<DesyncSettings> => newDraft()
+/** AddDesyncCustomDomain on a draft: validated, nothing saved. */
+export const DraftDesyncAddCustomDomain = (
+  draft: DesyncSettings,
+  domain: string,
+): Promise<DesyncSettings> =>
+  draftAddCustom(main.DesyncSettings.createFrom(draft), domain)
+/** AddDesyncService on a draft: validated, nothing saved. */
+export const DraftDesyncAddService = (
+  draft: DesyncSettings,
+  id: string,
+): Promise<DesyncSettings> =>
+  draftAddService(main.DesyncSettings.createFrom(draft), id)
 export const AddDesyncCustomDomain = (domain: string): Promise<DesyncStatus> =>
   addCustom(domain)
 /** Add catalog service `id` as one enabled entry; it replaces plain entries it covers. */

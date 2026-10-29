@@ -1,8 +1,10 @@
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { DesyncSettings } from '../api/desync'
 import { ActivateProfile, CreateDesyncOnlyProfile } from '../api/profile'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
+import { useDesyncDraft } from '../hooks/useDesyncDraft'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { desyncEnablePatch, desyncHasSelection } from '../utils/desyncStatus'
 import { isDesyncOnlyProfile } from '../utils/profileKind'
@@ -57,6 +59,8 @@ export function DesyncModal({
   const overlayDownRef = useRef(false)
   const onboarding = view === 'onboarding'
   const { snapshot } = useDesyncStatus({ connected, mode, traffic })
+  // Onboarding: the choices stay here until Create profile.
+  const draft = useDesyncDraft(onboarding)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [panelSaving, setPanelSaving] = useState(false)
@@ -69,7 +73,8 @@ export function DesyncModal({
   useDialogFocus(cardRef, true, close, fallbackFocus)
 
   const status = snapshot?.status ?? null
-  const hasSelection = status ? desyncHasSelection(status.settings) : false
+  const chosen = onboarding ? draft.settings : (status?.settings ?? null)
+  const hasSelection = chosen ? desyncHasSelection(chosen) : false
   const canCreate =
     status !== null &&
     status.coreSupported === true &&
@@ -77,13 +82,15 @@ export function DesyncModal({
     !busy &&
     !panelSaving
 
-  async function createProfile(): Promise<CreatedProfile> {
+  async function createProfile(
+    selection: DesyncSettings,
+  ): Promise<CreatedProfile> {
     if (createdRef.current) return createdRef.current
     const before = new Set((profiles ?? []).map((p: any) => String(p.id)))
-    const st = await CreateDesyncOnlyProfile(name.trim(), {
-      ...status!.settings,
-      ...desyncEnablePatch(status!),
-    })
+    const st = await CreateDesyncOnlyProfile(
+      name.trim() || t('desync.onboarding.defaultName'),
+      selection,
+    )
     const list: any[] = st?.profile?.profiles ?? []
     // The backend appends the new profile: the last Desync-only one that
     // was not there before (the last one at all if `profiles` was stale).
@@ -103,11 +110,16 @@ export function DesyncModal({
   }
 
   async function create() {
-    if (!status || !canCreate) return
+    if (!status || !draft.settings || !canCreate) return
+    // Same patch as the master switch: a selected Discord gets voice.
+    const selection = {
+      ...draft.settings,
+      ...desyncEnablePatch({ ...status, settings: draft.settings }),
+    }
     setBusy(true)
     setError('')
     try {
-      const created = await createProfile()
+      const created = await createProfile(selection)
       if (!created.active) {
         await ActivateProfile(created.id)
         created.active = true
@@ -162,8 +174,9 @@ export function DesyncModal({
           locked={busy}
           error={error}
           onSavingChange={setPanelSaving}
+          draft={onboarding ? draft : undefined}
           footerNote={
-            onboarding && status && !hasSelection ? (
+            onboarding && status && chosen && !hasSelection ? (
               <span className="small muted desyncFooterNote">
                 {t('desync.onboarding.needSelection')}
               </span>
@@ -210,7 +223,7 @@ export function DesyncModal({
                   className="input"
                   value={name}
                   disabled={busy}
-                  placeholder={t('desync.onboarding.namePlaceholder')}
+                  placeholder={t('desync.onboarding.defaultName')}
                   onChange={(e) => setName(e.target.value)}
                 />
               </label>

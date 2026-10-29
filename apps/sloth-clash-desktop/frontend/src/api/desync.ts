@@ -8,9 +8,7 @@ import {
   GetDesyncAutoStatus as getAutoStatus,
   GetDesyncDiagnosticReport as getReport,
   RetryDesyncAuto as retryAuto,
-  GetDesyncUDPStatus as getUDPStatus,
   ReconnectDiscordUDP as reconnectUDP,
-  RunDesyncDiagnostics as runDiagnostics,
   SetDesyncSettings as setSettings,
 } from '../../wailsjs/go/main/App'
 
@@ -64,31 +62,6 @@ export interface DesyncStatus {
   desyncOnly?: boolean
 }
 
-export interface DesyncUDPStatus {
-  directFlows: number
-  profileFlows: number
-  profileRoutes: string[]
-  upload: number
-  download: number
-  countersAvailable: boolean
-  counters: {
-    packets: number
-    fakePackets: number
-    fakeErrors: number
-    peers: number
-  }
-  lastError?: string
-}
-
-export interface DesyncProbeResult {
-  name: string
-  url: string
-  route: string
-  ok: boolean
-  delayMS: number
-  error?: string
-}
-
 export const GetDesyncStatus = (): Promise<DesyncStatus> => getStatus()
 export const SetDesyncSettings = (
   settings: DesyncSettings,
@@ -107,9 +80,7 @@ export const SetDesyncCustomDomainEnabled = (
   id: string,
   enabled: boolean,
 ): Promise<DesyncStatus> => setCustomEnabled(id, enabled)
-export const RunDesyncDiagnostics = (): Promise<DesyncProbeResult[]> =>
-  runDiagnostics()
-export const GetDesyncUDPStatus = (): Promise<DesyncUDPStatus> => getUDPStatus()
+/** Close Discord's UDP flows so the client reconnects (the "Reconnect voice" button). */
 export const ReconnectDiscordUDP = (): Promise<number> => reconnectUDP()
 
 export interface DesyncAutoService {

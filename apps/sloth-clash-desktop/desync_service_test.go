@@ -108,7 +108,7 @@ func TestDesyncCustomEntryReadsLegacyPresetKey(t *testing.T) {
 // A plain entry the service covers is replaced by it (the owner's case: a
 // "facebook.com" typed before services existed); others stay in order.
 func TestDesyncServiceReplacesCoveredPlainEntries(t *testing.T) {
-	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, Custom: []DesyncCustomEntry{
 		{ID: "0a1b2c3d", Domain: "facebook.com", Enabled: true},
 		{ID: "1b2c3d4e", Domain: "example.org", Enabled: true},
 		{ID: "2c3d4e5f", Domain: "video.xx.fbcdn.net", Enabled: false},
@@ -136,7 +136,7 @@ func TestDesyncServiceCountsAsOneEntryTowardTheCap(t *testing.T) {
 	for i := range desyncCustomLimit - 1 {
 		full = append(full, DesyncCustomEntry{ID: fmt.Sprintf("e%d", i), Domain: fmt.Sprintf("site%d.example.org", i), Enabled: true})
 	}
-	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: full}), nil)
+	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, Custom: full}), nil)
 	if _, err := a.AddDesyncService("x"); err != nil {
 		t.Fatalf("service as the last entry: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestDesyncServiceSanitize(t *testing.T) {
 }
 
 func TestDesyncSaveSelectionKeepsPresetWinners(t *testing.T) {
-	withDesyncPrefs(t, DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: []DesyncCustomEntry{
+	withDesyncPrefs(t, DesyncSettings{Enabled: true, Custom: []DesyncCustomEntry{
 		{ID: "0a1b2c3d", Service: "facebook", Enabled: true},
 		{ID: "5a6b7c8d", Domain: "example.org", Enabled: true},
 	}})

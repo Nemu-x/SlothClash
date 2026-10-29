@@ -14,10 +14,7 @@ export function desyncSettings(
     enabled: true,
     youtube: true,
     discord: true,
-    discordTTL: 0,
     discordUDP: true,
-    discordUDPTTL: 0,
-    discordUDPRepeats: 0,
     ...over,
   }
 }

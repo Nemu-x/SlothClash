@@ -14,16 +14,11 @@ import (
 	"SlothClashDesktop/internal/runtimecfg"
 )
 
-const desyncDefaultUDPRepeats = 1
-
 type DesyncSettings struct {
-	Enabled           bool `json:"enabled"`
-	YouTube           bool `json:"youtube"`
-	Discord           bool `json:"discord"`
-	DiscordTTL        int  `json:"discordTTL"`
-	DiscordUDP        bool `json:"discordUDP"`
-	DiscordUDPTTL     int  `json:"discordUDPTTL"`
-	DiscordUDPRepeats int  `json:"discordUDPRepeats"`
+	Enabled    bool `json:"enabled"`
+	YouTube    bool `json:"youtube"`
+	Discord    bool `json:"discord"`
+	DiscordUDP bool `json:"discordUDP"`
 	// Custom is the user's custom domains. Absent in prefs written before it
 	// existed (= none). Only the AddDesyncCustomDomain family changes it;
 	// SetDesyncSettings keeps the stored list.
@@ -50,19 +45,9 @@ func currentDesyncSettings() DesyncSettings {
 	return effectiveDesyncSettings(currentDesktopPrefs().Desync)
 }
 
-// effectiveDesyncSettings sanitizes the custom list and fills the defaults a
-// stored config leaves at zero.
+// effectiveDesyncSettings sanitizes the stored custom list.
 func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
 	s.Custom = sanitizeDesyncCustom(s.Custom)
-	if s.DiscordTTL == 0 {
-		s.DiscordTTL = 4
-	}
-	if s.DiscordUDPTTL == 0 {
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
 	return s
 }
 
@@ -85,33 +70,6 @@ func desyncUDPCoreSupported() bool {
 }
 
 func validateDesyncSettings(s DesyncSettings, platform string, coreSupported bool) (DesyncSettings, error) {
-	if s.DiscordTTL == 0 {
-		s.DiscordTTL = 4
-	}
-	if s.DiscordTTL < 1 || s.DiscordTTL > 255 {
-		if s.Enabled {
-			return s, fmt.Errorf("Discord TTL must be between 1 and 255")
-		}
-		s.DiscordTTL = 4
-	}
-	if s.DiscordUDPTTL == 0 {
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
-	if s.DiscordUDPTTL < 1 || s.DiscordUDPTTL > 255 {
-		if s.Enabled && s.DiscordUDP {
-			return s, fmt.Errorf("Discord UDP TTL must be between 1 and 255")
-		}
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats < 1 || s.DiscordUDPRepeats > 16 {
-		if s.Enabled && s.DiscordUDP {
-			return s, fmt.Errorf("Discord UDP repeats must be between 1 and 16")
-		}
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
 	if s.Enabled {
 		if !coreSupported {
 			return s, fmt.Errorf("the embedded core does not support desync")
@@ -159,7 +117,7 @@ func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	if err != nil {
 		return a.GetDesyncStatus(), err
 	}
-	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t ttl=%d discord_udp=%t udp_ttl=%d udp_repeats=%d", next.Enabled, next.YouTube, next.Discord, next.DiscordTTL, next.DiscordUDP, next.DiscordUDPTTL, next.DiscordUDPRepeats))
+	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t discord_udp=%t", next.Enabled, next.YouTube, next.Discord, next.DiscordUDP))
 	a.triggerRuntimeReloadForPrefs()
 	return a.GetDesyncStatus(), nil
 }

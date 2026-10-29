@@ -30,3 +30,24 @@
   font-size: 0.82rem;
   color: var(--muted);
 }
+
+/* Per-row close: quiet until hovered, so 500 rows of ✕ don't shout. */
+.connCloseCell {
+  width: 1%;
+  text-align: center;
+}
+.connCloseBtn {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.connCloseBtn:hover,
+.connCloseBtn:focus-visible {
+  color: var(--danger);
+  border-color: var(--danger);
+}

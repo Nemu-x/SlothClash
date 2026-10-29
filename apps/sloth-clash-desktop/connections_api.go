@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -33,12 +35,12 @@ type ConnectionItem struct {
 }
 
 type ConnectionsOverview struct {
-	Controller   string           `json:"controller"`
-	Reachable    bool             `json:"reachable"`
-	LastError    string           `json:"lastError,omitempty"`
-	UploadTotal  int64            `json:"uploadTotal"`
-	DownloadTotal int64           `json:"downloadTotal"`
-	Connections  []ConnectionItem `json:"connections"`
+	Controller    string           `json:"controller"`
+	Reachable     bool             `json:"reachable"`
+	LastError     string           `json:"lastError,omitempty"`
+	UploadTotal   int64            `json:"uploadTotal"`
+	DownloadTotal int64            `json:"downloadTotal"`
+	Connections   []ConnectionItem `json:"connections"`
 }
 
 // FetchConnectionsOverview reads /connections from the active mihomo controller.
@@ -130,12 +132,12 @@ func (a *App) FetchConnectionsOverview() ConnectionsOverview {
 			continue
 		}
 		out.Connections = append(out.Connections, ConnectionItem{
-			ID:       c.ID,
-			Upload:   c.Upload,
-			Download: c.Download,
-			Start:    c.Start,
-			Chains:   c.Chains,
-			Rule:     c.Rule,
+			ID:          c.ID,
+			Upload:      c.Upload,
+			Download:    c.Download,
+			Start:       c.Start,
+			Chains:      c.Chains,
+			Rule:        c.Rule,
 			RulePayload: c.RulePayload,
 			Metadata: ConnectionMeta{
 				Network:         c.Metadata.Network,
@@ -171,4 +173,62 @@ func (a *App) CloseAllConnections() error {
 		return errors.New("close all failed: HTTP " + resp.Status)
 	}
 	return nil
+}
+
+// maxCloseConnectionIDs caps one CloseConnections call; the overview itself
+// lists at most 500 rows, so a larger batch is a caller bug.
+const maxCloseConnectionIDs = 500
+
+// CloseConnections closes the given connections by id (DELETE
+// /connections/{id}) and returns how many the core accepted. Blank and
+// duplicate ids are skipped; mihomo answers 204 for an id that already went
+// away, so a connection that closed on its own still counts.
+func (a *App) CloseConnections(ids []string) (int, error) {
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return 0, nil
+	}
+	if len(unique) > maxCloseConnectionIDs {
+		return 0, fmt.Errorf("too many connections to close at once: %d (max %d)", len(unique), maxCloseConnectionIDs)
+	}
+	a.mu.RLock()
+	ep := a.effectiveCoreEndpointLocked()
+	secret := a.core.secret
+	a.mu.RUnlock()
+	if strings.TrimSpace(ep) == "" {
+		return 0, errors.New("core controller is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	closed := 0
+	var failures []error
+	for _, id := range unique {
+		resp, err := coreDoWithEndpoint(ctx, ep, secret, http.MethodDelete, "/connections/"+url.PathEscape(id), nil)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("close %s: %w", id, err))
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			failures = append(failures, fmt.Errorf("close %s: HTTP %s", id, resp.Status))
+			continue
+		}
+		closed++
+	}
+	return closed, errors.Join(failures...)
 }

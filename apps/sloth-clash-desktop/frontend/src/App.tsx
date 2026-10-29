@@ -1310,6 +1310,7 @@ function App() {
               <ConnectionsPage
                 view={connectionsView}
                 onCloseAll={() => run(connectionsView.closeAll)}
+                onClose={(ids) => run(() => connectionsView.closeByIds(ids))}
               />
             </Suspense>
           ) : null}

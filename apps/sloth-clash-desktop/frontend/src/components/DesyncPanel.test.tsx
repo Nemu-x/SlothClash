@@ -220,11 +220,12 @@ describe('DesyncPanel: status chips', () => {
       text: 'HTTPS available · automatic',
     },
     {
-      title: 'subscription reserve → ok',
+      // It works, but through the VPN, not by Desync: never a green tick.
+      title: 'subscription reserve → pending, through the VPN',
       auto: desyncAuto({ youtube: desyncService('profile') }),
       service: 'youtube',
-      tone: 'ok',
-      text: 'Using subscription reserve',
+      tone: 'pending',
+      text: "Through VPN (Desync didn't work here)",
     },
     {
       title: 'testing → pending with progress',
@@ -254,14 +255,14 @@ describe('DesyncPanel: status chips', () => {
       auto: desyncAuto({ youtube: desyncService('failed', { code: 'x' }) }),
       service: 'youtube',
       tone: 'problem',
-      text: 'Desync and reserve unavailable · retrying automatically',
+      text: 'Desync and VPN unavailable · retrying automatically',
     },
     {
       title: 'reserve check failed → pending (recovering)',
       auto: desyncAuto({ discord: desyncService('profile_failed') }),
       service: 'discord',
       tone: 'pending',
-      text: 'Subscription reserve unavailable · retrying',
+      text: 'VPN unavailable too · retrying',
     },
     {
       title: 'service off → off',

@@ -84,10 +84,16 @@ describe('DesyncPanel: services', () => {
         .getAllByRole('switch')
         .map((s) => s.getAttribute('aria-label')),
     ).toEqual(['Facebook', 'Instagram', 'X (Twitter)', 'Demo'])
-    // Popular comes first inside Custom domains, then the user's own sites.
-    const own = screen.getByRole('group', { name: 'Other sites' })
+    // One "Popular services" section (YouTube and Discord, then the
+    // catalog), then "Sites" with the user's own domains.
+    const popular = screen.getByRole('region', { name: 'Popular services' })
+    expect(within(popular).getByRole('switch', { name: 'YouTube' })).toBe(
+      screen.getByRole('switch', { name: 'YouTube' }),
+    )
+    expect(popular.contains(group)).toBe(true)
+    const own = screen.getByRole('region', { name: 'Sites' })
     expect(
-      group.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING,
+      popular.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(within(own).getByText('example.org')).toBeVisible()
     // A single-domain service has no "+N more".
@@ -199,7 +205,7 @@ describe('DesyncPanel: services', () => {
     expect(chip).toHaveTextContent(text)
     expect(
       within(serviceRow('facebook')).queryByText(
-        'Likely blocked by IP address; traffic follows your profile.',
+        'Likely blocked by IP address; it goes through your VPN.',
       ) !== null,
     ).toBe(phase === 'unavailable')
   })

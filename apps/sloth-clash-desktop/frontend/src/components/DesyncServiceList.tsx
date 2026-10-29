@@ -9,49 +9,52 @@ import { DesyncStatusChip } from './DesyncStatusChip'
 const SUMMARY_DOMAINS = 2
 
 /**
- * "Popular": one row per catalog service — name, a one-line domain summary
+ * The catalog part of "Popular services", under YouTube and Discord in the
+ * same section: one row per catalog service — name, a one-line domain summary
  * (the full list behind "+N more"), live status in manage, and a switch.
  * Notes under a row: the full domain list, a shared-domain hint, and which
  * plain entries switching it on replaced.
  */
 export function DesyncServiceList({
   views,
+  labelledBy,
   onboarding,
   busy,
   supported,
+  ipHint,
   replaced,
   error,
   onToggle,
 }: {
   views: DesyncServiceView[]
+  /** The "Popular services" section title above YouTube and Discord. */
+  labelledBy: string
   onboarding: boolean
   busy: boolean
   supported: boolean
+  /** Under a service Desync cannot unblock: where its traffic goes. */
+  ipHint: string
   /** The last service switched on and the plain domains it replaced. */
   replaced: { id: string; domains: string[] } | null
   /** Why the last switch of service `id` failed; it describes that switch. */
   error: { id: string; text: string } | null
   onToggle: (view: DesyncServiceView) => void
 }) {
-  const { t } = useTranslation()
   const baseId = useId()
-  const titleId = `${baseId}-title`
   const errorId = `${baseId}-error`
   return (
     <div
       className="desyncSubgroup desyncPopulars"
       role="group"
-      aria-labelledby={titleId}
+      aria-labelledby={labelledBy}
     >
-      <h5 id={titleId} className="desyncSubTitle">
-        {t('desync.services.title')}
-      </h5>
       <ul className="desyncServices desyncPopularList">
         {views.map((view) => (
           <DesyncServiceRow
             key={view.id}
             view={view}
             onboarding={onboarding}
+            ipHint={ipHint}
             disabled={busy || (!supported && !view.checked)}
             replaced={replaced?.id === view.id ? replaced.domains : []}
             errorId={error?.id === view.id ? errorId : undefined}
@@ -71,6 +74,7 @@ export function DesyncServiceList({
 function DesyncServiceRow({
   view,
   onboarding,
+  ipHint,
   disabled,
   replaced,
   errorId,
@@ -78,6 +82,7 @@ function DesyncServiceRow({
 }: {
   view: DesyncServiceView
   onboarding: boolean
+  ipHint: string
   disabled: boolean
   replaced: string[]
   errorId?: string
@@ -129,9 +134,7 @@ function DesyncServiceRow({
           <>
             <DesyncStatusChip view={view.status} />
             {view.status.phase === 'unavailable' ? (
-              <span className="desyncCustomNote">
-                {t('desync.custom.ipHint')}
-              </span>
+              <span className="desyncCustomNote">{ipHint}</span>
             ) : null}
           </>
         )}

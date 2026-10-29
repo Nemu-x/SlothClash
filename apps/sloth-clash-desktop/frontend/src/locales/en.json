@@ -778,10 +778,10 @@
       "receiving": "Receiving media",
       "partial": "One media connection stalled; other connections are working",
       "interrupted": "UDP traffic interrupted; waiting for recovery",
-      "failed": "Desync and reserve unavailable · retrying automatically",
+      "failed": "Desync and VPN unavailable · retrying automatically",
       "checking": "Confirming a connection failure",
-      "profile": "Using subscription reserve",
-      "profile_failed": "Subscription reserve unavailable · retrying",
+      "profile": "Through VPN (Desync didn't work here)",
+      "profile_failed": "VPN unavailable too · retrying",
       "queued": "Waiting for a check",
       "not_needed": "Not blocked · Desync not needed",
       "unavailable": "Desync can't unblock this site",
@@ -798,13 +798,14 @@
       "no_profile": "Add or choose a profile first: Desync settings belong to a profile."
     },
     "custom": {
-      "title": "Custom domains",
+      "title": "Sites",
       "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",
       "inputLabel": "Domain",
       "add": "Add",
       "remove": "Remove {{domain}}",
-      "ipHint": "Likely blocked by IP address; traffic follows your profile.",
-      "limitReached": "Up to {{limit}} domains.",
+      "ipHint": "Likely blocked by IP address; it goes through your VPN.",
+      "ipHintDirect": "Likely blocked by IP address. Without a VPN this site stays blocked.",
+      "limitReached": "Up to {{limit}} sites and popular services.",
       "homeItem": "Sites {{count}}",
       "error": {
         "empty": "Enter a domain, for example example.com.",
@@ -814,15 +815,14 @@
         "public_suffix": "Enter a site’s domain, not a whole zone such as com or co.uk.",
         "builtin": "This domain is covered by the built-in YouTube or Discord switch.",
         "duplicate": "This domain is already in the list.",
-        "limit": "You can add up to {{limit}} domains.",
+        "limit": "You can add up to {{limit}} sites and popular services.",
         "not_found": "This entry no longer exists. The list was refreshed.",
         "service_overlap": "Already covered by {{name}} in Popular services.",
         "unknown_service": "This service is not available in this version."
-      },
-      "ownTitle": "Other sites"
+      }
     },
-    "lead": "Unblocks YouTube, Discord and the sites you add, without a VPN.",
-    "servicesTitle": "Services",
+    "lead": "YouTube, Discord and the sites you add go directly through Desync, outside your VPN. Where Desync doesn't help, they go through the VPN.",
+    "leadDesyncOnly": "Unblocks YouTube, Discord and the sites you add without a VPN. Everything else connects directly.",
     "summary": {
       "status": "Status",
       "covers": "Covers",

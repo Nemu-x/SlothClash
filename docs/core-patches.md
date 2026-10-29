@@ -301,8 +301,9 @@ Patch `0022-desync-profile-reserve.patch` adds bounded authenticated prospective
 ## Desync outbound
 
 Patch `0023-desync-outbound.patch` adds `type: desync`, a first-class outbound for the same client-side
-library, and moves the series to `github.com/Nemu-x/desync v0.1.0` (exact tag and checksum in
-mihomo's `go.mod` / `go.sum`). It is a DIRECT connection whose first TLS ClientHello leaves the
+library, and moves the series to `github.com/Nemu-x/desync` main at 673cbef
+(`v0.2.1-0.20261029232908-673cbefddb80`, Nemu-x/desync#11; it becomes the `v0.2.1` tag once that
+is published), exact version and checksum in mihomo's `go.mod` / `go.sum`. It is a DIRECT connection whose first TLS ClientHello leaves the
 client's own socket transformed; non-TLS traffic and everything after the ClientHello pass through.
 Named `direct` outbounds with a `desync` mapping (0017-0022) keep working unchanged during the
 migration, and the app still generates only those.
@@ -320,7 +321,7 @@ proxies:
     tlsrec: "1+s"              # TLS record cuts, comma-separated ("3", "1+s", "-2+s")
     split: "1+s"               # TCP write cuts
     split-delay: 5             # ms between pieces, 0-1000
-    split-wait: sent           # sent | acked (absent = no wait; macOS: acked only)
+    split-wait: sent           # sent | acked (absent = no wait; macOS: acked only; Android: sent per connection)
     split-wait-timeout: 2000   # ms per wait (also bounds disorder), 0-60000, default 2000
     disorder: true             # first split piece with hop limit 1 (ByeDPI --disorder)
     oob: false                 # urgent byte after the first split piece; with disorder = disoob
@@ -329,7 +330,7 @@ proxies:
       tlsrec: [{from: "-8+s", to: "8+s", count: 2, min-piece: 2}]
       split: [{from: 1, to: 120}]
       seed: 0                  # 0 = a new seed per connection
-    fake:                      # low-TTL decoy (Windows, Linux, Android)
+    fake:                      # low-TTL decoy (Windows, Linux, Android per connection)
       ttl: 4                   # with auto-ttl the fallback (0 = no fallback)
       auto-ttl: {delta: 1, min: 3, max: 20}   # {} = these defaults; absent = off; observable on Linux/Android over IPv6
       prefix: -1               # end of the fake piece; with split it is the piece ending here
@@ -354,7 +355,12 @@ proxies:
 
 What an OS cannot do is a configuration error naming the outbound, the method, the OS and the
 library's reason (`desync.PlatformCapabilities`), never a silent plain DIRECT: `fake` on macOS and
-`split-wait: sent` on macOS. As in Citrus, `auto-ttl` fails only where it can never derive a TTL
+`split-wait: sent` on macOS. On Android the library lists `split-wait: sent`, `disorder` and `fake`
+in `Capabilities.Conditional`: apps may not read `SIOCOUTQNSD`, so unsent bytes come from `TCP_INFO`
+`tcpi_notsent_bytes` (Linux 4.6+), decided per socket. As in Citrus, such a method loads and logs once
+per outbound that it is verified per connection; a socket without the field fails the connection
+before any byte is sent, with the library's `ErrSplitWaitUnsupported` / `ErrDisorderUnsupported` /
+`ErrFakeUnsupported`, never a substitute. As in Citrus, `auto-ttl` fails only where it can never derive a TTL
 (Windows, macOS, Linux with `ip-version: ipv4`) and no fallback `ttl` is set; with a fallback it
 loads and logs that every fake uses it, and on Linux without a fallback it logs that IPv4
 connections fail. `tfo`, `mptcp` and `dialer-proxy` are refused. The transformed connection hides

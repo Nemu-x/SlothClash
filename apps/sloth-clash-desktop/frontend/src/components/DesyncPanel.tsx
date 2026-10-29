@@ -22,8 +22,9 @@ import { DesyncStatusChip } from './DesyncStatusChip'
 
 /**
  * - manage: the active profile's controls — master switch (not for a
- *   Desync-only profile, which is always on), service rows and custom
- *   domains with live status, Check again / Copy diagnostics.
+ *   Desync-only profile, which is always on), "Popular services" (YouTube,
+ *   Discord and the catalog) and "Sites" (the user's domains) with live
+ *   status, Check again / Copy diagnostics.
  * - onboarding: choosing what a new Desync-only profile unblocks — the same
  *   rows without the master switch, status or diagnostics (Desync is turned
  *   on when the profile is created).
@@ -232,8 +233,11 @@ export function DesyncPanel({
   const shownError = outerError || error || pollError
   const servicesTitleId = `${baseId}-services`
   const customTitleId = `${baseId}-custom`
+  // Without a VPN a site Desync cannot unblock stays blocked.
+  const ipHint = t(
+    status?.desyncOnly ? 'desync.custom.ipHintDirect' : 'desync.custom.ipHint',
+  )
   const customErrorId = `${baseId}-custom-error`
-  const ownTitleId = `${baseId}-own`
 
   return (
     <div className="desyncPanel" data-variant={variant}>
@@ -267,7 +271,7 @@ export function DesyncPanel({
         {status ? (
           <section className="desyncSection" aria-labelledby={servicesTitleId}>
             <h4 id={servicesTitleId} className="desyncSectionTitle">
-              {t('desync.servicesTitle')}
+              {t('desync.services.title')}
             </h4>
             <ul className="desyncServices">
               {rows.map((row) => (
@@ -309,6 +313,19 @@ export function DesyncPanel({
                 </li>
               ))}
             </ul>
+            {serviceRows.length > 0 ? (
+              <DesyncServiceList
+                views={serviceRows}
+                labelledBy={servicesTitleId}
+                onboarding={onboarding}
+                busy={busy}
+                supported={supported}
+                ipHint={ipHint}
+                replaced={replaced}
+                error={serviceError}
+                onToggle={toggleService}
+              />
+            ) : null}
           </section>
         ) : (
           <p className="small muted desyncLoading">{t('desync.loading')}</p>
@@ -324,27 +341,7 @@ export function DesyncPanel({
             <p className="small muted desyncCustomHint">
               {t('desync.custom.hint')}
             </p>
-            {serviceRows.length > 0 ? (
-              <DesyncServiceList
-                views={serviceRows}
-                onboarding={onboarding}
-                busy={busy}
-                supported={supported}
-                replaced={replaced}
-                error={serviceError}
-                onToggle={toggleService}
-              />
-            ) : null}
-            <div
-              className="desyncSubgroup desyncOwnSites"
-              role={serviceRows.length > 0 ? 'group' : undefined}
-              aria-labelledby={serviceRows.length > 0 ? ownTitleId : undefined}
-            >
-              {serviceRows.length > 0 ? (
-                <h5 id={ownTitleId} className="desyncSubTitle">
-                  {t('desync.custom.ownTitle')}
-                </h5>
-              ) : null}
+            <div className="desyncSubgroup desyncOwnSites">
               {customRows.length > 0 ? (
                 <ul className="desyncServices desyncCustomList">
                   {customRows.map((row) => (
@@ -364,9 +361,7 @@ export function DesyncPanel({
                           <>
                             <DesyncStatusChip view={row.status} />
                             {row.status.phase === 'unavailable' ? (
-                              <span className="desyncCustomNote">
-                                {t('desync.custom.ipHint')}
-                              </span>
+                              <span className="desyncCustomNote">{ipHint}</span>
                             ) : null}
                           </>
                         )}

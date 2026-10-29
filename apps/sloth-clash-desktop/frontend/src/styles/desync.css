@@ -239,22 +239,6 @@
   margin: var(--space-2) 0 0;
 }
 
-/* Custom domains, two quiet subgroups: "Popular" (services) above the user's
-   own sites. A muted label, the same rows below it. */
-.desyncPanel .desyncSubgroup + .desyncSubgroup {
-  margin-top: var(--space-2);
-}
-.desyncPanel .desyncSubTitle {
-  margin: var(--space-3) 0 0;
-  font-size: var(--font-size-xs);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-tight);
-  color: var(--text-muted);
-}
-.desyncPanel .desyncSubTitle + .desyncCustomAdd {
-  margin-top: var(--space-2);
-}
-
 /* Service rows: name over a one-line domain summary, status, switch; notes
    (full list, shared domain, replaced entries) span the row underneath. */
 .desyncPanel .desyncPopularRow {

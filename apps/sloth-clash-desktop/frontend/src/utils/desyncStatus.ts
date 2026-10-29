@@ -59,12 +59,15 @@ export type DesyncContext = {
 const PHASE_TONE: Record<string, DesyncTone> = {
   // Working.
   ready: 'ok',
-  profile: 'ok',
   transport: 'ok',
   receiving: 'ok',
   media: 'ok',
   // Custom domain reachable without Desync (routed directly).
   not_needed: 'ok',
+  // Desync did not work here: the service goes through the VPN (the
+  // subscription reserve) while the search goes on. It works, but not by
+  // Desync, so it is not shown as a success.
+  profile: 'pending',
   // In progress / waiting for traffic.
   queued: 'pending',
   testing: 'pending',

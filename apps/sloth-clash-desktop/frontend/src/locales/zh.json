@@ -777,10 +777,10 @@
       "receiving": "正在接收媒体流量",
       "partial": "一个媒体连接已停滞，其他连接仍在工作",
       "interrupted": "UDP 通信中断，正在等待恢复",
-      "failed": "Desync 和备用线路不可用 · 将自动重试",
+      "failed": "Desync 和 VPN 均不可用 · 将自动重试",
       "checking": "正在确认连接故障",
-      "profile": "使用订阅备用线路",
-      "profile_failed": "订阅备用线路不可用 · 正在重试",
+      "profile": "走 VPN（Desync 在此无效）",
+      "profile_failed": "VPN 也不可用 · 正在重试",
       "queued": "等待检测",
       "not_needed": "未被封锁 · 无需 Desync",
       "unavailable": "Desync 无法解锁此网站",
@@ -797,13 +797,14 @@
       "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。"
     },
     "custom": {
-      "title": "自定义域名",
+      "title": "网站",
       "hint": "包含所有子域名。每个网站会单独自动测试策略。",
       "inputLabel": "域名",
       "add": "添加",
       "remove": "移除 {{domain}}",
-      "ipHint": "很可能按 IP 地址封锁；流量将按配置文件的规则走。",
-      "limitReached": "最多 {{limit}} 个域名。",
+      "ipHint": "很可能按 IP 地址封锁；将通过 VPN 访问。",
+      "ipHintDirect": "很可能按 IP 地址封锁。没有 VPN 时此网站仍无法访问。",
+      "limitReached": "网站和热门服务最多 {{limit}} 个。",
       "homeItem": "网站 {{count}}",
       "error": {
         "empty": "请输入域名，例如 example.com。",
@@ -813,15 +814,14 @@
         "public_suffix": "请输入网站的域名，而不是 com 或 co.uk 这样的整个后缀。",
         "builtin": "该域名已由内置的 YouTube 或 Discord 开关覆盖。",
         "duplicate": "该域名已在列表中。",
-        "limit": "最多可以添加 {{limit}} 个域名。",
+        "limit": "最多可以添加 {{limit}} 个网站和热门服务。",
         "not_found": "该条目已不存在，列表已刷新。",
         "service_overlap": "已被热门服务 {{name}} 覆盖。",
         "unknown_service": "此版本中没有该服务。"
-      },
-      "ownTitle": "其他网站"
+      }
     },
-    "lead": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站。",
-    "servicesTitle": "服务",
+    "lead": "YouTube、Discord 和你添加的网站将通过 Desync 直连，不走 VPN。Desync 无效时改走 VPN。",
+    "leadDesyncOnly": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站，其余流量直连。",
     "summary": {
       "status": "状态",
       "covers": "范围",

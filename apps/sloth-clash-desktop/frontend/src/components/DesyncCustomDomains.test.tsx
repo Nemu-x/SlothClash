@@ -186,11 +186,34 @@ describe('DesyncPanel: custom domains', () => {
       await waitFor(() => expect(chip(ORG.id)).toHaveTextContent(c.text))
       expect(chip(ORG.id)).toHaveAttribute('data-tone', c.tone)
       const hint = within(customRow(ORG.id)).queryByText(
-        'Likely blocked by IP address; traffic follows your profile.',
+        'Likely blocked by IP address; it goes through your VPN.',
       )
       expect(hint !== null).toBe(c.ipHint === true)
     })
   }
+
+  it('on a Desync-only profile the IP hint says the site stays blocked', async () => {
+    stubBackend(
+      desyncStatus({ desyncOnly: true, settings: { custom: [ORG] } }),
+      desyncAuto({ custom: { [ORG.id]: desyncService('unavailable') } }),
+    )
+    await renderCard()
+    expect(
+      await within(customRow(ORG.id)).findByText(
+        'Likely blocked by IP address. Without a VPN this site stays blocked.',
+      ),
+    ).toBeVisible()
+    expect(within(customRow(ORG.id)).queryByText(/through your VPN/)).toBeNull()
+  })
+
+  it('lists the sites under "Sites"', async () => {
+    stubBackend(desyncStatus({ settings: { custom: [ORG] } }))
+    await renderCard()
+    const sites = screen.getByRole('region', { name: 'Sites' })
+    expect(within(sites).getByText(ORG.domain)).toBeVisible()
+    expect(screen.queryByText('Custom domains')).toBeNull()
+    expect(screen.queryByText('Other sites')).toBeNull()
+  })
 
   it('disables adding at the limit', async () => {
     const many = Array.from({ length: 32 }, (_, i) => ({
@@ -201,6 +224,8 @@ describe('DesyncPanel: custom domains', () => {
     stubBackend(desyncStatus({ settings: { custom: many } }))
     await renderCard()
     expect(screen.getByRole('textbox', { name: 'Domain' })).toBeDisabled()
-    expect(screen.getByText('Up to 32 domains.')).toBeVisible()
+    expect(
+      screen.getByText('Up to 32 sites and popular services.'),
+    ).toBeVisible()
   })
 })

@@ -167,7 +167,12 @@ export function DesyncModal({
             {onboarding ? t('desync.onboarding.title') : t('desync.title')}
           </h3>
           <p id={leadId} className="muted small desyncModalLead">
-            {onboarding ? t('desync.onboarding.lead') : t('desync.lead')}
+            {onboarding
+              ? t('desync.onboarding.lead')
+              : status?.desyncOnly
+                ? t('desync.leadDesyncOnly')
+                : // A subscription profile: Desync takes these off the VPN.
+                  t('desync.lead')}
           </p>
         </header>
         <DesyncPanel

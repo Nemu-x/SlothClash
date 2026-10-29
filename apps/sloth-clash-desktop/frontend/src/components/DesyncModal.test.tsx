@@ -99,8 +99,11 @@ describe('DesyncModal: manage', () => {
     renderModal('manage')
     const dialog = screen.getByRole('dialog', { name: 'Desync' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(dialog).toHaveAccessibleDescription(
-      'Unblocks YouTube, Discord and the sites you add, without a VPN.',
+    // A subscription profile: Desync takes the services off the VPN.
+    await waitFor(() =>
+      expect(dialog).toHaveAccessibleDescription(
+        "YouTube, Discord and the sites you add go directly through Desync, outside your VPN. Where Desync doesn't help, they go through the VPN.",
+      ),
     )
     await screen.findByRole('switch', { name: 'YouTube' })
     expect(screen.getByRole('switch', { name: 'Enable Desync' })).toBeVisible()
@@ -110,6 +113,17 @@ describe('DesyncModal: manage', () => {
     ).toBeVisible()
     // Live status chips are shown here.
     expect(document.querySelectorAll('.desyncChip').length).toBeGreaterThan(0)
+  })
+
+  it('a Desync-only profile: unblocks without a VPN, no master switch', async () => {
+    stubStatus(desyncStatus({ desyncOnly: true }))
+    renderModal('manage')
+    const dialog = screen.getByRole('dialog', { name: 'Desync' })
+    await screen.findByRole('switch', { name: 'YouTube' })
+    expect(dialog).toHaveAccessibleDescription(
+      'Unblocks YouTube, Discord and the sites you add without a VPN. Everything else connects directly.',
+    )
+    expect(screen.queryByRole('switch', { name: 'Enable Desync' })).toBeNull()
   })
 
   it('closes with Close, Escape and a backdrop click', async () => {

@@ -3,13 +3,14 @@ import { useCallback } from 'react'
 
 import {
   CloseAllConnections,
+  CloseConnections,
   FetchConnectionsOverview,
 } from '../../api/connections'
 import type { ConnectionsOverview } from '../../types/app'
 
 /**
  * Connections snapshot poll — auto-refetches every 3.5s while `enabled`.
- * `refresh`/`closeAll` are memoized: a fresh identity each render is the footgun
+ * `refresh`/`closeAll`/`closeByIds` are memoized: a fresh identity each render is the footgun
  * that caused the useUpdateState render-loop (audit C1-1).
  */
 export function useConnectionsOverview(enabled: boolean) {
@@ -25,5 +26,22 @@ export function useConnectionsOverview(enabled: boolean) {
     await CloseAllConnections()
     void qc.invalidateQueries({ queryKey: ['connections-overview'] })
   }, [qc])
-  return { overview: data ?? null, busy: isFetching, refresh, closeAll }
+  const closeByIds = useCallback(
+    async (ids: string[]) => {
+      try {
+        await CloseConnections(ids)
+      } finally {
+        // Refetch even on a partial failure: the ids that did close must vanish.
+        void qc.invalidateQueries({ queryKey: ['connections-overview'] })
+      }
+    },
+    [qc],
+  )
+  return {
+    overview: data ?? null,
+    busy: isFetching,
+    refresh,
+    closeAll,
+    closeByIds,
+  }
 }

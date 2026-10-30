@@ -299,6 +299,89 @@
   margin: var(--space-2) 0 0;
 }
 
+/* The strategy in use, under a status chip: quiet secondary text aligned
+   with the chip text (past the dot). */
+.desyncPanel .desyncStrategy {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+  padding-left: 13px;
+  overflow-wrap: break-word;
+}
+
+/* Discord voice actions (Turn on TUN, Reconnect voice), under its status. */
+.desyncPanel .desyncRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding-left: 13px;
+  margin-top: 2px;
+}
+.desyncPanel .desyncRowActions .linkBtn {
+  font-size: var(--font-size-xs);
+}
+.desyncPanel .desyncRowActionNote {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+
+/* "What this computer can do": a collapsed section; methods as rows of
+   name + supported / not supported. */
+.desyncPanel .desyncCapsSummary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+.desyncPanel .desyncCapsSummary:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.desyncPanel .desyncCapsCount {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+.desyncPanel .desyncCapsNote {
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+}
+.desyncPanel .desyncCapsList {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.desyncPanel .desyncCapsRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: start;
+}
+.desyncPanel .desyncCapsName {
+  font-size: var(--font-size-sm);
+  line-height: 22px;
+  color: var(--text);
+}
+.desyncPanel .desyncCapsState {
+  white-space: nowrap;
+}
+.desyncPanel .desyncCapsReason {
+  grid-column: 1 / -1;
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.desyncPanel .desyncCapsStrategies {
+  margin: var(--space-2) 0 0;
+}
+
 /* Diagnostics: a quiet link on the footer's left. */
 .desyncPanel .linkBtn {
   font-size: var(--font-size-xs);

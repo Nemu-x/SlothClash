@@ -107,7 +107,7 @@ describe('DesyncModal: manage', () => {
     )
     await screen.findByRole('switch', { name: 'YouTube' })
     expect(screen.getByRole('switch', { name: 'Enable Desync' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Check again' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Check network' })).toBeVisible()
     expect(
       screen.getByRole('button', { name: 'Copy diagnostics' }),
     ).toBeVisible()
@@ -151,6 +151,27 @@ describe('DesyncModal: manage', () => {
   })
 })
 
+describe('DesyncModal: manage voice', () => {
+  it('Turn on TUN goes through the app traffic switch', async () => {
+    stubStatus()
+    const onEnableTun = vi.fn(async () => '')
+    renderWithProviders(
+      <DesyncModal
+        view="manage"
+        {...CONNECTED}
+        traffic="proxy"
+        profiles={[SUB]}
+        refresh={async () => {}}
+        onClose={noop}
+        onCreated={noop}
+        onEnableTun={onEnableTun}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on TUN' }))
+    await waitFor(() => expect(onEnableTun).toHaveBeenCalledTimes(1))
+  })
+})
+
 describe('DesyncModal: onboarding', () => {
   it('asks only what to unblock: no master switch, status or diagnostics', async () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
@@ -161,13 +182,17 @@ describe('DesyncModal: onboarding', () => {
     ).toBeVisible()
     await screen.findByRole('switch', { name: 'YouTube' })
     expect(screen.queryByRole('switch', { name: 'Enable Desync' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Check network' })).toBeNull()
     expect(
       screen.queryByRole('button', { name: 'Copy diagnostics' }),
     ).toBeNull()
     expect(document.querySelector('.desyncChip')).toBeNull()
     expect(screen.getByText('Videos and the website')).toBeVisible()
     expect(screen.getByLabelText('Domain')).toBeVisible()
+    // No strategies, capabilities or voice actions while choosing.
+    expect(wailsApp.fn('GetDesyncCapabilities')).not.toHaveBeenCalled()
+    expect(document.querySelector('.desyncCaps')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reconnect voice' })).toBeNull()
   })
 
   it('Create makes a Desync-only profile with the selection and activates it', async () => {

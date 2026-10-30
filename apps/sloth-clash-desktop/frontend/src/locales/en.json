@@ -759,7 +759,13 @@
     "enabled": "Enable Desync",
     "unsupportedCore": "This build does not include a compatible core.",
     "voice": "Discord voice",
-    "retry": "Check again",
+    "checkNetwork": "Check network",
+    "enableTun": "Turn on TUN",
+    "enablingTun": "Turning on TUN…",
+    "reconnectVoice": "Reconnect voice",
+    "reconnecting": "Reconnecting…",
+    "reconnected": "Discord is reconnecting voice",
+    "reconnectedNone": "No active voice connection to reconnect",
     "copy": "Copy diagnostics",
     "copying": "Preparing report…",
     "copied": "Copied",
@@ -856,6 +862,47 @@
         "limit": "Up to {{limit}} entries, popular services included. Remove a site first.",
         "not_found": "This service entry no longer exists. The list was refreshed.",
         "unknown_service": "This service is not available in this version."
+      }
+    },
+    "strategy": {
+      "line": "Strategy: {{strategy}}",
+      "voiceLine": "Voice strategy: {{strategy}}",
+      "named": "{{name}}, variant {{variant}}",
+      "automatic": "chosen automatically",
+      "kind": {
+        "tlsrec": "Split the TLS record",
+        "tlsrec-random": "Split the TLS record at random points",
+        "split": "Split the first packet",
+        "split-random": "Split the first packet at a random point",
+        "tlsrec-split": "Split the TLS record and the first packet",
+        "split-wait": "Split the first packet and wait for delivery",
+        "disorder": "Send the first piece out of order",
+        "oob": "Add an out-of-band byte",
+        "disorder-oob": "Out of order, with an out-of-band byte",
+        "fake": "Send a decoy packet first",
+        "fake-split": "Split and send a decoy packet first",
+        "udp-zero": "Send decoy datagrams first",
+        "udp-quic": "Send decoy QUIC packets first"
+      }
+    },
+    "caps": {
+      "title": "What this computer can do",
+      "count": "{{supported}} of {{total}} methods available",
+      "note": "What this version of the app can do on this system. This is not a network test: which method works depends on your network.",
+      "supported": "Available",
+      "supportedInferred": "Available · timing estimated",
+      "inferredHint": "Supported, but the moment it waits for is estimated rather than read from the system.",
+      "unsupported": "Not available",
+      "strategies": "Automatic selection tries {{tried}} of {{total}} strategies on this computer.",
+      "method": {
+        "tlsrec": "Splitting the TLS record",
+        "split": "Splitting the first packet",
+        "split-wait-sent": "Waiting until a piece is sent",
+        "split-wait-acked": "Waiting until a piece is delivered",
+        "disorder": "Sending pieces out of order",
+        "oob": "Out-of-band byte",
+        "fake-tcp": "Decoy packets (websites)",
+        "fake-udp": "Decoy packets (voice)"
       }
     }
   }

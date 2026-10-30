@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { DesyncServiceView } from '../utils/desyncStatus'
 
 import { DesyncStatusChip } from './DesyncStatusChip'
+import { DesyncStrategyLine } from './DesyncStrategyLine'
 
 /** Domains shown before "+N more". */
 const SUMMARY_DOMAINS = 2
@@ -133,6 +134,7 @@ function DesyncServiceRow({
         {onboarding || !view.checked ? null : (
           <>
             <DesyncStatusChip view={view.status} />
+            <DesyncStrategyLine view={view.status} />
             {view.status.phase === 'unavailable' ? (
               <span className="desyncCustomNote">{ipHint}</span>
             ) : null}

@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   DraftDesyncAddCustomDomain,
+  DraftDesyncAddRule,
   DraftDesyncAddService,
+  DraftDesyncUpdateRule,
   NewDesyncDraft,
+  type DesyncRuleInput,
   type DesyncSettings,
 } from '../api/desync'
 
@@ -17,6 +20,10 @@ export type DesyncEditor = {
   /** Apply `settings` (the full object; the custom list is not changed). */
   save: (settings: DesyncSettings) => Promise<boolean>
   addCustom: (domain: string) => Promise<boolean>
+  /** Add a rule ("My rules"), enabled. */
+  addRule: (rule: DesyncRuleInput) => Promise<boolean>
+  /** Replace rule `id`, keeping its on/off state. */
+  updateRule: (id: string, rule: DesyncRuleInput) => Promise<boolean>
   /** Resolves to the domains of the plain entries the service replaced. */
   addService: (id: string) => Promise<string[] | false>
   removeCustom: (id: string) => Promise<boolean>
@@ -72,6 +79,22 @@ export function useDesyncDraft(enabled = true): DesyncDraft {
     },
     [update],
   )
+  const addRule = useCallback(
+    async (rule: DesyncRuleInput) => {
+      const current = latestRef.current
+      if (!current) return false
+      return update(await DraftDesyncAddRule(current, rule))
+    },
+    [update],
+  )
+  const updateRule = useCallback(
+    async (id: string, rule: DesyncRuleInput) => {
+      const current = latestRef.current
+      if (!current) return false
+      return update(await DraftDesyncUpdateRule(current, id, rule))
+    },
+    [update],
+  )
   const addService = useCallback(
     async (id: string): Promise<string[] | false> => {
       const current = latestRef.current
@@ -114,6 +137,8 @@ export function useDesyncDraft(enabled = true): DesyncDraft {
     settings,
     save,
     addCustom,
+    addRule,
+    updateRule,
     addService,
     removeCustom,
     setCustomEnabled,

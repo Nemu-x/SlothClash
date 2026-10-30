@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import {
   AddDesyncCustomDomain,
+  AddDesyncRule,
   AddDesyncService,
   GetDesyncAutoStatus,
   GetDesyncStatus,
@@ -14,7 +15,9 @@ import {
   RetryDesyncAuto,
   SetDesyncCustomDomainEnabled,
   SetDesyncSettings,
+  UpdateDesyncRule,
   type DesyncAutoStatus,
+  type DesyncRuleInput,
   type DesyncSettings,
   type DesyncStatus,
 } from '../../api/desync'
@@ -126,6 +129,15 @@ export function useDesyncStatus(
     (domain: string) => write(() => AddDesyncCustomDomain(domain)),
     [write],
   )
+  const addRule = useCallback(
+    (rule: DesyncRuleInput) => write(() => AddDesyncRule(rule)),
+    [write],
+  )
+  const updateRule = useCallback(
+    (id: string, rule: DesyncRuleInput) =>
+      write(() => UpdateDesyncRule(id, rule)),
+    [write],
+  )
   /**
    * Add catalog service `id`. Resolves to the domains of the plain entries it
    * replaced (the backend drops those the service covers), or false when
@@ -172,6 +184,8 @@ export function useDesyncStatus(
     error: q.error ? String(q.error) : '',
     save,
     addCustom,
+    addRule,
+    updateRule,
     addService,
     removeCustom,
     setCustomEnabled,

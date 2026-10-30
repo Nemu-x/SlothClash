@@ -369,7 +369,7 @@ describe('useHomeViewModel: Desync chip', () => {
       const chip = chipWith({ a1: 'ready', b2: 'not_needed' })
       expect(chip?.services.at(-1)).toEqual({
         key: 'custom',
-        name: 'Sites 2',
+        name: 'My rules 2',
         tone: 'ok',
       })
       expect(chip?.tooltip).toContain(
@@ -438,7 +438,7 @@ describe('useHomeViewModel: Desync chip', () => {
         { key: 'discord', name: 'Discord', tone: 'ok' },
         { key: 'service:facebook', name: 'Facebook', tone: 'ok' },
         { key: 'service:instagram', name: 'Instagram', tone: 'problem' },
-        { key: 'custom', name: 'Sites 2', tone: 'ok' },
+        { key: 'custom', name: 'My rules 2', tone: 'ok' },
       ])
       expect(chip?.tooltip).toContain('Facebook: HTTPS available · automatic')
       expect(chip?.tooltip).toContain(

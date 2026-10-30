@@ -2,7 +2,11 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { DesyncSettings, DesyncStatus } from '../api/desync'
+import type {
+  DesyncRuleInput,
+  DesyncSettings,
+  DesyncStatus,
+} from '../api/desync'
 import { useDesyncModal } from '../hooks/useDesyncModal'
 import { useHomeViewModel } from '../hooks/useHomeViewModel'
 import { HomePage } from '../pages/Home'
@@ -43,6 +47,8 @@ function stubSavingCalls() {
   return [
     'SetDesyncSettings',
     'AddDesyncCustomDomain',
+    'AddDesyncRule',
+    'UpdateDesyncRule',
     'AddDesyncService',
     'RemoveDesyncCustomDomain',
     'SetDesyncCustomDomainEnabled',
@@ -235,12 +241,12 @@ describe('DesyncModal: onboarding', () => {
     stubDraft({ youtube: true, discord: false })
     const saving = stubSavingCalls()
     const addSite = wailsApp.stub(
-      'DraftDesyncAddCustomDomain',
-      (draft: DesyncSettings, domain: string) => ({
+      'DraftDesyncAddRule',
+      (draft: DesyncSettings, rule: DesyncRuleInput) => ({
         ...draft,
         custom: [
           ...(draft.custom ?? []),
-          { id: 'a1b2c3d4', domain, enabled: true },
+          { id: 'a1b2c3d4', domain: rule.value, enabled: true },
         ],
       }),
     )
@@ -263,8 +269,19 @@ describe('DesyncModal: onboarding', () => {
     await screen.findByText('example.org')
     expect(addSite).toHaveBeenCalledWith(
       expect.objectContaining({ youtube: false }),
-      'example.org',
+      expect.objectContaining({
+        kind: 'suffix',
+        value: 'example.org',
+        route: 'desync',
+      }),
     )
+    // A Desync-only profile has no VPN to send a rule to.
+    expect(
+      within(screen.getByRole('combobox', { name: 'Route' })).queryByRole(
+        'option',
+        { name: 'VPN' },
+      ),
+    ).toBeNull()
     // Turn the new site off and on again: still nothing saved.
     const site = screen.getByRole('switch', { name: 'example.org' })
     fireEvent.click(site)
@@ -330,7 +347,7 @@ describe('DesyncModal: onboarding', () => {
     stubStatus(desyncStatus({ settings: { enabled: false } }))
     stubDraft({ youtube: true, discord: false })
     const saving = stubSavingCalls()
-    wailsApp.stub('DraftDesyncAddCustomDomain', (draft: DesyncSettings) => ({
+    wailsApp.stub('DraftDesyncAddRule', (draft: DesyncSettings) => ({
       ...draft,
       custom: [{ id: 'a1b2c3d4', domain: 'example.org', enabled: true }],
     }))
@@ -664,7 +681,7 @@ describe('Desync modal entry points', () => {
     )
     renderWithProviders(<ModalHost />)
     const card = screen.getByRole('group', { name: 'Desync' })
-    await within(card).findByText('YouTube, Discord, Sites 1')
+    await within(card).findByText('YouTube, Discord, My rules 1')
     expect(within(card).getByText('On')).toBeVisible()
     fireEvent.click(within(card).getByRole('button', { name: 'Open' }))
     expect(screen.getByRole('dialog', { name: 'Desync' })).toBeVisible()
@@ -691,7 +708,7 @@ describe('Desync modal entry points', () => {
     const card = screen.getByRole('group', { name: 'Desync' })
     expect(
       await within(card).findByText(
-        'YouTube, Discord, Facebook, Instagram, Sites 2',
+        'YouTube, Discord, Facebook, Instagram, My rules 2',
       ),
     ).toBeVisible()
   })

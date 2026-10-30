@@ -4,6 +4,8 @@ import type {
   DesyncAutoService,
   DesyncAutoStatus,
   DesyncCustomEntry,
+  DesyncRuleKind,
+  DesyncRuleRoute,
   DesyncService,
   DesyncStatus,
 } from '../api/desync'
@@ -69,6 +71,12 @@ const PHASE_TONE: Record<string, DesyncTone> = {
   media: 'ok',
   // Custom domain reachable without Desync (routed directly).
   not_needed: 'ok',
+  // An app rule through Desync: the catalog default strategy, applied
+  // (apps cannot be probed).
+  fixed: 'ok',
+  // A rule sending its traffic to the VPN or directly: applied as is.
+  route_vpn: 'ok',
+  route_direct: 'ok',
   // Desync did not work here: the service goes through the VPN (the
   // subscription reserve) while the search goes on. It works, but not by
   // Desync, so it is not shown as a success.
@@ -216,19 +224,46 @@ export function desyncBuiltinTone(view: DesyncBuiltinView): DesyncTone {
 
 export type DesyncCustomView = {
   id: string
+  /** What the rule matches, as shown: its domain or process name. */
   domain: string
+  kind: DesyncRuleKind
+  route: DesyncRuleRoute
   /** The entry switch as the user sees it. */
   checked: boolean
   status: DesyncPhaseView
 }
 
-/** A custom entry's status line, gated like the built-in services. */
+const RULE_KINDS: readonly string[] = ['suffix', 'domain', 'process']
+const RULE_ROUTES: readonly string[] = ['desync', 'vpn', 'direct']
+
+/** A rule's kind; an entry stored before kinds is a suffix. */
+function ruleKind(e: DesyncCustomEntry): DesyncRuleKind {
+  return RULE_KINDS.includes(e.kind ?? '')
+    ? (e.kind as DesyncRuleKind)
+    : 'suffix'
+}
+
+/** A rule's route; an entry stored before routes, and a service, use Desync. */
+function ruleRoute(e: DesyncCustomEntry): DesyncRuleRoute {
+  return !e.service && RULE_ROUTES.includes(e.route ?? '')
+    ? (e.route as DesyncRuleRoute)
+    : 'desync'
+}
+
+/**
+ * A custom entry's status line, gated like the built-in services. A rule to
+ * the VPN or direct has no calibration: once active it shows its route.
+ */
 function customEntryStatus(
   snapshot: DesyncSnapshot,
   ctx: DesyncContext,
   entry: DesyncCustomEntry | undefined,
 ): DesyncPhaseView {
-  const state = entry ? snapshot.automatic?.custom?.[entry.id] : undefined
+  const route = entry ? ruleRoute(entry) : 'desync'
+  const state =
+    entry && route === 'desync'
+      ? snapshot.automatic?.custom?.[entry.id]
+      : undefined
   return phaseView(
     snapshot.status.settings.enabled !== true || !entry?.enabled
       ? 'disabled'
@@ -236,15 +271,19 @@ function customEntryStatus(
         ? 'connect'
         : ctx.mode.toLowerCase() !== 'rule'
           ? 'rule'
-          : state?.phase || 'queued',
+          : route !== 'desync'
+            ? `route_${route}`
+            : state?.phase || 'queued',
     state,
   )
 }
 
 /**
- * One row per plain custom-domain entry (service entries are rows of
+ * One row per user rule ("My rules"; service entries are rows of
  * desyncServiceViews), gated like the built-in services. The calibration
- * state comes from automatic.custom[id].
+ * state of a rule through Desync comes from automatic.custom[id]. An entry
+ * stored before rules had a kind and a route reads as a suffix through
+ * Desync, as the backend reads it.
  */
 export function desyncCustomViews(
   snapshot: DesyncSnapshot,
@@ -255,7 +294,9 @@ export function desyncCustomViews(
     .filter((e) => !e.service)
     .map((e) => ({
       id: e.id,
-      domain: e.domain,
+      domain: (e.kind === 'process' ? e.process : e.domain) ?? '',
+      kind: ruleKind(e),
+      route: ruleRoute(e),
       checked: e.enabled,
       status: customEntryStatus(snapshot, ctx, e),
     }))
@@ -351,8 +392,10 @@ export function desyncCustomTone(views: DesyncCustomView[]): DesyncTone {
   return 'pending'
 }
 
-/** Mirrors desyncCustomLimit (desync_custom.go). */
+/** Mirrors desyncCustomLimit (desync_custom.go): entries through Desync. */
 export const DESYNC_CUSTOM_LIMIT = 32
+/** Mirrors desyncRuleLimit (desync_custom.go): every entry. */
+export const DESYNC_RULE_LIMIT = 128
 
 const CUSTOM_ERROR_CODES = new Set([
   'empty',
@@ -363,9 +406,14 @@ const CUSTOM_ERROR_CODES = new Set([
   'builtin',
   'duplicate',
   'limit',
+  'rule_limit',
   'not_found',
   'service_overlap',
   'unknown_service',
+  'invalid_process',
+  'invalid_kind',
+  'invalid_route',
+  'no_vpn',
 ])
 
 /** Codes worded for a service switch rather than a typed domain. */
@@ -375,6 +423,9 @@ const SERVICE_ERROR_CODES = new Set([
   'not_found',
   'unknown_service',
 ])
+
+/** Codes worded for a process name rather than a domain. */
+const PROCESS_ERROR_CODES = new Set(['empty', 'wildcard', 'duplicate'])
 
 /** Settings failures (desync_settings.go), worded under desync.error.*. */
 const SETTINGS_ERROR_CODES = new Set([
@@ -389,7 +440,8 @@ const SETTINGS_ERROR_CODES = new Set([
  * The backend rejects a Desync change with "desync: <code>" (or
  * "desync: service_overlap: <service id>"); show the translated reason, or
  * the raw error for anything else. `serviceName` names a service ID;
- * `forService` words the reason for a popular-service switch.
+ * `forService` words the reason for a popular-service switch, `forProcess`
+ * for an app rule's process name.
  */
 export function desyncErrorText(
   t: TFunction,
@@ -397,7 +449,12 @@ export function desyncErrorText(
   {
     serviceName = (id: string) => id,
     forService = false,
-  }: { serviceName?: (id: string) => string; forService?: boolean } = {},
+    forProcess = false,
+  }: {
+    serviceName?: (id: string) => string
+    forService?: boolean
+    forProcess?: boolean
+  } = {},
 ): string {
   const raw = String(err)
   const m = /desync: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
@@ -406,8 +463,10 @@ export function desyncErrorText(
   if (!code || !CUSTOM_ERROR_CODES.has(code)) return raw
   const scope =
     forService && SERVICE_ERROR_CODES.has(code) ? 'services' : 'custom'
-  return t(`desync.${scope}.error.${code}`, {
-    limit: DESYNC_CUSTOM_LIMIT,
+  const key =
+    forProcess && PROCESS_ERROR_CODES.has(code) ? `process_${code}` : code
+  return t(`desync.${scope}.error.${key}`, {
+    limit: code === 'rule_limit' ? DESYNC_RULE_LIMIT : DESYNC_CUSTOM_LIMIT,
     name: serviceName(m?.[2] ?? ''),
   })
 }
@@ -450,7 +509,7 @@ export function desyncEnablePatch(
 
 /**
  * Short names of what Desync covers: the services, the switched-on services
- * by name (catalog order), then the plain domains as "Sites N".
+ * by name (catalog order), then the switched-on rules as "My rules N".
  */
 export function desyncSelectionNames(
   t: TFunction,

@@ -791,7 +791,10 @@
       "not_needed": "未被封锁 · 无需 Desync",
       "unavailable": "Desync 无法解锁此网站",
       "no_strategy": "没有可用的策略 · 暂时直连，将自动重试",
-      "failed_direct": "Desync 不可用 · 将自动重试"
+      "failed_direct": "Desync 不可用 · 将自动重试",
+      "fixed": "默认策略 · 应用无法测试",
+      "route_vpn": "走 VPN",
+      "route_direct": "直连"
     },
     "copyFailed": "无法复制诊断信息",
     "homeChipAria": "Desync 状态 · 打开 Desync",
@@ -803,15 +806,15 @@
       "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。"
     },
     "custom": {
-      "title": "网站",
-      "hint": "包含所有子域名。每个网站会单独自动测试策略。",
+      "title": "我的规则",
+      "hint": "按你的方式发送网站或应用的流量：通过 Desync（自动找到可用策略）、通过 VPN 或直连。你的规则优先于订阅的规则。",
       "inputLabel": "域名",
       "add": "添加",
       "remove": "移除 {{domain}}",
       "ipHint": "很可能按 IP 地址封锁；将通过 VPN 访问。",
       "ipHintDirect": "很可能按 IP 地址封锁。没有 VPN 时此网站仍无法访问。",
-      "limitReached": "网站和热门服务最多 {{limit}} 个。",
-      "homeItem": "网站 {{count}}",
+      "limitReached": "最多 {{limit}} 条规则。",
+      "homeItem": "我的规则 {{count}}",
       "error": {
         "empty": "请输入域名，例如 example.com。",
         "invalid": "这不是有效的域名。",
@@ -819,12 +822,21 @@
         "wildcard": "请输入不带 * 或 +. 的域名，子域名会自动包含。",
         "public_suffix": "请输入网站的域名，而不是 com 或 co.uk 这样的整个后缀。",
         "builtin": "该域名已由内置的 YouTube 或 Discord 开关覆盖。",
-        "duplicate": "该域名已在列表中。",
-        "limit": "最多可以添加 {{limit}} 个网站和热门服务。",
+        "duplicate": "该规则已在列表中。",
+        "limit": "最多 {{limit}} 条规则和热门服务可以通过 Desync。请移除一条，或将此规则改为 VPN 或直连。",
         "not_found": "该条目已不存在，列表已刷新。",
         "service_overlap": "已被热门服务 {{name}} 覆盖。",
-        "unknown_service": "此版本中没有该服务。"
-      }
+        "unknown_service": "此版本中没有该服务。",
+        "rule_limit": "最多可以添加 {{limit}} 条规则。",
+        "invalid_process": "请输入应用的进程名，例如 Telegram.exe。",
+        "invalid_kind": "请选择规则匹配的内容。",
+        "invalid_route": "请选择规则发送流量的方式。",
+        "no_vpn": "此配置没有 VPN。请选择 Desync 或直连。",
+        "process_empty": "请输入进程名，例如 Telegram.exe。",
+        "process_wildcard": "请输入准确的进程名，不要包含 * 或 ?。",
+        "process_duplicate": "该应用已在列表中。"
+      },
+      "hintDesyncOnly": "让网站或应用通过 Desync（自动找到可用策略）或直连。"
     },
     "lead": "YouTube、Discord 和你添加的网站将通过 Desync 直连，不走 VPN。Desync 无效时改走 VPN。",
     "leadDesyncOnly": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站，其余流量直连。",
@@ -857,7 +869,7 @@
       "replaced_other": "已替换 {{domains}}：{{name}} 已涵盖。",
       "error": {
         "duplicate": "该服务已在列表中。",
-        "limit": "包括热门服务在内最多 {{limit}} 个条目。请先移除一个网站。",
+        "limit": "最多 {{limit}} 个热门服务和规则可以通过 Desync。请先移除一个，或将某条规则改为 VPN 或直连。",
         "not_found": "该服务条目已不存在，列表已刷新。",
         "unknown_service": "此版本中没有该服务。"
       }
@@ -881,7 +893,8 @@
         "fake-split": "拆分并先发送诱饵数据包",
         "udp-zero": "先发送诱饵数据报",
         "udp-quic": "先发送诱饵 QUIC 数据包"
-      }
+      },
+      "catalogDefault": "默认"
     },
     "caps": {
       "title": "这台电脑支持的功能",
@@ -902,6 +915,33 @@
         "fake-tcp": "诱饵数据包（网站）",
         "fake-udp": "诱饵数据包（语音）"
       }
+    },
+    "rules": {
+      "kindLabel": "规则类型",
+      "routeLabel": "路由",
+      "kind": {
+        "suffix": "域名及子域名",
+        "domain": "精确域名",
+        "process": "应用"
+      },
+      "kindShort": {
+        "suffix": "含子域名",
+        "domain": "精确域名",
+        "process": "应用"
+      },
+      "route": {
+        "desync": "Desync（自动）",
+        "vpn": "VPN",
+        "direct": "直连"
+      },
+      "valueLabel": {
+        "domain": "域名",
+        "process": "进程名"
+      },
+      "save": "保存",
+      "cancel": "取消",
+      "edit": "编辑 {{value}}",
+      "processHint": "应用无法像网站一样测试，因此 Desync 对它使用默认策略。"
     }
   }
 }

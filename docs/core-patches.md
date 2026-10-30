@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.33 + 21 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.33 + 23 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -297,6 +297,89 @@ Patch `0018-probe-error-details.patch` preserves URL-test error messages in cont
 Patch `0021-desync-stable-udp-binding.patch` adds the explicit `desync.udp.stable-binding` option. It reuses a native socket only for the same Discord TUN source/process/inbound/interface/server/discovery-session identity, across local port replacement. Discovery replies and logical deadlines remain independent; private socket starts, other traffic and inner probes are excluded from sharing. Buffers, memberships and idle lifetime are bounded, and adapter shutdown owns cleanup. Private diagnostics expose aggregate counts only. Regression coverage includes concurrent sessions, handover/old-close behavior, native library fake-window continuity, deadlines, bounds, shutdown and a 75-second native core PacketConn test. Remove this patch when upstream offers equivalent scoped association continuity and lifecycle guarantees; no upstream issue is claimed.
 
 Patch `0022-desync-profile-reserve.patch` adds bounded authenticated prospective reserve probes for the three generated service selectors. Fixed HTTPS targets or actually observed Discord UDP endpoints are evaluated through the original full rule engine with only generated overlay targets skipped. Probes never change live selectors; results contain availability/error categories without subscription node names. DIRECT/REJECT and unsupported UDP do not qualify as remote reserve. `desync.reject-quic` rejects UDP/443 only inside explicitly configured Desync candidates, allowing selector PASS to restore the profile's QUIC policy as well as TCP rules. Tests cover full rule order, process/corporate precedence, PASS, local HTTPS success/error validation, strict request scope, endpoint ownership and UDP capability. Client hysteresis and sticky recovery remain outside the transport library.
+
+## Desync outbound
+
+Patch `0023-desync-outbound.patch` adds `type: desync`, a first-class outbound for the same client-side
+library, and moves the series to `github.com/Nemu-x/desync` main at 673cbef
+(`v0.2.1-0.20261029232908-673cbefddb80`, Nemu-x/desync#11; it becomes the `v0.2.1` tag once that
+is published), exact version and checksum in mihomo's `go.mod` / `go.sum`. It is a DIRECT connection whose first TLS ClientHello leaves the
+client's own socket transformed; non-TLS traffic and everything after the ClientHello pass through.
+Named `direct` outbounds with a `desync` mapping (0017-0022) keep working unchanged during the
+migration, and the app still generates only those.
+
+The keys, values, defaults, validation and the `/proxies` fields under `desync` are those of Citrus'
+`type: desync` (getmikan/Citrus#172, `adapter/outbound/desync.go`, `docs/config.yaml`), so a client
+generates one config for both cores. Only `dns-fallback`, `reject-quic` and `udp.stable-binding` are
+SlothClash's own (Citrus does not have them); Citrus' egress guard has no counterpart in mihomo and
+is not ported.
+
+```yaml
+proxies:
+  - name: SLOTH-DESYNC-YOUTUBE
+    type: desync
+    tlsrec: "1+s"              # TLS record cuts, comma-separated ("3", "1+s", "-2+s")
+    split: "1+s"               # TCP write cuts
+    split-delay: 5             # ms between pieces, 0-1000
+    split-wait: sent           # sent | acked (absent = no wait; macOS: acked only; Android: sent per connection)
+    split-wait-timeout: 2000   # ms per wait (also bounds disorder), 0-60000, default 2000
+    disorder: true             # first split piece with hop limit 1 (ByeDPI --disorder)
+    oob: false                 # urgent byte after the first split piece; with disorder = disoob
+    oob-byte: "a"              # one ASCII character, default "a"
+    random:                    # random cuts per connection; count and min-piece default to 1
+      tlsrec: [{from: "-8+s", to: "8+s", count: 2, min-piece: 2}]
+      split: [{from: 1, to: 120}]
+      seed: 0                  # 0 = a new seed per connection
+    fake:                      # low-TTL decoy (Windows, Linux, Android per connection)
+      ttl: 4                   # with auto-ttl the fallback (0 = no fallback)
+      auto-ttl: {delta: 1, min: 3, max: 20}   # {} = these defaults; absent = off; observable on Linux/Android over IPv6
+      prefix: -1               # end of the fake piece; with split it is the piece ending here
+      timeout: 3000            # ms
+      sni: [www.example.com, "cdn-##.example.net"]   # decoy ClientHello
+      randomize: true
+      from-original: false
+      offset: 0
+    dns-fallback: true         # SlothClash only (0019)
+    reject-quic: true          # SlothClash only (0022)
+  - name: SLOTH-DESYNC-DISCORD-UDP-1
+    type: desync
+    udp:                       # low-TTL burst before the first datagrams per peer (all OSes)
+      ttl: 4
+      repeats: 6               # 1-16
+      packets: 3               # 1-8
+      template: quic           # zero (default) | quic
+      sni: www.wikipedia.org   # with template: quic
+      quic-only: false
+      stable-binding: true     # SlothClash only (0021)
+```
+
+What an OS cannot do is a configuration error naming the outbound, the method, the OS and the
+library's reason (`desync.PlatformCapabilities`), never a silent plain DIRECT: `fake` on macOS and
+`split-wait: sent` on macOS. On Android the library lists `split-wait: sent`, `disorder` and `fake`
+in `Capabilities.Conditional`: apps may not read `SIOCOUTQNSD`, so unsent bytes come from `TCP_INFO`
+`tcpi_notsent_bytes` (Linux 4.6+), decided per socket. As in Citrus, such a method loads and logs once
+per outbound that it is verified per connection; a socket without the field fails the connection
+before any byte is sent, with the library's `ErrSplitWaitUnsupported` / `ErrDisorderUnsupported` /
+`ErrFakeUnsupported`, never a substitute. As in Citrus, `auto-ttl` fails only where it can never derive a TTL
+(Windows, macOS, Linux with `ip-version: ipv4`) and no fallback `ttl` is set; with a fallback it
+loads and logs that every fake uses it, and on Linux without a fallback it logs that IPv4
+connections fail. `tfo`, `mptcp` and `dialer-proxy` are refused. The transformed connection hides
+the socket and the transformer from relay fast paths on writes (no `NetConn`/`Upstream`/
+`SyscallConn`, no replaceable writer); reads go to the socket directly. UDP is Direct's path with the
+0019-0022 options, so the burst counters, activity, the stable binding pool and the profile-reserve
+classification (a desync outbound counts as `direct`) work as for `direct.desync`.
+
+`/proxies` shows type `Desync` and, under `desync`, Citrus' `strategy` (`static`), `tcp` (`tlsrec`,
+`split`, `split-delay`, `split-wait`, `split-wait-timeout`, `disorder`, `oob{byte}`,
+`random{tlsrec,split,seed}`, `fake{ttl,auto-ttl{delta,min,max},prefix,timeout,sni,randomize,
+from-original,offset,last-ttl{ttl,auto}}`) and `udp` (`ttl`, `repeats`, `packets`, `template`, `sni`,
+`quic-only`, `counters`), with defaults filled in; SlothClash adds `dns-fallback`, `reject-quic` and
+`udp.stable-binding`. The 0019-0022 diagnostics stay at the top level under the keys of
+`direct.desync` (`desyncDNSFallbacks`, `desyncUDP`). The dial takes its options from a strategy seam,
+static for now. The feature token is `desync-outbound`.
+
+Remove when the client generates only `type: desync` and mihomo carries an equivalent outbound; no
+upstream issue is claimed.
 
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 

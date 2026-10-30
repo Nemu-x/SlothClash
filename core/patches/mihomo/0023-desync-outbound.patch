@@ -1,9 +1,9 @@
 diff --git a/adapter/outbound/desync.go b/adapter/outbound/desync.go
 new file mode 100644
-index 0000000..ada3dc8
+index 0000000..626e620
 --- /dev/null
 +++ b/adapter/outbound/desync.go
-@@ -0,0 +1,708 @@
+@@ -0,0 +1,734 @@
 +package outbound
 +
 +// SlothClash core patch 0023: a first-class "desync" outbound.
@@ -17,8 +17,9 @@ index 0000000..ada3dc8
 +// its counters and activity diagnostics (0019/0020), the stable UDP binding
 +// pool (0021) and reject-quic (0022). Keys, values, validation and the
 +// /proxies fields inside "desync" match Citrus' adapter/outbound/desync.go
-+// (getmikan/Citrus#172, desync v0.1.0), so one config serves both cores;
-+// dns-fallback, reject-quic and udp.stable-binding are SlothClash-only.
++// (getmikan/Citrus#172; Android conditional methods, desync v0.2.1), so one
++// config serves both cores; dns-fallback, reject-quic and udp.stable-binding
++// are SlothClash-only.
 +// Citrus' egress guard does not exist in mihomo and is not part of it.
 +//
 +// Remove when the migrated client no longer generates direct.desync and
@@ -60,6 +61,16 @@ index 0000000..ada3dc8
 +// desyncCaps is what the library implements on this OS. Validation takes it
 +// as a parameter, so that the per-OS errors can be tested on any OS.
 +var desyncCaps = desync.PlatformCapabilities()
++
++// desyncConditional reports whether the library implements method on this OS
++// but decides per socket whether a connection can use it (Android, where
++// unsent bytes are read from TCP_INFO when the kernel provides them). Such a
++// method is listed in Unsupported too; configuration accepts it, and a socket
++// that cannot honor it fails the first write before any byte is sent.
++func desyncConditional(caps desync.Capabilities, method string) bool {
++	_, ok := caps.Conditional[method]
++	return ok
++}
 +
 +// DesyncOption is the configuration of a "desync" outbound. Keys and units
 +// are Citrus' (milliseconds, comma-separated positions).
@@ -379,6 +390,8 @@ index 0000000..ada3dc8
 +}
 +
 +func (o DesyncOption) tcpOptions(caps desync.Capabilities) (opts desync.Options, err error) {
++	// Methods accepted although this OS decides them per socket.
++	var conditional []string
 +	if opts.TLSRec, err = parseDirectDesyncPositions(o.TLSRec); err != nil {
 +		return opts, fmt.Errorf("tlsrec: %w", err)
 +	}
@@ -418,7 +431,9 @@ index 0000000..ada3dc8
 +		if !splits {
 +			return opts, errors.New("split-wait needs split positions")
 +		}
-+		if !caps.Ack.Supports(opts.SplitWait) {
++		if opts.SplitWait == desync.SplitWaitSent && !caps.Ack.Sent && desyncConditional(caps, "split-wait-sent") {
++			conditional = append(conditional, "split-wait sent")
++		} else if !caps.Ack.Supports(opts.SplitWait) {
 +			return opts, fmt.Errorf("split-wait %s is not supported on %s (%s): %w",
 +				opts.SplitWait, caps.OS, desyncAckReason(caps.Ack), desync.ErrSplitWaitUnsupported)
 +		}
@@ -429,7 +444,9 @@ index 0000000..ada3dc8
 +		if !splits {
 +			return opts, errors.New("disorder needs split positions: it acts on the first split piece")
 +		}
-+		if !caps.Disorder.Supported {
++		if !caps.Disorder.Supported && desyncConditional(caps, "disorder") {
++			conditional = append(conditional, "disorder")
++		} else if !caps.Disorder.Supported {
 +			return opts, desyncUnsupported(caps, "disorder", "disorder", desync.ErrDisorderUnsupported)
 +		}
 +	}
@@ -453,7 +470,9 @@ index 0000000..ada3dc8
 +	}
 +
 +	if f := o.Fake; f != nil {
-+		if !caps.FakeTCP {
++		if !caps.FakeTCP && desyncConditional(caps, "fake-tcp") {
++			conditional = append(conditional, "fake")
++		} else if !caps.FakeTCP {
 +			return opts, desyncUnsupported(caps, "fake", "fake-tcp", desync.ErrFakeUnsupported)
 +		}
 +		if f.AutoTTL == nil && f.TTL == 0 {
@@ -485,7 +504,14 @@ index 0000000..ada3dc8
 +			}
 +		}
 +	}
-+	return opts, opts.Validate()
++	if err := opts.Validate(); err != nil {
++		return opts, err
++	}
++	if len(conditional) > 0 {
++		log.Infoln("[desync] %s: %s on %s is verified per connection: a socket that cannot observe its unsent bytes fails the connection before anything is sent",
++			o.Name, strings.Join(conditional, ", "), caps.OS)
++	}
++	return opts, nil
 +}
 +
 +// checkAutoTTL rejects an auto-ttl that can never derive a TTL here and has
@@ -1019,10 +1045,10 @@ index 0000000..5ca3cda
 +}
 diff --git a/adapter/outbound/desync_test.go b/adapter/outbound/desync_test.go
 new file mode 100644
-index 0000000..0bb16f4
+index 0000000..a7b3316
 --- /dev/null
 +++ b/adapter/outbound/desync_test.go
-@@ -0,0 +1,840 @@
+@@ -0,0 +1,918 @@
 +package outbound
 +
 +import (
@@ -1579,7 +1605,7 @@ index 0000000..0bb16f4
 +}
 +
 +// fakePlatform is the capability report of another OS, as the library
-+// gives it on that OS (desync v0.1.0, docs/connection-io.md).
++// gives it on that OS (desync v0.2.1, docs/connection-io.md).
 +func fakePlatform(os string) desync.Capabilities {
 +	switch os {
 +	case "darwin":
@@ -1599,8 +1625,84 @@ index 0000000..0bb16f4
 +			Ack:         desync.AckCapability{Mechanism: "SIOCOUTQ/SIOCOUTQNSD", Sent: true, Acked: true, Reliable: true},
 +			AutoTTL:     desync.AutoTTLCapability{Mechanism: "IPV6_RECVHOPLIMIT", IPv6: true},
 +			Unsupported: map[string]string{"auto-ttl-ipv4": "tcp_v4_do_rcv records no TTL"}}
++	case "android":
++		// SIOCOUTQNSD is denied to apps: the methods that need unsent bytes
++		// are not claimed but listed in Conditional (and in Unsupported).
++		return desync.Capabilities{OS: "android", FakeUDP: true, TTLControl: true, OOB: true,
++			Ack:     desync.AckCapability{Mechanism: "SIOCOUTQ", Acked: true, Reliable: true},
++			AutoTTL: desync.AutoTTLCapability{Mechanism: "IPV6_RECVHOPLIMIT", IPv6: true},
++			Unsupported: map[string]string{"auto-ttl-ipv4": "tcp_v4_do_rcv records no TTL",
++				"split-wait-sent": desyncAndroidReason, "fake-tcp": desyncAndroidReason, "disorder": desyncAndroidReason},
++			Conditional: map[string]string{
++				"split-wait-sent": desyncAndroidReason, "fake-tcp": desyncAndroidReason, "disorder": desyncAndroidReason}}
 +	}
 +	return desync.Capabilities{OS: os, Unsupported: map[string]string{}}
++}
++
++const desyncAndroidReason = "Android does not let apps read SIOCOUTQNSD; unsent bytes are read from TCP_INFO tcpi_notsent_bytes (Linux 4.6+) when the socket provides it, so this is decided per socket: see ProbeCapabilities"
++
++// A method the OS decides per socket (Conditional) loads, although it is
++// also listed as unsupported; the same report without Conditional rejects
++// it, so the acceptance comes from Conditional alone.
++func TestDesyncConditionalMethods(t *testing.T) {
++	android := fakePlatform("android")
++	for name, option := range map[string]DesyncOption{
++		"split-wait sent":       {Split: "1+s", SplitWait: "sent", SplitWaitTimeout: 500},
++		"split-wait acked":      {Split: "1+s", SplitWait: "acked"},
++		"disorder":              {Split: "1+s", Disorder: true},
++		"disoob":                {Split: "1+s", Disorder: true, OOB: true},
++		"fake":                  {TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, SNI: []string{"www.example.com"}}},
++		"fake auto-ttl":         {TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, AutoTTL: &DesyncAutoTTLOption{}}},
++		"fake disorder sent":    {Split: "1+s", Disorder: true, SplitWait: "sent", Fake: &DesyncFakeOption{TTL: 4}},
++		"fake random split oob": {Random: &DesyncRandomOption{Split: []DesyncRandomCut{{From: "1", To: "8"}}}, OOB: true, Fake: &DesyncFakeOption{TTL: 4}},
++		"udp":                   {UDP: &DesyncUDPOption{TTL: 4, Template: "quic"}},
++	} {
++		option.Name = name
++		d, err := newDesync(option, android)
++		if assert.NoError(t, err, name) {
++			assert.Equal(t, option.SplitWait == "sent", d.tcp.SplitWait == desync.SplitWaitSent, name)
++			assert.Equal(t, option.Disorder, d.tcp.Disorder, name)
++			assert.Equal(t, option.Fake != nil, d.tcp.Fake != nil, name)
++			_ = d.Close()
++		}
++	}
++
++	strict := android
++	strict.Conditional = nil
++	for _, tc := range []struct {
++		option DesyncOption
++		is     error
++		says   string
++	}{
++		{DesyncOption{Split: "1+s", SplitWait: "sent"}, desync.ErrSplitWaitUnsupported, "split-wait sent is not supported on android (SIOCOUTQ observes only acked)"},
++		{DesyncOption{Split: "1+s", Disorder: true}, desync.ErrDisorderUnsupported, "disorder is not supported on android (Android does not let apps read SIOCOUTQNSD"},
++		{DesyncOption{TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4}}, desync.ErrFakeUnsupported, "fake is not supported on android (Android does not let apps read SIOCOUTQNSD"},
++	} {
++		_, err := newDesync(tc.option, strict)
++		if assert.Error(t, err, tc.says) {
++			assert.ErrorIs(t, err, tc.is)
++			assert.Contains(t, err.Error(), tc.says)
++		}
++	}
++
++	// Conditional does not lift the checks that do not depend on the socket.
++	for _, tc := range []struct {
++		option DesyncOption
++		is     error
++		says   string
++	}{
++		{DesyncOption{BasicOption: BasicOption{IPVersion: C.IPv4Only}, Fake: &DesyncFakeOption{AutoTTL: &DesyncAutoTTLOption{}}}, desync.ErrAutoTTLUnsupported, "fake auto-ttl cannot observe the path on android (tcp_v4_do_rcv records no TTL)"},
++		{DesyncOption{TLSRec: "1+s", Disorder: true}, nil, "disorder needs split positions"},
++		{DesyncOption{TLSRec: "1+s", SplitWait: "sent"}, nil, "split-wait needs split positions"},
++	} {
++		_, err := newDesync(tc.option, android)
++		if assert.Error(t, err, tc.says) {
++			if tc.is != nil {
++				assert.ErrorIs(t, err, tc.is)
++			}
++			assert.Contains(t, err.Error(), tc.says)
++		}
++	}
 +}
 +
 +// What an OS cannot do is a configuration error that names the method, the
@@ -1632,9 +1734,11 @@ index 0000000..0bb16f4
 +	}
 +}
 +
-+// On this OS: the methods it lacks fail, the ones it has load.
++// On this OS: the methods it lacks fail, the ones it has load (also the
++// ones it decides per socket, as Android does).
 +func TestDesyncPlatformMethods(t *testing.T) {
 +	caps := desync.PlatformCapabilities()
++	fake := caps.FakeTCP || desyncConditional(caps, "fake-tcp")
 +	check := func(ok bool, sentinel error, option DesyncOption) {
 +		t.Helper()
 +		d, err := NewDesync(option)
@@ -1646,13 +1750,13 @@ index 0000000..0bb16f4
 +			assert.ErrorIs(t, err, sentinel, option.Name)
 +		}
 +	}
-+	check(caps.FakeTCP, desync.ErrFakeUnsupported, DesyncOption{Name: "fake", TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1, Timeout: 3000}})
++	check(fake, desync.ErrFakeUnsupported, DesyncOption{Name: "fake", TLSRec: "1+s", Fake: &DesyncFakeOption{TTL: 4, Prefix: -1, Timeout: 3000}})
 +	check(caps.FakeUDP, desync.ErrUDPFakeUnsupported, DesyncOption{Name: "udp", UDP: &DesyncUDPOption{TTL: 4}})
-+	check(caps.Disorder.Supported, desync.ErrDisorderUnsupported, DesyncOption{Name: "disorder", Split: "1+s", Disorder: true})
++	check(caps.Disorder.Supported || desyncConditional(caps, "disorder"), desync.ErrDisorderUnsupported, DesyncOption{Name: "disorder", Split: "1+s", Disorder: true})
 +	check(caps.OOB, desync.ErrOOBUnsupported, DesyncOption{Name: "oob", Split: "1+s", OOB: true})
-+	check(caps.Ack.Sent, desync.ErrSplitWaitUnsupported, DesyncOption{Name: "sent", Split: "1+s", SplitWait: "sent"})
++	check(caps.Ack.Sent || desyncConditional(caps, "split-wait-sent"), desync.ErrSplitWaitUnsupported, DesyncOption{Name: "sent", Split: "1+s", SplitWait: "sent"})
 +	check(caps.Ack.Acked, desync.ErrSplitWaitUnsupported, DesyncOption{Name: "acked", Split: "1+s", SplitWait: "acked"})
-+	if caps.FakeTCP {
++	if fake {
 +		// with a fallback TTL auto-ttl loads wherever one family is observable
 +		// with a fallback ttl auto-ttl loads wherever the fake exists (as in
 +		// Citrus it only logs where the path cannot be observed); without
@@ -2159,7 +2263,7 @@ index d91ef81..b595c23 100644
  		return "Shadowsocks"
  	case ShadowsocksR:
 diff --git a/go.mod b/go.mod
-index 2ffc91b..7a422d1 100644
+index 2ffc91b..ffcd1c7 100644
 --- a/go.mod
 +++ b/go.mod
 @@ -3,7 +3,7 @@ module github.com/metacubex/mihomo
@@ -2167,12 +2271,12 @@ index 2ffc91b..7a422d1 100644
  
  require (
 -	github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e
-+	github.com/Nemu-x/desync v0.1.0
++	github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80
  	github.com/bahlo/generic-list-go v0.2.0
  	github.com/coreos/go-iptables v0.8.0
  	github.com/dlclark/regexp2 v1.12.0
 diff --git a/go.sum b/go.sum
-index b2384a1..a034ad1 100644
+index b2384a1..c8c71c1 100644
 --- a/go.sum
 +++ b/go.sum
 @@ -1,7 +1,5 @@
@@ -2180,8 +2284,8 @@ index b2384a1..a034ad1 100644
 -github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
 -github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e h1:yYLGt9g/zY1uXhSku56cXLV483MDgCAVYO0XbEz5Nhs=
 -github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
-+github.com/Nemu-x/desync v0.1.0 h1:FMWTAX90URFF6w2fFbaot1VYBz+O5wG8NHFRETyGp9U=
-+github.com/Nemu-x/desync v0.1.0/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
++github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80 h1:OmssuGLD8tPcVpmu0MM3T9mWThr7k/ALAjO24BDThXY=
++github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
  github.com/RyuaNerin/go-krypto v1.3.0 h1:smavTzSMAx8iuVlGb4pEwl9MD2qicqMzuXR2QWp2/Pg=
  github.com/RyuaNerin/go-krypto v1.3.0/go.mod h1:9R9TU936laAIqAmjcHo/LsaXYOZlymudOAxjaBf62UM=
  github.com/RyuaNerin/testingutil v0.1.0 h1:IYT6JL57RV3U2ml3dLHZsVtPOP6yNK7WUVdzzlpNrss=

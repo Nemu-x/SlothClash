@@ -8,26 +8,26 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// sharedPresetDomains is every domain more than one preset may list, with the
-// presets listing it in catalog order (the first enabled one owns it). Any
+// sharedServiceDomains is every domain more than one service may list, with the
+// services listing it in catalog order (the first enabled one owns it). Any
 // other overlap is a catalog mistake.
-var sharedPresetDomains = map[string][]string{
+var sharedServiceDomains = map[string][]string{
 	"fbcdn.net": {"facebook", "instagram"},
 }
 
-// presetMediaCDN is each preset's own media/static CDN domain, which its
+// serviceMediaCDN is each service's own media/static CDN domain, which its
 // probes must always check (the owner's failure: page loads, images do not).
-var presetMediaCDN = map[string]string{"facebook": "fbcdn.net", "instagram": "cdninstagram.com", "x": "twimg.com"}
+var serviceMediaCDN = map[string]string{"facebook": "fbcdn.net", "instagram": "cdninstagram.com", "x": "twimg.com"}
 
-func TestPresetCatalogSanity(t *testing.T) {
-	if len(presetMediaCDN) != len(Presets) {
-		t.Fatalf("declare the media CDN of every preset: %v", presetMediaCDN)
+func TestServiceCatalogSanity(t *testing.T) {
+	if len(serviceMediaCDN) != len(Services) {
+		t.Fatalf("declare the media CDN of every service: %v", serviceMediaCDN)
 	}
 	ids := map[string]bool{}
 	listedBy := map[string][]string{}
-	for _, p := range Presets {
+	for _, p := range Services {
 		if p.ID == "" || strings.Trim(p.ID, "abcdefghijklmnopqrstuvwxyz0123456789") != "" || ids[p.ID] {
-			t.Fatalf("bad or duplicate preset id %q", p.ID)
+			t.Fatalf("bad or duplicate service id %q", p.ID)
 		}
 		ids[p.ID] = true
 		if p.Name == "" || len(p.Domains) == 0 {
@@ -67,46 +67,46 @@ func TestPresetCatalogSanity(t *testing.T) {
 			}
 		}
 	}
-	// Page AND CDN: even with every preset on (the fewest owned domains),
-	// each preset's probes still cover at least two of its domains: the site
+	// Page AND CDN: even with every service on (the fewest owned domains),
+	// each service's probes still cover at least two of its domains: the site
 	// and its media/static CDN.
 	all := []string{}
-	for _, p := range Presets {
+	for _, p := range Services {
 		all = append(all, p.ID)
 	}
-	for _, p := range Presets {
-		owned := PresetOwnedDomains(p.ID, all)
+	for _, p := range Services {
+		owned := ServiceOwnedDomains(p.ID, all)
 		covered := map[string]bool{}
-		for _, host := range PresetProbes(p.ID, owned) {
+		for _, host := range ServiceProbes(p.ID, owned) {
 			for _, d := range owned {
 				if CoversDomain(d, host) {
 					covered[d] = true
 				}
 			}
 		}
-		if len(covered) < 2 || !covered[presetMediaCDN[p.ID]] {
-			t.Fatalf("%s: probes cover only %v with every preset on (media CDN %s)", p.ID, covered, presetMediaCDN[p.ID])
+		if len(covered) < 2 || !covered[serviceMediaCDN[p.ID]] {
+			t.Fatalf("%s: probes cover only %v with every service on (media CDN %s)", p.ID, covered, serviceMediaCDN[p.ID])
 		}
 	}
 	for d, by := range listedBy {
-		if len(by) > 1 && !reflect.DeepEqual(by, sharedPresetDomains[d]) {
+		if len(by) > 1 && !reflect.DeepEqual(by, sharedServiceDomains[d]) {
 			t.Fatalf("domain %s listed by %v; shared domains must be declared", d, by)
 		}
 	}
-	for d, by := range sharedPresetDomains {
+	for d, by := range sharedServiceDomains {
 		if !reflect.DeepEqual(listedBy[d], by) {
 			t.Fatalf("declared shared domain %s is listed by %v", d, listedBy[d])
 		}
 	}
-	// Not twitter: xAI's domains stay out of the X preset.
-	for _, d := range Presets[2].Domains {
+	// Not twitter: xAI's domains stay out of the X service.
+	for _, d := range Services[2].Domains {
 		if d == "x.ai" || d == "grok.com" {
-			t.Fatalf("x preset lists %s", d)
+			t.Fatalf("x service lists %s", d)
 		}
 	}
 }
 
-func TestPresetOwnershipFollowsCatalogOrder(t *testing.T) {
+func TestServiceOwnershipFollowsCatalogOrder(t *testing.T) {
 	has := func(list []string, d string) bool {
 		for _, v := range list {
 			if v == d {
@@ -116,47 +116,47 @@ func TestPresetOwnershipFollowsCatalogOrder(t *testing.T) {
 		return false
 	}
 	// Instagram alone owns the shared CDN and probes it.
-	insta := PresetOwnedDomains("instagram", []string{"instagram"})
-	if !has(insta, "fbcdn.net") || !has(PresetProbes("instagram", insta), "scontent.xx.fbcdn.net") {
+	insta := ServiceOwnedDomains("instagram", []string{"instagram"})
+	if !has(insta, "fbcdn.net") || !has(ServiceProbes("instagram", insta), "scontent.xx.fbcdn.net") {
 		t.Fatalf("instagram alone: %v", insta)
 	}
 	// With Facebook on, Facebook owns it whatever the list order, and
 	// Instagram neither routes nor probes it.
 	for _, enabled := range [][]string{{"facebook", "instagram"}, {"instagram", "facebook"}} {
-		insta = PresetOwnedDomains("instagram", enabled)
-		fb := PresetOwnedDomains("facebook", enabled)
+		insta = ServiceOwnedDomains("instagram", enabled)
+		fb := ServiceOwnedDomains("facebook", enabled)
 		if has(insta, "fbcdn.net") || !has(fb, "fbcdn.net") {
 			t.Fatalf("%v: instagram %v facebook %v", enabled, insta, fb)
 		}
-		probes := PresetProbes("instagram", insta)
+		probes := ServiceProbes("instagram", insta)
 		if has(probes, "scontent.xx.fbcdn.net") || !reflect.DeepEqual(probes, []string{"www.instagram.com", "static.cdninstagram.com", "scontent.cdninstagram.com"}) {
 			t.Fatalf("%v: instagram probes %v", enabled, probes)
 		}
 	}
-	// No two enabled presets ever own one domain.
+	// No two enabled services ever own one domain.
 	all := []string{}
-	for _, p := range Presets {
+	for _, p := range Services {
 		all = append(all, p.ID)
 	}
 	owner := map[string]string{}
-	for _, p := range Presets {
-		for _, d := range PresetOwnedDomains(p.ID, all) {
+	for _, p := range Services {
+		for _, d := range ServiceOwnedDomains(p.ID, all) {
 			if owner[d] != "" {
 				t.Fatalf("%s owned by %s and %s", d, owner[d], p.ID)
 			}
 			owner[d] = p.ID
 		}
 	}
-	if PresetOwnedDomains("nope", all) != nil || PresetProbes("nope", []string{"x.com"}) != nil {
-		t.Fatal("unknown preset has domains")
+	if ServiceOwnedDomains("nope", all) != nil || ServiceProbes("nope", []string{"x.com"}) != nil {
+		t.Fatal("unknown service has domains")
 	}
 }
 
-func TestPresetForDomainAndEntryKey(t *testing.T) {
+func TestServiceForDomainAndEntryKey(t *testing.T) {
 	cases := map[string]string{"facebook.com": "facebook", "scontent-ams.xx.fbcdn.net": "facebook", "www.instagram.com": "instagram", "pbs.twimg.com": "x", "x.ai": "", "example.org": "", "notfacebook.com": ""}
 	for d, want := range cases {
-		if got := PresetForDomain(d); got != want {
-			t.Fatalf("PresetForDomain(%s) = %q, want %q", d, got, want)
+		if got := ServiceForDomain(d); got != want {
+			t.Fatalf("ServiceForDomain(%s) = %q, want %q", d, got, want)
 		}
 	}
 	if CustomEntryKey("example.org", "") != "example.org" || CustomService(CustomEntryKey("", "facebook")) != "custom:preset:facebook" {

@@ -1,7 +1,7 @@
 import type {
   DesyncAutoService,
   DesyncAutoStatus,
-  DesyncPreset,
+  DesyncService,
   DesyncSettings,
   DesyncStatus,
 } from '../api/desync'
@@ -14,10 +14,7 @@ export function desyncSettings(
     enabled: true,
     youtube: true,
     discord: true,
-    discordTTL: 0,
     discordUDP: true,
-    discordUDPTTL: 0,
-    discordUDPRepeats: 0,
     ...over,
   }
 }
@@ -66,8 +63,8 @@ export function desyncSnapshot(
   return { status, automatic }
 }
 
-/** The preset catalog as ListDesyncPresets returns it (internal/desync/presets.go). */
-export const DESYNC_PRESETS: DesyncPreset[] = [
+/** The service catalog as ListDesyncServices returns it (internal/desync/services.go). */
+export const DESYNC_SERVICES: DesyncService[] = [
   {
     id: 'facebook',
     name: 'Facebook',

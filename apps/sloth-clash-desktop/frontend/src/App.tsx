@@ -46,7 +46,6 @@ import { GetAppState, RefreshHomeInsight } from './api/state'
 import { GetSubscriptionDeviceIdentity } from './api/subscription'
 import { ApplyUpdate } from './api/update'
 import { DesyncModal } from './components/DesyncModal'
-import { DesyncOnlyEnableModal } from './components/DesyncOnlyEnableModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OperatorModal } from './components/OperatorModal'
 import { ProfileModalsHost } from './components/ProfileModalsHost'
@@ -63,7 +62,7 @@ import {
 } from './constants'
 import { useAdvancedInfo } from './hooks/queries/useAdvancedInfo'
 import { useBranding } from './hooks/queries/useBranding'
-import { useDesyncPresets } from './hooks/queries/useDesyncPresets'
+import { useDesyncServices } from './hooks/queries/useDesyncServices'
 import { useDesyncStatus } from './hooks/queries/useDesyncStatus'
 import { useRuntimeDiag } from './hooks/queries/useRuntimeDiag'
 import { useServiceLog } from './hooks/queries/useServiceLog'
@@ -73,7 +72,6 @@ import { useConnectionsView } from './hooks/useConnectionsView'
 import { useConnectivityChecks } from './hooks/useConnectivityChecks'
 import { useDesktopPrefs } from './hooks/useDesktopPrefs'
 import { useDesyncModal } from './hooks/useDesyncModal'
-import { useDesyncOnlyPrompt } from './hooks/useDesyncOnlyPrompt'
 import { useHomeViewModel } from './hooks/useHomeViewModel'
 import { useProfileModals } from './hooks/useProfileModals'
 import { useProxyDelay } from './hooks/useProxyDelay'
@@ -110,7 +108,6 @@ import { SpotlightTour } from './SpotlightTour'
 import { SPOTLIGHT_TOUR_STEP_COUNT } from './spotlightTourConfig'
 import type { ImportModalReason, Screen } from './types/app'
 import { deriveAccentVars, normalizeHex, resolveAccent } from './utils/accent'
-import { activateProfileThenOfferDesync } from './utils/profileKind'
 import { DEFAULT_SETTINGS } from './utils/settings'
 
 function App() {
@@ -808,35 +805,20 @@ function App() {
     }
   }
 
-  // Desync summary for Home (and the Desync-only profile cards): same shared
-  // poll as the Desync modal, active only while one of them is shown (the
-  // Settings summary and the modal keep it alive themselves).
-  const { snapshot: desyncSnapshot, save: saveDesyncSettings } =
-    useDesyncStatus({
-      connected: state?.connection?.status === 'connected',
-      mode: String(state?.mode?.current ?? ''),
-      traffic: String(state?.traffic ?? ''),
-      enabled: screen === 'home' || screen === 'profiles',
-    })
-  const desyncPresets = useDesyncPresets()
-
-  // Activating a Desync-only profile while Desync is off offers to turn it
-  // on: without it the profile routes everything directly.
-  const desyncOnlyPrompt = useDesyncOnlyPrompt({
-    save: saveDesyncSettings,
-    onFailed: (e) => {
-      // Typically no service selected: the Desync modal is where that is
-      // fixed.
-      setError(String(e))
-      desyncModal.openManage()
-    },
+  // Desync summary for Home: same shared poll as the Desync modal, active
+  // only while Home is shown (the Settings summary and the modal keep it
+  // alive themselves).
+  const { snapshot: desyncSnapshot } = useDesyncStatus({
+    connected: state?.connection?.status === 'connected',
+    mode: String(state?.mode?.current ?? ''),
+    traffic: String(state?.traffic ?? ''),
+    enabled: screen === 'home',
+    // Settings are per profile: another active profile, other settings.
+    profileId: String(state?.profile?.activeProfileId ?? ''),
   })
-  const activateProfile = (id: string) =>
-    activateProfileThenOfferDesync(
-      (state?.profile?.profiles ?? []).find((p: any) => p.id === id),
-      () => run(() => ActivateProfile(id)),
-      desyncOnlyPrompt.offer,
-    )
+  const desyncServices = useDesyncServices()
+
+  const activateProfile = (id: string) => run(() => ActivateProfile(id))
 
   // Home screen derivations (status label, active node, tooltips …).
   const homeVm = useHomeViewModel({
@@ -846,7 +828,7 @@ function App() {
     optimisticTraffic,
     updateSnap,
     desync: desyncSnapshot,
-    desyncPresets,
+    desyncServices,
   })
   const { hasAnyProfile, hasActiveProfile, activeProfile, displayMode } = homeVm
 
@@ -1284,11 +1266,6 @@ function App() {
               refreshBusyId={profileRefreshBusyId}
               error={error}
               onImport={() => openImportModal('manual')}
-              desyncEnabled={
-                desyncSnapshot
-                  ? desyncSnapshot.status.settings.enabled === true
-                  : undefined
-              }
               onActivate={(id) => void activateProfile(id)}
               onOpenDesync={desyncModal.openManage}
               onRefresh={(id) => {
@@ -1583,16 +1560,6 @@ function App() {
           }}
         />
       ) : null}
-
-      <DesyncOnlyEnableModal
-        open={desyncOnlyPrompt.open}
-        busy={desyncOnlyPrompt.busy}
-        onClose={desyncOnlyPrompt.dismiss}
-        onEnable={() => {
-          setError('')
-          void desyncOnlyPrompt.enable()
-        }}
-      />
 
       <SettingsResetModal
         mode={settingsResetModal}

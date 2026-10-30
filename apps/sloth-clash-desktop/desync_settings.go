@@ -7,25 +7,17 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
 	"runtime"
 	"strings"
-	"time"
 
-	"SlothClashDesktop/internal/desync"
 	"SlothClashDesktop/internal/runtimecfg"
 )
 
-const desyncDefaultUDPRepeats = 1
-
 type DesyncSettings struct {
-	Enabled           bool `json:"enabled"`
-	YouTube           bool `json:"youtube"`
-	Discord           bool `json:"discord"`
-	DiscordTTL        int  `json:"discordTTL"`
-	DiscordUDP        bool `json:"discordUDP"`
-	DiscordUDPTTL     int  `json:"discordUDPTTL"`
-	DiscordUDPRepeats int  `json:"discordUDPRepeats"`
+	Enabled    bool `json:"enabled"`
+	YouTube    bool `json:"youtube"`
+	Discord    bool `json:"discord"`
+	DiscordUDP bool `json:"discordUDP"`
 	// Custom is the user's custom domains. Absent in prefs written before it
 	// existed (= none). Only the AddDesyncCustomDomain family changes it;
 	// SetDesyncSettings keeps the stored list.
@@ -46,37 +38,15 @@ type DesyncStatus struct {
 	DesyncOnly bool `json:"desyncOnly"`
 }
 
-type DesyncProbeResult struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Route   string `json:"route"`
-	OK      bool   `json:"ok"`
-	DelayMS int    `json:"delayMS"`
-	Error   string `json:"error,omitempty"`
-}
-
+// currentDesyncSettings is the active profile's effective settings
+// (desync_profile.go).
 func currentDesyncSettings() DesyncSettings {
 	return effectiveDesyncSettings(currentDesktopPrefs().Desync)
 }
 
-// effectiveDesyncSettings fills the defaults a stored (possibly never-touched)
-// desync config leaves at zero.
+// effectiveDesyncSettings sanitizes the stored custom list.
 func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
-	custom := sanitizeDesyncCustom(s.Custom)
-	s.Custom = nil
-	if reflect.DeepEqual(s, DesyncSettings{}) { // never touched
-		return DesyncSettings{YouTube: true, Discord: runtime.GOOS == "windows", DiscordTTL: 4, DiscordUDPTTL: 4, DiscordUDPRepeats: desyncDefaultUDPRepeats, Custom: custom}
-	}
-	s.Custom = custom
-	if s.DiscordTTL == 0 {
-		s.DiscordTTL = 4
-	}
-	if s.DiscordUDPTTL == 0 {
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
+	s.Custom = sanitizeDesyncCustom(s.Custom)
 	return s
 }
 
@@ -99,42 +69,15 @@ func desyncUDPCoreSupported() bool {
 }
 
 func validateDesyncSettings(s DesyncSettings, platform string, coreSupported bool) (DesyncSettings, error) {
-	if s.DiscordTTL == 0 {
-		s.DiscordTTL = 4
-	}
-	if s.DiscordTTL < 1 || s.DiscordTTL > 255 {
-		if s.Enabled {
-			return s, fmt.Errorf("Discord TTL must be between 1 and 255")
-		}
-		s.DiscordTTL = 4
-	}
-	if s.DiscordUDPTTL == 0 {
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats == 0 {
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
-	if s.DiscordUDPTTL < 1 || s.DiscordUDPTTL > 255 {
-		if s.Enabled && s.DiscordUDP {
-			return s, fmt.Errorf("Discord UDP TTL must be between 1 and 255")
-		}
-		s.DiscordUDPTTL = 4
-	}
-	if s.DiscordUDPRepeats < 1 || s.DiscordUDPRepeats > 16 {
-		if s.Enabled && s.DiscordUDP {
-			return s, fmt.Errorf("Discord UDP repeats must be between 1 and 16")
-		}
-		s.DiscordUDPRepeats = desyncDefaultUDPRepeats
-	}
 	if s.Enabled {
 		if !coreSupported {
-			return s, fmt.Errorf("the embedded core does not support desync")
+			return s, desyncErr("unsupported_core")
 		}
 		if !desyncHasSelection(s) {
-			return s, fmt.Errorf("select YouTube, Discord or a custom domain before enabling desync")
+			return s, desyncErr("no_selection")
 		}
 		if (s.Discord || s.DiscordUDP) && platform != "windows" {
-			return s, fmt.Errorf("the Discord fake method currently requires Windows")
+			return s, desyncErr("discord_platform")
 		}
 	}
 	return s, nil
@@ -150,32 +93,75 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic, DesyncOnly: desyncOnly}
 }
 
+// SetDesyncSettings applies the switches of next (on/off, YouTube, Discord)
+// to the active profile. Its custom list is kept: it has its own methods.
+//
+// Turning off the last selected service while Desync is on turns Desync off,
+// as removing or switching off the last custom entry does
+// (updateDesyncCustom): an enabled Desync with nothing selected is not a
+// valid state. Switching Desync on with nothing selected is refused
+// (no_selection). A Desync-only profile stays on and may select nothing.
 func (a *App) SetDesyncSettings(next DesyncSettings) (DesyncStatus, error) {
 	a.desyncCtl.invalidate()
-	// The custom list has its own methods; a settings object the UI read
-	// before an add/remove must not roll the list back.
-	next.Custom = currentDesyncSettings().Custom
-	next, err := validateDesyncSettings(next, runtime.GOOS, desyncCoreSupported())
+	next, err := a.updateActiveDesync(func(current DesyncSettings, desyncOnly bool) (DesyncSettings, error) {
+		// A settings object the UI read before an add/remove must not roll
+		// the list back.
+		next.Custom = current.Custom
+		check := next
+		switch {
+		case desyncOnly:
+			next.Enabled = true
+			check.Enabled = desyncHasSelection(next)
+		case next.Enabled && current.Enabled && !desyncHasSelection(next):
+			next.Enabled = false
+			check.Enabled = false
+		}
+		if _, err := validateDesyncSettings(check, runtime.GOOS, desyncCoreSupported()); err != nil {
+			return current, err
+		}
+		if check.Enabled && next.DiscordUDP && !desyncUDPCoreSupported() {
+			return current, desyncErr("unsupported_udp_core")
+		}
+		return next, nil
+	})
 	if err != nil {
 		return a.GetDesyncStatus(), err
 	}
-	if next.Enabled && next.DiscordUDP && !desyncUDPCoreSupported() {
-		return a.GetDesyncStatus(), fmt.Errorf("the embedded core does not support desync UDP")
-	}
-	prefsMu.Lock()
-	// Re-read under the lock: an add/remove may have landed since.
-	next.Custom = effectiveDesyncSettings(prefsCurrent.Desync).Custom
-	if next.Enabled && !desyncHasSelection(next) {
-		prefsMu.Unlock()
-		return a.GetDesyncStatus(), fmt.Errorf("select YouTube, Discord or a custom domain before enabling desync")
-	}
-	prefsCurrent.Desync = next
-	snapshot := prefsCurrent
-	savePrefsBestEffort(snapshot)
-	prefsMu.Unlock()
-	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t ttl=%d discord_udp=%t udp_ttl=%d udp_repeats=%d", next.Enabled, next.YouTube, next.Discord, next.DiscordTTL, next.DiscordUDP, next.DiscordUDPTTL, next.DiscordUDPRepeats))
+	a.appendRuntimeDiag("desync.settings", fmt.Sprintf("enabled=%t youtube=%t discord=%t discord_udp=%t", next.Enabled, next.YouTube, next.Discord, next.DiscordUDP))
 	a.triggerRuntimeReloadForPrefs()
 	return a.GetDesyncStatus(), nil
+}
+
+// errNoDesyncProfile: Desync settings belong to a profile, and none is
+// active.
+var errNoDesyncProfile = desyncErr("no_profile")
+
+// updateActiveDesync applies change to the active profile's effective Desync
+// settings (a copy; desyncOnly tells whether it is a Desync-only profile)
+// and stores the result in the profile, profiles.json and the live copy.
+// A failed save changes nothing.
+func (a *App) updateActiveDesync(change func(current DesyncSettings, desyncOnly bool) (DesyncSettings, error)) (DesyncSettings, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	idx := a.activeProfileIndexLocked()
+	if idx < 0 {
+		return DesyncSettings{}, errNoDesyncProfile
+	}
+	p := a.profiles[idx]
+	current := profileDesyncSettings(p)
+	current.Custom = append([]DesyncCustomEntry(nil), current.Custom...)
+	next, err := change(current, profileIsDesyncOnly(p))
+	if err != nil {
+		return current, err
+	}
+	stored := next
+	a.profiles[idx].Desync = &stored
+	if err := a.persistProfilesLocked(); err != nil {
+		a.profiles[idx].Desync = p.Desync
+		return current, err
+	}
+	a.syncActiveDesyncLocked()
+	return next, nil
 }
 
 // desyncProbeMode is what a probe through a Desync outbound has to prove.
@@ -243,62 +229,4 @@ func probeDesyncOutboundMode(ctx context.Context, endpoint, secret, route, targe
 		return 0, err
 	}
 	return body.Delay, nil
-}
-
-// Fixed URLs are sent through the named core outbound. This checks that the
-// running patched core can use the method; it is not a browser/login/voice test.
-func (a *App) RunDesyncDiagnostics() ([]DesyncProbeResult, error) {
-	status := a.GetDesyncStatus()
-	if !status.Connected {
-		return nil, fmt.Errorf("connect SlothClash before running diagnostics")
-	}
-	if !status.Settings.Enabled {
-		return nil, fmt.Errorf("enable desync before running diagnostics")
-	}
-	if !strings.EqualFold(status.Mode, "rule") {
-		return nil, fmt.Errorf("select Rule mode so service routes are active")
-	}
-	a.mu.RLock()
-	endpoint := a.effectiveCoreEndpointLocked()
-	secret := a.core.secret
-	a.mu.RUnlock()
-	var checks []DesyncProbeResult
-	if status.Settings.YouTube {
-		checks = append(checks, DesyncProbeResult{Name: "YouTube HTTPS", URL: "https://www.youtube.com/generate_204", Route: desync.YouTubeRoute})
-	}
-	if status.Settings.Discord {
-		checks = append(checks, DesyncProbeResult{Name: "Discord API", URL: "https://discord.com/api/v10/gateway", Route: desync.DiscordRoute}, DesyncProbeResult{Name: "Discord CDN", URL: "https://cdn.discordapp.com/embed/avatars/0.png", Route: desync.DiscordRoute})
-	}
-	parent := a.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
-	defer cancel()
-	for i := range checks {
-		probeCtx, probeCancel := context.WithTimeout(ctx, 11*time.Second)
-		var group desyncUDPProxy
-		err := autoCoreJSON(probeCtx, endpoint, secret, http.MethodGet, "/proxies/"+url.PathEscape(checks[i].Route), nil, &group)
-		delay := 0
-		if err == nil && group.Now == desyncProfileSelection && status.DesyncOnly {
-			// No reserve: PASS ends at DIRECT, so test that path.
-			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, "DIRECT", checks[i].URL)
-			checks[i].Route = "direct"
-		} else if err == nil && group.Now == desyncProfileSelection {
-			var result desyncProfileProbe
-			result, err = probeDesyncProfile(probeCtx, endpoint, secret, checks[i].Route, "")
-			delay = int(result.DurationMS)
-			checks[i].Route = "profile"
-		} else if err == nil {
-			delay, err = probeDesyncOutbound(probeCtx, endpoint, secret, checks[i].Route, checks[i].URL)
-		}
-		probeCancel()
-		checks[i].DelayMS = delay
-		checks[i].OK = err == nil
-		if err != nil {
-			checks[i].Error = err.Error()
-		}
-		a.appendRuntimeDiag("desync.probe", fmt.Sprintf("route=%s target=%s ok=%t delay_ms=%d error=%q", checks[i].Route, checks[i].Name, checks[i].OK, delay, checks[i].Error))
-	}
-	return checks, nil
 }

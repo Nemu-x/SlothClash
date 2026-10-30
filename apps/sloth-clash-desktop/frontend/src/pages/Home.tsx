@@ -127,7 +127,6 @@ export function HomePage({
   const {
     activeProfile,
     isDesyncOnly,
-    desyncOnlyOff,
     homeUpdateTooltip,
     homeAlertTooltip,
     hasAnyProfile,
@@ -226,20 +225,6 @@ export function HomePage({
             >
               <span className="homeCorpDot" aria-hidden />
               {t('corp.homeIndicator')}
-            </button>
-          ) : null}
-          {desyncOnlyOff ? (
-            <button
-              type="button"
-              className="homeDesyncChip"
-              onClick={() => onOpenDesync?.()}
-            >
-              <span className="homeDesyncChipService" data-tone="problem">
-                {t('ui.home.desyncOnlyOff')}
-              </span>
-              <span className="homeDesyncChipArrow" aria-hidden>
-                ›
-              </span>
             </button>
           ) : null}
           {desyncChip ? (

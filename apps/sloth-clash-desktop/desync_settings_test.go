@@ -13,7 +13,7 @@ import (
 )
 
 func TestDesyncSettingsValidation(t *testing.T) {
-	valid := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
+	valid := DesyncSettings{Enabled: true, YouTube: true, Discord: true}
 	if _, err := validateDesyncSettings(valid, "windows", true); err != nil {
 		t.Fatal(err)
 	}
@@ -23,15 +23,11 @@ func TestDesyncSettingsValidation(t *testing.T) {
 	if _, err := validateDesyncSettings(valid, "windows", false); err == nil {
 		t.Fatal("accepted unsupported core")
 	}
-	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true, DiscordTTL: 4}, "windows", true); err == nil {
+	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true}, "windows", true); err == nil {
 		t.Fatal("accepted empty enabled selection")
 	}
-	valid.DiscordTTL = 999
-	if _, err := validateDesyncSettings(valid, "windows", true); err == nil {
-		t.Fatal("accepted invalid TTL")
-	}
 	valid.Enabled = false
-	if got, err := validateDesyncSettings(valid, "linux", false); err != nil || got.Enabled || got.DiscordTTL != 4 {
+	if got, err := validateDesyncSettings(valid, "linux", false); err != nil || got.Enabled {
 		t.Fatalf("disable must remain available: %+v %v", got, err)
 	}
 }
@@ -39,7 +35,7 @@ func TestDesyncSettingsValidation(t *testing.T) {
 func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 	prefsMu.Lock()
 	previous := prefsCurrent
-	prefsCurrent.Desync = DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
+	prefsCurrent.Desync = DesyncSettings{Enabled: true, YouTube: true, Discord: true}
 	prefsMu.Unlock()
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	doc := runtimecfgtest.RepresentativeFullProfile()
@@ -93,33 +89,17 @@ func TestDesyncDiagnosticUsesExplicitNamedOutbound(t *testing.T) {
 	}
 }
 
-func TestDesyncUDPMigrationAndValidation(t *testing.T) {
-	prefsMu.Lock()
-	previous := prefsCurrent
-	prefsCurrent.Desync = DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordTTL: 4}
-	prefsMu.Unlock()
-	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
-	migrated := currentDesyncSettings()
-	if migrated.DiscordUDP || migrated.DiscordUDPTTL != 4 || migrated.DiscordUDPRepeats != 1 {
-		t.Fatalf("migration enabled untested UDP or lost defaults: %+v", migrated)
-	}
-	prefsMu.Lock()
-	prefsCurrent.Desync.DiscordUDPRepeats = 6
-	prefsMu.Unlock()
-	if got := currentDesyncSettings(); got.DiscordUDPRepeats != 6 {
-		t.Fatalf("explicit UDP repeat setting was overwritten: %+v", got)
-	}
-	for _, s := range []DesyncSettings{{Enabled: true, DiscordUDP: true, DiscordUDPTTL: 256}, {Enabled: true, DiscordUDP: true, DiscordUDPRepeats: 17}} {
-		if _, err := validateDesyncSettings(s, "windows", true); err == nil {
-			t.Fatal("invalid UDP options accepted")
-		}
-		s.Enabled = false
-		if got, err := validateDesyncSettings(s, "windows", false); err != nil || got.Enabled {
-			t.Fatalf("UDP settings prevented disable: %+v %v", got, err)
-		}
+func TestDesyncUDPValidation(t *testing.T) {
+	// A selection saved before voice existed does not gain it.
+	withDesyncPrefs(t, DesyncSettings{Enabled: true, YouTube: true, Discord: true})
+	if got := currentDesyncSettings(); got.DiscordUDP {
+		t.Fatalf("voice switched on by itself: %+v", got)
 	}
 	if _, err := validateDesyncSettings(DesyncSettings{Enabled: true, DiscordUDP: true}, "linux", true); err == nil {
 		t.Fatal("UDP fake accepted on an unsupported platform")
+	}
+	if got, err := validateDesyncSettings(DesyncSettings{DiscordUDP: true}, "linux", false); err != nil || got.Enabled {
+		t.Fatalf("UDP settings prevented disable: %+v %v", got, err)
 	}
 }
 

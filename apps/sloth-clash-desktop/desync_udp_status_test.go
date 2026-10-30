@@ -12,7 +12,7 @@ import (
 	"SlothClashDesktop/internal/desync"
 )
 
-func TestDiscordUDPStatusAndResetScope(t *testing.T) {
+func TestDiscordUDPResetScope(t *testing.T) {
 	prefsMu.Lock()
 	previous := prefsCurrent
 	prefsCurrent.Desync = DesyncSettings{Enabled: true, DiscordUDP: true}
@@ -30,8 +30,6 @@ func TestDiscordUDPStatusAndResetScope(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/connections":
 			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
-		case r.Method == http.MethodGet && r.URL.Path == "/proxies/"+desync.DiscordUDPRoute:
-			_, _ = w.Write([]byte(`{"desyncUDP":{"counters":{"packets":12,"fakePackets":18,"fakeErrors":0,"peers":1}}}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/connections/"):
 			mu.Lock()
 			deleted = append(deleted, strings.TrimPrefix(r.URL.Path, "/connections/"))
@@ -44,10 +42,6 @@ func TestDiscordUDPStatusAndResetScope(t *testing.T) {
 	defer server.Close()
 	a := &App{core: coreProcess{listen: strings.TrimPrefix(server.URL, "http://")}}
 	a.state.Connection.Status = "connected"
-	status := a.GetDesyncUDPStatus()
-	if status.LastError != "" || status.DirectFlows != 1 || status.ProfileFlows != 1 || status.Download != 300 || !status.CountersAvailable || status.Counters.FakePackets != 18 || !reflect.DeepEqual(status.ProfileRoutes, []string{"test-node"}) {
-		t.Fatalf("wrong route/counter report: %+v", status)
-	}
 	count, err := a.ReconnectDiscordUDP()
 	if err != nil || count != 2 {
 		t.Fatalf("UDP reset: %d %v", count, err)

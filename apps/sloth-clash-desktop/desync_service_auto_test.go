@@ -11,7 +11,7 @@ import (
 	"SlothClashDesktop/internal/desync"
 )
 
-var presetEntry = DesyncCustomEntry{ID: "fb01fb01", Preset: "facebook", Enabled: true}
+var serviceEntry = DesyncCustomEntry{ID: "fb01fb01", Service: "facebook", Enabled: true}
 
 const fbPage, fbStatic, fbMedia = "https://www.facebook.com/", "https://static.xx.fbcdn.net/", "https://scontent.xx.fbcdn.net/"
 
@@ -32,18 +32,18 @@ func probedTargets(probes []string) []string {
 // The owner's failure: the page opens through plain DIRECT and through every
 // strategy, the media CDN only through one. Neither "not needed" nor the
 // first page-only strategy may be accepted.
-func TestDesyncPresetNeedsPageAndCDN(t *testing.T) {
+func TestDesyncServiceNeedsPageAndCDN(t *testing.T) {
 	core := newCustomFakeCore(t, func(name, target string) bool {
 		return target != fbMedia || strings.HasSuffix(name, "-split")
 	})
-	a, network := customTestApp(t, core, presetEntry)
+	a, network := customTestApp(t, core, serviceEntry)
 	plan := &desyncCustomPlan{phase: "queued"}
-	calibrateCustomToEnd(a, 1, network, a.core.listen, "", presetEntry, plan)
-	route := desync.CustomRoute(presetEntry.ID)
+	calibrateCustomToEnd(a, 1, network, a.core.listen, "", serviceEntry, plan)
+	route := desync.CustomRoute(serviceEntry.ID)
 	if got := core.selections(route); got[len(got)-1] != route+"-split" {
 		t.Fatalf("selections: %v", got)
 	}
-	state := a.GetDesyncAutoStatus().Custom[presetEntry.ID]
+	state := a.GetDesyncAutoStatus().Custom[serviceEntry.ID]
 	if state.Phase != "ready" || state.Candidate != "split" {
 		t.Fatalf("state %+v", state)
 	}
@@ -56,12 +56,12 @@ func TestDesyncPresetNeedsPageAndCDN(t *testing.T) {
 	}
 }
 
-func TestDesyncPresetPageOnlyIsUnavailable(t *testing.T) {
+func TestDesyncServicePageOnlyIsUnavailable(t *testing.T) {
 	core := newCustomFakeCore(t, func(_, target string) bool { return target != fbMedia })
-	a, network := customTestApp(t, core, presetEntry)
+	a, network := customTestApp(t, core, serviceEntry)
 	plan := &desyncCustomPlan{phase: "queued"}
-	calibrateCustomToEnd(a, 1, network, a.core.listen, "", presetEntry, plan)
-	if state := a.GetDesyncAutoStatus().Custom[presetEntry.ID]; state.Phase != "unavailable" || plan.phase != "unavailable" {
+	calibrateCustomToEnd(a, 1, network, a.core.listen, "", serviceEntry, plan)
+	if state := a.GetDesyncAutoStatus().Custom[serviceEntry.ID]; state.Phase != "unavailable" || plan.phase != "unavailable" {
 		t.Fatalf("state %+v plan %+v", state, plan)
 	}
 	if got := desyncCachedSelection(network, "custom:preset:facebook"); got != "" {
@@ -71,15 +71,15 @@ func TestDesyncPresetPageOnlyIsUnavailable(t *testing.T) {
 
 // A working preset whose CDN starts failing is searched again, even though
 // the page still opens.
-func TestDesyncPresetRecheckCoversCDN(t *testing.T) {
+func TestDesyncServiceRecheckCoversCDN(t *testing.T) {
 	core := newCustomFakeCore(t, func(_, target string) bool { return target != fbMedia })
-	a, network := customTestApp(t, core, presetEntry)
+	a, network := customTestApp(t, core, serviceEntry)
 	plan := &desyncCustomPlan{phase: "not_needed", candidate: desync.DirectID}
-	a.stepDesyncCustom(context.Background(), 1, network, a.core.listen, "", presetEntry, plan)
+	a.stepDesyncCustom(context.Background(), 1, network, a.core.listen, "", serviceEntry, plan)
 	if plan.phase == "not_needed" {
 		t.Fatalf("CDN failure ignored by the re-check: %+v", plan)
 	}
-	route := desync.CustomRoute(presetEntry.ID)
+	route := desync.CustomRoute(serviceEntry.ID)
 	var recheckMedia bool
 	for _, p := range core.probeLog() {
 		recheckMedia = recheckMedia || strings.HasPrefix(p, route+" "+fbMedia)
@@ -90,10 +90,10 @@ func TestDesyncPresetRecheckCoversCDN(t *testing.T) {
 }
 
 // Instagram probes the shared fbcdn.net only while it routes it.
-func TestDesyncPresetTargetsFollowOwnership(t *testing.T) {
-	insta := DesyncCustomEntry{ID: "ig01ig01", Preset: "instagram", Enabled: true}
+func TestDesyncServiceTargetsFollowOwnership(t *testing.T) {
+	insta := DesyncCustomEntry{ID: "ig01ig01", Service: "instagram", Enabled: true}
 	alone := desyncCustomTargets(insta, []DesyncCustomEntry{insta})
-	both := desyncCustomTargets(insta, []DesyncCustomEntry{insta, presetEntry})
+	both := desyncCustomTargets(insta, []DesyncCustomEntry{insta, serviceEntry})
 	if !reflect.DeepEqual(alone, []string{"https://www.instagram.com/", "https://static.cdninstagram.com/", "https://scontent.cdninstagram.com/", fbMedia}) {
 		t.Fatalf("alone: %v", alone)
 	}
@@ -119,25 +119,25 @@ func TestDesyncCustomStepBudgetScalesWithTargets(t *testing.T) {
 // CDN hosts) takes longer than one plain-entry budget. The step budget scales
 // with the hosts, so it completes instead of being cut off at the deadline
 // and retried forever.
-func TestDesyncPresetSlowPassingCandidateFitsTheBudget(t *testing.T) {
+func TestDesyncServiceSlowPassingCandidateFitsTheBudget(t *testing.T) {
 	const perProbe = 30 * time.Millisecond
 	// A plain budget fits fewer than the 6 probes of the winner (3 hosts x
 	// 2 rounds); three of them fit it with room to spare.
 	withShortCustomTimers(t, 4*perProbe, time.Hour, time.Millisecond)
 	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-split") })
 	core.delay.Store(int64(perProbe))
-	a, network := customTestApp(t, core, presetEntry)
-	if n := len(desyncCustomTargets(presetEntry, enabledDesyncCustom())); n != 3 {
+	a, network := customTestApp(t, core, serviceEntry)
+	if n := len(desyncCustomTargets(serviceEntry, enabledDesyncCustom())); n != 3 {
 		t.Fatalf("facebook probes %d hosts, the test assumes 3", n)
 	}
 	plan := &desyncCustomPlan{phase: "queued"}
 	for range 30 {
-		a.calibrateDesyncCustom(context.Background(), 1, network, a.core.listen, "", presetEntry, plan)
+		a.calibrateDesyncCustom(context.Background(), 1, network, a.core.listen, "", serviceEntry, plan)
 		if plan.phase != "searching" {
 			break
 		}
 	}
-	state := a.GetDesyncAutoStatus().Custom[presetEntry.ID]
+	state := a.GetDesyncAutoStatus().Custom[serviceEntry.ID]
 	if plan.phase != "ready" || state.Phase != "ready" || state.Candidate != "split" {
 		t.Fatalf("plan %+v state %+v: the passing candidate never completed within a step", plan, state)
 	}
@@ -145,11 +145,11 @@ func TestDesyncPresetSlowPassingCandidateFitsTheBudget(t *testing.T) {
 
 func TestDesyncReportNamesPresetsAndHashesUserDomains(t *testing.T) {
 	core := newCustomFakeCore(t, func(name, _ string) bool { return name == "DIRECT" })
-	a, network := customTestApp(t, core, customEntry, presetEntry)
+	a, network := customTestApp(t, core, customEntry, serviceEntry)
 	secret := strings.Repeat("ab", 32)
 	withDesyncReportKey(t, secret)
 	calibrateCustomToEnd(a, 1, network, a.core.listen, "", customEntry, &desyncCustomPlan{})
-	calibrateCustomToEnd(a, 1, network, a.core.listen, "", presetEntry, &desyncCustomPlan{})
+	calibrateCustomToEnd(a, 1, network, a.core.listen, "", serviceEntry, &desyncCustomPlan{})
 	a.state.Connection.Status = "disconnected"
 	text := a.GetDesyncDiagnosticReport()
 	if strings.Contains(text, "example.org") {
@@ -159,7 +159,7 @@ func TestDesyncReportNamesPresetsAndHashesUserDomains(t *testing.T) {
 	report := parseDesyncReport(t, text)
 	want := []map[string]any{
 		{"id": customEntry.ID, "domain": desyncReportDigest(key, "example.org"), "enabled": true},
-		{"id": presetEntry.ID, "preset": "facebook", "enabled": true},
+		{"id": serviceEntry.ID, "preset": "facebook", "enabled": true},
 	}
 	if !reflect.DeepEqual(report.Custom, want) {
 		t.Fatalf("custom entries: %v", report.Custom)
@@ -175,7 +175,7 @@ func TestDesyncReportNamesPresetsAndHashesUserDomains(t *testing.T) {
 			t.Fatalf("plain attempt: %+v", attempt)
 		}
 	}
-	if presetAttempts == 0 || report.Automatic.Custom[presetEntry.ID].Phase != "not_needed" {
+	if presetAttempts == 0 || report.Automatic.Custom[serviceEntry.ID].Phase != "not_needed" {
 		t.Fatalf("preset attempts missing: %+v", report.Automatic)
 	}
 }

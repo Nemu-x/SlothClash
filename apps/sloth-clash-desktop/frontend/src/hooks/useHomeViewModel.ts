@@ -1,20 +1,20 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { DesyncPreset } from '../api/desync'
+import type { DesyncService } from '../api/desync'
 import {
   type DesyncSnapshot,
   type DesyncTone,
   desyncCustomTone,
   desyncCustomViews,
-  desyncPresetViews,
-  desyncServiceTone,
   desyncServiceViews,
+  desyncBuiltinTone,
+  desyncBuiltinViews,
 } from '../utils/desyncStatus'
 import { isDesyncOnlyProfile } from '../utils/profileKind'
 import { decodeUnicodeEscapes, extractNodeFlagIso } from '../utils/proxyNames'
 
-const NO_PRESETS: DesyncPreset[] = []
+const NO_SERVICES: DesyncService[] = []
 
 export type HomeActiveNodeVisual = { iso: string; text: string }
 
@@ -31,8 +31,6 @@ export type HomeViewModel = {
   activeProfile: any
   /** The active profile is Desync-only: no nodes, Rule mode only. */
   isDesyncOnly: boolean
-  /** Desync-only profile with Desync switched off: everything goes direct. */
-  desyncOnlyOff: boolean
   /** Mode / traffic as shown: the optimistic pick while a switch is in flight. */
   displayMode: string
   displayTraffic: string
@@ -64,7 +62,7 @@ export function useHomeViewModel({
   optimisticTraffic,
   updateSnap,
   desync = null,
-  desyncPresets = NO_PRESETS,
+  desyncServices = NO_SERVICES,
 }: {
   state: any
   connectBusy: boolean
@@ -73,8 +71,8 @@ export function useHomeViewModel({
   updateSnap: any
   /** Shared Desync snapshot (useDesyncStatus), the same one the card shows. */
   desync?: DesyncSnapshot | null
-  /** Desync preset catalog (useDesyncPresets): names the preset items. */
-  desyncPresets?: DesyncPreset[]
+  /** Desync service catalog (useDesyncServices): names the service items. */
+  desyncServices?: DesyncService[]
 }): HomeViewModel {
   const { t } = useTranslation()
 
@@ -94,8 +92,6 @@ export function useHomeViewModel({
   }, [state])
 
   const isDesyncOnly = isDesyncOnlyProfile(activeProfile)
-  const desyncOnlyOff =
-    isDesyncOnly && desync?.status.settings.enabled === false
 
   const displayMode = optimisticMode ?? String(state?.mode?.current ?? 'rule')
   const displayTraffic = optimisticTraffic ?? String(state?.traffic ?? 'proxy')
@@ -243,12 +239,12 @@ export function useHomeViewModel({
       mode: modeCurrent,
       traffic: trafficCurrent,
     }
-    const views = desyncServiceViews(desync, ctx).filter((v) => v.checked)
-    const presets = desyncPresetViews(desync, ctx, desyncPresets).filter(
+    const views = desyncBuiltinViews(desync, ctx).filter((v) => v.checked)
+    const popular = desyncServiceViews(desync, ctx, desyncServices).filter(
       (v) => v.checked,
     )
     const custom = desyncCustomViews(desync, ctx).filter((v) => v.checked)
-    if (views.length === 0 && presets.length === 0 && custom.length === 0)
+    if (views.length === 0 && popular.length === 0 && custom.length === 0)
       return null
     const phaseText = (v: { phase: string; attempt: number; total: number }) =>
       t(`desync.phase.${v.phase}`, { attempt: v.attempt, total: v.total })
@@ -257,17 +253,18 @@ export function useHomeViewModel({
       lines.push(`${v.name}: ${phaseText(v.status)}`)
       if (v.voice) lines.push(`${t('desync.voice')}: ${phaseText(v.voice)}`)
     }
-    for (const v of presets) lines.push(`${v.name}: ${phaseText(v.status)}`)
+    for (const v of popular) lines.push(`${v.name}: ${phaseText(v.status)}`)
     for (const v of custom) lines.push(`${v.domain}: ${phaseText(v.status)}`)
     const services: HomeDesyncChip['services'] = views.map((v) => ({
       key: v.key,
       name: v.name,
-      tone: desyncServiceTone(v),
+      tone: desyncBuiltinTone(v),
     }))
-    // Each preset is named like a service ("Facebook"), in catalog order.
-    for (const v of presets) {
+    // Each popular service is named like a built-in one ("Facebook"), in
+    // catalog order.
+    for (const v of popular) {
       services.push({
-        key: `preset:${v.id}`,
+        key: `service:${v.id}`,
         name: v.name,
         tone: v.status.tone,
       })
@@ -281,14 +278,13 @@ export function useHomeViewModel({
       })
     }
     return { services, tooltip: lines.join('\n') }
-  }, [desync, desyncPresets, connectionStatus, modeCurrent, trafficCurrent, t])
+  }, [desync, desyncServices, connectionStatus, modeCurrent, trafficCurrent, t])
 
   return {
     hasAnyProfile,
     hasActiveProfile,
     activeProfile,
     isDesyncOnly,
-    desyncOnlyOff,
     displayMode,
     displayTraffic,
     connectionLabel,

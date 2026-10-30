@@ -4,7 +4,7 @@ import type {
   DesyncAutoService,
   DesyncAutoStatus,
   DesyncCustomEntry,
-  DesyncPreset,
+  DesyncService,
   DesyncStatus,
 } from '../api/desync'
 
@@ -17,7 +17,7 @@ export type DesyncSnapshot = {
 /** Visual tone of a status chip / Home mark. */
 export type DesyncTone = 'ok' | 'pending' | 'problem' | 'off'
 
-export type DesyncServiceKey = 'youtube' | 'discord'
+export type DesyncBuiltinKey = 'youtube' | 'discord'
 
 /** One line of service status: the `desync.phase.*` key plus its params. */
 export type DesyncPhaseView = {
@@ -27,8 +27,8 @@ export type DesyncPhaseView = {
   total: number
 }
 
-export type DesyncServiceView = {
-  key: DesyncServiceKey
+export type DesyncBuiltinView = {
+  key: DesyncBuiltinKey
   name: string
   /** The service toggle as the user sees it. */
   checked: boolean
@@ -59,12 +59,15 @@ export type DesyncContext = {
 const PHASE_TONE: Record<string, DesyncTone> = {
   // Working.
   ready: 'ok',
-  profile: 'ok',
   transport: 'ok',
   receiving: 'ok',
   media: 'ok',
   // Custom domain reachable without Desync (routed directly).
   not_needed: 'ok',
+  // Desync did not work here: the service goes through the VPN (the
+  // subscription reserve) while the search goes on. It works, but not by
+  // Desync, so it is not shown as a success.
+  profile: 'pending',
   // In progress / waiting for traffic.
   queued: 'pending',
   testing: 'pending',
@@ -120,10 +123,10 @@ function phaseView(phase: string, state?: DesyncAutoService): DesyncPhaseView {
  * Per-service rows exactly as the Desync card has always computed them
  * (toggle semantics, gates and phase precedence), shared with the Home chip.
  */
-export function desyncServiceViews(
+export function desyncBuiltinViews(
   snapshot: DesyncSnapshot,
   ctx: DesyncContext,
-): DesyncServiceView[] {
+): DesyncBuiltinView[] {
   const { status, automatic } = snapshot
   const s = status.settings
   const enabled = s.enabled === true
@@ -198,7 +201,7 @@ const TONE_RANK: Record<DesyncTone, number> = {
  * worse voice status. A voice line that is merely inactive (off, e.g. "enable
  * TUN for voice") never downgrades a working service.
  */
-export function desyncServiceTone(view: DesyncServiceView): DesyncTone {
+export function desyncBuiltinTone(view: DesyncBuiltinView): DesyncTone {
   const base = view.status.tone
   const voice = view.voice?.tone
   if (!voice || voice === 'off' || base === 'off') return base
@@ -233,8 +236,8 @@ function customEntryStatus(
 }
 
 /**
- * One row per plain custom-domain entry (preset entries are rows of
- * desyncPresetViews), gated like the built-in services. The calibration
+ * One row per plain custom-domain entry (service entries are rows of
+ * desyncServiceViews), gated like the built-in services. The calibration
  * state comes from automatic.custom[id].
  */
 export function desyncCustomViews(
@@ -243,7 +246,7 @@ export function desyncCustomViews(
 ): DesyncCustomView[] {
   const entries: DesyncCustomEntry[] = snapshot.status.settings.custom ?? []
   return entries
-    .filter((e) => !e.preset)
+    .filter((e) => !e.service)
     .map((e) => ({
       id: e.id,
       domain: e.domain,
@@ -252,61 +255,61 @@ export function desyncCustomViews(
     }))
 }
 
-export type DesyncPresetView = {
-  /** Catalog preset ID. */
+export type DesyncServiceView = {
+  /** Catalog service ID. */
   id: string
   name: string
   domains: string[]
-  /** The stored entry's ID; null while the preset was never switched on. */
+  /** The stored entry's ID; null while the service was never switched on. */
   entryId: string | null
-  /** The preset switch as the user sees it. */
+  /** The service switch as the user sees it. */
   checked: boolean
   status: DesyncPhaseView
   /**
-   * Domains this switched-on preset routes on behalf of a switched-off one
+   * Domains this switched-on service routes on behalf of a switched-off one
    * listed first in the catalog (Instagram carrying Facebook's fbcdn.net),
-   * with that preset's name; null when there are none.
+   * with that service's name; null when there are none.
    */
   shared: { domains: string[]; names: string[] } | null
 }
 
 /**
- * One row per catalog preset (catalog order), then one per stored preset
+ * One row per catalog service (catalog order), then one per stored service
  * entry the catalog does not list (named by its ID, e.g. while the catalog
  * has not loaded). Shared domains follow the backend's ownership rule
- * (desync.PresetOwnedDomains): a domain listed by two presets belongs to the
+ * (desync.ServiceOwnedDomains): a domain listed by two services belongs to the
  * first switched-on one in catalog order.
  */
-export function desyncPresetViews(
+export function desyncServiceViews(
   snapshot: DesyncSnapshot,
   ctx: DesyncContext,
-  catalog: DesyncPreset[],
-): DesyncPresetView[] {
+  catalog: DesyncService[],
+): DesyncServiceView[] {
   const entries = (snapshot.status.settings.custom ?? []).filter(
-    (e) => e.preset,
+    (e) => e.service,
   )
-  const entryOf = (id: string) => entries.find((e) => e.preset === id)
-  const presets = [
+  const entryOf = (id: string) => entries.find((e) => e.service === id)
+  const services = [
     ...catalog,
     ...entries
-      .filter((e) => !catalog.some((p) => p.id === e.preset))
+      .filter((e) => !catalog.some((p) => p.id === e.service))
       .map((e) => ({
-        id: String(e.preset),
-        name: String(e.preset),
+        id: String(e.service),
+        name: String(e.service),
         domains: [],
       })),
   ]
   const on = (id: string) => entryOf(id)?.enabled === true
-  return presets.map((p, index) => {
+  return services.map((p, index) => {
     const entry = entryOf(p.id)
     const checked = entry?.enabled === true
     const shared = new Map<string, string[]>() // domain -> earlier listers
     if (checked) {
       for (const d of p.domains) {
-        const earlier = presets
+        const earlier = services
           .slice(0, index)
           .filter((o) => o.domains.includes(d))
-        // Another switched-on preset earlier in the catalog routes it.
+        // Another switched-on service earlier in the catalog routes it.
         if (earlier.some((o) => on(o.id)) || earlier.length === 0) continue
         shared.set(
           d,
@@ -355,52 +358,66 @@ const CUSTOM_ERROR_CODES = new Set([
   'duplicate',
   'limit',
   'not_found',
-  'preset_overlap',
-  'unknown_preset',
+  'service_overlap',
+  'unknown_service',
 ])
 
-/** Codes worded for a preset switch rather than a typed domain. */
-const PRESET_ERROR_CODES = new Set([
+/** Codes worded for a service switch rather than a typed domain. */
+const SERVICE_ERROR_CODES = new Set([
   'duplicate',
   'limit',
   'not_found',
-  'unknown_preset',
+  'unknown_service',
+])
+
+/** Settings failures (desync_settings.go), worded under desync.error.*. */
+const SETTINGS_ERROR_CODES = new Set([
+  'unsupported_core',
+  'unsupported_udp_core',
+  'no_selection',
+  'discord_platform',
+  'no_profile',
 ])
 
 /**
- * The backend rejects a custom entry with "custom domain: <code>" (or
- * "custom domain: preset_overlap: <preset id>"); show the translated reason,
- * or the raw error for anything else. `presetName` names a preset ID;
- * `forPreset` words the reason for a preset switch.
+ * The backend rejects a Desync change with "desync: <code>" (or
+ * "desync: service_overlap: <service id>"); show the translated reason, or
+ * the raw error for anything else. `serviceName` names a service ID;
+ * `forService` words the reason for a popular-service switch.
  */
-export function customDomainErrorText(
+export function desyncErrorText(
   t: TFunction,
   err: unknown,
   {
-    presetName = (id: string) => id,
-    forPreset = false,
-  }: { presetName?: (id: string) => string; forPreset?: boolean } = {},
+    serviceName = (id: string) => id,
+    forService = false,
+  }: { serviceName?: (id: string) => string; forService?: boolean } = {},
 ): string {
   const raw = String(err)
-  const m = /custom domain: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
+  const m = /desync: ([a-z_]+)(?:: ([a-z0-9_-]+))?/.exec(raw)
   const code = m?.[1]
+  if (code && SETTINGS_ERROR_CODES.has(code)) return t(`desync.error.${code}`)
   if (!code || !CUSTOM_ERROR_CODES.has(code)) return raw
-  const scope = forPreset && PRESET_ERROR_CODES.has(code) ? 'presets' : 'custom'
+  const scope =
+    forService && SERVICE_ERROR_CODES.has(code) ? 'services' : 'custom'
   return t(`desync.${scope}.error.${code}`, {
     limit: DESYNC_CUSTOM_LIMIT,
-    name: presetName(m?.[2] ?? ''),
+    name: serviceName(m?.[2] ?? ''),
   })
 }
 
-/** A preset's display name from the catalog, or its ID. */
-export function desyncPresetName(catalog: DesyncPreset[], id: string): string {
+/** A service's display name from the catalog, or its ID. */
+export function desyncServiceName(
+  catalog: DesyncService[],
+  id: string,
+): string {
   return catalog.find((p) => p.id === id)?.name ?? id
 }
 
 /**
  * Mirrors desyncHasSelection (desync_custom.go): the backend refuses to
  * enable Desync without a service or a switched-on custom entry (a domain or
- * a preset).
+ * a service).
  */
 export function desyncHasSelection(
   settings: DesyncStatus['settings'],
@@ -426,26 +443,26 @@ export function desyncEnablePatch(
 }
 
 /**
- * Short names of what Desync covers: the services, the switched-on presets
+ * Short names of what Desync covers: the services, the switched-on services
  * by name (catalog order), then the plain domains as "Sites N".
  */
 export function desyncSelectionNames(
   t: TFunction,
   settings: DesyncStatus['settings'],
-  catalog: DesyncPreset[] = [],
+  catalog: DesyncService[] = [],
 ): string[] {
   const names: string[] = []
   if (settings.youtube) names.push('YouTube')
   if (settings.discord || settings.discordUDP) names.push('Discord')
   const on = (settings.custom ?? []).filter((e) => e.enabled)
-  const presets = on.filter((e) => e.preset).map((e) => String(e.preset))
+  const services = on.filter((e) => e.service).map((e) => String(e.service))
   const rank = (id: string) => {
     const i = catalog.findIndex((p) => p.id === id)
     return i < 0 ? catalog.length : i
   }
-  presets.sort((a, b) => rank(a) - rank(b))
-  for (const id of presets) names.push(desyncPresetName(catalog, id))
-  const sites = on.filter((e) => !e.preset).length
+  services.sort((a, b) => rank(a) - rank(b))
+  for (const id of services) names.push(desyncServiceName(catalog, id))
+  const sites = on.filter((e) => !e.service).length
   if (sites > 0) names.push(t('desync.custom.homeItem', { count: sites }))
   return names
 }

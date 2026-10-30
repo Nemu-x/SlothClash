@@ -1,17 +1,18 @@
 import {
   AddDesyncCustomDomain as addCustom,
-  AddDesyncPreset as addPreset,
-  ListDesyncPresets as listPresets,
+  AddDesyncService as addService,
+  ListDesyncServices as listServices,
   RemoveDesyncCustomDomain as removeCustom,
   SetDesyncCustomDomainEnabled as setCustomEnabled,
   GetDesyncStatus as getStatus,
   GetDesyncAutoStatus as getAutoStatus,
   GetDesyncDiagnosticReport as getReport,
   RetryDesyncAuto as retryAuto,
-  GetDesyncUDPStatus as getUDPStatus,
   ReconnectDiscordUDP as reconnectUDP,
-  RunDesyncDiagnostics as runDiagnostics,
   SetDesyncSettings as setSettings,
+  NewDesyncDraft as newDraft,
+  DraftDesyncAddCustomDomain as draftAddCustom,
+  DraftDesyncAddService as draftAddService,
 } from '../../wailsjs/go/main/App'
 
 import { main } from './models'
@@ -20,32 +21,29 @@ export interface DesyncSettings {
   enabled: boolean
   youtube: boolean
   discord: boolean
-  discordTTL: number
   discordUDP: boolean
-  discordUDPTTL: number
-  discordUDPRepeats: number
   /** Custom domains; absent when there are none. */
   custom?: DesyncCustomEntry[]
 }
 
 /**
  * One custom entry routed through Desync: a domain (its subdomains included)
- * or a catalog preset (`preset` set, `domain` empty: its domains come from the
- * catalog, see ListDesyncPresets).
+ * or a catalog service (`service` set, `domain` empty: its domains come from the
+ * catalog, see ListDesyncServices).
  */
 export interface DesyncCustomEntry {
   id: string
   domain: string
-  /** Catalog preset ID; absent for a plain domain entry. */
-  preset?: string
+  /** Catalog service ID; absent for a plain domain entry. */
+  service?: string
   enabled: boolean
 }
 
-/** One catalog preset: a service whose pages and media span several domains. */
-export interface DesyncPreset {
+/** One catalog service: a service whose pages and media span several domains. */
+export interface DesyncService {
   id: string
   name: string
-  /** Every domain the preset routes (each with its subdomains). */
+  /** Every domain the service routes (each with its subdomains). */
   domains: string[]
 }
 
@@ -64,52 +62,39 @@ export interface DesyncStatus {
   desyncOnly?: boolean
 }
 
-export interface DesyncUDPStatus {
-  directFlows: number
-  profileFlows: number
-  profileRoutes: string[]
-  upload: number
-  download: number
-  countersAvailable: boolean
-  counters: {
-    packets: number
-    fakePackets: number
-    fakeErrors: number
-    peers: number
-  }
-  lastError?: string
-}
-
-export interface DesyncProbeResult {
-  name: string
-  url: string
-  route: string
-  ok: boolean
-  delayMS: number
-  error?: string
-}
-
 export const GetDesyncStatus = (): Promise<DesyncStatus> => getStatus()
 export const SetDesyncSettings = (
   settings: DesyncSettings,
 ): Promise<DesyncStatus> =>
   setSettings(main.DesyncSettings.createFrom(settings))
+/** The selection a new Desync-only profile starts from (the defaults). */
+export const NewDesyncDraft = (): Promise<DesyncSettings> => newDraft()
+/** AddDesyncCustomDomain on a draft: validated, nothing saved. */
+export const DraftDesyncAddCustomDomain = (
+  draft: DesyncSettings,
+  domain: string,
+): Promise<DesyncSettings> =>
+  draftAddCustom(main.DesyncSettings.createFrom(draft), domain)
+/** AddDesyncService on a draft: validated, nothing saved. */
+export const DraftDesyncAddService = (
+  draft: DesyncSettings,
+  id: string,
+): Promise<DesyncSettings> =>
+  draftAddService(main.DesyncSettings.createFrom(draft), id)
 export const AddDesyncCustomDomain = (domain: string): Promise<DesyncStatus> =>
   addCustom(domain)
-/** Add catalog preset `id` as one enabled entry; it replaces plain entries it covers. */
-export const AddDesyncPreset = (id: string): Promise<DesyncStatus> =>
-  addPreset(id)
-/** The preset catalog, in precedence order (fixed per build). */
-export const ListDesyncPresets = (): Promise<DesyncPreset[]> => listPresets()
+/** Add catalog service `id` as one enabled entry; it replaces plain entries it covers. */
+export const AddDesyncService = (id: string): Promise<DesyncStatus> =>
+  addService(id)
+/** The service catalog, in precedence order (fixed per build). */
+export const ListDesyncServices = (): Promise<DesyncService[]> => listServices()
 export const RemoveDesyncCustomDomain = (id: string): Promise<DesyncStatus> =>
   removeCustom(id)
 export const SetDesyncCustomDomainEnabled = (
   id: string,
   enabled: boolean,
 ): Promise<DesyncStatus> => setCustomEnabled(id, enabled)
-export const RunDesyncDiagnostics = (): Promise<DesyncProbeResult[]> =>
-  runDiagnostics()
-export const GetDesyncUDPStatus = (): Promise<DesyncUDPStatus> => getUDPStatus()
+/** Close Discord's UDP flows so the client reconnects (the "Reconnect voice" button). */
 export const ReconnectDiscordUDP = (): Promise<number> => reconnectUDP()
 
 export interface DesyncAutoService {

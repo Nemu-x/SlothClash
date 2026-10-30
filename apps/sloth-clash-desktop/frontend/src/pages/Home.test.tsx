@@ -121,7 +121,7 @@ describe('Home Desync chip', () => {
     ])
     expect(el?.title).toContain('YouTube: HTTPS available · automatic')
     expect(el?.title).toContain(
-      'Discord: Desync and reserve unavailable · retrying automatically',
+      'Discord: Desync and VPN unavailable · retrying automatically',
     )
     expect(
       screen.getByRole('button', { name: /Desync status · open Desync/ }),

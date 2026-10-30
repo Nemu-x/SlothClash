@@ -10,12 +10,13 @@ import { useProfileModals } from '../hooks/useProfileModals'
 import {
   desyncAuto,
   desyncService,
+  desyncSettings,
   desyncSnapshot,
   desyncStatus,
 } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
 import { wailsApp } from '../test/wailsMock'
-import { type DesyncSnapshot, desyncServiceViews } from '../utils/desyncStatus'
+import { type DesyncSnapshot, desyncBuiltinViews } from '../utils/desyncStatus'
 
 import { HomePage } from './Home'
 import { ProfilesPage } from './Profiles'
@@ -84,6 +85,9 @@ describe('Add profile dialog: Desync only', () => {
       desyncStatus({ settings: { enabled: true } }),
     )
     wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
+    wailsApp.stub('NewDesyncDraft', () =>
+      desyncSettings({ enabled: false, youtube: true }),
+    )
     const create = wailsApp.stub('CreateDesyncOnlyProfile', () => ({
       // The first profile: the backend makes it the active one itself.
       profile: { activeProfileId: 'p2', profiles: [DESYNC_ONLY] },
@@ -114,7 +118,12 @@ describe('Add profile dialog: Desync only', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create profile' }))
 
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Free'))
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        'Free',
+        expect.objectContaining({ enabled: true, youtube: true }),
+      ),
+    )
     await waitFor(() => expect(created).toHaveBeenCalledWith('No VPN'))
     expect(importUrl).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -142,7 +151,6 @@ describe('Profiles page: Desync-only card', () => {
         profiles={[{ ...DESYNC_ONLY, lastUpdateError: 'stale error' }]}
         activeProfileId=""
         refreshBusyId={null}
-        desyncEnabled={false}
         error={null}
         onImport={noop}
         onActivate={noop}
@@ -152,7 +160,12 @@ describe('Profiles page: Desync-only card', () => {
     )
     const badge = screen.getByText('Desync only')
     expect(badge.getAttribute('title')).toContain('No VPN servers')
-    expect(screen.getByText('No VPN · Desync is off')).toBeTruthy()
+    // Always on: there is no "Desync is off" line.
+    expect(screen.getByText('No VPN · Desync on')).toBeTruthy()
+    expect(screen.queryByText(/Desync is off/)).toBeNull()
+    // Its settings are edited while it is active (the Desync window edits
+    // the active profile's).
+    expect(screen.queryByRole('button', { name: 'Desync settings' })).toBeNull()
     // Never an update status, never a refresh button.
     expect(screen.queryByText('Update failed')).toBeNull()
     expect(screen.queryByText('local')).toBeNull()
@@ -175,7 +188,6 @@ describe('Profiles page: Desync-only card', () => {
         profiles={[subscription, DESYNC_ONLY]}
         activeProfileId="p2"
         refreshBusyId={null}
-        desyncEnabled
         error={null}
         onImport={noop}
         onActivate={noop}
@@ -190,21 +202,24 @@ describe('Profiles page: Desync-only card', () => {
     expect(shown).toEqual(['2m ago'])
   })
 
-  it('says when Desync is on', () => {
+  it('says that Desync is on and links its settings while active', () => {
+    const open = vi.fn()
     renderWithProviders(
       <ProfilesPage
         profiles={[DESYNC_ONLY]}
         activeProfileId="p2"
         refreshBusyId={null}
-        desyncEnabled
         error={null}
         onImport={noop}
         onActivate={noop}
         onRefresh={noop}
         onContextMenu={noop}
+        onOpenDesync={open}
       />,
     )
     expect(screen.getByText('No VPN · Desync on')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Desync settings' }))
+    expect(open).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -310,20 +325,15 @@ describe('Home: Desync-only profile', () => {
     expect(screen.getByText('Rule only')).toBeTruthy()
   })
 
-  it('says that Desync is off and opens its settings', () => {
-    const open = vi.fn()
+  it('never says that Desync is off: it is always on there', () => {
     renderWithProviders(
       <DesyncOnlyHome
-        desync={desyncSnapshot(
-          desyncStatus({ desyncOnly: true, settings: { enabled: false } }),
-        )}
-        onOpenDesync={open}
+        desync={desyncSnapshot(desyncStatus({ desyncOnly: true }))}
       />,
     )
-    fireEvent.click(
-      screen.getByText('Desync is off: all traffic goes directly. Turn it on'),
-    )
-    expect(open).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/Desync is off/)).toBeNull()
+    // The usual Desync chip opens the settings.
+    expect(document.querySelector('.homeDesyncChip')).not.toBeNull()
   })
 })
 
@@ -365,7 +375,7 @@ describe('Desync status lines without a reserve', () => {
         discord: desyncService('no_strategy'),
       }),
     )
-    const [youtube, discord] = desyncServiceViews(snap, ctx)
+    const [youtube, discord] = desyncBuiltinViews(snap, ctx)
     expect(youtube.status.phase).toBe('failed_direct')
     expect(youtube.status.tone).toBe('problem')
     expect(discord.status.phase).toBe('no_strategy')
@@ -377,6 +387,6 @@ describe('Desync status lines without a reserve', () => {
       desyncStatus(),
       desyncAuto({ youtube: desyncService('failed') }),
     )
-    expect(desyncServiceViews(snap, ctx)[0].status.phase).toBe('failed')
+    expect(desyncBuiltinViews(snap, ctx)[0].status.phase).toBe('failed')
   })
 })

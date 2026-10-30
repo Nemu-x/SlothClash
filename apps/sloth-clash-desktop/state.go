@@ -120,6 +120,10 @@ type Profile struct {
 	// fallbacks (anchor / first-safe) never touch it, so the stored value
 	// always reflects genuine user intent.
 	LastGoodGroup string `json:"lastGoodGroup,omitempty"`
+	// Desync is this profile's Desync settings (desync_profile.go): whether
+	// it is on, the built-in services, the popular services and the user's
+	// sites. nil = never changed, the defaults.
+	Desync *DesyncSettings `json:"desync,omitempty"`
 }
 
 // ProfilePaths exposes on-disk locations for a profile runtime directory.

@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { DesyncPresetView } from '../utils/desyncStatus'
+import type { DesyncServiceView } from '../utils/desyncStatus'
 
 import { DesyncStatusChip } from './DesyncStatusChip'
 
@@ -9,49 +9,52 @@ import { DesyncStatusChip } from './DesyncStatusChip'
 const SUMMARY_DOMAINS = 2
 
 /**
- * "Popular": one row per catalog preset — name, a one-line domain summary
+ * The catalog part of "Popular services", under YouTube and Discord in the
+ * same section: one row per catalog service — name, a one-line domain summary
  * (the full list behind "+N more"), live status in manage, and a switch.
  * Notes under a row: the full domain list, a shared-domain hint, and which
  * plain entries switching it on replaced.
  */
-export function DesyncPresetList({
+export function DesyncServiceList({
   views,
+  labelledBy,
   onboarding,
   busy,
   supported,
+  ipHint,
   replaced,
   error,
   onToggle,
 }: {
-  views: DesyncPresetView[]
+  views: DesyncServiceView[]
+  /** The "Popular services" section title above YouTube and Discord. */
+  labelledBy: string
   onboarding: boolean
   busy: boolean
   supported: boolean
-  /** The last preset switched on and the plain domains it replaced. */
+  /** Under a service Desync cannot unblock: where its traffic goes. */
+  ipHint: string
+  /** The last service switched on and the plain domains it replaced. */
   replaced: { id: string; domains: string[] } | null
-  /** Why the last switch of preset `id` failed; it describes that switch. */
+  /** Why the last switch of service `id` failed; it describes that switch. */
   error: { id: string; text: string } | null
-  onToggle: (view: DesyncPresetView) => void
+  onToggle: (view: DesyncServiceView) => void
 }) {
-  const { t } = useTranslation()
   const baseId = useId()
-  const titleId = `${baseId}-title`
   const errorId = `${baseId}-error`
   return (
     <div
-      className="desyncSubgroup desyncPresets"
+      className="desyncSubgroup desyncPopulars"
       role="group"
-      aria-labelledby={titleId}
+      aria-labelledby={labelledBy}
     >
-      <h5 id={titleId} className="desyncSubTitle">
-        {t('desync.presets.title')}
-      </h5>
-      <ul className="desyncServices desyncPresetList">
+      <ul className="desyncServices desyncPopularList">
         {views.map((view) => (
-          <DesyncPresetRow
+          <DesyncServiceRow
             key={view.id}
             view={view}
             onboarding={onboarding}
+            ipHint={ipHint}
             disabled={busy || (!supported && !view.checked)}
             replaced={replaced?.id === view.id ? replaced.domains : []}
             errorId={error?.id === view.id ? errorId : undefined}
@@ -60,7 +63,7 @@ export function DesyncPresetList({
         ))}
       </ul>
       {error ? (
-        <p id={errorId} className="error small desyncPresetError" role="alert">
+        <p id={errorId} className="error small desyncPopularError" role="alert">
           {error.text}
         </p>
       ) : null}
@@ -68,16 +71,18 @@ export function DesyncPresetList({
   )
 }
 
-function DesyncPresetRow({
+function DesyncServiceRow({
   view,
   onboarding,
+  ipHint,
   disabled,
   replaced,
   errorId,
   onToggle,
 }: {
-  view: DesyncPresetView
+  view: DesyncServiceView
   onboarding: boolean
+  ipHint: string
   disabled: boolean
   replaced: string[]
   errorId?: string
@@ -93,17 +98,17 @@ function DesyncPresetRow({
   const all = view.domains.join(', ')
   return (
     <li
-      className="desyncService desyncPresetRow"
-      data-preset={view.id}
+      className="desyncService desyncPopularRow"
+      data-popular={view.id}
       data-checked={view.checked}
     >
-      <div className="desyncPresetInfo">
-        <span className="desyncServiceName desyncPresetName">{view.name}</span>
+      <div className="desyncPopularInfo">
+        <span className="desyncServiceName desyncPopularName">{view.name}</span>
         {view.domains.length > 0 ? (
-          <span className="desyncPresetDomains">
+          <span className="desyncPopularDomains">
             <span
               id={domainsId}
-              className="desyncPresetDomainsText"
+              className="desyncPopularDomainsText"
               title={all}
             >
               {summary}
@@ -111,14 +116,14 @@ function DesyncPresetRow({
             {more > 0 ? (
               <button
                 type="button"
-                className="desyncPresetMore"
+                className="desyncPopularMore"
                 aria-expanded={expanded}
                 aria-controls={allId}
                 onClick={() => setExpanded((v) => !v)}
               >
                 {expanded
-                  ? t('desync.presets.less')
-                  : t('desync.presets.more', { count: more })}
+                  ? t('desync.services.less')
+                  : t('desync.services.more', { count: more })}
               </button>
             ) : null}
           </span>
@@ -129,9 +134,7 @@ function DesyncPresetRow({
           <>
             <DesyncStatusChip view={view.status} />
             {view.status.phase === 'unavailable' ? (
-              <span className="desyncCustomNote">
-                {t('desync.custom.ipHint')}
-              </span>
+              <span className="desyncCustomNote">{ipHint}</span>
             ) : null}
           </>
         )}
@@ -155,23 +158,23 @@ function DesyncPresetRow({
       {more > 0 ? (
         <p
           id={allId}
-          className="desyncPresetNote desyncPresetAll"
+          className="desyncPopularNote desyncPopularAll"
           hidden={!expanded}
         >
           {all}
         </p>
       ) : null}
       {view.shared ? (
-        <p className="desyncPresetNote" data-note="shared">
-          {t('desync.presets.shared', {
+        <p className="desyncPopularNote" data-note="shared">
+          {t('desync.services.shared', {
             domains: view.shared.domains.join(', '),
             names: view.shared.names.join(', '),
           })}
         </p>
       ) : null}
       {replaced.length > 0 ? (
-        <p className="desyncPresetNote" data-note="replaced" role="status">
-          {t('desync.presets.replaced', {
+        <p className="desyncPopularNote" data-note="replaced" role="status">
+          {t('desync.services.replaced', {
             domains: replaced.join(', '),
             name: view.name,
             count: replaced.length,

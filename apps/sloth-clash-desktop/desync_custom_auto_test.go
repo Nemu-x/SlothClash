@@ -91,7 +91,7 @@ func customTestApp(t *testing.T, core *customFakeCore, entries ...DesyncCustomEn
 	t.Helper()
 	prefsMu.Lock()
 	previous := prefsCurrent
-	prefsCurrent.Desync = DesyncSettings{Enabled: true, DiscordTTL: 4, Custom: entries}
+	prefsCurrent.Desync = DesyncSettings{Enabled: true, Custom: entries}
 	prefsCurrent.DesyncCache = nil
 	prefsMu.Unlock()
 	fake := desyncFakeTTLSupported

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -75,14 +76,26 @@ func rejectDesyncOnlyValue(p Profile, value string) error {
 	return nil
 }
 
-// CreateDesyncOnlyProfile adds a Desync-only profile (no VPN). An empty name
-// gets the default one. Like an import, it becomes the active profile only
-// when there is none yet; activating it is the user's next step (the UI
-// offers to turn Desync on at that point if it is off).
-func (a *App) CreateDesyncOnlyProfile(name string) (AppState, error) {
+// CreateDesyncOnlyProfile adds a Desync-only profile (no VPN) with the
+// given Desync settings: what it unblocks, chosen before it exists (the
+// custom list built with the DraftDesync* methods). Desync is on in such a
+// profile, so the settings must select something this build can run. An
+// empty name gets the default one; the UI passes its localized default. Like
+// an import, it becomes the active profile only when there is none yet;
+// activating it is the user's next step.
+func (a *App) CreateDesyncOnlyProfile(name string, settings DesyncSettings) (AppState, error) {
 	finalName := strings.TrimSpace(name)
 	if finalName == "" {
 		finalName = "Desync only"
+	}
+	settings.Enabled = true
+	settings.Custom = sanitizeDesyncCustom(settings.Custom)
+	settings, err := validateDesyncSettings(settings, runtime.GOOS, desyncCoreSupported())
+	if err != nil {
+		return a.GetAppState(), err
+	}
+	if settings.DiscordUDP && !desyncUDPCoreSupported() {
+		return a.GetAppState(), desyncErr("unsupported_udp_core")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -92,6 +105,7 @@ func (a *App) CreateDesyncOnlyProfile(name string) (AppState, error) {
 		Type:        "local",
 		Kind:        profileKindDesyncOnly,
 		LastUpdated: time.Now().Unix(),
+		Desync:      &settings,
 	}
 	// What the creation changes in memory, restored when it cannot be
 	// persisted: a profile that is not on disk must not stay in the list, or
@@ -107,11 +121,13 @@ func (a *App) CreateDesyncOnlyProfile(name string) (AppState, error) {
 		a.state.Profile.ActiveProfileID = p.ID
 		a.enforceDesyncOnlyModeLocked()
 	}
+	a.syncActiveDesyncLocked()
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
 		a.profiles, a.state.Profile.Profiles = profiles, listed
 		a.state.Profile.ActiveProfileID, a.state.Mode.Current, a.state.Proxy.ActiveGroup = active, mode, group
 		a.modeBeforeDesyncOnly, a.state.UpdatedAt = modeBefore, updated
+		a.syncActiveDesyncLocked()
 		return a.state, err
 	}
 	return a.state, nil

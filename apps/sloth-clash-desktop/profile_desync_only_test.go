@@ -10,11 +10,16 @@ import (
 	"time"
 )
 
+// onboardingSelection is what the onboarding dialog sends: YouTube.
+var onboardingSelection = DesyncSettings{YouTube: true}
+
 func TestCreateDesyncOnlyProfile(t *testing.T) {
 	isolateAppDataRoot(t)
+	withDesyncCoreFeatures(t, "desync")
+	withDesyncPrefs(t, DesyncSettings{})
 	a := &App{}
 	a.state.Mode.Current = "global"
-	state, err := a.CreateDesyncOnlyProfile("  ")
+	state, err := a.CreateDesyncOnlyProfile("  ", onboardingSelection)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -48,7 +53,7 @@ func TestCreateDesyncOnlyProfile(t *testing.T) {
 	if !strings.Contains(string(raw), `"kind": "desync-only"`) {
 		t.Fatalf("profiles.json lacks the kind:\n%s", raw)
 	}
-	state, err = a.CreateDesyncOnlyProfile("Second")
+	state, err = a.CreateDesyncOnlyProfile("Second", onboardingSelection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +85,8 @@ func blockProfilesStore(t *testing.T) {
 // profile, no active-profile or mode change, so a retry creates exactly one.
 func TestCreateDesyncOnlyProfileRollsBackOnPersistFailure(t *testing.T) {
 	isolateAppDataRoot(t)
+	withDesyncCoreFeatures(t, "desync")
+	withDesyncPrefs(t, DesyncSettings{})
 	sub := Profile{ID: "profile-1", Name: "Sub", Type: "subscription", URL: "https://example.com/s"}
 	for _, tc := range []struct {
 		name   string
@@ -104,7 +111,7 @@ func TestCreateDesyncOnlyProfileRollsBackOnPersistFailure(t *testing.T) {
 			before := append([]Profile(nil), a.profiles...)
 			blockProfilesStore(t)
 
-			if _, err := a.CreateDesyncOnlyProfile("No VPN"); err == nil {
+			if _, err := a.CreateDesyncOnlyProfile("No VPN", onboardingSelection); err == nil {
 				t.Fatal("create succeeded although profiles.json cannot be written")
 			}
 			if len(a.profiles) != len(before) || len(a.state.Profile.Profiles) != len(before) {
@@ -125,7 +132,7 @@ func TestCreateDesyncOnlyProfileRollsBackOnPersistFailure(t *testing.T) {
 			if err := os.RemoveAll(path); err != nil {
 				t.Fatal(err)
 			}
-			state, err := a.CreateDesyncOnlyProfile("No VPN")
+			state, err := a.CreateDesyncOnlyProfile("No VPN", onboardingSelection)
 			if err != nil {
 				t.Fatalf("retry: %v", err)
 			}

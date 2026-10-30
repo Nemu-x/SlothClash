@@ -57,12 +57,17 @@ func runtimeConfigPrefsFrom(p DesktopPrefs) runtimecfg.Prefs {
 	}
 }
 
-// desyncCustomRoutes is the enabled entries of an (already sanitized) list.
+// desyncCustomRoutes is the enabled entries (rules and popular services) of
+// an (already sanitized) list.
 func desyncCustomRoutes(entries []DesyncCustomEntry) []runtimecfg.DesyncCustomRoute {
 	var out []runtimecfg.DesyncCustomRoute
 	for _, e := range entries {
 		if e.Enabled {
-			out = append(out, runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain, Preset: e.Service})
+			route := runtimecfg.DesyncCustomRoute{ID: e.ID, Domain: e.Domain, Preset: e.Service}
+			if e.Service == "" {
+				route.Kind, route.Process, route.Target = e.kind(), e.Process, e.route()
+			}
+			out = append(out, route)
 		}
 	}
 	return out

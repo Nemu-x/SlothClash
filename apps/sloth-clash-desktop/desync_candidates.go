@@ -91,7 +91,9 @@ func saveDesyncSelection(network, service, id string) {
 		// the other profiles'), so the cache stays bounded by the entries.
 		current := map[string]bool{}
 		for _, e := range sanitizeDesyncCustom(prefsCurrent.Desync.Custom) {
-			current[e.key()] = true
+			if e.calibrated() {
+				current[e.key()] = true
+			}
 		}
 		for key := range desyncOtherProfileKeys {
 			current[key] = true

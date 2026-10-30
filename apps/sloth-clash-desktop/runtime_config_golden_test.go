@@ -206,6 +206,29 @@ func loadGoldenProfiles(t *testing.T) []goldenProfile {
 			{ID: "5a6b7c8d", Domain: "media.example.org", Enabled: true},
 			{ID: "3c3c3c3c", Service: "facebook", Enabled: false},
 		}}},
+		// The user's rules: every kind and route. Domain rules go first (the
+		// most specific first, an exact domain before a suffix of the same
+		// depth, a user's rule before a popular service's domain), then the
+		// built-in services, then the application rules. VPN rules go to
+		// the profile's MATCH group (PROXY); a switched-off rule is absent.
+		goldenProfile{id: "synthetic/representative-desync-rules", body: rep, desync: &DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{
+			{ID: "1a2b3c4d", Kind: desyncKindSuffix, Domain: "example.org", Route: desyncRouteAuto, Enabled: true},
+			{ID: "2b3c4d5e", Kind: desyncKindDomain, Domain: "login.example.org", Route: desyncRouteDirect, Enabled: true},
+			{ID: "3c4d5e6f", Kind: desyncKindSuffix, Domain: "music.youtube.com", Route: desyncRouteVPN, Enabled: true},
+			{ID: "4d5e6f70", Kind: desyncKindSuffix, Domain: "ru", Route: desyncRouteVPN, Enabled: true},
+			{ID: "5e6f7081", Kind: desyncKindProcess, Process: "Telegram.exe", Route: desyncRouteVPN, Enabled: true},
+			{ID: "6f708192", Kind: desyncKindProcess, Process: "chrome.exe", Route: desyncRouteAuto, Enabled: true},
+			{ID: "708192a3", Kind: desyncKindProcess, Process: "steam.exe", Route: desyncRouteDirect, Enabled: true},
+			{ID: "8192a3b4", Kind: desyncKindSuffix, Domain: "fbcdn.net", Route: desyncRouteVPN, Enabled: true},
+			{ID: "92a3b4c5", Service: "facebook", Enabled: true},
+			{ID: "a3b4c5d6", Kind: desyncKindDomain, Domain: "off.example.net", Route: desyncRouteDirect, Enabled: false},
+		}}},
+		// The same on a Desync-only profile, which has no VPN route.
+		goldenProfile{id: "synthetic/desync-only-rules", desyncOnly: true, desync: &DesyncSettings{Enabled: true, Custom: []DesyncCustomEntry{
+			{ID: "1a2b3c4d", Kind: desyncKindSuffix, Domain: "example.org", Route: desyncRouteAuto, Enabled: true},
+			{ID: "2b3c4d5e", Kind: desyncKindDomain, Domain: "login.example.org", Route: desyncRouteDirect, Enabled: true},
+			{ID: "6f708192", Kind: desyncKindProcess, Process: "Telegram.exe", Route: desyncRouteAuto, Enabled: true},
+		}}},
 		// Desync-only profiles (no subscription). With Desync off the config
 		// is plain MATCH,DIRECT; each service adds only its own routes.
 		goldenProfile{id: "synthetic/desync-only-off", desyncOnly: true, desync: &DesyncSettings{YouTube: true}},

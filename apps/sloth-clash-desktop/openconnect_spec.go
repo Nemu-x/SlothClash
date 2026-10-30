@@ -13,22 +13,28 @@ import "runtime"
 // message. Bumping a bundle = bump Version + URL + SHA together.
 const openconnectBundleBase = "https://github.com/Nemu-x/sloth-clash-service-ipc/releases/download/components-openconnect-9.21"
 
+// openconnectMacOSBundleBase holds the macOS bundles built from source for
+// macOS 12+ (scripts/build-openconnect-macos.sh in the service repo): one
+// static binary that links only system libraries. The 9.21 macOS bundles were
+// Homebrew bottles and needed macOS 14 (arm64) / 15 (Intel).
+const openconnectMacOSBundleBase = "https://github.com/Nemu-x/sloth-clash-service-ipc/releases/download/components-openconnect-9.12-macos12"
+
 func openconnectComponentSpec() (componentSpec, bool) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		return componentSpec{
 			Name:    "openconnect",
-			Version: "9.12-macos-arm64",
-			URL:     openconnectBundleBase + "/openconnect-macos-arm64.tar.gz",
-			SHA256:  "22fad90065f52ec97930078567f700fabc9aa4f071686724ffa53f2177dd3527",
+			Version: "9.12-macos-arm64-r2", // r2: from source, macOS 12+
+			URL:     openconnectMacOSBundleBase + "/openconnect-macos-arm64.tar.gz",
+			SHA256:  "e17f936def181876a8fe3505d52c4e1b1af13b94eb7d80ead85c4f23a7184264",
 			BinRel:  "openconnect",
 		}, true
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
 		return componentSpec{
 			Name:    "openconnect",
-			Version: "9.12-macos-amd64",
-			URL:     openconnectBundleBase + "/openconnect-macos-amd64.tar.gz",
-			SHA256:  "0c2914d6e88d66369506a75e02cdf141a5824e3872853aad526ba985fb345c7b",
+			Version: "9.12-macos-amd64-r2", // r2: from source, macOS 12+
+			URL:     openconnectMacOSBundleBase + "/openconnect-macos-amd64.tar.gz",
+			SHA256:  "3ee76534b780866fc8f2a8adbce8c30d36d4a90129e63d751797f4680e899d63",
 			BinRel:  "openconnect",
 		}, true
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":

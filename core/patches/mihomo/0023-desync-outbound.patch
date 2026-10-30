@@ -1,9 +1,9 @@
 diff --git a/adapter/outbound/desync.go b/adapter/outbound/desync.go
 new file mode 100644
-index 0000000..626e620
+index 0000000..8defc90
 --- /dev/null
 +++ b/adapter/outbound/desync.go
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,750 @@
 +package outbound
 +
 +// SlothClash core patch 0023: a first-class "desync" outbound.
@@ -32,6 +32,7 @@ index 0000000..626e620
 +	"fmt"
 +	"net"
 +	"strings"
++	"sync"
 +	"sync/atomic"
 +	"time"
 +
@@ -70,6 +71,21 @@ index 0000000..626e620
 +func desyncConditional(caps desync.Capabilities, method string) bool {
 +	_, ok := caps.Conditional[method]
 +	return ok
++}
++
++// desyncNoted holds the configuration notes already logged. Options are
++// parsed on every load, validation and snapshot of a configuration, so a
++// note is logged once per process; it changes only when the outbound's name,
++// methods or OS do, and then it is a new note.
++var desyncNoted sync.Map
++
++// desyncNote logs the formatted note through logf unless it was logged
++// before.
++func desyncNote(logf func(string, ...any), format string, args ...any) {
++	msg := fmt.Sprintf(format, args...)
++	if _, seen := desyncNoted.LoadOrStore(msg, struct{}{}); !seen {
++		logf("%s", msg)
++	}
 +}
 +
 +// DesyncOption is the configuration of a "desync" outbound. Keys and units
@@ -508,7 +524,7 @@ index 0000000..626e620
 +		return opts, err
 +	}
 +	if len(conditional) > 0 {
-+		log.Infoln("[desync] %s: %s on %s is verified per connection: a socket that cannot observe its unsent bytes fails the connection before anything is sent",
++		desyncNote(log.Infoln, "[desync] %s: %s on %s is verified per connection: a socket that cannot observe its unsent bytes fails the connection before anything is sent",
 +			o.Name, strings.Join(conditional, ", "), caps.OS)
 +	}
 +	return opts, nil
@@ -534,16 +550,16 @@ index 0000000..626e620
 +			return fmt.Errorf("fake auto-ttl cannot observe the path on %s (%s); set ttl as the fallback: %w",
 +				caps.OS, reason, desync.ErrAutoTTLUnsupported)
 +		}
-+		log.Warnln("[desync] %s: auto-ttl cannot observe the path on %s (%s); every fake uses ttl %d",
++		desyncNote(log.Warnln, "[desync] %s: auto-ttl cannot observe the path on %s (%s); every fake uses ttl %d",
 +			o.Name, caps.OS, reason, ttl)
 +		return nil
 +	}
 +	if !v4 && o.IPVersion != C.IPv6Only {
 +		if ttl == 0 {
-+			log.Warnln("[desync] %s: auto-ttl observes only IPv6 on %s (%s); IPv4 connections fail without a fallback ttl",
++			desyncNote(log.Warnln, "[desync] %s: auto-ttl observes only IPv6 on %s (%s); IPv4 connections fail without a fallback ttl",
 +				o.Name, caps.OS, caps.Unsupported["auto-ttl-ipv4"])
 +		} else {
-+			log.Infoln("[desync] %s: auto-ttl observes only IPv6 on %s; IPv4 connections use ttl %d", o.Name, caps.OS, ttl)
++			desyncNote(log.Infoln, "[desync] %s: auto-ttl observes only IPv6 on %s; IPv4 connections use ttl %d", o.Name, caps.OS, ttl)
 +		}
 +	}
 +	return nil
@@ -1045,10 +1061,10 @@ index 0000000..5ca3cda
 +}
 diff --git a/adapter/outbound/desync_test.go b/adapter/outbound/desync_test.go
 new file mode 100644
-index 0000000..a7b3316
+index 0000000..81d2d05
 --- /dev/null
 +++ b/adapter/outbound/desync_test.go
-@@ -0,0 +1,918 @@
+@@ -0,0 +1,928 @@
 +package outbound
 +
 +import (
@@ -1062,6 +1078,7 @@ index 0000000..a7b3316
 +	"encoding/binary"
 +	"encoding/json"
 +	"errors"
++	"fmt"
 +	"io"
 +	"math/big"
 +	"net"
@@ -1644,6 +1661,15 @@ index 0000000..a7b3316
 +// A method the OS decides per socket (Conditional) loads, although it is
 +// also listed as unsupported; the same report without Conditional rejects
 +// it, so the acceptance comes from Conditional alone.
++func TestDesyncNoteLogsOnce(t *testing.T) {
++	var got []string
++	logf := func(format string, v ...any) { got = append(got, fmt.Sprintf(format, v...)) }
++	desyncNote(logf, "[desync] %s: note-once %s", "a", "linux")
++	desyncNote(logf, "[desync] %s: note-once %s", "a", "linux")
++	desyncNote(logf, "[desync] %s: note-once %s", "b", "linux")
++	assert.Equal(t, []string{"[desync] a: note-once linux", "[desync] b: note-once linux"}, got)
++}
++
 +func TestDesyncConditionalMethods(t *testing.T) {
 +	android := fakePlatform("android")
 +	for name, option := range map[string]DesyncOption{

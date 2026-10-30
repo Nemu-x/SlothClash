@@ -3,19 +3,34 @@ import { useTranslation } from 'react-i18next'
 
 import {
   ForgetCorpVpnCredentials,
+  ForgetCorpVpnServercert,
   GetCorpVpnCredentials,
   GetCorpVpnStatus,
   StartCorpVpn,
   StopCorpVpn,
+  splitCorpError,
   type main,
 } from '../api/corp'
 import { EventsOn } from '../api/runtime'
+import { CorpCertTrustModal } from '../components/CorpCertTrustModal'
 
 type Status = main.CorpVpnStatus
 
 function errText(e: unknown): string {
   const m = (e as { message?: string })?.message
   return String(m ?? e ?? '').trim() || 'unknown error'
+}
+
+function CorpError({ raw }: { raw: string }) {
+  const { t } = useTranslation()
+  const { code, detail } = splitCorpError(raw)
+  if (!code) return <div className="error">{detail}</div>
+  return (
+    <div className="error">
+      <strong>{t(`corp.err.${code}`)}</strong>
+      {detail ? <div className="small">{detail}</div> : null}
+    </div>
+  )
 }
 
 export function CorpVpnPage() {
@@ -31,8 +46,11 @@ export function CorpVpnPage() {
   const [error, setError] = useState('')
   // Remember server + username (never the password) between sessions.
   const [remember, setRemember] = useState(true)
-  // Pending server-cert to trust (first connect against an untrusted gateway).
-  const [pendingCert, setPendingCert] = useState('')
+  // Pending certificate decision (untrusted on first use, or changed since the
+  // pin we trusted). Cleared on reject — the remembered pin is left untouched.
+  const [pendingTrust, setPendingTrust] = useState<Status | null>(null)
+  // A pin is remembered → offer to forget it (reset trust without hand-editing).
+  const [hasSavedPin, setHasSavedPin] = useState(false)
 
   const refresh = useCallback(() => {
     GetCorpVpnStatus()
@@ -40,8 +58,7 @@ export function CorpVpnPage() {
       .catch(() => {})
   }, [])
 
-  useEffect(() => {
-    refresh()
+  const loadCredentials = useCallback(() => {
     // Pre-fill the saved server + username (password is never stored).
     GetCorpVpnCredentials()
       .then((c) => {
@@ -49,9 +66,15 @@ export function CorpVpnPage() {
         const un = c?.username ?? ''
         if (gw) setGateway((g) => g || gw)
         if (un) setUsername((u) => u || un)
+        setHasSavedPin(!!c?.servercert)
       })
       .catch(() => {})
-  }, [refresh])
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    loadCredentials()
+  }, [refresh, loadCredentials])
 
   // While connected, poll so the log view and status stay live.
   useEffect(() => {
@@ -88,29 +111,40 @@ export function CorpVpnPage() {
         // forgetting them when the box is unticked.
         if (!remember) void ForgetCorpVpnCredentials()
         if (s.needsCertTrust) {
-          // Gateway presented an untrusted cert — surface its fingerprint and
-          // let the user accept it (trust-on-first-use), then reconnect pinned.
-          setPendingCert(s.servercertSha256)
+          // Gateway certificate failed verification (new, or changed since we
+          // trusted it) — show it and let the user decide explicitly.
+          setPendingTrust(s)
         } else {
-          setPendingCert('')
+          setPendingTrust(null)
           if (s.connected) setPassword('') // don't keep the secret around once up
         }
       } catch (e) {
+        setPendingTrust(null)
         setError(errText(e))
       } finally {
         setBusy(false)
         setPhase('')
+        loadCredentials()
       }
     },
-    [gateway, username, password, remember],
+    [gateway, username, password, remember, loadCredentials],
   )
+
+  const forgetPin = useCallback(async () => {
+    try {
+      await ForgetCorpVpnServercert()
+    } catch (e) {
+      setError(errText(e))
+    }
+    loadCredentials()
+  }, [loadCredentials])
 
   const disconnect = useCallback(async () => {
     setBusy(true)
     setError('')
     try {
       await StopCorpVpn()
-      setPendingCert('')
+      setPendingTrust(null)
       refresh()
     } catch (e) {
       setError(errText(e))
@@ -143,36 +177,19 @@ export function CorpVpnPage() {
         </span>
       </div>
 
-      {error ? <div className="error">{error}</div> : null}
+      {error ? <CorpError raw={error} /> : null}
+
+      <CorpCertTrustModal
+        gateway={gateway}
+        pending={pendingTrust}
+        busy={busy}
+        onReject={() => setPendingTrust(null)}
+        onTrust={(pin) => void connect(pin)}
+      />
 
       <div className="corpGrid">
         <div className="corpMain">
-          {/* Cert-trust step: shown after a first connect against an untrusted cert. */}
-          {pendingCert ? (
-            <div className="corpCard corpCert">
-              <h3>{t('corp.certTitle')}</h3>
-              <p className="muted small">{t('corp.certBody')}</p>
-              <code className="corpFingerprint">{pendingCert}</code>
-              <div className="corpActions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void connect(pendingCert)}
-                >
-                  {t('corp.trustConnect')}
-                </button>
-                <button
-                  type="button"
-                  className="btn subtle"
-                  disabled={busy}
-                  onClick={() => setPendingCert('')}
-                >
-                  {t('corp.cancel')}
-                </button>
-              </div>
-            </div>
-          ) : connected ? (
+          {connected ? (
             <div className="corpCard">
               <div className="corpStatusRow">
                 <span className="muted small">{t('corp.gateway')}</span>
@@ -267,6 +284,19 @@ export function CorpVpnPage() {
                 />
                 <span className="muted small">{t('corp.remember')}</span>
               </label>
+              {hasSavedPin ? (
+                <div className="corpRemember">
+                  <span className="muted small">{t('corp.cert.saved')}</span>
+                  <button
+                    type="button"
+                    className="btn subtle"
+                    disabled={busy}
+                    onClick={() => void forgetPin()}
+                  >
+                    {t('corp.cert.forget')}
+                  </button>
+                </div>
+              ) : null}
               <div className="corpActions">
                 <button
                   type="submit"

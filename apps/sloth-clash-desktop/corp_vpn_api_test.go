@@ -9,7 +9,7 @@ import (
 
 func TestParseCorpEnvelope_CertTrustIsNotError(t *testing.T) {
 	body := []byte(`{"code":1,"message":"trust required","data":{"connected":false,"needs_cert_trust":true,"servercert_sha256":"sha256:abcd"}}`)
-	status, err := parseCorpEnvelope(503, body)
+	status, err := parseCorpEnvelope(503, body, "")
 	if err != nil {
 		t.Fatalf("cert-trust must not be an error, got %v", err)
 	}
@@ -20,7 +20,7 @@ func TestParseCorpEnvelope_CertTrustIsNotError(t *testing.T) {
 
 func TestParseCorpEnvelope_HTTPErrorSurfaces(t *testing.T) {
 	body := []byte(`{"code":1,"message":"auth failed","data":null}`)
-	_, err := parseCorpEnvelope(503, body)
+	_, err := parseCorpEnvelope(503, body, "")
 	if err == nil {
 		t.Fatal("expected an error for a real service failure")
 	}
@@ -28,7 +28,7 @@ func TestParseCorpEnvelope_HTTPErrorSurfaces(t *testing.T) {
 
 func TestParseCorpEnvelope_SuccessMapsData(t *testing.T) {
 	body := []byte(`{"code":0,"message":"Success","data":{"connected":true,"routes":["10.0.0.0/8"],"dns_servers":["10.16.32.100"],"dns_domains":["corp.example"],"full_tunnel":false}}`)
-	status, err := parseCorpEnvelope(200, body)
+	status, err := parseCorpEnvelope(200, body, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

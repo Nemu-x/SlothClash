@@ -964,18 +964,22 @@ function App() {
     await refreshServiceInfo()
   }
 
-  const switchTraffic = async (mode: 'proxy' | 'tun') => {
+  /** Home's Proxy / TUN toggle (and Desync's Turn on TUN): the error text, empty on success. */
+  const switchTraffic = async (mode: 'proxy' | 'tun'): Promise<string> => {
     setTunBanner('')
     setOptimisticTraffic(mode)
     setError('')
+    let failure = ''
     try {
       await SetTrafficMode(mode)
     } catch (e: any) {
-      setError(String(e))
+      failure = String(e)
+      setError(failure)
     } finally {
       setOptimisticTraffic(null)
       await refresh()
     }
+    return failure
   }
 
   const connectAction = async () => {
@@ -1547,6 +1551,7 @@ function App() {
           traffic={String(state?.traffic ?? '')}
           profiles={state?.profile?.profiles}
           refresh={refresh}
+          onEnableTun={() => switchTraffic('tun')}
           onClose={desyncModal.close}
           // Onboarding from an empty Home: the link that opened it is gone
           // once the profile exists; Connect is the next step.

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/desync/desynctest"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,9 +18,9 @@ import (
 func TestDesyncOverlayPreservesProfileAndRemovesOnlyGeneratedEntries(t *testing.T) {
 	userProxy := map[string]any{"name": "subscription-node", "type": "socks5", "server": "example.test", "port": 1080}
 	doc := map[string]any{"proxies": []any{userProxy}, "rules": []any{"DOMAIN-SUFFIX,internal.test,DIRECT", "MATCH,subscription-node"}, "mode": "rule"}
-	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true}
+	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: true, Caps: desynctest.Windows()}
 	applyDesyncOverlay(doc, settings, nil, nil)
-	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
+	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube", settings.Caps))+len(desync.Candidates("discord", settings.Caps)) {
 		t.Fatalf("unexpected proxies: %v", doc["proxies"])
 	}
 	if !reflect.DeepEqual(doc["proxies"].([]any)[0], userProxy) {
@@ -64,7 +65,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 		t.Skip("set SLOTH_MIHOMO_BIN for patched-core preflight")
 	}
 	doc := map[string]any{"mode": "rule", "rules": []any{"MATCH,DIRECT"}, "proxies": []any{}}
-	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordUDP: runtime.GOOS == "windows", FakeTTL: runtime.GOOS == "windows", Custom: []DesyncCustomRoute{{ID: "0a1b2c3d", Domain: "example.org"}, {ID: "5a6b7c8d", Domain: "media.example.org"}}}
+	settings := DesyncSettings{Enabled: true, YouTube: true, Discord: runtime.GOOS == "windows", DiscordUDP: runtime.GOOS == "windows", Custom: []DesyncCustomRoute{{ID: "0a1b2c3d", Domain: "example.org"}, {ID: "5a6b7c8d", Domain: "media.example.org"}}}
 	applyDesyncOverlay(doc, settings, nil, nil)
 	data, err := yaml.Marshal(doc)
 	if err != nil {
@@ -81,7 +82,7 @@ func TestDesyncRuntimeConfigPreflight(t *testing.T) {
 
 func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	doc := map[string]any{"rules": []any{"PROCESS-NAME,Discord.exe,subscription-node", "MATCH,subscription-node"}, "proxies": []any{map[string]any{"name": "subscription-node", "type": "direct"}}}
-	s := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true}
+	s := DesyncSettings{Enabled: true, YouTube: true, Discord: true, DiscordUDP: true, Caps: desynctest.Windows()}
 	applyDesyncOverlay(doc, s, nil, nil)
 	if doc["rules"].([]any)[0] != desync.DiscordUDPRules()[0] {
 		t.Fatal("Discord UDP did not override only the intended desktop rule")
@@ -91,19 +92,19 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	for _, raw := range proxies {
 		p := raw.(map[string]any)
 		switch p["name"] {
-		case desync.DiscordUDPRoute + "-f4":
+		case desync.DiscordUDPRoute + "-" + presetID(t, "udp-zero-ttl5-r2"):
 			udp = p
-		case desync.YouTubeRoute + "-r3":
+		case desync.YouTubeRoute + "-" + presetID(t, "tlsrec-3s"):
 			youtube = p
 		}
 	}
 	if udp == nil || youtube == nil {
 		t.Fatal("missing isolated candidates")
 	}
-	if options := udp["desync"].(map[string]any)["udp"].(map[string]any); options["packets"] != 3 || options["repeats"] != 1 {
+	if options := udp["udp"].(map[string]any); options["repeats"] != 2 || options["stable-binding"] != true || udp["type"] != "desync" {
 		t.Fatalf("unsafe initial UDP preset: %v", options)
 	}
-	if options := youtube["desync"].(map[string]any); options["tlsrec"] != "3+s" || options["dns-fallback"] != true {
+	if youtube["type"] != "desync" || youtube["tlsrec"] != "3+s" || youtube["dns-fallback"] != true {
 		t.Fatal("proven YouTube candidate lost")
 	}
 	groups := doc["proxy-groups"].([]any)
@@ -112,7 +113,7 @@ func TestDesyncUDPOverlayIsExplicitAndReversible(t *testing.T) {
 	}
 	s.DiscordUDP = false
 	applyDesyncOverlay(doc, s, nil, nil)
-	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
+	if len(doc["proxies"].([]any)) != 1+len(desync.Candidates("youtube", s.Caps))+len(desync.Candidates("discord", s.Caps)) {
 		t.Fatal("UDP disable removed or retained the wrong outbounds")
 	}
 	for _, rule := range doc["rules"].([]any) {
@@ -147,7 +148,7 @@ func TestDesyncReserveOverlayRestoresQUICAndMigratesOldRejectRules(t *testing.T)
 		t.Fatal("profile rules changed")
 	}
 	for _, service := range []string{"youtube", "discord", "voice"} {
-		opts := desync.Candidates(service)[0].Proxy("test")["desync"].(map[string]any)
+		opts := desync.Candidates(service, desynctest.Windows())[0].Proxy("test")
 		if (opts["reject-quic"] == true) != (service != "voice") {
 			t.Fatal("conditional QUIC scope changed")
 		}

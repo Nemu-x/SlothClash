@@ -2,7 +2,11 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
-import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
+import {
+  GetDesyncDiagnosticReport,
+  ReconnectDiscordUDP,
+  type DesyncSettings,
+} from '../api/desync'
 import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import type { DesyncDraft } from '../hooks/useDesyncDraft'
@@ -17,14 +21,18 @@ import {
   desyncBuiltinViews,
 } from '../utils/desyncStatus'
 
+import { DesyncCapabilities } from './DesyncCapabilities'
 import { DesyncServiceList } from './DesyncServiceList'
 import { DesyncStatusChip } from './DesyncStatusChip'
+import { DesyncStrategyLine } from './DesyncStrategyLine'
 
 /**
  * - manage: the active profile's controls — master switch (not for a
  *   Desync-only profile, which is always on), "Popular services" (YouTube,
  *   Discord and the catalog) and "Sites" (the user's domains) with live
- *   status, Check again / Copy diagnostics.
+ *   status and the strategy in use, "What this computer can do", Check
+ *   network / Copy diagnostics, and on the Discord row Reconnect voice /
+ *   Turn on TUN.
  * - onboarding: choosing what a new Desync-only profile unblocks — the same
  *   rows without the master switch, status or diagnostics (Desync is turned
  *   on when the profile is created).
@@ -48,6 +56,7 @@ export function DesyncPanel({
   children,
   onSavingChange,
   draft,
+  onEnableTun,
 }: {
   connected: boolean
   mode: string
@@ -67,6 +76,12 @@ export function DesyncPanel({
   onSavingChange?: (saving: boolean) => void
   /** Edit this draft instead of the active profile's settings. */
   draft?: DesyncDraft
+  /**
+   * Manage: switch traffic to TUN the way Home's toggle does (Discord voice
+   * needs it). Resolves to an error text, empty on success. Without it the
+   * Turn on TUN button is not shown.
+   */
+  onEnableTun?: () => Promise<string | void>
 }) {
   const { t } = useTranslation()
   const baseId = useId()
@@ -104,6 +119,10 @@ export function DesyncPanel({
   } | null>(null)
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [tunBusy, setTunBusy] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  /** Voice flows the last Reconnect voice closed; null before one. */
+  const [reconnected, setReconnected] = useState<number | null>(null)
   const [error, setError] = useState('')
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -200,6 +219,34 @@ export function DesyncPanel({
     }
   }
 
+  async function enableTun() {
+    if (!onEnableTun) return
+    setTunBusy(true)
+    setError('')
+    try {
+      const failure = await onEnableTun()
+      if (failure && mountedRef.current) setError(failure)
+    } catch (err: unknown) {
+      if (mountedRef.current) setError(String(err))
+    } finally {
+      if (mountedRef.current) setTunBusy(false)
+    }
+  }
+
+  async function reconnectVoice() {
+    setReconnecting(true)
+    setReconnected(null)
+    setError('')
+    try {
+      const closed = await ReconnectDiscordUDP()
+      if (mountedRef.current) setReconnected(Number(closed) || 0)
+    } catch (err: unknown) {
+      if (mountedRef.current) setError(String(err))
+    } finally {
+      if (mountedRef.current) setReconnecting(false)
+    }
+  }
+
   async function copyReport() {
     setCopying(true)
     setCopied(false)
@@ -238,6 +285,56 @@ export function DesyncPanel({
     status?.desyncOnly ? 'desync.custom.ipHintDirect' : 'desync.custom.ipHint',
   )
   const customErrorId = `${baseId}-custom-error`
+
+  /**
+   * Under the Discord voice status: Turn on TUN while voice waits for it
+   * (the same switch as Home's traffic toggle), Reconnect voice while voice
+   * runs through Desync (connected, Rule mode, TUN).
+   */
+  function voiceActions(phase: string, tone: string) {
+    const needsTun = phase === 'needs_tun' && onEnableTun !== undefined
+    const canReconnect =
+      tone !== 'off' && connected && ruleMode && traffic === 'tun'
+    if (!needsTun && !canReconnect) return null
+    return (
+      <div className="desyncRowActions">
+        {needsTun ? (
+          <button
+            type="button"
+            className="btn btnCompact"
+            disabled={tunBusy || locked}
+            aria-busy={tunBusy || undefined}
+            onClick={() => void enableTun()}
+          >
+            {t(tunBusy ? 'desync.enablingTun' : 'desync.enableTun')}
+          </button>
+        ) : null}
+        {canReconnect ? (
+          <>
+            <button
+              type="button"
+              className="linkBtn"
+              disabled={reconnecting || locked}
+              onClick={() => void reconnectVoice()}
+            >
+              {t(
+                reconnecting ? 'desync.reconnecting' : 'desync.reconnectVoice',
+              )}
+            </button>
+            {reconnected !== null && !reconnecting ? (
+              <span className="desyncRowActionNote" role="status">
+                {t(
+                  reconnected > 0
+                    ? 'desync.reconnected'
+                    : 'desync.reconnectedNone',
+                )}
+              </span>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div className="desyncPanel" data-variant={variant}>
@@ -289,12 +386,17 @@ export function DesyncPanel({
                     ) : (
                       <>
                         <DesyncStatusChip view={row.status} />
+                        <DesyncStrategyLine view={row.status} />
                         {row.voice ? (
-                          <DesyncStatusChip
-                            view={row.voice}
-                            prefix={t('desync.voice')}
-                            sub
-                          />
+                          <>
+                            <DesyncStatusChip
+                              view={row.voice}
+                              prefix={t('desync.voice')}
+                              sub
+                            />
+                            <DesyncStrategyLine view={row.voice} voice />
+                            {voiceActions(row.voice.phase, row.voice.tone)}
+                          </>
                         ) : null}
                       </>
                     )}
@@ -360,6 +462,7 @@ export function DesyncPanel({
                         {onboarding ? null : (
                           <>
                             <DesyncStatusChip view={row.status} />
+                            <DesyncStrategyLine view={row.status} />
                             {row.status.phase === 'unavailable' ? (
                               <span className="desyncCustomNote">{ipHint}</span>
                             ) : null}
@@ -452,6 +555,7 @@ export function DesyncPanel({
           </section>
         ) : null}
         {children}
+        {onboarding || !status ? null : <DesyncCapabilities />}
       </div>
       {shownError ? (
         <p className="error small desyncPanelError" role="alert">
@@ -488,7 +592,7 @@ export function DesyncPanel({
               disabled={!enabled || !connected || !ruleMode || busy}
               onClick={() => void retry()}
             >
-              {t('desync.retry')}
+              {t('desync.checkNetwork')}
             </button>
           )}
         </div>

@@ -152,7 +152,7 @@ func (m *desyncVoiceMonitor) observe(now time.Time, connections []ConnectionItem
 }
 
 func knownDesyncVoiceCandidate(name string) bool {
-	for _, c := range desync.Candidates("voice") {
+	for _, c := range desync.Candidates("voice", desyncCaps) {
 		if c.Name(desync.DiscordUDPRoute) == name {
 			return true
 		}
@@ -227,8 +227,8 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 		if err == nil {
 			err = autoCoreJSON(one, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group)
 		}
-		if err == nil && group.Now == desyncProfileSelection && noReserve {
-			first := desync.Ordered("voice", desyncCachedSelection(network, "voice"))[0]
+		if ordered := desync.Ordered("voice", desyncCaps, desyncCachedSelection(network, "voice")); err == nil && group.Now == desyncProfileSelection && noReserve && len(ordered) > 0 {
+			first := ordered[0]
 			err = a.applyDesyncCandidate(one, lease, endpoint, secret, desync.DiscordUDPRoute, first.Name(desync.DiscordUDPRoute))
 			if err == nil {
 				group.Now = first.Name(desync.DiscordUDPRoute)
@@ -315,7 +315,7 @@ func (a *App) runDesyncVoiceService(ctx context.Context, lease uint64, network, 
 					closeStaleDesyncVoice(ctx, endpoint, secret, target, chosen, overview.Connections)
 					graceUntil = time.Now().Add(75 * time.Second)
 				}
-				if len(rejected) >= len(desync.Candidates("voice")) {
+				if len(rejected) >= len(desync.Candidates("voice", desyncCaps)) {
 					rejected = map[string]bool{}
 				}
 			}

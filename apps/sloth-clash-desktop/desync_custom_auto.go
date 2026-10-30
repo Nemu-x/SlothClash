@@ -284,7 +284,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 		}
 		return
 	}
-	candidates := desync.OrderedCustom(desyncFakeTTLSupported, desyncCachedSelection(network, service))
+	candidates := desync.Ordered("custom", desyncCaps, desyncCachedSelection(network, service))
 	total := len(candidates) + 1 // + the DIRECT baseline
 	probe := func(one context.Context, c desync.Candidate, target string) error {
 		name := c.Name(route)

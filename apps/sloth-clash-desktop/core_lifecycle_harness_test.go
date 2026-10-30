@@ -38,6 +38,7 @@ import (
 	"testing"
 	"time"
 
+	"SlothClashDesktop/internal/desync/desynctest"
 	"SlothClashDesktop/internal/runtimecfg"
 )
 
@@ -68,6 +69,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// One candidate set on every OS: the goldens and the strategy IDs the
+	// tests expect are Windows' (every method).
+	desyncCaps = desynctest.Windows()
 	code := m.Run()
 	if fakeCoreDir != "" {
 		_ = os.RemoveAll(fakeCoreDir)

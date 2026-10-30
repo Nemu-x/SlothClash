@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/desync/desynctest"
 )
 
 func TestDesyncCustomOverlayGroupsRulesAndRemoval(t *testing.T) {
 	doc := map[string]any{"rules": []any{"DOMAIN-SUFFIX,example.org,profile-node", "MATCH,profile-node"}}
-	settings := DesyncSettings{Enabled: true, YouTube: true, FakeTTL: true, Custom: []DesyncCustomRoute{
+	settings := DesyncSettings{Enabled: true, YouTube: true, Caps: desynctest.Windows(), Custom: []DesyncCustomRoute{
 		{ID: "aa11", Domain: "example.org"},
 		{ID: "bb22", Domain: "cdn.example.org"},
 	}}
-	cache := []desync.CacheEntry{{Network: "net", Custom: map[string]string{"example.org": desync.DirectID, "cdn.example.org": "f7"}, Updated: time.Now().Unix()}}
+	cache := []desync.CacheEntry{{Network: "net", Custom: map[string]string{"example.org": desync.DirectID, "cdn.example.org": presetID(t, "fake-ttl8")}, Updated: time.Now().Unix()}}
 	network := func() string { return "net" }
 	applyDesyncOverlay(doc, settings, cache, network)
 	groups := map[string]map[string]any{}
@@ -30,7 +31,7 @@ func TestDesyncCustomOverlayGroupsRulesAndRemoval(t *testing.T) {
 		t.Fatalf("custom groups missing: %v", groups)
 	}
 	names := narrow["proxies"].([]string)
-	if names[0] != desync.CustomRoute("bb22")+"-f7" || names[len(names)-2] != "DIRECT" || names[len(names)-1] != "PASS" || len(names) != len(desync.CustomCandidates(true))+2 {
+	if names[0] != desync.CustomRoute("bb22")+"-"+presetID(t, "fake-ttl8") || names[len(names)-2] != "DIRECT" || names[len(names)-1] != "PASS" || len(names) != len(desync.Candidates("custom", desynctest.Windows()))+2 {
 		t.Fatalf("custom members: %v", names)
 	}
 	if narrow["default-selected"] != names[0] || broad["default-selected"] != "DIRECT" {
@@ -77,16 +78,16 @@ func TestDesyncCustomOverlayGroupsRulesAndRemoval(t *testing.T) {
 
 func TestDesyncCustomOverlayWithoutFakeTTLAndWithoutBuiltins(t *testing.T) {
 	doc := map[string]any{"rules": []any{"MATCH,DIRECT"}}
-	applyDesyncOverlay(doc, DesyncSettings{Enabled: true, Custom: []DesyncCustomRoute{{ID: "cc33", Domain: "example.net"}}}, nil, nil)
-	if got := len(desyncSlice(doc["proxies"])); got != len(desync.CustomCandidates(false)) {
+	applyDesyncOverlay(doc, DesyncSettings{Enabled: true, Caps: desynctest.Darwin(), Custom: []DesyncCustomRoute{{ID: "cc33", Domain: "example.net"}}}, nil, nil)
+	if got := len(desyncSlice(doc["proxies"])); got != len(desync.Candidates("custom", desynctest.Darwin())) {
 		t.Fatalf("candidates without fake TTL: %d", got)
 	}
 	for _, raw := range desyncSlice(doc["proxies"]) {
-		if raw.(map[string]any)["desync"].(map[string]any)["fake"] != nil {
+		if raw.(map[string]any)["fake"] != nil {
 			t.Fatal("fake-TTL candidate on an unsupported platform")
 		}
 	}
-	if groups := desyncSlice(doc["proxy-groups"]); len(groups) != 1 || groups[0].(map[string]any)["default-selected"] != desync.CustomRoute("cc33")+"-r3" {
+	if groups := desyncSlice(doc["proxy-groups"]); len(groups) != 1 || groups[0].(map[string]any)["default-selected"] != desync.CustomRoute("cc33")+"-"+presetID(t, "tlsrec-1s") {
 		t.Fatalf("groups: %v", groups)
 	}
 	if rules := desyncSlice(doc["rules"]); len(rules) != 3 || rules[2] != "MATCH,DIRECT" {

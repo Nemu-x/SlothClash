@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/desync/desynctest"
 
 	"gopkg.in/yaml.v3"
 )
@@ -50,7 +51,7 @@ func readGenerated(t *testing.T, dataDir string) map[string]any {
 // subscription is involved: nothing fetched, no body cache, no provider.
 func TestWriteDesyncOnly(t *testing.T) {
 	for _, tun := range []bool{false, true} {
-		in := desyncOnlyInput(t, DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomRoute{{ID: "aa11", Domain: "example.org"}}, FakeTTL: true}, tun)
+		in := desyncOnlyInput(t, DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomRoute{{ID: "aa11", Domain: "example.org"}}, Caps: desynctest.Windows()}, tun)
 		if err := Write(in, nil); err != nil {
 			t.Fatalf("tun=%v: %v", tun, err)
 		}

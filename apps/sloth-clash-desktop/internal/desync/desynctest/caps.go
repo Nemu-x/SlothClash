@@ -1,7 +1,7 @@
 // Package desynctest holds the desync library's capability sets of the
 // desktop systems, so that config generation can be tested for every OS on
 // any OS. The values copy what desync.PlatformCapabilities reports on each
-// (library v0.1.0/v0.2.0: ack_*.go, hop_*.go, fake_*.go, oob_*.go,
+// (library at 673cbef: ack_*.go, hop_*.go, fake_*.go, oob_*.go,
 // packet_*.go); TestPlatformMatchesFixture keeps this OS's copy honest.
 package desynctest
 

@@ -3,6 +3,8 @@ package desync_test
 import (
 	"testing"
 
+	dlib "github.com/Nemu-x/desync"
+
 	"SlothClashDesktop/internal/desync"
 	"SlothClashDesktop/internal/desync/desynctest"
 )
@@ -72,5 +74,34 @@ func TestCapabilitiesPerOS(t *testing.T) {
 		if !c.Supported || c.Inferred {
 			t.Fatalf("linux %+v", c)
 		}
+	}
+}
+
+// A method the library lists as Conditional (Android) is generated and
+// reported as supported, decided per connection.
+func TestConditionalMethodsAreAllowed(t *testing.T) {
+	caps := desynctest.Linux()
+	reason := "decided per socket"
+	caps.FakeTCP, caps.Ack.Sent, caps.Disorder = false, false, dlib.DisorderCapability{}
+	caps.Unsupported["fake-tcp"], caps.Unsupported["split-wait-sent"], caps.Unsupported["disorder"] = reason, reason, reason
+	caps.Conditional = map[string]string{"fake-tcp": reason, "split-wait-sent": reason, "disorder": reason}
+	if got, want := len(desync.Candidates("custom", caps)), len(desync.Candidates("custom", desynctest.Linux())); got != want {
+		t.Fatalf("%d candidates with conditional methods, want %d", got, want)
+	}
+	for _, c := range desync.Capabilities(caps) {
+		switch c.Method {
+		case "fake-tcp", "split-wait-sent", "disorder":
+			if !c.Supported || !c.Conditional || c.Reason != reason {
+				t.Fatalf("%+v", c)
+			}
+		default:
+			if c.Conditional {
+				t.Fatalf("%+v", c)
+			}
+		}
+	}
+	caps.Conditional = nil
+	if got := len(desync.Candidates("custom", caps)); got >= len(desync.Candidates("custom", desynctest.Linux())) {
+		t.Fatal("unsupported methods generated without Conditional")
 	}
 }

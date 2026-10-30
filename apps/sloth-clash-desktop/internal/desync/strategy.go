@@ -91,8 +91,9 @@ func Strategies(caps dlib.Capabilities) []Strategy {
 		}
 	}
 	reasons := map[string]string{}
-	_, skipped := presets.Filter(presets.TCP(), caps)
-	_, skippedUDP := presets.FilterUDP(presets.UDP(), caps)
+	allowed := Allowed(caps)
+	_, skipped := presets.Filter(presets.TCP(), allowed)
+	_, skippedUDP := presets.FilterUDP(presets.UDP(), allowed)
 	for _, s := range append(skipped, skippedUDP...) {
 		reasons[s.Name] = s.Reason
 	}
@@ -127,16 +128,23 @@ type Capability struct {
 	// rather than reading it from the kernel (split-wait, disorder on some
 	// systems).
 	Inferred bool `json:"inferred,omitempty"`
+	// Conditional: implemented, but whether a connection can use it is
+	// decided per socket (Capabilities.Conditional; Android only); Reason
+	// says why. Counted as supported.
+	Conditional bool `json:"conditional,omitempty"`
 }
 
 // Capabilities lists the methods the catalog uses, in a fixed order. Record
 // and write splits, random cuts included, are plain socket writes available
 // everywhere.
 func Capabilities(caps dlib.Capabilities) []Capability {
+	allowed := Allowed(caps)
 	feature := func(method string, f presets.Feature) Capability {
-		ok, why := f.Check(caps)
+		ok, why := f.Check(allowed)
 		c := Capability{Method: method, Supported: ok}
-		if !ok {
+		if reason, conditional := caps.Conditional[f.String()]; conditional {
+			c.Conditional, c.Reason = true, reason
+		} else if !ok {
 			c.Reason = why
 		}
 		return c

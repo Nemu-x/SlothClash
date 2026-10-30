@@ -39,7 +39,7 @@ jobs:
             url_input: ${{ inputs.mihomo_url_windows }}
             url_var: ${{ vars.MIHOMO_URL_WINDOWS }}
             default_asset: mihomo-windows-amd64-v2
-          - os: macos-14
+          - os: macos-15
             url_input: ${{ inputs.mihomo_url_macos }}
             url_var: ${{ vars.MIHOMO_URL_MACOS }}
             default_asset: mihomo-darwin-arm64-go122

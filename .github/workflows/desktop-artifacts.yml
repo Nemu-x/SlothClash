@@ -237,7 +237,7 @@ jobs:
 
   darwin-arm64:
     needs: core
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       SLOTH_CORE_DIR: core-dist
     steps:

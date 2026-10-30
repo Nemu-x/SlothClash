@@ -455,6 +455,8 @@ proxy-groups:
         - PASS
       type: select
 rules:
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
     - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
     - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtu.be)),SLOTH-DESYNC-YOUTUBE
@@ -469,6 +471,4 @@ rules:
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.googleapis.com)),SLOTH-DESYNC-YOUTUBE
     - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
-    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
-    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
     - MATCH,PROXY

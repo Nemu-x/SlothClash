@@ -63,8 +63,8 @@ func TestWriteDesyncOnly(t *testing.T) {
 		if len(rules) < 2 || rules[len(rules)-1] != "MATCH,DIRECT" {
 			t.Fatalf("rules = %v", rules)
 		}
-		if rules[0] != desync.Rules(desync.YouTubeDomains, desync.YouTubeRoute)[0] {
-			t.Fatalf("first rule = %v, want the YouTube route", rules[0])
+		if rules[0] != desync.Rules([]string{"example.org"}, desync.CustomRoute("aa11"))[0] || rules[2] != desync.Rules(desync.YouTubeDomains, desync.YouTubeRoute)[0] {
+			t.Fatalf("first rules = %v, want the site's route, then YouTube's", rules[:3])
 		}
 		for _, r := range rules[:len(rules)-1] {
 			s, _ := r.(string)

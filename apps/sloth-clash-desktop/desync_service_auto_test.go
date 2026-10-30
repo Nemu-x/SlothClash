@@ -34,24 +34,24 @@ func probedTargets(probes []string) []string {
 // first page-only strategy may be accepted.
 func TestDesyncServiceNeedsPageAndCDN(t *testing.T) {
 	core := newCustomFakeCore(t, func(name, target string) bool {
-		return target != fbMedia || strings.HasSuffix(name, "-split")
+		return target != fbMedia || strings.HasSuffix(name, "-"+presetIDOf("split-1s"))
 	})
 	a, network := customTestApp(t, core, serviceEntry)
 	plan := &desyncCustomPlan{phase: "queued"}
 	calibrateCustomToEnd(a, 1, network, a.core.listen, "", serviceEntry, plan)
 	route := desync.CustomRoute(serviceEntry.ID)
-	if got := core.selections(route); got[len(got)-1] != route+"-split" {
+	if got := core.selections(route); got[len(got)-1] != route+"-"+presetIDOf("split-1s") {
 		t.Fatalf("selections: %v", got)
 	}
 	state := a.GetDesyncAutoStatus().Custom[serviceEntry.ID]
-	if state.Phase != "ready" || state.Candidate != "split" {
+	if state.Phase != "ready" || state.Candidate != presetIDOf("split-1s") {
 		t.Fatalf("state %+v", state)
 	}
 	if got := probedTargets(core.probeLog()); !reflect.DeepEqual(got, []string{fbPage, fbStatic, fbMedia}) {
 		t.Fatalf("targets: %v", got)
 	}
 	// Cached under the preset key, not under a domain.
-	if desyncCachedSelection(network, "custom:preset:facebook") != "split" || desyncCachedSelection(network, desync.CustomService("")) != "" {
+	if desyncCachedSelection(network, "custom:preset:facebook") != presetIDOf("split-1s") || desyncCachedSelection(network, desync.CustomService("")) != "" {
 		t.Fatalf("cache: %+v", currentDesktopPrefs().DesyncCache)
 	}
 }
@@ -124,7 +124,7 @@ func TestDesyncServiceSlowPassingCandidateFitsTheBudget(t *testing.T) {
 	// A plain budget fits fewer than the 6 probes of the winner (3 hosts x
 	// 2 rounds); three of them fit it with room to spare.
 	withShortCustomTimers(t, 4*perProbe, time.Hour, time.Millisecond)
-	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-split") })
+	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-"+presetIDOf("split-1s")) })
 	core.delay.Store(int64(perProbe))
 	a, network := customTestApp(t, core, serviceEntry)
 	if n := len(desyncCustomTargets(serviceEntry, enabledDesyncCustom())); n != 3 {
@@ -138,7 +138,7 @@ func TestDesyncServiceSlowPassingCandidateFitsTheBudget(t *testing.T) {
 		}
 	}
 	state := a.GetDesyncAutoStatus().Custom[serviceEntry.ID]
-	if plan.phase != "ready" || state.Phase != "ready" || state.Candidate != "split" {
+	if plan.phase != "ready" || state.Phase != "ready" || state.Candidate != presetIDOf("split-1s") {
 		t.Fatalf("plan %+v state %+v: the passing candidate never completed within a step", plan, state)
 	}
 }

@@ -67,7 +67,7 @@ func TestDesyncOverlaySurvivesUserScript(t *testing.T) {
 			managed++
 		}
 	}
-	if managed != len(desync.Candidates("youtube"))+len(desync.Candidates("discord")) {
+	if managed != len(desync.Candidates("youtube", desyncCaps))+len(desync.Candidates("discord", desyncCaps)) {
 		t.Fatal("enabled routes were not restored through the complete script/finalization pipeline")
 	}
 	if doc["rules"].([]any)[len(doc["rules"].([]any))-1] != "MATCH,DIRECT" {

@@ -2,12 +2,11 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"net/url"
-	"runtime"
 	"strings"
 
 	"SlothClashDesktop/internal/desync"
@@ -19,11 +18,6 @@ import (
 // desyncCustomLimit caps the custom-domain entries: each one is a hidden group
 // with the whole custom candidate set, and they are calibrated one at a time.
 const desyncCustomLimit = 32
-
-// desyncFakeTTLSupported gates the fake-TTL strategies of the custom set: the
-// same platform gate as Discord TCP (validateDesyncSettings). A variable so
-// the goldens are generated with one candidate set on every OS.
-var desyncFakeTTLSupported = runtime.GOOS == "windows"
 
 // DesyncCustomEntry is one user site routed through Desync (the domain and
 // its subdomains), or one popular service from the catalog (Service set,

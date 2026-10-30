@@ -118,8 +118,8 @@ func desyncYouTubeDefault(t *testing.T) string {
 // The desync winner cached for the current network must be what the generated
 // group selects by default; a winner cached for another network must not be.
 func TestDesyncCachedWinnerReachesGeneration(t *testing.T) {
-	const winner = "r8"
-	defaultFirst := desync.Candidates("youtube")[0].ID
+	winner := presetIDOf("tlsrec-multi")
+	defaultFirst := desync.Candidates("youtube", desyncCaps)[0].ID
 	if defaultFirst == winner {
 		t.Fatalf("the winner must not already be the first candidate (%s)", defaultFirst)
 	}

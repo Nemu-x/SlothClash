@@ -46,7 +46,7 @@ func (a *App) profileDesync(t *testing.T, id string) DesyncSettings {
 // Turning Desync off, or changing what it covers, on one profile leaves the
 // other alone; activating a profile makes its settings the live ones.
 func TestDesyncSettingsArePerProfile(t *testing.T) {
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, YouTube: true}), desyncPtr(DesyncSettings{Enabled: true, YouTube: true}))
 	if !currentDesyncSettings().Enabled {
 		t.Fatal("the active profile's settings are not live")
@@ -95,7 +95,7 @@ func TestDesyncSettingsArePerProfile(t *testing.T) {
 // A Desync-only profile has nothing but Desync routes: it is always on,
 // whatever was stored, and the off switch cannot turn it off.
 func TestDesyncOnlyProfileIsAlwaysEnabled(t *testing.T) {
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	for _, stored := range []*DesyncSettings{nil, desyncPtr(DesyncSettings{YouTube: true})} {
 		p := Profile{ID: "profile-2", Kind: profileKindDesyncOnly, Desync: stored}
 		if !profileDesyncSettings(p).Enabled {
@@ -210,7 +210,7 @@ func TestDesyncLegacyDefaultsMigrateToNothing(t *testing.T) {
 // The onboarding's selection lands in the new profile in one call; nothing
 // else changes, and a selection Desync cannot run is refused.
 func TestCreateDesyncOnlyProfileStoresSelection(t *testing.T) {
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	sub := DesyncSettings{Enabled: false, YouTube: true}
 	a := desyncProfileApp(t, &sub, nil)
 	selection := DesyncSettings{Custom: []DesyncCustomEntry{{ID: "a1", Domain: "example.org", Enabled: true}, {ID: "b2", Service: "facebook", Enabled: true}}}
@@ -330,7 +330,7 @@ func TestDesyncSettingsErrorCodes(t *testing.T) {
 	if !isDesyncCode(errNoDesyncProfile, "no_profile") {
 		t.Fatal(errNoDesyncProfile)
 	}
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	a := desyncProfileApp(t, desyncPtr(DesyncSettings{}), nil)
 	a.state.Profile.ActiveProfileID = ""
 	if _, err := a.SetDesyncSettings(DesyncSettings{YouTube: true}); !isDesyncCode(err, "no_profile") {
@@ -347,7 +347,7 @@ func TestDesyncSettingsErrorCodes(t *testing.T) {
 // Turning off the last service turns Desync off, like turning off the last
 // custom entry; switching Desync on with nothing selected is refused.
 func TestDesyncLastServiceOffDisables(t *testing.T) {
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Enabled: true, YouTube: true}), nil)
 	status, err := a.SetDesyncSettings(DesyncSettings{Enabled: true})
 	if err != nil || status.Settings.Enabled || status.Settings.YouTube {

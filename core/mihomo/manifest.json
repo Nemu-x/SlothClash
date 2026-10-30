@@ -102,7 +102,7 @@
     },
     {
       "file": "0023-desync-outbound.patch",
-      "sha256": "7c6bff30f57e874f9c65149bb41aa745a23ae7f005aa0a098c8cbfc3fe140843",
+      "sha256": "c24dcc97c9006deb72b89b5d47723fc7edc5d86109adc7984d67c799be88b4db",
       "feature": "desync-outbound"
     }
   ],

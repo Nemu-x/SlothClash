@@ -6,8 +6,8 @@ import { renderWithProviders } from '../test/render'
 
 import { CorpCertTrustModal } from './CorpCertTrustModal'
 
-const OLD = 'pin-sha256:MCDJgwuGvXvv80C45Q2mYbX4C334x7+82GyRERoyFCI='
-const NEW = 'pin-sha256:zaTdo6UzzBdQ8q9j/dX1wPikc0LbMPI93JrWPkUXHGw='
+const OLD = 'pin-sha256:apo83jtNjY9S5BMu0+FgmRInhoUIg9NYm/9Rw6ePuWg='
+const NEW = 'pin-sha256:e1DdhZfjxnW9MJzTBCrO5jSPUZOHQ00seIF/h4cdmkA='
 
 // biome-ignore lint/suspicious/noExplicitAny: test fixture for the Wails model
 const changed: any = {

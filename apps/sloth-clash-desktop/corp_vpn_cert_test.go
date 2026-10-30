@@ -21,15 +21,15 @@ import (
 	"time"
 )
 
-// Real pins from the vpn.skoltech.ru rotation (public fingerprints).
+// Synthetic pins: the trusted one and the one after a rotation.
 const (
-	pinOld = "pin-sha256:MCDJgwuGvXvv80C45Q2mYbX4C334x7+82GyRERoyFCI="
-	pinNew = "pin-sha256:zaTdo6UzzBdQ8q9j/dX1wPikc0LbMPI93JrWPkUXHGw="
+	pinOld = "pin-sha256:apo83jtNjY9S5BMu0+FgmRInhoUIg9NYm/9Rw6ePuWg="
+	pinNew = "pin-sha256:e1DdhZfjxnW9MJzTBCrO5jSPUZOHQ00seIF/h4cdmkA="
 )
 
 // The exact failure the old (2.5.0) service returned after the gateway renewed
 // its certificate while a stale pin was configured.
-const rotationFailureBody = `{"code":1,"message":"start corp vpn: openconnect exited before the tunnel came up: None of the 1 fingerprint(s) specified via --servercert match server's certificate: pin-sha256:zaTdo6UzzBdQ8q9j/dX1wPikc0LbMPI93JrWPkUXHGw=\nSSL connection failure: Error in the certificate.\nFailed to open HTTPS connection to vpn.skoltech.ru","data":null}`
+const rotationFailureBody = `{"code":1,"message":"start corp vpn: openconnect exited before the tunnel came up: None of the 1 fingerprint(s) specified via --servercert match server's certificate: pin-sha256:e1DdhZfjxnW9MJzTBCrO5jSPUZOHQ00seIF/h4cdmkA=\nSSL connection failure: Error in the certificate.\nFailed to open HTTPS connection to vpn.corp.test","data":null}`
 
 // withCorpPrefs isolates prefs (memory + prefs.json) for one test.
 func withCorpPrefs(t *testing.T) string {
@@ -79,13 +79,13 @@ func TestNormalizeCorpPin(t *testing.T) {
 		{"  " + pinNew + " ", pinNew, true},
 		{"PIN-SHA256:" + strings.TrimPrefix(pinNew, "pin-sha256:"), pinNew, true},
 		{hexPin, strings.ToLower(hexPin), true},
-		{"pin-sha256:MCDJgwuGvXvv80C45Q2mYbX4C334x7+82GyRERoyFC", "", false}, // truncated
+		{"pin-sha256:apo83jtNjY9S5BMu0+FgmRInhoUIg9NYm/9Rw6ePuW", "", false}, // truncated
 		{"pin-sha256:" + base64.StdEncoding.EncodeToString(make([]byte, 20)), "", false},
 		{"sha256:" + strings.Repeat("a", 63), "", false},
 		{"sha256:" + strings.Repeat("g", 64), "", false},
 		{"sha1:" + strings.Repeat("a", 40), "", false},
 		{"--no-cert-check", "", false},
-		{"MCDJgwuGvXvv80C45Q2mYbX4C334x7+82GyRERoyFCI=", "", false}, // no prefix
+		{"apo83jtNjY9S5BMu0+FgmRInhoUIg9NYm/9Rw6ePuWg=", "", false}, // no prefix
 	}
 	for _, c := range cases {
 		got, err := normalizeCorpPin(c.in)
@@ -175,9 +175,9 @@ func TestParseCorpEnvelope_FailuresAreTypedErrors(t *testing.T) {
 func TestResolveCorpServercert_AbsentOnDiskSendsNoPin(t *testing.T) {
 	path := withCorpPrefs(t)
 	prefsMu.Lock()
-	prefsCurrent.CorpVpn = CorpVpnCredentials{Gateway: "vpn.skoltech.ru", Username: "u", Servercert: pinOld}
+	prefsCurrent.CorpVpn = CorpVpnCredentials{Gateway: "vpn.corp.test", Username: "u", Servercert: pinOld}
 	prefsMu.Unlock()
-	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.skoltech.ru", Username: "u"}})
+	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.corp.test", Username: "u"}})
 
 	pin, source, err := resolveCorpServercert("")
 	if err != nil || pin != "" || source != "none" {
@@ -186,7 +186,7 @@ func TestResolveCorpServercert_AbsentOnDiskSendsNoPin(t *testing.T) {
 	if got := currentDesktopPrefs().CorpVpn.Servercert; got != "" {
 		t.Fatalf("stale pin survived in memory: %q", got)
 	}
-	payload, _ := buildCorpStartPayload("oc.exe", "vpn.skoltech.ru", "u", "pw", pin)
+	payload, _ := buildCorpStartPayload("oc.exe", "vpn.corp.test", "u", "pw", pin)
 	var m map[string]any
 	_ = json.Unmarshal(payload, &m)
 	if m["servercert"] != "" {
@@ -254,7 +254,7 @@ func TestCorpDiagFields_NoSecrets(t *testing.T) {
 
 func TestCorpGatewayAddr(t *testing.T) {
 	cases := map[string]string{
-		"vpn.skoltech.ru":                 "vpn.skoltech.ru:443",
+		"vpn.corp.test":                 "vpn.corp.test:443",
 		"https://vpn.corp.test/employees": "vpn.corp.test:443",
 		"vpn.corp.test:8443":              "vpn.corp.test:8443",
 	}

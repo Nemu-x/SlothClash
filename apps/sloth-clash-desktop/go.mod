@@ -7,6 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/Nemu-x/clash-companion/go v0.0.0-20261021192046-10671001c6d3
+	github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
 	github.com/metacubex/age v0.0.0-20260603010618-28d156b4ea78
 	github.com/wailsapp/wails/v2 v2.12.0
@@ -19,7 +20,6 @@ require (
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
-	github.com/Nemu-x/desync v0.2.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect

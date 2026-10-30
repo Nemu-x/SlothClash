@@ -8,13 +8,39 @@ import (
 	"github.com/Nemu-x/desync/presets"
 )
 
-// Platform is what the desync library implements on this OS. The core embeds
-// the same library (patch 0023 pins v0.1.0; the app takes v0.2.0 for the
-// presets package, whose capability code is unchanged), so a candidate the
-// app generates from these capabilities is one the core accepts: a method
-// the OS lacks is never written, since the core rejects the whole config
-// with it.
+// Platform is what the desync library implements on this OS. The app pins the
+// library version core patch 0023 pins, so a candidate generated from these
+// capabilities is one the core accepts: a method the OS lacks is never
+// written, since the core rejects the whole config with it.
 var Platform = dlib.PlatformCapabilities()
+
+// Allowed is caps with the methods listed in Conditional counted as
+// available: the library implements them but decides per socket (Android
+// only), and the core accepts them in a config. Such a strategy may fail at
+// runtime, which calibration observes like any other failure.
+func Allowed(caps dlib.Capabilities) dlib.Capabilities {
+	if len(caps.Conditional) == 0 {
+		return caps
+	}
+	out := caps
+	out.Unsupported = map[string]string{}
+	for k, v := range caps.Unsupported {
+		if _, conditional := caps.Conditional[k]; !conditional {
+			out.Unsupported[k] = v
+		}
+	}
+	for k := range caps.Conditional {
+		switch k {
+		case "fake-tcp":
+			out.FakeTCP = true
+		case "split-wait-sent":
+			out.Ack.Sent = true
+		case "disorder":
+			out.Disorder.Supported = true
+		}
+	}
+	return out
+}
 
 // Candidate is one strategy a route can use: a preset of the desync library's
 // catalog. ID is the catalog's stable ID (persisted in the winner cache);
@@ -53,6 +79,7 @@ const maxVoiceRepeats = 6
 // order (cheapest and least risky first), without the baseline: plain DIRECT
 // is not a strategy here (custom entries probe it separately, DirectID).
 func Candidates(service string, caps dlib.Capabilities) []Candidate {
+	caps = Allowed(caps)
 	var out []Candidate
 	if service == "voice" {
 		usable, _ := presets.FilterUDP(presets.UDP(), caps)

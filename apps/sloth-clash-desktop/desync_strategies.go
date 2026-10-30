@@ -24,6 +24,8 @@ type DesyncCapability struct {
 	Supported bool   `json:"supported"`
 	Reason    string `json:"reason,omitempty"`
 	Inferred  bool   `json:"inferred,omitempty"`
+	// Conditional: decided per connection (Android); counted as supported.
+	Conditional bool `json:"conditional,omitempty"`
 }
 
 // DesyncCapabilityReport is what this build of the app can do on this

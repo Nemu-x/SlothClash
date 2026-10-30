@@ -99,7 +99,7 @@ previous tag until the patch is redone.
 ## Verifying behaviour
 
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
-26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, each plain, with `minClientVer: 25.1.1`
+26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, each plain, with `minClientVer: 25.1.1`
 and with `maxClientVer: 2.0.0`) and
 probes every combination of key share, fingerprint, policy and client version through the core
 under test. The expected result of each cell comes from a model of the server generations, so a
@@ -118,8 +118,8 @@ XRAY_LAB=1 SLOTH_MIHOMO_BIN=<patched core> SLOTH_MIHOMO_STOCK_BIN=<stock core> g
 mihomo sends the constant `1.8.2` as the client version in the REALITY session id. Xray servers
 configured with `minClientVer` compare it with their threshold and, when it is lower, silently
 hand the connection to the cover site: the client sees a timeout. The patch turns the constant
-into `tlsC.RealityClientVersion`, default `26.9.9` (the Xray release the core was validated
-against). Only `minClientVer` / `maxClientVer` depend on this value.
+into `tlsC.RealityClientVersion`, default `26.10.29` since 0024 (was `26.9.9`; the Xray release
+the core was validated against). Only `minClientVer` / `maxClientVer` depend on this value.
 
 Xray 26.7.11 and 26.7.28 apply `minClientVer: 26.3.27` when the server config sets none
 (XTLS/Xray-core af7eb680; commented out again in 47cfe999, the 26.9.8 change that also requires
@@ -167,12 +167,12 @@ The desktop core runs as a separate process, so the policy reaches it through tw
 of the generated `config.yaml`, applied on every config load (a reload undoes earlier values):
 
 ```yaml
-reality-mlkem: auto              # auto | on | off; absent = auto
-reality-client-version: "26.9.9" # x.y.z, each part 0..255; absent = core default
+reality-mlkem: auto                # auto | on | off; absent = auto
+reality-client-version: "26.10.29" # x.y.z, each part 0..255; absent = core default
 ```
 
 Invalid values fail the config with a message naming the key. On load the core logs
-`REALITY policy: client version 26.9.9, X25519MLKEM768 auto`. An unpatched mihomo ignores
+`REALITY policy: client version 26.10.29, X25519MLKEM768 auto`. An unpatched mihomo ignores
 unknown top-level keys, so the same config still starts on a stock core.
 
 The app writes them from Settings → REALITY ("ML-KEM key share": Auto / Always / Never, "Client
@@ -391,7 +391,9 @@ before any byte is sent, with the library's `ErrSplitWaitUnsupported` / `ErrDiso
 `ErrFakeUnsupported`, never a substitute. As in Citrus, `auto-ttl` fails only where it can never derive a TTL
 (Windows, macOS, Linux with `ip-version: ipv4`) and no fallback `ttl` is set; with a fallback it
 loads and logs that every fake uses it, and on Linux without a fallback it logs that IPv4
-connections fail. `tfo`, `mptcp` and `dialer-proxy` are refused. The transformed connection hides
+connections fail. Options are parsed on every load, validation and snapshot of a
+configuration (with proxy auto-selection, many times per load), so each of these notes is logged once
+per process: the same outbound name, methods and OS never repeat it. `tfo`, `mptcp` and `dialer-proxy` are refused. The transformed connection hides
 the socket and the transformer from relay fast paths on writes (no `NetConn`/`Upstream`/
 `SyscallConn`, no replaceable writer); reads go to the socket directly. UDP is Direct's path with the
 0019-0022 options, so the burst counters, activity, the stable binding pool and the profile-reserve

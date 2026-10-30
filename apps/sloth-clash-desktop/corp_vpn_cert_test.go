@@ -55,7 +55,7 @@ func withCorpPrefs(t *testing.T) string {
 	return p
 }
 
-func writePrefsFile(t *testing.T, path string, prefs DesktopPrefs) {
+func writeCorpPrefsFile(t *testing.T, path string, prefs DesktopPrefs) {
 	t.Helper()
 	b, err := json.Marshal(desktopPrefsFile{DesktopPrefs: prefs})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestResolveCorpServercert_AbsentOnDiskSendsNoPin(t *testing.T) {
 	prefsMu.Lock()
 	prefsCurrent.CorpVpn = CorpVpnCredentials{Gateway: "vpn.corp.test", Username: "u", Servercert: pinOld}
 	prefsMu.Unlock()
-	writePrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.corp.test", Username: "u"}})
+	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.corp.test", Username: "u"}})
 
 	pin, source, err := resolveCorpServercert("")
 	if err != nil || pin != "" || source != "none" {
@@ -196,7 +196,7 @@ func TestResolveCorpServercert_AbsentOnDiskSendsNoPin(t *testing.T) {
 
 func TestResolveCorpServercert_Sources(t *testing.T) {
 	path := withCorpPrefs(t)
-	writePrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Servercert: pinNew}})
+	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Servercert: pinNew}})
 	if pin, src, err := resolveCorpServercert(""); err != nil || pin != pinNew || src != "saved" {
 		t.Fatalf("saved: %q %q %v", pin, src, err)
 	}
@@ -207,7 +207,7 @@ func TestResolveCorpServercert_Sources(t *testing.T) {
 		t.Fatalf("malformed explicit: %v", err)
 	}
 	// A malformed remembered pin is dropped (→ CA validation / prompt), not sent.
-	writePrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Servercert: "sha256:nothex"}})
+	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Servercert: "sha256:nothex"}})
 	if pin, src, err := resolveCorpServercert(""); err != nil || pin != "" || src != "none" {
 		t.Fatalf("malformed saved: %q %q %v", pin, src, err)
 	}
@@ -220,7 +220,7 @@ func TestResolveCorpServercert_Sources(t *testing.T) {
 // the old pin is never restored.
 func TestCorpServercert_ApprovedPinPersistsAcrossRestart(t *testing.T) {
 	path := withCorpPrefs(t)
-	writePrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.corp.test", Servercert: pinOld}})
+	writeCorpPrefsFile(t, path, DesktopPrefs{CorpVpn: CorpVpnCredentials{Gateway: "vpn.corp.test", Servercert: pinOld}})
 	loadDesktopPrefs()
 	saveCorpVpnServercert(pinNew) // user trusted the rotated cert and connected
 	saveCorpVpnCredentials("vpn.corp.test", "u")

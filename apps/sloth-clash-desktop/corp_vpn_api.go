@@ -56,6 +56,13 @@ type CorpVpnStatus struct {
 	// Supported is false on platforms where the feature is not available yet, so
 	// the UI can hide/disable the tab instead of surfacing errors.
 	Supported bool `json:"supported"`
+	// Certificate-trust prompt details (only with NeedsCertTrust). CertError is a
+	// corpErrCert* code; CERTIFICATE_CHANGED means a previously trusted pin no
+	// longer matches (PreviousServercert) — rotation or interception.
+	CertError          string           `json:"certError,omitempty"`
+	CertReason         string           `json:"certReason,omitempty"`
+	PreviousServercert string           `json:"previousServercert,omitempty"`
+	Certificate        *CorpVpnCertInfo `json:"certificate,omitempty"`
 }
 
 // corpVpnEnvelope mirrors the service's Response<CorpVpnStatusData> (snake_case).
@@ -76,6 +83,11 @@ type corpVpnDataWire struct {
 	Tundev           string   `json:"tundev"`
 	GatewayIP        string   `json:"gateway_ip"`
 	LogTail          []string `json:"log_tail"`
+	// Service >= 2.6.0 classifies certificate failures itself; older services
+	// leave these empty and the desktop classifies from the message.
+	CertError          string `json:"cert_error"`
+	CertReason         string `json:"cert_reason"`
+	PreviousServercert string `json:"previous_servercert"`
 }
 
 // corpStatusFromWire maps the service payload to the Wails-facing status. Pure.
@@ -84,17 +96,20 @@ func corpStatusFromWire(d *corpVpnDataWire) CorpVpnStatus {
 		return CorpVpnStatus{Supported: true}
 	}
 	return CorpVpnStatus{
-		Connected:        d.Connected,
-		NeedsCertTrust:   d.NeedsCertTrust,
-		ServercertSHA256: d.ServercertSHA256,
-		Routes:           append([]string(nil), d.Routes...),
-		DNSServers:       append([]string(nil), d.DNSServers...),
-		DNSDomains:       append([]string(nil), d.DNSDomains...),
-		FullTunnel:       d.FullTunnel,
-		Tundev:           d.Tundev,
-		GatewayIP:        d.GatewayIP,
-		LogTail:          append([]string(nil), d.LogTail...),
-		Supported:        true,
+		Connected:          d.Connected,
+		NeedsCertTrust:     d.NeedsCertTrust,
+		ServercertSHA256:   d.ServercertSHA256,
+		Routes:             append([]string(nil), d.Routes...),
+		DNSServers:         append([]string(nil), d.DNSServers...),
+		DNSDomains:         append([]string(nil), d.DNSDomains...),
+		FullTunnel:         d.FullTunnel,
+		Tundev:             d.Tundev,
+		GatewayIP:          d.GatewayIP,
+		LogTail:            append([]string(nil), d.LogTail...),
+		Supported:          true,
+		CertError:          d.CertError,
+		CertReason:         d.CertReason,
+		PreviousServercert: d.PreviousServercert,
 	}
 }
 
@@ -115,17 +130,27 @@ func corpSplitFromStatus(s CorpVpnStatus) runtimecfg.CorpVpnSplit {
 }
 
 // parseCorpEnvelope decodes a service reply and turns transport/protocol errors
-// into a Go error, otherwise returns the mapped status. A non-zero code that is
-// specifically the cert-trust prompt is NOT an error — it carries the
-// fingerprint for the user to accept. Pure (no I/O).
-func parseCorpEnvelope(httpStatus int, body []byte) (CorpVpnStatus, error) {
+// into a structured *corpVpnError, otherwise returns the mapped status. A
+// certificate-verification failure is NOT an error — it becomes a trust prompt
+// carrying the observed pin (and, after a rotation, the previous one).
+// configuredPin is the `--servercert` this request sent ("" for status polls).
+// Pure (no I/O).
+func parseCorpEnvelope(httpStatus int, body []byte, configuredPin string) (CorpVpnStatus, error) {
 	var env corpVpnEnvelope
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &env)
 	}
 	status := corpStatusFromWire(env.Data)
 	if status.NeedsCertTrust {
-		// Cert-trust prompt: surface the fingerprint, not an error.
+		if status.CertError == "" {
+			status.CertError = corpErrCertUntrusted
+			if configuredPin != "" {
+				status.CertError = corpErrCertChanged
+			}
+		}
+		if status.CertError == corpErrCertChanged && status.PreviousServercert == "" {
+			status.PreviousServercert = configuredPin
+		}
 		return status, nil
 	}
 	// An old service (< 2.7.0) has no /corp/* routes and answers 404. That is not a
@@ -133,24 +158,32 @@ func parseCorpEnvelope(httpStatus int, body []byte) (CorpVpnStatus, error) {
 	// feature, so give the actionable remedy instead of a raw "HTTP 404". The
 	// global reinstall banner (expectedSlothServiceVersion) nudges the same fix.
 	if httpStatus == http.StatusNotFound {
-		return status, fmt.Errorf("the Sloth service is outdated and does not support Corporate VPN — reinstall the service (Settings → reinstall) to update it")
+		return status, &corpVpnError{Code: corpErrServiceOutdated, Detail: "the Sloth service is outdated and does not support Corporate VPN — reinstall the service (Settings → reinstall) to update it"}
 	}
-	if httpStatus < 200 || httpStatus >= 300 {
+	if httpStatus < 200 || httpStatus >= 300 || env.Code != 0 {
 		msg := strings.TrimSpace(env.Message)
 		if msg == "" {
 			msg = strings.TrimSpace(string(body))
 		}
-		return status, fmt.Errorf("corp vpn service: HTTP %d: %s", httpStatus, msg)
-	}
-	if env.Code != 0 {
-		return status, fmt.Errorf("corp vpn service: %s", strings.TrimSpace(env.Message))
+		// The local service's HTTP status describes the IPC call, not the
+		// gateway; classify by what OpenConnect reported instead of "HTTP 503".
+		if cs, ok := corpCertTrustFromFailure(msg, configuredPin); ok {
+			return cs, nil
+		}
+		return status, &corpVpnError{Code: classifyCorpFailure(msg), Detail: msg}
 	}
 	return status, nil
 }
 
-// StartCorpVpn brings up the corporate VPN sidecar. On a first connect against an
-// untrusted server certificate it returns needsCertTrust=true with the
-// fingerprint; the UI shows it and calls again with servercert set to accept it.
+// corpStartMu serializes connects: a second click while one is in flight is
+// refused instead of racing the first (the service would tear it down).
+var corpStartMu sync.Mutex
+
+// StartCorpVpn brings up the corporate VPN sidecar. When the gateway certificate
+// fails verification it returns needsCertTrust=true with the observed pin and
+// certificate details (certError says why: untrusted, or CHANGED vs the pin we
+// trusted before); the UI asks the user and calls again with servercert set to
+// the pin they explicitly trusted. Never trusts a certificate on its own.
 func (a *App) StartCorpVpn(gateway, username, password, servercert string) (CorpVpnStatus, error) {
 	if _, ok := openconnectComponentSpec(); !ok {
 		return CorpVpnStatus{Supported: false}, errCorpVpnUnsupported
@@ -160,13 +193,16 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	if gateway == "" || username == "" {
 		return CorpVpnStatus{Supported: true}, errors.New("gateway and username are required")
 	}
+	if !corpStartMu.TryLock() {
+		return CorpVpnStatus{Supported: true}, &corpVpnError{Code: corpErrBusy, Detail: "a corporate VPN connect is already in progress"}
+	}
+	defer corpStartMu.Unlock()
 
-	// Trust-on-first-use: if the caller didn't pass a pin, reuse the one we
-	// remembered from a prior successful connect — so the user trusts the server
-	// certificate once, not every session.
-	servercert = strings.TrimSpace(servercert)
-	if servercert == "" {
-		servercert = strings.TrimSpace(currentDesktopPrefs().CorpVpn.Servercert)
+	// Trust-on-first-use: an explicit pin (just approved by the user) wins, else
+	// the remembered one — re-read from prefs.json, see resolveCorpServercert.
+	pin, pinSource, err := resolveCorpServercert(servercert)
+	if err != nil {
+		return CorpVpnStatus{Supported: true}, err
 	}
 
 	ctx := a.baseCtx()
@@ -186,25 +222,30 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	}
 	a.emitCorpPhase("connecting")
 
-	payload, err := json.Marshal(map[string]any{
-		"bin_path":   binPath,
-		"gateway":    gateway,
-		"username":   username,
-		"password":   password,
-		"servercert": servercert,
-	})
+	payload, err := buildCorpStartPayload(binPath, gateway, username, password, pin)
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, err
 	}
+	// Diagnostics: pins are public fingerprints; never log password/cookies.
+	debugLog("corp", "CERT", "corp_vpn_api.go", "corp start",
+		corpDiagFields("connect", gateway, pinSource, pin, "", ""))
 
 	startCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	httpStatus, body, err := ipcSlothStartCorpVpn(startCtx, payload)
 	if err != nil {
-		return CorpVpnStatus{Supported: true}, fmt.Errorf("call corp vpn service: %w", err)
+		return CorpVpnStatus{Supported: true}, &corpVpnError{Code: corpErrServiceUnavailable, Detail: fmt.Sprintf("call corp vpn service: %v", err)}
 	}
-	status, err := parseCorpEnvelope(httpStatus, body)
+	status, err := parseCorpEnvelope(httpStatus, body, pin)
 	if err != nil {
+		code := corpErrorCode(err)
+		// An auth failure means TLS already accepted the pin the user just
+		// approved — keep it, so a password retry doesn't re-prompt the cert.
+		if code == corpErrAuthFailed && pinSource == "explicit" {
+			saveCorpVpnServercert(pin)
+		}
+		debugLog("corp", "CERT", "corp_vpn_api.go", "corp start failed",
+			corpDiagFields("result", gateway, pinSource, pin, "", code))
 		return status, err
 	}
 
@@ -213,15 +254,21 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	// (connected or a cert-trust prompt — both mean the gateway/user were valid).
 	saveCorpVpnCredentials(gateway, username)
 
-	// Cert-trust round trip: nothing to route yet.
+	// Cert-trust round trip: nothing to route yet. Attach what the certificate
+	// looks like so the user can verify it before trusting.
 	if status.NeedsCertTrust {
+		info := inspectCorpCert(ctx, gateway, status.ServercertSHA256)
+		status.Certificate = &info
+		status.CertError = refineCorpCertError(status.CertError, info)
+		debugLog("corp", "CERT", "corp_vpn_api.go", "corp cert trust required",
+			corpDiagFields("tls", gateway, pinSource, pin, status.ServercertSHA256, status.CertError))
 		return status, nil
 	}
 
 	// Connected against a pinned certificate → remember the pin so future
 	// connects skip the trust prompt entirely (trust-on-first-use).
-	if servercert != "" {
-		saveCorpVpnServercert(servercert)
+	if pin != "" {
+		saveCorpVpnServercert(pin)
 	}
 
 	// Learned the split → record it and hot-reload mihomo so the exclude/DNS
@@ -233,6 +280,27 @@ func (a *App) StartCorpVpn(gateway, username, password, servercert string) (Corp
 	split.Gateway = gateway
 	a.applyCorpSplitAndReload(split)
 	return status, nil
+}
+
+// corpDiagFields is the debug-log payload for a corp connect step. It takes only
+// non-secret inputs by construction (there is no password/cookie parameter).
+func corpDiagFields(stage, gateway, pinSource, configuredPin, observedPin, code string) map[string]any {
+	return map[string]any{
+		"stage":         stage,
+		"gateway":       gateway,
+		"pinSource":     pinSource,
+		"configuredPin": configuredPin,
+		"observedPin":   observedPin,
+		"code":          code,
+	}
+}
+
+// ForgetCorpVpnServercert drops the remembered certificate pin, so the next
+// connect validates against the CA store (or asks to trust the certificate).
+func (a *App) ForgetCorpVpnServercert() CorpVpnCredentials {
+	_ = a
+	forgetCorpVpnServercert()
+	return currentDesktopPrefs().CorpVpn
 }
 
 // StopCorpVpn tears the sidecar down and reloads mihomo without the overlay.
@@ -313,7 +381,7 @@ func (a *App) GetCorpVpnStatus() (CorpVpnStatus, error) {
 	if err != nil {
 		return CorpVpnStatus{Supported: true}, fmt.Errorf("query corp vpn service: %w", err)
 	}
-	status, perr := parseCorpEnvelope(httpStatus, body)
+	status, perr := parseCorpEnvelope(httpStatus, body, "")
 	// Self-heal: if the sidecar is down but we still hold a corp overlay (e.g.
 	// OpenConnect dropped on its own, not via Disconnect), clear it and reload so
 	// the corp DNS policy / route-exclude don't linger pointing at a dead tunnel —

@@ -23,6 +23,10 @@ type SubscriptionPeek struct {
 	SubscriptionInfo         string `json:"subscriptionInfo,omitempty"` // decoded userinfo JSON when present
 	SubscriptionSupportURL   string `json:"subscriptionSupportUrl,omitempty"`
 	SubscriptionAnnouncement string `json:"subscriptionAnnouncement,omitempty"`
+	// DesyncProviderMode is the provider's X-Desync-Desktop-Mode ("off",
+	// "deny" or ""): the add-subscription dialog hides "Connect Desync"
+	// under "deny".
+	DesyncProviderMode string `json:"desyncProviderMode,omitempty"`
 }
 
 // HTTP header names that some providers use for support / docs links (first non-empty wins).
@@ -251,6 +255,7 @@ func fetchSubscriptionPeekHeaders(ctx context.Context, norm, userAgent string, c
 	if ann := normalizeSubscriptionAnnouncementFromHeader(headerFirstNonEmpty(resp.Header, subscriptionAnnounceHeaderKeys)); ann != "" {
 		out.SubscriptionAnnouncement = ann
 	}
+	out.DesyncProviderMode = parseDesyncProviderMode(norm, func(k string) string { return headerGet(resp.Header, k) })
 
 	return out, nil
 }

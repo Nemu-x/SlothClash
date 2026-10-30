@@ -444,7 +444,12 @@
         "helperUrl": "The https:// link from your provider.",
         "helperPaste": "A Clash / mihomo YAML config, or share links one per line.",
         "desyncAltQuestion": "No VPN subscription?",
-        "desyncAltLink": "Desync only (no VPN)"
+        "desyncAltLink": "Desync only (no VPN)",
+        "desyncConnect": "Connect Desync to this subscription",
+        "desyncConnectHint": "YouTube, Discord and your Desync sites will bypass the subscription and fall back to it where Desync does not work. Leave unchecked if unsure: you can turn it on later in Desync.",
+        "desyncChecking": "Checking whether the provider allows Desync…",
+        "desyncDenied": "Your provider does not allow Desync for this subscription.",
+        "desyncDeniedAtImport": "Subscription added without Desync: the provider does not allow it."
       },
       "editInfo": {
         "title": "Edit profile info",
@@ -842,7 +847,8 @@
       "unsupported_udp_core": "This build's core does not support Discord voice through Desync.",
       "no_selection": "Turn on a service or add a site first.",
       "discord_platform": "Discord through Desync works on Windows only.",
-      "no_profile": "Add or choose a profile first: Desync settings belong to a profile."
+      "no_profile": "Add or choose a profile first: Desync settings belong to a profile.",
+      "provider_denied": "Your provider does not allow Desync for this subscription."
     },
     "custom": {
       "title": "My rules",
@@ -982,6 +988,10 @@
       "cancel": "Cancel",
       "edit": "Edit {{value}}",
       "processHint": "An app can’t be tested like a site, so Desync uses its default strategy for it."
+    },
+    "provider": {
+      "denied": "Disabled by your provider: Desync is not allowed for this subscription.",
+      "turnedOff": "Your provider turned Desync off for this subscription. You can turn it on again."
     }
   }
 }

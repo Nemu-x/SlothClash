@@ -26,6 +26,28 @@ Selection runs in the background even when Settings is closed. The panel shows p
 
 **Copy diagnostics** copies a report through the native clipboard. It includes app/core build identifiers, a controller revision, an opaque network digest, enabled services, candidate attempts and error categories, probe response counts and anonymized application traffic counters. UDP flow summaries distinguish generated Desync routes from profile routes without exposing subscription node names. Probe targets, Discord voice endpoints and custom domains appear only as a keyed digest: HMAC-SHA256 truncated to 12 hex characters, keyed by a random secret generated once per install and stored in the local prefs file. The secret is never included in the report and never returned to the UI, so a reader cannot test a guessed site against a digest. Digests stay the same across reports from the same install, so attempts match flow observations and each custom domain (listed with its random entry ID, kind, route and on/off state) matches its attempts. An app rule's process name is digested the same way (lowercased). It excludes subscription URLs/configuration/names, credentials, raw logs, local/public IP addresses, file paths and audio. Copying does not upload or send anything.
 
+### With a subscription
+
+Desync can be mixed into a subscription profile: its routes (YouTube, Discord, popular services, your rules) come before the subscription's rules, and a service for which no strategy works follows the subscription's rules again (**Through VPN (Desync didn't work here)**). Because this changes how those services leave the machine, it is only ever the user's decision:
+
+- **When adding a subscription**, the dialog offers **Connect Desync to this subscription**. It is unchecked every time, for every provider; nothing suggests it. Checked, the profile starts with Desync on: with the selection of your Desync-only profile (services, popular services and your Direct/Desync rules) if you have one, otherwise the defaults. Changing the URL clears the box.
+- **Later**, the master switch in the Desync window turns it on or off for the active profile.
+
+### Provider control
+
+A subscription provider can switch Desync off, or forbid it, for their subscription with a response header. It cannot switch Desync on.
+
+```text
+X-Desync-Desktop-Mode: off     # switch Desync off on this subscription's profile (once)
+X-Desync-Desktop-Mode: deny    # Desync stays off and cannot be enabled
+```
+
+- Desktop only (`X-Desync-Desktop-*`, like `X-Brand-Desktop-*`), honored only when the subscription URL is `https`. The value is case-insensitive; any other value, `on` included, is ignored.
+- The app stores the last value it applied per profile and acts only when it changes. After `off` the user may switch Desync on again, and a refresh with the same `off` leaves it on. The Desync window says "Your provider turned Desync off" until the user does.
+- Under `deny` the add dialog keeps the box unchecked and disabled (checking it asks the provider first; the app also checks again when adding), the Desync window's switch is disabled with "Disabled by your provider", and enabling it any other way fails with `provider_denied`. Editing the selection stays possible.
+- A response without the header clears the stored value: a `deny` is lifted, Desync stays as it is.
+- When a refresh switches Desync off on the active profile, the running configuration is regenerated. Local and Desync-only profiles have no provider and ignore it. **Copy diagnostics** includes `"providerMode"` (`none`, `off`, `deny`).
+
 ## My rules
 
 **Settings → Desync → My rules** (in Russian «Мои правила») routes any other site or app the way you choose. A rule has a type, a value and a route:

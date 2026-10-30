@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { GetDesyncStatus } from '../api/desync'
 import {
   ConfirmInstallConfigFromLink,
   DeleteProfile,
   DeriveAgePublicKey,
   GenerateAgeKeyPair,
   ImportProfileFromText,
-  ImportProfileFromURL,
+  ImportProfileFromURLWithDesync,
+  PeekSubscriptionFromURL,
   ReadProfileConfig,
   RefreshProfileSubscription,
   SetProfileAgeSecretKey,
@@ -85,6 +87,12 @@ export function ProfileModalsHost({
   const [importMode, setImportMode] = useState<ImportMode>('url')
   const [importContent, setImportContent] = useState('')
   const [importBusy, setImportBusy] = useState(false)
+  // "Connect Desync": the user's explicit choice, unchecked for every new
+  // dialog and every URL (ImportProfileModal).
+  const [desyncAvailable, setDesyncAvailable] = useState(false)
+  const [importDesync, setImportDesync] = useState(false)
+  const [importDesyncDenied, setImportDesyncDenied] = useState(false)
+  const [importDesyncChecking, setImportDesyncChecking] = useState(false)
   const [mergeTemplateDraft, setMergeTemplateDraft] = useState('')
   const [mergeTemplateYamlErr, setMergeTemplateYamlErr] = useState<
     string | null
@@ -217,9 +225,66 @@ export function ProfileModalsHost({
     }
   }, [profileFileModal])
 
+  const resetImportDesync = () => {
+    setImportDesync(false)
+    setImportDesyncDenied(false)
+    setImportDesyncChecking(false)
+  }
+
   const closeImportModal = () => {
     modals.closeImport()
     setImportBusy(false)
+    resetImportDesync()
+  }
+
+  useEffect(() => {
+    if (!modals.importOpen) return
+    let live = true
+    GetDesyncStatus()
+      .then((s) => {
+        if (live) setDesyncAvailable(s.coreSupported === true)
+      })
+      .catch(() => {
+        if (live) setDesyncAvailable(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [modals.importOpen])
+
+  const changeImportUrl = (next: string) => {
+    setImportUrl(next)
+    // The choice and the provider's answer belong to one subscription.
+    resetImportDesync()
+  }
+
+  // Checking the box asks the provider first: under X-Desync-Desktop-Mode:
+  // deny it stays unchecked. A failed probe leaves it checked; the backend
+  // checks again at import.
+  const changeImportDesync = async (next: boolean) => {
+    if (!next) {
+      setImportDesync(false)
+      return
+    }
+    const url = importUrl.trim()
+    if (!url) {
+      setImportDesync(true)
+      return
+    }
+    setImportDesyncChecking(true)
+    try {
+      const peek = await PeekSubscriptionFromURL(url)
+      if (peek?.desyncProviderMode === 'deny') {
+        setImportDesyncDenied(true)
+        setImportDesync(false)
+        return
+      }
+    } catch {
+      // unreachable now; decided at import
+    } finally {
+      setImportDesyncChecking(false)
+    }
+    setImportDesync(true)
   }
 
   const pasteFromClipboard = async () => {
@@ -227,7 +292,7 @@ export function ProfileModalsHost({
     try {
       const text = await navigator.clipboard.readText()
       if (importMode === 'paste') setImportContent(text)
-      else setImportUrl(text.trim())
+      else changeImportUrl(text.trim())
     } catch {
       setError(t('ui.toasts.clipboardReadFail'))
     }
@@ -241,7 +306,19 @@ export function ProfileModalsHost({
       if (importMode === 'paste' && !hidePaste) {
         await ImportProfileFromText(name, importContent.trim())
       } else {
-        await ImportProfileFromURL(name, importUrl.trim())
+        const connect = desyncAvailable && importDesync && !importDesyncDenied
+        const state: any = await ImportProfileFromURLWithDesync(
+          name,
+          importUrl.trim(),
+          connect,
+        )
+        const added = state?.profile?.profiles?.at?.(-1)
+        if (connect && added?.desyncProviderMode === 'deny') {
+          pushToast({
+            kind: 'info',
+            message: t('ui.profiles.importModal.desyncDeniedAtImport'),
+          })
+        }
       }
       await refresh()
       onImported()
@@ -287,12 +364,22 @@ export function ProfileModalsHost({
         busy={importBusy}
         hidePaste={hidePaste}
         onModeChange={setImportMode}
-        onUrlChange={setImportUrl}
+        onUrlChange={changeImportUrl}
         onNameChange={setImportName}
         onContentChange={setImportContent}
         onPasteFromClipboard={() => pasteFromClipboard()}
         onClose={closeImportModal}
         onSubmit={() => performImportAndClose()}
+        desync={
+          desyncAvailable
+            ? {
+                checked: importDesync,
+                denied: importDesyncDenied,
+                checking: importDesyncChecking,
+                onChange: (next) => void changeImportDesync(next),
+              }
+            : undefined
+        }
         onStartDesyncOnly={
           onStartDesyncOnly
             ? () => {

@@ -55,6 +55,34 @@ describe('DesyncPanel: controls', () => {
     expect(document.querySelector('input[type="checkbox"]')).toBeNull()
   })
 
+  it('disables the master switch with a note when the provider denies Desync', async () => {
+    stubBackend(
+      desyncStatus({ settings: { enabled: false }, providerMode: 'deny' }),
+    )
+    await renderCard()
+    expect(screen.getByRole('switch', { name: 'Enable Desync' })).toBeDisabled()
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Disabled by your provider',
+    )
+  })
+
+  it('notes a provider off until the user turns Desync on', async () => {
+    stubBackend(
+      desyncStatus({ settings: { enabled: false }, providerMode: 'off' }),
+    )
+    await renderCard()
+    expect(screen.getByRole('switch', { name: 'Enable Desync' })).toBeEnabled()
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Your provider turned Desync off',
+    )
+  })
+
+  it('shows no provider note once the user turned Desync on again', async () => {
+    stubBackend(desyncStatus({ providerMode: 'off' }))
+    await renderCard()
+    expect(screen.queryByRole('note')).toBeNull()
+  })
+
   it('shows an unchecked service as an off switch', async () => {
     stubBackend(desyncStatus({ settings: { youtube: false } }))
     await renderCard()

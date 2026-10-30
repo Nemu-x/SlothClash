@@ -41,6 +41,8 @@ func profileDesyncSettings(p Profile) DesyncSettings {
 	if profileIsDesyncOnly(p) {
 		s.Enabled = true
 		s.Custom = withoutVPNRules(s.Custom)
+	} else if p.DesyncProviderMode == desyncProviderDeny {
+		s.Enabled = false // the provider forbids it (desync_provider.go)
 	}
 	return s
 }

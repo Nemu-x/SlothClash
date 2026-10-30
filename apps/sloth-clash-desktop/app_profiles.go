@@ -18,6 +18,16 @@ func (a *App) ListProfiles() []Profile {
 }
 
 func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error) {
+	return a.ImportProfileFromURLWithDesync(name, rawURL, false)
+}
+
+// ImportProfileFromURLWithDesync adds a subscription profile; connectDesync
+// is the user's "Connect Desync" choice in the add dialog (never a default):
+// the profile then starts with Desync on (desyncImportSelectionLocked). A
+// provider that denies Desync (X-Desync-Desktop-Mode: deny) wins over it, as
+// does a core or platform that cannot run the selection; the profile is then
+// added with Desync off.
+func (a *App) ImportProfileFromURLWithDesync(name string, rawURL string, connectDesync bool) (AppState, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return a.GetAppState(), errors.New("subscription url is required")
@@ -61,6 +71,12 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 		LastUpdated:               time.Now().Unix(),
 		AutoUpdateEnabled:         true,
 		AutoUpdateIntervalMinutes: defaultProfileAutoUpdateMinutes,
+		DesyncProviderMode:        peek.DesyncProviderMode,
+	}
+	if connectDesync && p.DesyncProviderMode != desyncProviderDeny {
+		if s, ok := desyncImportRunnable(a.desyncImportSelectionLocked()); ok {
+			p.Desync = &s
+		}
 	}
 	a.profiles = append(a.profiles, p)
 	a.state.Profile.Profiles = a.profiles

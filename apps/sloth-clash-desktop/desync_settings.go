@@ -37,6 +37,9 @@ type DesyncStatus struct {
 	// subscription reserve exists, so a route that finds no strategy goes
 	// direct (no_strategy) instead of to the reserve.
 	DesyncOnly bool `json:"desyncOnly"`
+	// ProviderMode is the active profile's provider X-Desync-Desktop-Mode:
+	// "off", "deny" or "" (desync_provider.go).
+	ProviderMode string `json:"providerMode"`
 }
 
 // currentDesyncSettings is the active profile's effective settings
@@ -98,8 +101,9 @@ func (a *App) GetDesyncStatus() DesyncStatus {
 	mode := a.state.Mode.Current
 	traffic := a.state.Traffic
 	desyncOnly := a.activeProfileIsDesyncOnlyLocked()
+	providerMode := a.activeDesyncProviderModeLocked()
 	a.mu.RUnlock()
-	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic, DesyncOnly: desyncOnly}
+	return DesyncStatus{Settings: currentDesyncSettings(), Platform: runtime.GOOS, CoreSupported: desyncCoreSupported(), UDPCoreSupported: desyncUDPCoreSupported(), Connected: connected, Mode: mode, Traffic: traffic, DesyncOnly: desyncOnly, ProviderMode: providerMode}
 }
 
 // SetDesyncSettings applies the switches of next (on/off, YouTube, Discord)
@@ -162,6 +166,9 @@ func (a *App) updateActiveDesync(change func(current DesyncSettings, desyncOnly 
 	next, err := change(current, profileIsDesyncOnly(p))
 	if err != nil {
 		return current, err
+	}
+	if next.Enabled && !current.Enabled && p.DesyncProviderMode == desyncProviderDeny {
+		return current, errDesyncProviderDenied
 	}
 	stored := next
 	a.profiles[idx].Desync = &stored

@@ -306,7 +306,8 @@ library, and moves the series to `github.com/Nemu-x/desync` main at 673cbef
 is published), exact version and checksum in mihomo's `go.mod` / `go.sum`. It is a DIRECT connection whose first TLS ClientHello leaves the
 client's own socket transformed; non-TLS traffic and everything after the ClientHello pass through.
 Named `direct` outbounds with a `desync` mapping (0017-0022) keep working unchanged during the
-migration, and the app still generates only those.
+migration; the app generates `type: desync` outbounds from the desync presets catalog
+(docs/desync.md, "Strategy catalog").
 
 The keys, values, defaults, validation and the `/proxies` fields under `desync` are those of Citrus'
 `type: desync` (getmikan/Citrus#172, `adapter/outbound/desync.go`, `docs/config.yaml`), so a client

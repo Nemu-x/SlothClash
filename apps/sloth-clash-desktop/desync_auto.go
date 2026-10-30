@@ -681,6 +681,7 @@ func (a *App) GetDesyncDiagnosticReport() string {
 	report := map[string]any{"format": "sloth-desync-1", "at": time.Now().UTC().Format(time.RFC3339), "appVersion": AppVersion, "platform": runtime.GOOS, "arch": runtime.GOARCH, "coreVersion": info.Version, "coreSHA256": coreSHA, "features": info.Features, "connected": status.Connected, "mode": status.Mode, "traffic": status.Traffic, "services": map[string]bool{"enabled": status.Settings.Enabled, "youtube": status.Settings.YouTube, "discord": status.Settings.Discord, "voice": status.Settings.DiscordUDP}, "automatic": auto}
 	report["controllerRevision"] = 5
 	report["desyncOnly"] = status.DesyncOnly
+	report["providerMode"] = desyncProviderModeLabel(status.ProviderMode)
 	// Custom domains appear only as the install-keyed digest probe targets
 	// use (so an entry matches its attempts); the IDs are random. A preset
 	// entry is reported by its catalog ID, which names no user input.

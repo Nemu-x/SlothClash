@@ -446,7 +446,12 @@
         "helperUrl": "Ссылка https:// от вашего провайдера.",
         "helperPaste": "Конфиг Clash / mihomo в YAML или share-ссылки, по одной на строку.",
         "desyncAltQuestion": "Нет VPN-подписки?",
-        "desyncAltLink": "Только Desync (без VPN)"
+        "desyncAltLink": "Только Desync (без VPN)",
+        "desyncConnect": "Подключить Desync к этой подписке",
+        "desyncConnectHint": "YouTube, Discord и твои сайты Desync пойдут мимо подписки, а где Desync не сработает — через неё. Если не уверен, не отмечай: включить можно позже в Desync.",
+        "desyncChecking": "Проверяем, разрешает ли провайдер Desync…",
+        "desyncDenied": "Провайдер не разрешает Desync для этой подписки.",
+        "desyncDeniedAtImport": "Подписка добавлена без Desync: провайдер его не разрешает."
       },
       "editInfo": {
         "title": "Изменить сведения профиля",
@@ -844,7 +849,8 @@
       "unsupported_udp_core": "Ядро этой сборки не поддерживает голос Discord через Desync.",
       "no_selection": "Сначала включи сервис или добавь сайт.",
       "discord_platform": "Discord через Desync работает только в Windows.",
-      "no_profile": "Сначала добавь или выбери профиль: настройки Desync хранятся в профиле."
+      "no_profile": "Сначала добавь или выбери профиль: настройки Desync хранятся в профиле.",
+      "provider_denied": "Провайдер не разрешает Desync для этой подписки."
     },
     "custom": {
       "title": "Мои правила",
@@ -986,6 +992,10 @@
       "cancel": "Отмена",
       "edit": "Изменить {{value}}",
       "processHint": "Приложение нельзя проверить как сайт, поэтому Desync использует для него стратегию по умолчанию."
+    },
+    "provider": {
+      "denied": "Отключено провайдером: Desync для этой подписки не разрешён.",
+      "turnedOff": "Провайдер выключил Desync для этой подписки. Его можно включить снова."
     }
   }
 }

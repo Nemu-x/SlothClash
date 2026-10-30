@@ -71,6 +71,19 @@ function detect(raw: string, t: TranslateFn): Detection | null {
 const tabId = (m: ImportMode) => `importTab-${m}`
 
 /**
+ * "Connect Desync" for a subscription. It is the user's conscious choice:
+ * never pre-checked or suggested, since mixing Desync into a subscription can
+ * break it. `denied`: the provider forbids it (X-Desync-Desktop-Mode: deny),
+ * found when the box was checked.
+ */
+export type ImportDesyncChoice = {
+  checked: boolean
+  denied: boolean
+  checking: boolean
+  onChange: (next: boolean) => void
+}
+
+/**
  * Add a profile: a subscription URL, or a pasted / loaded config. Below the
  * actions, a quiet way out for someone without a VPN subscription: the
  * Desync-only onboarding.
@@ -93,6 +106,7 @@ export function ImportProfileModal({
   onSubmit,
   onStartDesyncOnly,
   hidePaste,
+  desync,
 }: {
   open: boolean
   title: string
@@ -114,6 +128,8 @@ export function ImportProfileModal({
   onSubmit: () => void
   /** "No VPN subscription?": leave for the Desync-only onboarding. */
   onStartDesyncOnly?: () => void
+  /** Absent when this build cannot run Desync. URL mode only. */
+  desync?: ImportDesyncChoice
 }) {
   const { t } = useTranslation()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -303,6 +319,32 @@ export function ImportProfileModal({
               }
             />
           </label>
+
+          {effectiveMode === 'url' && desync ? (
+            <div className="field modalField importDesync">
+              <label className="importDesyncCheck">
+                <input
+                  type="checkbox"
+                  checked={desync.checked && !desync.denied}
+                  disabled={busy || desync.denied || desync.checking}
+                  onChange={(e) => desync.onChange(e.target.checked)}
+                  aria-describedby="importDesyncHint"
+                />
+                <span>{t('ui.profiles.importModal.desyncConnect')}</span>
+              </label>
+              <p
+                id="importDesyncHint"
+                className="importHelper"
+                aria-live="polite"
+              >
+                {desync.denied
+                  ? t('ui.profiles.importModal.desyncDenied')
+                  : desync.checking
+                    ? t('ui.profiles.importModal.desyncChecking')
+                    : t('ui.profiles.importModal.desyncConnectHint')}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="modalFooter importFooter">

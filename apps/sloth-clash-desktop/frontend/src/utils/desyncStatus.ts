@@ -434,6 +434,7 @@ const SETTINGS_ERROR_CODES = new Set([
   'no_selection',
   'discord_platform',
   'no_profile',
+  'provider_denied',
 ])
 
 /**

@@ -89,6 +89,12 @@ export interface DesyncStatus {
    * without a working strategy goes direct (phase no_strategy).
    */
   desyncOnly?: boolean
+  /**
+   * The subscription provider's X-Desync-Desktop-Mode for the active profile:
+   * 'off' (it switched Desync off once), 'deny' (Desync cannot be enabled) or
+   * '' (none).
+   */
+  providerMode?: string
 }
 
 export const GetDesyncStatus = (): Promise<DesyncStatus> => getStatus()

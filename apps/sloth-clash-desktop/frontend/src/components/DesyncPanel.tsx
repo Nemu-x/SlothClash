@@ -274,6 +274,14 @@ export function DesyncPanel({
   const enabled = status?.settings.enabled === true
   const ruleMode = mode.toLowerCase() === 'rule'
   const supported = status?.coreSupported === true
+  // The subscription provider forbids Desync on this profile, or switched it
+  // off (desync_provider.go); the "off" note stays until the user turns it on.
+  const denied = status?.providerMode === 'deny'
+  const providerNote = denied
+    ? 'desync.provider.denied'
+    : status?.providerMode === 'off' && !enabled
+      ? 'desync.provider.turnedOff'
+      : null
   const rows = snapshot
     ? desyncBuiltinViews(snapshot, { connected, mode, traffic })
     : []
@@ -358,7 +366,7 @@ export function DesyncPanel({
               aria-checked={enabled}
               aria-label={t('desync.enabled')}
               className={`settingsSwitch${enabled ? ' on' : ''}`}
-              disabled={busy || !status || (!supported && !enabled)}
+              disabled={busy || !status || (!supported && !enabled) || denied}
               onClick={() =>
                 void save(
                   enabled || !status
@@ -373,6 +381,11 @@ export function DesyncPanel({
         )}
         {!supported && status ? (
           <p className="error small">{t('desync.unsupportedCore')}</p>
+        ) : null}
+        {!onboarding && !status?.desyncOnly && providerNote ? (
+          <p className="muted small desyncProviderNote" role="note">
+            {t(providerNote)}
+          </p>
         ) : null}
         {status ? (
           <section className="desyncSection" aria-labelledby={servicesTitleId}>

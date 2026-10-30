@@ -113,6 +113,8 @@ func (a *App) startup(ctx context.Context) {
 	// The generation pipeline reports its own subscription body fetches here
 	// (profile update status, profile_update_status.go).
 	bodyFetchRecorder.Store(a)
+	// ... and the provider's Desync mode of every fetch (desync_provider.go).
+	desyncProviderRecorder.Store(a)
 	// Reclaim runtime dirs of profiles deleted in earlier sessions (audit R3).
 	a.pruneOrphanRuntimeDirs()
 	a.refreshServiceStatus()

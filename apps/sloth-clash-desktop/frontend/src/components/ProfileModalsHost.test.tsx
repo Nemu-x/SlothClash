@@ -81,7 +81,10 @@ const urlInput = () => screen.getByPlaceholderText('https://…')
 
 describe('ProfileModalsHost', () => {
   it('imports from a URL, then clears and closes the dialog', async () => {
-    const importUrl = wailsApp.stub('ImportProfileFromURL', () => undefined)
+    const importUrl = wailsApp.stub(
+      'ImportProfileFromURLWithDesync',
+      () => undefined,
+    )
     const props = setup()
 
     fireEvent.click(screen.getByText('open-import'))
@@ -97,7 +100,12 @@ describe('ProfileModalsHost', () => {
     await waitFor(() =>
       expect(screen.queryByText('Connect needs a profile')).toBeNull(),
     )
-    expect(importUrl).toHaveBeenCalledWith('Mine', 'https://sub.example/new')
+    // Desync is never connected unless the user checks the box.
+    expect(importUrl).toHaveBeenCalledWith(
+      'Mine',
+      'https://sub.example/new',
+      false,
+    )
     expect(props.refresh).toHaveBeenCalledTimes(1)
     expect(props.onImported).toHaveBeenCalledTimes(1)
     expect(props.setError).toHaveBeenCalledWith('')
@@ -108,7 +116,7 @@ describe('ProfileModalsHost', () => {
   })
 
   it('keeps the dialog and the input on a failed import', async () => {
-    wailsApp.stub('ImportProfileFromURL', () =>
+    wailsApp.stub('ImportProfileFromURLWithDesync', () =>
       Promise.reject(new Error('HTTP 403')),
     )
     const props = setup()
@@ -128,6 +136,115 @@ describe('ProfileModalsHost', () => {
     expect(urlInput()).toHaveValue('https://bad.example')
     expect(props.onImported).not.toHaveBeenCalled()
     expect(props.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('connects Desync only when the user checks the box', async () => {
+    wailsApp.stub('GetDesyncStatus', () => ({ coreSupported: true }))
+    const peek = wailsApp.stub('PeekSubscriptionFromURL', () => ({}))
+    const importUrl = wailsApp.stub('ImportProfileFromURLWithDesync', () => ({
+      profile: { profiles: [{ id: 'new' }] },
+    }))
+    setup()
+
+    fireEvent.click(screen.getByText('open-import'))
+    fireEvent.change(urlInput(), {
+      target: { value: 'https://sub.example/new' },
+    })
+    const box = await screen.findByRole('checkbox', {
+      name: 'Connect Desync to this subscription',
+    })
+    expect(box).not.toBeChecked()
+    fireEvent.click(box)
+    await waitFor(() => expect(box).toBeChecked())
+    expect(peek).toHaveBeenCalledWith('https://sub.example/new')
+
+    // A new URL is a new decision.
+    fireEvent.change(urlInput(), {
+      target: { value: 'https://sub.example/other' },
+    })
+    expect(box).not.toBeChecked()
+    fireEvent.click(box)
+    await waitFor(() => expect(box).toBeChecked())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    await waitFor(() =>
+      expect(importUrl).toHaveBeenCalledWith(
+        '',
+        'https://sub.example/other',
+        true,
+      ),
+    )
+  })
+
+  it('keeps the box unchecked when the provider denies Desync', async () => {
+    wailsApp.stub('GetDesyncStatus', () => ({ coreSupported: true }))
+    wailsApp.stub('PeekSubscriptionFromURL', () => ({
+      desyncProviderMode: 'deny',
+    }))
+    const importUrl = wailsApp.stub(
+      'ImportProfileFromURLWithDesync',
+      () => undefined,
+    )
+    setup()
+
+    fireEvent.click(screen.getByText('open-import'))
+    fireEvent.change(urlInput(), {
+      target: { value: 'https://sub.example/denied' },
+    })
+    const box = await screen.findByRole('checkbox')
+    fireEvent.click(box)
+    expect(
+      await screen.findByText(
+        'Your provider does not allow Desync for this subscription.',
+      ),
+    ).toBeVisible()
+    expect(box).not.toBeChecked()
+    expect(box).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    await waitFor(() =>
+      expect(importUrl).toHaveBeenCalledWith(
+        '',
+        'https://sub.example/denied',
+        false,
+      ),
+    )
+  })
+
+  it('tells the user when the backend found a deny at import', async () => {
+    wailsApp.stub('GetDesyncStatus', () => ({ coreSupported: true }))
+    wailsApp.stub('PeekSubscriptionFromURL', () =>
+      Promise.reject(new Error('offline')),
+    )
+    wailsApp.stub('ImportProfileFromURLWithDesync', () => ({
+      profile: { profiles: [{ id: 'new', desyncProviderMode: 'deny' }] },
+    }))
+    const props = setup()
+
+    fireEvent.click(screen.getByText('open-import'))
+    fireEvent.change(urlInput(), {
+      target: { value: 'https://sub.example/x' },
+    })
+    const box = await screen.findByRole('checkbox')
+    fireEvent.click(box)
+    await waitFor(() => expect(box).toBeChecked())
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    await waitFor(() =>
+      expect(props.pushToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'Subscription added without Desync: the provider does not allow it.',
+        }),
+      ),
+    )
+  })
+
+  it('hides the Desync choice when the core cannot run it', async () => {
+    wailsApp.stub('GetDesyncStatus', () => ({ coreSupported: false }))
+    setup()
+    fireEvent.click(screen.getByText('open-import'))
+    await act(async () => {})
+    expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
   it('deletes a profile from the context menu after confirmation', async () => {

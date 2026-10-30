@@ -443,7 +443,12 @@
         "helperUrl": "服务商提供的 https:// 链接。",
         "helperPaste": "Clash / mihomo YAML 配置，或分享链接（每行一条）。",
         "desyncAltQuestion": "没有 VPN 订阅？",
-        "desyncAltLink": "仅 Desync（无 VPN）"
+        "desyncAltLink": "仅 Desync（无 VPN）",
+        "desyncConnect": "为此订阅启用 Desync",
+        "desyncConnectHint": "YouTube、Discord 和你的 Desync 网站将绕过订阅，Desync 无效时回退到订阅。不确定时请勿勾选：之后可在 Desync 中开启。",
+        "desyncChecking": "正在检查服务商是否允许 Desync…",
+        "desyncDenied": "你的服务商不允许此订阅使用 Desync。",
+        "desyncDeniedAtImport": "已添加订阅但未启用 Desync：服务商不允许。"
       },
       "editInfo": {
         "title": "编辑配置信息",
@@ -841,7 +846,8 @@
       "unsupported_udp_core": "此版本的内核不支持通过 Desync 的 Discord 语音。",
       "no_selection": "请先开启一个服务或添加一个网站。",
       "discord_platform": "通过 Desync 的 Discord 仅支持 Windows。",
-      "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。"
+      "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。",
+      "provider_denied": "你的服务商不允许此订阅使用 Desync。"
     },
     "custom": {
       "title": "我的规则",
@@ -980,6 +986,10 @@
       "cancel": "取消",
       "edit": "编辑 {{value}}",
       "processHint": "应用无法像网站一样测试，因此 Desync 对它使用默认策略。"
+    },
+    "provider": {
+      "denied": "已被服务商禁用：此订阅不允许使用 Desync。",
+      "turnedOff": "服务商已为此订阅关闭 Desync。你可以重新开启。"
     }
   }
 }

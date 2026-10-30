@@ -19,6 +19,8 @@ export {
   GetProfileRulesBaseline,
   ImportProfileFromText,
   ImportProfileFromURL,
+  ImportProfileFromURLWithDesync,
+  PeekSubscriptionFromURL,
   PreviewProfileScript,
   ReadProfileConfig,
   RefreshProfileSubscription,

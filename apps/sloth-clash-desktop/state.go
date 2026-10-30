@@ -124,6 +124,10 @@ type Profile struct {
 	// it is on, the built-in services, the popular services and the user's
 	// sites. nil = never changed, the defaults.
 	Desync *DesyncSettings `json:"desync,omitempty"`
+	// DesyncProviderMode is the subscription provider's last applied
+	// X-Desync-Desktop-Mode ("off", "deny" or "", desync_provider.go). Under
+	// "deny" Desync on this profile stays off.
+	DesyncProviderMode string `json:"desyncProviderMode,omitempty"`
 }
 
 // ProfilePaths exposes on-disk locations for a profile runtime directory.

@@ -123,7 +123,7 @@ func TestDesyncCachedWinnerReachesGeneration(t *testing.T) {
 	if defaultFirst == winner {
 		t.Fatalf("the winner must not already be the first candidate (%s)", defaultFirst)
 	}
-	enabled := DesyncSettings{Enabled: true, YouTube: true, DiscordTTL: 4}
+	enabled := DesyncSettings{Enabled: true, YouTube: true}
 
 	t.Run("current network", func(t *testing.T) {
 		withRuntimeConfigPrefs(t, DesktopPrefs{Desync: enabled})

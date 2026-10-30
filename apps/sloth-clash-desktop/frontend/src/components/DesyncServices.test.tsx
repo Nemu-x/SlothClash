@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   DesyncAutoStatus,
   DesyncCustomEntry,
-  DesyncPreset,
+  DesyncService,
   DesyncStatus,
 } from '../api/desync'
 import {
-  DESYNC_PRESETS,
+  DESYNC_SERVICES,
   desyncAuto,
   desyncService,
+  desyncSettings,
   desyncStatus,
 } from '../test/desyncFixtures'
 import { renderWithProviders } from '../test/render'
@@ -23,13 +24,13 @@ const CONNECTED = { connected: true, mode: 'rule', traffic: 'tun' }
 const FB: DesyncCustomEntry = {
   id: 'fb01fb01',
   domain: '',
-  preset: 'facebook',
+  service: 'facebook',
   enabled: true,
 }
 const IG: DesyncCustomEntry = {
   id: 'ig01ig01',
   domain: '',
-  preset: 'instagram',
+  service: 'instagram',
   enabled: true,
 }
 const ORG: DesyncCustomEntry = {
@@ -41,11 +42,11 @@ const ORG: DesyncCustomEntry = {
 function stubBackend(
   status: DesyncStatus = desyncStatus(),
   auto: DesyncAutoStatus = desyncAuto(),
-  catalog: DesyncPreset[] = DESYNC_PRESETS,
+  catalog: DesyncService[] = DESYNC_SERVICES,
 ) {
   wailsApp.stub('GetDesyncStatus', () => status)
   wailsApp.stub('GetDesyncAutoStatus', () => auto)
-  wailsApp.stub('ListDesyncPresets', () => catalog)
+  wailsApp.stub('ListDesyncServices', () => catalog)
 }
 
 const withCustom = (custom: DesyncCustomEntry[], over = {}) =>
@@ -53,54 +54,63 @@ const withCustom = (custom: DesyncCustomEntry[], over = {}) =>
 
 async function renderPanel(variant: DesyncPanelVariant = 'manage') {
   renderWithProviders(<DesyncPanel {...CONNECTED} variant={variant} />)
-  await screen.findByRole('group', { name: 'Popular' })
+  await screen.findByRole('group', { name: 'Popular services' })
 }
 
-function presetRow(id: string) {
+function serviceRow(id: string) {
   const row = document.querySelector<HTMLElement>(
-    `.desyncPresetRow[data-preset="${id}"]`,
+    `.desyncPopularRow[data-popular="${id}"]`,
   )
-  if (!row) throw new Error(`preset row ${id} not rendered`)
+  if (!row) throw new Error(`service row ${id} not rendered`)
   return row
 }
 
-const presetSwitch = (name: string) =>
-  within(screen.getByRole('group', { name: 'Popular' })).getByRole('switch', {
-    name,
-  })
+const serviceSwitch = (name: string) =>
+  within(screen.getByRole('group', { name: 'Popular services' })).getByRole(
+    'switch',
+    {
+      name,
+    },
+  )
 
-describe('DesyncPanel: presets', () => {
+describe('DesyncPanel: services', () => {
   it('lists the catalog the backend returns, above the own-sites list', async () => {
     const extra = { id: 'demo', name: 'Demo', domains: ['demo.example'] }
-    stubBackend(withCustom([ORG]), desyncAuto(), [...DESYNC_PRESETS, extra])
+    stubBackend(withCustom([ORG]), desyncAuto(), [...DESYNC_SERVICES, extra])
     await renderPanel()
-    const group = screen.getByRole('group', { name: 'Popular' })
+    const group = screen.getByRole('group', { name: 'Popular services' })
     expect(
       within(group)
         .getAllByRole('switch')
         .map((s) => s.getAttribute('aria-label')),
     ).toEqual(['Facebook', 'Instagram', 'X (Twitter)', 'Demo'])
-    // Popular comes first inside Custom domains, then the user's own sites.
-    const own = screen.getByRole('group', { name: 'Other sites' })
+    // One "Popular services" section (YouTube and Discord, then the
+    // catalog), then "Sites" with the user's own domains.
+    const popular = screen.getByRole('region', { name: 'Popular services' })
+    expect(within(popular).getByRole('switch', { name: 'YouTube' })).toBe(
+      screen.getByRole('switch', { name: 'YouTube' }),
+    )
+    expect(popular.contains(group)).toBe(true)
+    const own = screen.getByRole('region', { name: 'Sites' })
     expect(
-      group.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING,
+      popular.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(within(own).getByText('example.org')).toBeVisible()
-    // A single-domain preset has no "+N more".
-    expect(within(presetRow('demo')).queryByRole('button')).toBeNull()
+    // A single-domain service has no "+N more".
+    expect(within(serviceRow('demo')).queryByRole('button')).toBeNull()
   })
 
   it('summarizes the domains and discloses the full list', async () => {
     stubBackend()
     await renderPanel()
-    const row = presetRow('facebook')
+    const row = serviceRow('facebook')
     const summary = within(row).getByText('facebook.com, fbcdn.net')
     expect(summary).toHaveAttribute(
       'title',
-      DESYNC_PRESETS[0].domains.join(', '),
+      DESYNC_SERVICES[0].domains.join(', '),
     )
     // The switch is described by its domains.
-    expect(presetSwitch('Facebook')).toHaveAccessibleDescription(
+    expect(serviceSwitch('Facebook')).toHaveAccessibleDescription(
       'facebook.com, fbcdn.net',
     )
     const more = within(row).getByRole('button', { name: '+7 more' })
@@ -118,38 +128,41 @@ describe('DesyncPanel: presets', () => {
     )
   })
 
-  it('switching a new preset on adds it by catalog ID', async () => {
+  it('switching a new service on adds it by catalog ID', async () => {
     stubBackend()
-    const add = wailsApp.stub('AddDesyncPreset', () => withCustom([FB]))
+    const add = wailsApp.stub('AddDesyncService', () => withCustom([FB]))
     await renderPanel()
-    expect(presetSwitch('Facebook')).toHaveAttribute('aria-checked', 'false')
-    fireEvent.click(presetSwitch('Facebook'))
+    expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(serviceSwitch('Facebook'))
     await waitFor(() => expect(add).toHaveBeenCalledWith('facebook'))
     await waitFor(() =>
-      expect(presetSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
+      expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
     )
     expect(wailsApp.fn('SetDesyncCustomDomainEnabled')).not.toHaveBeenCalled()
   })
 
-  it('switching an existing preset toggles its entry and never removes it', async () => {
+  it('switching an existing service toggles its entry and never removes it', async () => {
     stubBackend(withCustom([FB]))
     const toggle = wailsApp.stub(
       'SetDesyncCustomDomainEnabled',
       (_id: string, enabled: boolean) => withCustom([{ ...FB, enabled }]),
     )
     await renderPanel()
-    fireEvent.click(presetSwitch('Facebook'))
+    fireEvent.click(serviceSwitch('Facebook'))
     await waitFor(() => expect(toggle).toHaveBeenLastCalledWith(FB.id, false))
     await waitFor(() =>
-      expect(presetSwitch('Facebook')).toHaveAttribute('aria-checked', 'false'),
+      expect(serviceSwitch('Facebook')).toHaveAttribute(
+        'aria-checked',
+        'false',
+      ),
     )
-    fireEvent.click(presetSwitch('Facebook'))
+    fireEvent.click(serviceSwitch('Facebook'))
     await waitFor(() => expect(toggle).toHaveBeenLastCalledWith(FB.id, true))
-    expect(wailsApp.fn('AddDesyncPreset')).not.toHaveBeenCalled()
+    expect(wailsApp.fn('AddDesyncService')).not.toHaveBeenCalled()
     expect(wailsApp.fn('RemoveDesyncCustomDomain')).not.toHaveBeenCalled()
   })
 
-  it('keeps preset entries out of the free-form list', async () => {
+  it('keeps service entries out of the free-form list', async () => {
     stubBackend(withCustom([FB, ORG, { ...IG, enabled: false }]))
     await renderPanel()
     const rows = document.querySelectorAll('.desyncCustomRow')
@@ -163,18 +176,18 @@ describe('DesyncPanel: presets', () => {
     ).toEqual(['example.org'])
   })
 
-  it('manage: an enabled preset shows its status chip, a disabled one none', async () => {
+  it('manage: an enabled service shows its status chip, a disabled one none', async () => {
     stubBackend(
       withCustom([FB, { ...IG, enabled: false }]),
       desyncAuto({ custom: { [FB.id]: desyncService('not_needed') } }),
     )
     await renderPanel()
-    const chip = presetRow('facebook').querySelector('.desyncChip')
+    const chip = serviceRow('facebook').querySelector('.desyncChip')
     expect(chip).toHaveAttribute('data-phase', 'not_needed')
     expect(chip).toHaveAttribute('data-tone', 'ok')
     expect(chip).toHaveTextContent('Not blocked · Desync not needed')
-    expect(presetRow('instagram').querySelector('.desyncChip')).toBeNull()
-    expect(presetRow('x').querySelector('.desyncChip')).toBeNull()
+    expect(serviceRow('instagram').querySelector('.desyncChip')).toBeNull()
+    expect(serviceRow('x').querySelector('.desyncChip')).toBeNull()
   })
 
   it.each([
@@ -187,12 +200,12 @@ describe('DesyncPanel: presets', () => {
       desyncAuto({ custom: { [FB.id]: desyncService(phase) } }),
     )
     await renderPanel()
-    const chip = presetRow('facebook').querySelector('.desyncChip')
+    const chip = serviceRow('facebook').querySelector('.desyncChip')
     expect(chip).toHaveAttribute('data-tone', tone)
     expect(chip).toHaveTextContent(text)
     expect(
-      within(presetRow('facebook')).queryByText(
-        'Likely blocked by IP address; traffic follows your profile.',
+      within(serviceRow('facebook')).queryByText(
+        'Likely blocked by IP address; it goes through your VPN.',
       ) !== null,
     ).toBe(phase === 'unavailable')
   })
@@ -203,67 +216,67 @@ describe('DesyncPanel: presets', () => {
       desyncAuto({ custom: { [FB.id]: desyncService('ready') } }),
     )
     await renderPanel('onboarding')
-    expect(presetSwitch('Facebook')).toHaveAttribute('aria-checked', 'true')
+    expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'true')
     expect(document.querySelectorAll('.desyncChip')).toHaveLength(0)
   })
 
   it.each([
     [
-      'custom domain: limit',
-      'Up to 32 entries, presets included. Remove a domain first.',
+      'desync: limit',
+      'Up to 32 entries, popular services included. Remove a site first.',
     ],
     [
-      'custom domain: unknown_preset',
-      'This preset is not available in this version.',
+      'desync: unknown_service',
+      'This service is not available in this version.',
     ],
-    ['custom domain: duplicate', 'This preset is already on the list.'],
-  ])('shows %s as a sentence under Popular', async (raw, text) => {
+    ['desync: duplicate', 'This service is already on the list.'],
+  ])('shows %s as a sentence under Popular services', async (raw, text) => {
     stubBackend()
-    wailsApp.stub('AddDesyncPreset', () => {
+    wailsApp.stub('AddDesyncService', () => {
       throw raw
     })
     await renderPanel()
-    fireEvent.click(presetSwitch('Instagram'))
+    fireEvent.click(serviceSwitch('Instagram'))
     const alert = await within(
-      screen.getByRole('group', { name: 'Popular' }),
+      screen.getByRole('group', { name: 'Popular services' }),
     ).findByRole('alert')
     expect(alert).toHaveTextContent(text)
-    expect(presetSwitch('Instagram')).toHaveAccessibleDescription(
+    expect(serviceSwitch('Instagram')).toHaveAccessibleDescription(
       `instagram.com, cdninstagram.com ${text}`,
     )
     // Only the switch that failed is described by the error.
-    expect(presetSwitch('Facebook')).toHaveAccessibleDescription(
+    expect(serviceSwitch('Facebook')).toHaveAccessibleDescription(
       'facebook.com, fbcdn.net',
     )
-    // The domain field is not blamed for a preset error.
+    // The domain field is not blamed for a service error.
     expect(screen.getByRole('textbox', { name: 'Domain' })).not.toHaveAttribute(
       'aria-invalid',
     )
   })
 
-  it('a typed domain a preset covers names the preset', async () => {
+  it('a typed domain a service covers names the service', async () => {
     stubBackend(withCustom([FB]))
     wailsApp.stub('AddDesyncCustomDomain', () => {
-      throw 'custom domain: preset_overlap: facebook'
+      throw 'desync: service_overlap: facebook'
     })
     await renderPanel()
     const input = screen.getByRole('textbox', { name: 'Domain' })
     fireEvent.change(input, { target: { value: 'm.facebook.com' } })
     fireEvent.submit(input)
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Already covered by the Facebook preset.',
+      'Already covered by Facebook in Popular services.',
     )
     expect(input).toHaveAttribute('aria-invalid', 'true')
   })
 
-  it('notes which plain entries a new preset replaced', async () => {
+  it('notes which plain entries a new service replaced', async () => {
     const typed = { id: '9f9f9f9f', domain: 'facebook.com', enabled: true }
     stubBackend(withCustom([typed, ORG]))
-    wailsApp.stub('AddDesyncPreset', () => withCustom([ORG, FB]))
+    wailsApp.stub('AddDesyncService', () => withCustom([ORG, FB]))
     await renderPanel()
-    fireEvent.click(presetSwitch('Facebook'))
-    const note = await within(presetRow('facebook')).findByText(
-      'Replaced facebook.com — the Facebook preset covers it.',
+    fireEvent.click(serviceSwitch('Facebook'))
+    const note = await within(serviceRow('facebook')).findByText(
+      'Replaced facebook.com: Facebook covers it.',
     )
     // Announced politely, like the status chips.
     expect(note).toHaveAttribute('role', 'status')
@@ -276,19 +289,19 @@ describe('DesyncPanel: presets', () => {
 
   it('adds no note when nothing was replaced', async () => {
     stubBackend(withCustom([ORG]))
-    const add = wailsApp.stub('AddDesyncPreset', () => withCustom([ORG, FB]))
+    const add = wailsApp.stub('AddDesyncService', () => withCustom([ORG, FB]))
     await renderPanel()
-    fireEvent.click(presetSwitch('Facebook'))
+    fireEvent.click(serviceSwitch('Facebook'))
     await waitFor(() => expect(add).toHaveBeenCalled())
     await waitFor(() =>
-      expect(presetSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
+      expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
     )
     expect(document.querySelector('[data-note="replaced"]')).toBeNull()
   })
 
   describe('shared fbcdn.net', () => {
     const hint = (id: string) =>
-      presetRow(id).querySelector('[data-note="shared"]')
+      serviceRow(id).querySelector('[data-note="shared"]')
 
     it('is noted under Instagram while Facebook is off', async () => {
       stubBackend(withCustom([IG, { ...FB, enabled: false }]))
@@ -313,10 +326,10 @@ describe('DesyncPanel: presets', () => {
     })
   })
 
-  it('names a stored preset by its ID when the catalog is unavailable', async () => {
+  it('names a stored service by its ID when the catalog is unavailable', async () => {
     wailsApp.stub('GetDesyncStatus', () => withCustom([FB]))
     wailsApp.stub('GetDesyncAutoStatus', () => desyncAuto())
-    wailsApp.stub('ListDesyncPresets', () => {
+    wailsApp.stub('ListDesyncServices', () => {
       throw new Error('no catalog')
     })
     renderWithProviders(<DesyncPanel {...CONNECTED} />)
@@ -327,7 +340,7 @@ describe('DesyncPanel: presets', () => {
   })
 })
 
-describe('DesyncModal onboarding: presets', () => {
+describe('DesyncModal onboarding: services', () => {
   const NOTHING = { youtube: false, discord: false, discordUDP: false }
 
   function renderOnboarding() {
@@ -343,23 +356,56 @@ describe('DesyncModal onboarding: presets', () => {
     )
   }
 
-  it('a switched-on preset alone allows Create profile', async () => {
-    stubBackend(withCustom([FB], { ...NOTHING, enabled: false }))
+  function stubDraft(custom: DesyncCustomEntry[]) {
+    wailsApp.stub('NewDesyncDraft', () =>
+      desyncSettings({ ...NOTHING, enabled: false, custom }),
+    )
+  }
+
+  it('a switched-on service alone allows Create profile', async () => {
+    stubBackend()
+    stubDraft([FB])
     renderOnboarding()
-    await screen.findByRole('group', { name: 'Popular' })
+    await screen.findByRole('group', { name: 'Popular services' })
     expect(screen.getByRole('button', { name: 'Create profile' })).toBeEnabled()
     expect(screen.queryByText('Turn on a service or add a site.')).toBeNull()
   })
 
-  it('a switched-off preset does not', async () => {
-    stubBackend(
-      withCustom([{ ...FB, enabled: false }], { ...NOTHING, enabled: false }),
-    )
+  it('a switched-off service does not', async () => {
+    stubBackend()
+    stubDraft([{ ...FB, enabled: false }])
     renderOnboarding()
-    await screen.findByRole('group', { name: 'Popular' })
+    await screen.findByRole('group', { name: 'Popular services' })
     expect(
       screen.getByRole('button', { name: 'Create profile' }),
     ).toBeDisabled()
     expect(screen.getByText('Turn on a service or add a site.')).toBeVisible()
+  })
+
+  it('switching a service on changes the draft only', async () => {
+    stubBackend()
+    stubDraft([])
+    const add = wailsApp.stub('DraftDesyncAddService', (draft, id) => ({
+      ...draft,
+      custom: [{ id: 'fb01fb01', domain: '', service: id, enabled: true }],
+    }))
+    const saved = wailsApp.stub('AddDesyncService', () => desyncStatus())
+    renderOnboarding()
+    await screen.findByRole('group', { name: 'Popular services' })
+    fireEvent.click(serviceSwitch('Facebook'))
+    await waitFor(() =>
+      expect(serviceSwitch('Facebook')).toHaveAttribute('aria-checked', 'true'),
+    )
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ custom: [] }),
+      'facebook',
+    )
+    expect(saved).not.toHaveBeenCalled()
+    // Enabled once the edit settled (the panel's saving flag clears after).
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Create profile' }),
+      ).toBeEnabled(),
+    )
   })
 })

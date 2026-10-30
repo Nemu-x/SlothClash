@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { useDesyncPresets } from '../hooks/queries/useDesyncPresets'
+import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import { desyncSelectionNames } from '../utils/desyncStatus'
 
@@ -24,7 +24,7 @@ export function DesyncSummaryCard({
   const titleId = useId()
   const { snapshot } = useDesyncStatus({ connected, mode, traffic })
   const settings = snapshot?.status.settings
-  const catalog = useDesyncPresets()
+  const catalog = useDesyncServices()
   const names = settings ? desyncSelectionNames(t, settings, catalog) : []
   return (
     <div

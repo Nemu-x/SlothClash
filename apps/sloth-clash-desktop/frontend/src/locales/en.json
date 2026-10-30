@@ -353,7 +353,6 @@
       "insightLatency": "Latency",
       "insightSpeed": "Speed",
       "desyncOnlySubtitle": "Desync only · no VPN",
-      "desyncOnlyOff": "Desync is off: all traffic goes directly. Turn it on",
       "desyncOnlyRuleOnly": "A Desync-only profile works in Rule mode only: its Desync routes are rules, and there is no server for Global mode",
       "desyncOnlyRuleHint": "Rule only",
       "proxyServers": "Proxy servers",
@@ -513,11 +512,6 @@
         "badge": "Desync only",
         "badgeTitle": "No VPN servers: Desync routes only, everything else connects directly",
         "desyncOn": "No VPN · Desync on",
-        "desyncOff": "No VPN · Desync is off",
-        "enableTitle": "Turn on Desync?",
-        "enableBody": "This profile has no VPN servers. Without Desync all traffic goes directly and nothing is unblocked.",
-        "enable": "Turn on Desync",
-        "notNow": "Not now",
         "editBlurb": "A Desync-only profile has no subscription, so only its name can be changed.",
         "configure": "Set up",
         "configureAria": "Desync settings"
@@ -784,10 +778,10 @@
       "receiving": "Receiving media",
       "partial": "One media connection stalled; other connections are working",
       "interrupted": "UDP traffic interrupted; waiting for recovery",
-      "failed": "Desync and reserve unavailable · retrying automatically",
+      "failed": "Desync and VPN unavailable · retrying automatically",
       "checking": "Confirming a connection failure",
-      "profile": "Using subscription reserve",
-      "profile_failed": "Subscription reserve unavailable · retrying",
+      "profile": "Through VPN (Desync didn't work here)",
+      "profile_failed": "VPN unavailable too · retrying",
       "queued": "Waiting for a check",
       "not_needed": "Not blocked · Desync not needed",
       "unavailable": "Desync can't unblock this site",
@@ -796,14 +790,22 @@
     },
     "copyFailed": "Could not copy diagnostics",
     "homeChipAria": "Desync status · open Desync",
+    "error": {
+      "unsupported_core": "This build's core does not support Desync.",
+      "unsupported_udp_core": "This build's core does not support Discord voice through Desync.",
+      "no_selection": "Turn on a service or add a site first.",
+      "discord_platform": "Discord through Desync works on Windows only.",
+      "no_profile": "Add or choose a profile first: Desync settings belong to a profile."
+    },
     "custom": {
-      "title": "Custom domains",
+      "title": "Sites",
       "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",
       "inputLabel": "Domain",
       "add": "Add",
       "remove": "Remove {{domain}}",
-      "ipHint": "Likely blocked by IP address; traffic follows your profile.",
-      "limitReached": "Up to {{limit}} domains.",
+      "ipHint": "Likely blocked by IP address; it goes through your VPN.",
+      "ipHintDirect": "Likely blocked by IP address. Without a VPN this site stays blocked.",
+      "limitReached": "Up to {{limit}} sites and popular services.",
       "homeItem": "Sites {{count}}",
       "error": {
         "empty": "Enter a domain, for example example.com.",
@@ -813,15 +815,14 @@
         "public_suffix": "Enter a site’s domain, not a whole zone such as com or co.uk.",
         "builtin": "This domain is covered by the built-in YouTube or Discord switch.",
         "duplicate": "This domain is already in the list.",
-        "limit": "You can add up to {{limit}} domains.",
+        "limit": "You can add up to {{limit}} sites and popular services.",
         "not_found": "This entry no longer exists. The list was refreshed.",
-        "preset_overlap": "Already covered by the {{name}} preset.",
-        "unknown_preset": "This preset is not available in this version."
-      },
-      "ownTitle": "Other sites"
+        "service_overlap": "Already covered by {{name}} in Popular services.",
+        "unknown_service": "This service is not available in this version."
+      }
     },
-    "lead": "Unblocks YouTube, Discord and the sites you add, without a VPN.",
-    "servicesTitle": "Services",
+    "lead": "YouTube, Discord and the sites you add go directly through Desync, outside your VPN. Where Desync doesn't help, they go through the VPN.",
+    "leadDesyncOnly": "Unblocks YouTube, Discord and the sites you add without a VPN. Everything else connects directly.",
     "summary": {
       "status": "Status",
       "covers": "Covers",
@@ -836,26 +837,25 @@
         "discord": "Chat and voice"
       },
       "nameLabel": "Profile name",
-      "namePlaceholder": "Empty = “Desync only”",
+      "defaultName": "Desync only",
       "needSelection": "Turn on a service or add a site.",
       "create": "Create profile",
       "creating": "Creating…",
       "created": "“{{name}}” is active: Desync is on.",
-      "saveBusy": "Another change is still being saved. Try again.",
       "notCreated": "The profile was not created. Try again."
     },
-    "presets": {
-      "title": "Popular",
+    "services": {
+      "title": "Popular services",
       "more": "+{{count}} more",
       "less": "Hide",
       "shared": "Also routes {{domains}}: it is shared with {{names}}, so {{names}} images on other sites go this way too.",
-      "replaced_one": "Replaced {{domains}} — the {{name}} preset covers it.",
-      "replaced_other": "Replaced {{domains}} — the {{name}} preset covers them.",
+      "replaced_one": "Replaced {{domains}}: {{name}} covers it.",
+      "replaced_other": "Replaced {{domains}}: {{name}} covers them.",
       "error": {
-        "duplicate": "This preset is already on the list.",
-        "limit": "Up to {{limit}} entries, presets included. Remove a domain first.",
-        "not_found": "This preset entry no longer exists. The list was refreshed.",
-        "unknown_preset": "This preset is not available in this version."
+        "duplicate": "This service is already on the list.",
+        "limit": "Up to {{limit}} entries, popular services included. Remove a site first.",
+        "not_found": "This service entry no longer exists. The list was refreshed.",
+        "unknown_service": "This service is not available in this version."
       }
     }
   }

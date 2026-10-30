@@ -82,11 +82,14 @@ func saveDesyncSelection(network, service, id string) {
 	entry.Network = network
 	entry.Updated = time.Now().Unix()
 	if domain, ok := desync.CustomServiceDomain(service); ok {
-		// Keep winners of current entries only, so the cache stays bounded
-		// by the entry cap.
+		// Keep winners of current entries only (the active profile's and
+		// the other profiles'), so the cache stays bounded by the entries.
 		current := map[string]bool{}
 		for _, e := range sanitizeDesyncCustom(prefsCurrent.Desync.Custom) {
 			current[e.key()] = true
+		}
+		for key := range desyncOtherProfileKeys {
+			current[key] = true
 		}
 		custom := map[string]string{}
 		for d, winner := range entry.Custom {

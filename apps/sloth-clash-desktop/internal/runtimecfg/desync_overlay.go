@@ -159,7 +159,7 @@ func customDesyncRules(entries []DesyncCustomRoute) []any {
 
 // customDesyncDomains is the domains entry routes among the enabled entries:
 // its own domain, or the preset's catalog domains minus those an enabled
-// preset earlier in the catalog also lists (desync.PresetOwnedDomains), so a
+// preset earlier in the catalog also lists (desync.ServiceOwnedDomains), so a
 // shared domain is in exactly one group.
 func customDesyncDomains(entry DesyncCustomRoute, entries []DesyncCustomRoute) []string {
 	if entry.Preset == "" {
@@ -171,7 +171,7 @@ func customDesyncDomains(entry DesyncCustomRoute, entries []DesyncCustomRoute) [
 			enabled = append(enabled, e.Preset)
 		}
 	}
-	return desync.PresetOwnedDomains(entry.Preset, enabled)
+	return desync.ServiceOwnedDomains(entry.Preset, enabled)
 }
 
 // isCustomDesyncRule reports a rule targeting a custom-domain group. The

@@ -3,25 +3,28 @@ import { useTranslation } from 'react-i18next'
 
 import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import { GetDesyncDiagnosticReport, type DesyncSettings } from '../api/desync'
-import { useDesyncPresets } from '../hooks/queries/useDesyncPresets'
+import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
+import type { DesyncDraft } from '../hooks/useDesyncDraft'
 import {
-  customDomainErrorText,
+  desyncErrorText,
   DESYNC_CUSTOM_LIMIT,
   desyncCustomViews,
   desyncEnablePatch,
-  desyncPresetName,
-  desyncPresetViews,
-  type DesyncPresetView,
+  desyncServiceName,
   desyncServiceViews,
+  type DesyncServiceView,
+  desyncBuiltinViews,
 } from '../utils/desyncStatus'
 
-import { DesyncPresetList } from './DesyncPresetList'
+import { DesyncServiceList } from './DesyncServiceList'
 import { DesyncStatusChip } from './DesyncStatusChip'
 
 /**
- * - manage: the full controls — master switch, service rows and custom
- *   domains with live status, Check again / Copy diagnostics.
+ * - manage: the active profile's controls — master switch (not for a
+ *   Desync-only profile, which is always on), "Popular services" (YouTube,
+ *   Discord and the catalog) and "Sites" (the user's domains) with live
+ *   status, Check again / Copy diagnostics.
  * - onboarding: choosing what a new Desync-only profile unblocks — the same
  *   rows without the master switch, status or diagnostics (Desync is turned
  *   on when the profile is created).
@@ -30,7 +33,8 @@ export type DesyncPanelVariant = 'manage' | 'onboarding'
 
 /**
  * The Desync controls, laid out for the Desync modal: a scrolling body and a
- * modal footer. Every switch saves at once (the settings are global prefs).
+ * modal footer. Every switch saves at once into the active profile, or, with
+ * `draft` (onboarding), only changes the draft.
  */
 export function DesyncPanel({
   connected,
@@ -43,6 +47,7 @@ export function DesyncPanel({
   footerNote,
   children,
   onSavingChange,
+  draft,
 }: {
   connected: boolean
   mode: string
@@ -60,25 +65,36 @@ export function DesyncPanel({
   children?: ReactNode
   /** A settings write started / finished. */
   onSavingChange?: (saving: boolean) => void
+  /** Edit this draft instead of the active profile's settings. */
+  draft?: DesyncDraft
 }) {
   const { t } = useTranslation()
   const baseId = useId()
+  const live = useDesyncStatus({ connected, mode, traffic })
+  const { error: pollError, retry: retryAuto } = live
   const {
-    snapshot,
-    error: pollError,
     save: saveSettings,
     addCustom,
-    addPreset,
+    addService,
     removeCustom,
     setCustomEnabled,
-    retry: retryAuto,
-  } = useDesyncStatus({ connected, mode, traffic })
-  const catalog = useDesyncPresets()
+  } = draft ?? live
+  // A draft is shown with the live status' platform and core support.
+  const snapshot =
+    draft && live.snapshot
+      ? draft.settings
+        ? {
+            ...live.snapshot,
+            status: { ...live.snapshot.status, settings: draft.settings },
+          }
+        : null
+      : live.snapshot
+  const catalog = useDesyncServices()
   const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)
   const [domainInput, setDomainInput] = useState('')
   const [customError, setCustomError] = useState('')
-  const [presetError, setPresetError] = useState<{
+  const [serviceError, setServiceError] = useState<{
     id: string
     text: string
   } | null>(null)
@@ -114,37 +130,37 @@ export function DesyncPanel({
     try {
       await saveSettings({ ...status.settings, ...patch })
     } catch (err: unknown) {
-      if (mountedRef.current) setError(String(err))
+      if (mountedRef.current) setError(desyncErrorText(t, err))
     } finally {
       if (mountedRef.current) setSaving(false)
     }
   }
 
-  const presetName = (id: string) => desyncPresetName(catalog, id)
+  const serviceName = (id: string) => desyncServiceName(catalog, id)
 
   /**
    * One custom-list write. A domain write's validation error shows under the
-   * field, a preset switch's (`preset` = its catalog ID) under the Popular
+   * field, a service switch's (`service` = its catalog ID) under the Popular
    * list.
    */
   async function writeCustom(
     call: () => Promise<boolean>,
-    preset?: string,
+    service?: string,
   ): Promise<boolean> {
     if (!status || busy) return false
     setSaving(true)
     setCustomError('')
-    setPresetError(null)
+    setServiceError(null)
     setReplaced(null)
     try {
       return await call()
     } catch (err: unknown) {
       if (mountedRef.current) {
-        const text = customDomainErrorText(t, err, {
-          presetName,
-          forPreset: preset !== undefined,
+        const text = desyncErrorText(t, err, {
+          serviceName,
+          forService: service !== undefined,
         })
-        if (preset !== undefined) setPresetError({ id: preset, text })
+        if (service !== undefined) setServiceError({ id: service, text })
         else setCustomError(text)
       }
       return false
@@ -154,13 +170,13 @@ export function DesyncPanel({
   }
 
   /**
-   * Preset switch: ON adds the preset the first time, then re-enables its
+   * Service switch: ON adds the service the first time, then re-enables its
    * entry; OFF only disables it (the entry and its cached strategy stay).
    */
-  function togglePreset(view: DesyncPresetView) {
+  function toggleService(view: DesyncServiceView) {
     void writeCustom(async () => {
       if (view.entryId) return setCustomEnabled(view.entryId, !view.checked)
-      const result = await addPreset(view.id)
+      const result = await addService(view.id)
       if (result === false) return false
       if (result.length > 0 && mountedRef.current)
         setReplaced({ id: view.id, domains: result })
@@ -204,26 +220,30 @@ export function DesyncPanel({
   const ruleMode = mode.toLowerCase() === 'rule'
   const supported = status?.coreSupported === true
   const rows = snapshot
-    ? desyncServiceViews(snapshot, { connected, mode, traffic })
+    ? desyncBuiltinViews(snapshot, { connected, mode, traffic })
     : []
   const customRows = snapshot
     ? desyncCustomViews(snapshot, { connected, mode, traffic })
     : []
-  const presetRows = snapshot
-    ? desyncPresetViews(snapshot, { connected, mode, traffic }, catalog)
+  const serviceRows = snapshot
+    ? desyncServiceViews(snapshot, { connected, mode, traffic }, catalog)
     : []
-  // The cap counts every entry, presets included (desyncCustomLimit).
+  // The cap counts every entry, services included (desyncCustomLimit).
   const atLimit = (status?.settings.custom?.length ?? 0) >= DESYNC_CUSTOM_LIMIT
   const shownError = outerError || error || pollError
   const servicesTitleId = `${baseId}-services`
   const customTitleId = `${baseId}-custom`
+  // Without a VPN a site Desync cannot unblock stays blocked.
+  const ipHint = t(
+    status?.desyncOnly ? 'desync.custom.ipHintDirect' : 'desync.custom.ipHint',
+  )
   const customErrorId = `${baseId}-custom-error`
-  const ownTitleId = `${baseId}-own`
 
   return (
     <div className="desyncPanel" data-variant={variant}>
       <div className="desyncPanelBody">
-        {onboarding ? null : (
+        {/* A Desync-only profile is always on: no master switch. */}
+        {onboarding || status?.desyncOnly ? null : (
           <div className="desyncMaster">
             <span className="desyncMasterLabel">{t('desync.enabled')}</span>
             <button
@@ -251,7 +271,7 @@ export function DesyncPanel({
         {status ? (
           <section className="desyncSection" aria-labelledby={servicesTitleId}>
             <h4 id={servicesTitleId} className="desyncSectionTitle">
-              {t('desync.servicesTitle')}
+              {t('desync.services.title')}
             </h4>
             <ul className="desyncServices">
               {rows.map((row) => (
@@ -293,6 +313,19 @@ export function DesyncPanel({
                 </li>
               ))}
             </ul>
+            {serviceRows.length > 0 ? (
+              <DesyncServiceList
+                views={serviceRows}
+                labelledBy={servicesTitleId}
+                onboarding={onboarding}
+                busy={busy}
+                supported={supported}
+                ipHint={ipHint}
+                replaced={replaced}
+                error={serviceError}
+                onToggle={toggleService}
+              />
+            ) : null}
           </section>
         ) : (
           <p className="small muted desyncLoading">{t('desync.loading')}</p>
@@ -308,27 +341,7 @@ export function DesyncPanel({
             <p className="small muted desyncCustomHint">
               {t('desync.custom.hint')}
             </p>
-            {presetRows.length > 0 ? (
-              <DesyncPresetList
-                views={presetRows}
-                onboarding={onboarding}
-                busy={busy}
-                supported={supported}
-                replaced={replaced}
-                error={presetError}
-                onToggle={togglePreset}
-              />
-            ) : null}
-            <div
-              className="desyncSubgroup desyncOwnSites"
-              role={presetRows.length > 0 ? 'group' : undefined}
-              aria-labelledby={presetRows.length > 0 ? ownTitleId : undefined}
-            >
-              {presetRows.length > 0 ? (
-                <h5 id={ownTitleId} className="desyncSubTitle">
-                  {t('desync.custom.ownTitle')}
-                </h5>
-              ) : null}
+            <div className="desyncSubgroup desyncOwnSites">
               {customRows.length > 0 ? (
                 <ul className="desyncServices desyncCustomList">
                   {customRows.map((row) => (
@@ -348,9 +361,7 @@ export function DesyncPanel({
                           <>
                             <DesyncStatusChip view={row.status} />
                             {row.status.phase === 'unavailable' ? (
-                              <span className="desyncCustomNote">
-                                {t('desync.custom.ipHint')}
-                              </span>
+                              <span className="desyncCustomNote">{ipHint}</span>
                             ) : null}
                           </>
                         )}

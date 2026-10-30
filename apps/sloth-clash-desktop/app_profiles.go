@@ -67,6 +67,7 @@ func (a *App) ImportProfileFromURL(name string, rawURL string) (AppState, error)
 	if a.state.Profile.ActiveProfileID == "" {
 		a.state.Profile.ActiveProfileID = p.ID
 	}
+	a.syncActiveDesyncLocked()
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
 		return a.state, err
@@ -130,6 +131,7 @@ func (a *App) ImportProfileFromText(name string, content string) (AppState, erro
 	if a.state.Profile.ActiveProfileID == "" {
 		a.state.Profile.ActiveProfileID = p.ID
 	}
+	a.syncActiveDesyncLocked()
 	// Surface partial imports instead of silently dropping nodes: a V2Ray list
 	// with unsupported schemes / malformed links keeps the good nodes and tells
 	// the user how many were skipped. (Frontend can render this as a toast.)
@@ -182,6 +184,8 @@ func (a *App) ActivateProfile(profileID string) (AppState, error) {
 		a.state.Proxy.Groups = []ProxyGroup{}
 		a.state.Proxy.LastGoodGroup = a.activeProfileLastGoodGroupLocked()
 	}
+	// The new profile's Desync settings drive the reconnect below.
+	a.syncActiveDesyncLocked()
 	a.state.UpdatedAt = time.Now().Unix()
 	if err := a.persistProfilesLocked(); err != nil {
 		a.mu.Unlock()
@@ -237,6 +241,7 @@ func (a *App) DeleteProfile(profileID string) (AppState, error) {
 	a.state.UpdatedAt = time.Now().Unix()
 	connected := a.state.Connection.Status == "connected"
 	nextActiveID := strings.TrimSpace(a.state.Profile.ActiveProfileID)
+	a.syncActiveDesyncLocked()
 	if err := a.persistProfilesLocked(); err != nil {
 		a.mu.Unlock()
 		return a.GetAppState(), err

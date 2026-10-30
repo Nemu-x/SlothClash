@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import {
   AddDesyncCustomDomain,
-  AddDesyncPreset,
+  AddDesyncService,
   GetDesyncAutoStatus,
   GetDesyncStatus,
   RemoveDesyncCustomDomain,
@@ -63,11 +63,14 @@ async function fetchSnapshot(qc: QueryClient): Promise<DesyncSnapshot> {
  * Desync is off) while any
  * `enabled` observer is mounted (the Settings card, and App while Home is
  * shown). Re-polls at once when connection / mode / traffic change, since
- * those gate the calibration.
+ * those gate the calibration, and when `profileId` (the active profile,
+ * whose settings these are) changes.
  *
  * `save`, the custom-entry writes and `retry` are stable (useCallback) so they are safe effect deps.
  */
-export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
+export function useDesyncStatus(
+  ctx: DesyncContext & { enabled?: boolean; profileId?: string },
+) {
   const qc = useQueryClient()
   const enabled = ctx.enabled !== false
   const q = useQuery({
@@ -83,7 +86,7 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     refetchIntervalInBackground: false,
   })
 
-  const gateKey = `${ctx.connected}|${ctx.mode}|${ctx.traffic}`
+  const gateKey = `${ctx.connected}|${ctx.mode}|${ctx.traffic}|${ctx.profileId ?? ''}`
   const lastGateRef = useRef(gateKey)
   useEffect(() => {
     if (lastGateRef.current === gateKey) return
@@ -124,21 +127,21 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     [write],
   )
   /**
-   * Add catalog preset `id`. Resolves to the domains of the plain entries it
-   * replaced (the backend drops those the preset covers), or false when
+   * Add catalog service `id`. Resolves to the domains of the plain entries it
+   * replaced (the backend drops those the service covers), or false when
    * another write is in flight.
    */
-  const addPreset = useCallback(
+  const addService = useCallback(
     async (id: string): Promise<string[] | false> => {
       let replaced: string[] = []
       const ok = await write(async () => {
         const before =
           qc.getQueryData<DesyncSnapshot>(DESYNC_STATUS_KEY)?.status.settings
             .custom ?? []
-        const next = await AddDesyncPreset(id)
+        const next = await AddDesyncService(id)
         const kept = new Set((next.settings.custom ?? []).map((e) => e.id))
         replaced = before
-          .filter((e) => !e.preset && !kept.has(e.id))
+          .filter((e) => !e.service && !kept.has(e.id))
           .map((e) => e.domain)
         return next
       })
@@ -169,7 +172,7 @@ export function useDesyncStatus(ctx: DesyncContext & { enabled?: boolean }) {
     error: q.error ? String(q.error) : '',
     save,
     addCustom,
-    addPreset,
+    addService,
     removeCustom,
     setCustomEnabled,
     retry,

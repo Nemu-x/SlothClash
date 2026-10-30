@@ -15,7 +15,7 @@ import (
 //     blocked: the group selects DIRECT (state not_needed).
 //  2. search: the custom candidate set (cached winner first) in budgets of
 //     30 seconds per probed host (desyncCustomStepBudget: one for a plain
-//     entry, one per page and CDN host for a preset) that resume where the
+//     entry, one per page and CDN host for a service) that resume where the
 //     previous one stopped; after the first
 //     failed budget the group selects PASS, so traffic follows the profile
 //     while the search continues. A winner passing two rounds is selected
@@ -28,7 +28,7 @@ import (
 //
 // ready and not_needed entries are re-checked every 90 seconds through their
 // group; a failure confirmed by two follow-ups starts again at step 1. Probes
-// use desyncProbeReachable against https://<domain>/, or for a preset entry
+// use desyncProbeReachable against https://<domain>/, or for a popular-service entry
 // against each of its probe hosts (page and CDN), all of which must pass in
 // every step: a strategy that opens the page but not its media is a failure.
 // A session ends on a
@@ -52,7 +52,7 @@ var (
 // desyncCustomStepBudget is the time one calibration step (the baseline, or
 // one search budget) gets for an entry probing `targets` hosts:
 // desyncCustomBudget per host. A candidate costs up to 2 rounds × targets ×
-// 5 s (chooseDesyncTCP), so a preset entry (page and CDN hosts) needs
+// 5 s (chooseDesyncTCP), so a popular-service entry (page and CDN hosts) needs
 // proportionally more for a passing candidate on a slow network not to be cut
 // off at the deadline; a plain entry (one host) keeps the base budget.
 func desyncCustomStepBudget(targets int) time.Duration {
@@ -134,24 +134,24 @@ func enabledDesyncCustom() []DesyncCustomEntry {
 }
 
 // desyncCustomTargets is the probe URLs of entry among the enabled entries:
-// its domain's root, or the preset's probe hosts under the domains it routes
-// now (desync.PresetOwnedDomains, the same split the config uses): a shared
-// CDN another preset carries is that preset's to check.
+// its domain's root, or the service's probe hosts under the domains it routes
+// now (desync.ServiceOwnedDomains, the same split the config uses): a shared
+// CDN another popular service carries is that service's to check.
 func desyncCustomTargets(entry DesyncCustomEntry, enabled []DesyncCustomEntry) []string {
-	if entry.Preset == "" {
+	if entry.Service == "" {
 		return []string{desyncCustomTarget(entry.Domain)}
 	}
-	var presets []string
+	var services []string
 	for _, e := range enabled {
-		if e.Preset != "" {
-			presets = append(presets, e.Preset)
+		if e.Service != "" {
+			services = append(services, e.Service)
 		}
 	}
-	hosts := desync.PresetProbes(entry.Preset, desync.PresetOwnedDomains(entry.Preset, presets))
+	hosts := desync.ServiceProbes(entry.Service, desync.ServiceOwnedDomains(entry.Service, services))
 	if len(hosts) == 0 {
 		// Unreachable with the catalog (its tests); never probe nothing,
 		// which would pass every candidate.
-		p, _ := desync.PresetByID(entry.Preset)
+		p, _ := desync.ServiceByID(entry.Service)
 		hosts = p.Probes
 	}
 	var out []string
@@ -295,7 +295,7 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 		return err
 	}
 	attempt := func(c desync.Candidate, e error, d time.Duration) {
-		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: c.ID, Target: entry.Domain, Preset: entry.Preset, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
+		a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: c.ID, Target: entry.Domain, Preset: entry.Service, OK: e == nil, Code: desyncErrorCode(e), DurationMS: d.Milliseconds()})
 	}
 	selectMember := func(name string) bool {
 		if err := a.applyDesyncCandidate(ctx, lease, endpoint, secret, route, name); err != nil {
@@ -380,5 +380,5 @@ func (a *App) calibrateDesyncCustom(ctx context.Context, lease uint64, network, 
 	backoff := desyncCustomRetry << min(failures-1, 5)
 	*plan = desyncCustomPlan{phase: "unavailable", candidate: "profile", failures: failures, due: time.Now().Add(min(backoff, desyncCustomBackoffMax))}
 	a.desyncCtl.setCustom(lease, entry.ID, DesyncAutoService{Phase: "unavailable", Candidate: "profile", Code: "exhausted"})
-	a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: "profile", Target: entry.Domain, Preset: entry.Preset, OK: true, Code: "unavailable"})
+	a.desyncAttempt(lease, DesyncAutoAttempt{Service: "custom", Candidate: "profile", Target: entry.Domain, Preset: entry.Service, OK: true, Code: "unavailable"})
 }

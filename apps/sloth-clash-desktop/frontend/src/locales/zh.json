@@ -352,7 +352,6 @@
       "insightLatency": "延迟",
       "insightSpeed": "速度",
       "desyncOnlySubtitle": "仅 Desync · 无 VPN",
-      "desyncOnlyOff": "Desync 已关闭：所有流量直连。去开启",
       "desyncOnlyRuleOnly": "仅 Desync 配置只能使用规则模式：Desync 路由本身就是规则，全局模式没有可用的服务器",
       "desyncOnlyRuleHint": "仅规则",
       "proxyServers": "代理服务器",
@@ -512,11 +511,6 @@
         "badge": "仅 Desync",
         "badgeTitle": "没有 VPN 服务器：仅 Desync 路由，其余流量直连",
         "desyncOn": "无 VPN · Desync 已开启",
-        "desyncOff": "无 VPN · Desync 已关闭",
-        "enableTitle": "开启 Desync？",
-        "enableBody": "此配置没有 VPN 服务器。不开启 Desync 时所有流量直连，不会解锁任何内容。",
-        "enable": "开启 Desync",
-        "notNow": "暂不",
         "editBlurb": "仅 Desync 配置没有订阅，只能修改名称。",
         "configure": "设置",
         "configureAria": "Desync 设置"
@@ -783,10 +777,10 @@
       "receiving": "正在接收媒体流量",
       "partial": "一个媒体连接已停滞，其他连接仍在工作",
       "interrupted": "UDP 通信中断，正在等待恢复",
-      "failed": "Desync 和备用线路不可用 · 将自动重试",
+      "failed": "Desync 和 VPN 均不可用 · 将自动重试",
       "checking": "正在确认连接故障",
-      "profile": "使用订阅备用线路",
-      "profile_failed": "订阅备用线路不可用 · 正在重试",
+      "profile": "走 VPN（Desync 在此无效）",
+      "profile_failed": "VPN 也不可用 · 正在重试",
       "queued": "等待检测",
       "not_needed": "未被封锁 · 无需 Desync",
       "unavailable": "Desync 无法解锁此网站",
@@ -795,14 +789,22 @@
     },
     "copyFailed": "无法复制诊断信息",
     "homeChipAria": "Desync 状态 · 打开 Desync",
+    "error": {
+      "unsupported_core": "此版本的内核不支持 Desync。",
+      "unsupported_udp_core": "此版本的内核不支持通过 Desync 的 Discord 语音。",
+      "no_selection": "请先开启一个服务或添加一个网站。",
+      "discord_platform": "通过 Desync 的 Discord 仅支持 Windows。",
+      "no_profile": "请先添加或选择一个配置：Desync 设置保存在配置中。"
+    },
     "custom": {
-      "title": "自定义域名",
+      "title": "网站",
       "hint": "包含所有子域名。每个网站会单独自动测试策略。",
       "inputLabel": "域名",
       "add": "添加",
       "remove": "移除 {{domain}}",
-      "ipHint": "很可能按 IP 地址封锁；流量将按配置文件的规则走。",
-      "limitReached": "最多 {{limit}} 个域名。",
+      "ipHint": "很可能按 IP 地址封锁；将通过 VPN 访问。",
+      "ipHintDirect": "很可能按 IP 地址封锁。没有 VPN 时此网站仍无法访问。",
+      "limitReached": "网站和热门服务最多 {{limit}} 个。",
       "homeItem": "网站 {{count}}",
       "error": {
         "empty": "请输入域名，例如 example.com。",
@@ -812,15 +814,14 @@
         "public_suffix": "请输入网站的域名，而不是 com 或 co.uk 这样的整个后缀。",
         "builtin": "该域名已由内置的 YouTube 或 Discord 开关覆盖。",
         "duplicate": "该域名已在列表中。",
-        "limit": "最多可以添加 {{limit}} 个域名。",
+        "limit": "最多可以添加 {{limit}} 个网站和热门服务。",
         "not_found": "该条目已不存在，列表已刷新。",
-        "preset_overlap": "已被 {{name}} 预设覆盖。",
-        "unknown_preset": "此版本中没有该预设。"
-      },
-      "ownTitle": "其他网站"
+        "service_overlap": "已被热门服务 {{name}} 覆盖。",
+        "unknown_service": "此版本中没有该服务。"
+      }
     },
-    "lead": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站。",
-    "servicesTitle": "服务",
+    "lead": "YouTube、Discord 和你添加的网站将通过 Desync 直连，不走 VPN。Desync 无效时改走 VPN。",
+    "leadDesyncOnly": "无需 VPN 即可解锁 YouTube、Discord 和你添加的网站，其余流量直连。",
     "summary": {
       "status": "状态",
       "covers": "范围",
@@ -835,25 +836,24 @@
         "discord": "聊天和语音"
       },
       "nameLabel": "配置名称",
-      "namePlaceholder": "留空 = “Desync only”",
+      "defaultName": "仅 Desync",
       "needSelection": "请开启一个服务或添加一个网站。",
       "create": "创建配置",
       "creating": "正在创建…",
       "created": "“{{name}}”已启用：Desync 已开启。",
-      "saveBusy": "上一次更改仍在保存，请重试。",
       "notCreated": "配置未创建，请重试。"
     },
-    "presets": {
-      "title": "热门",
+    "services": {
+      "title": "热门服务",
       "more": "另外 {{count}} 个",
       "less": "收起",
       "shared": "{{domains}} 也经由此路由：它与 {{names}} 共用，因此其他网站上的 {{names}} 图片也会走这里。",
-      "replaced_other": "已替换 {{domains}}：{{name}} 预设已涵盖。",
+      "replaced_other": "已替换 {{domains}}：{{name}} 已涵盖。",
       "error": {
-        "duplicate": "该预设已在列表中。",
-        "limit": "包括预设在内最多 {{limit}} 个条目。请先移除一个域名。",
-        "not_found": "该预设条目已不存在，列表已刷新。",
-        "unknown_preset": "此版本中没有该预设。"
+        "duplicate": "该服务已在列表中。",
+        "limit": "包括热门服务在内最多 {{limit}} 个条目。请先移除一个网站。",
+        "not_found": "该服务条目已不存在，列表已刷新。",
+        "unknown_service": "此版本中没有该服务。"
       }
     }
   }

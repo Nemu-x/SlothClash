@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  DESYNC_PRESETS,
+  DESYNC_SERVICES,
   desyncAuto,
   desyncService,
   desyncSnapshot,
@@ -403,19 +403,19 @@ describe('useHomeViewModel: Desync chip', () => {
     })
   })
 
-  describe('presets', () => {
+  describe('services', () => {
     // Stored Instagram first: the chip still follows the catalog order.
     const entries = [
-      { id: 'ig', domain: '', preset: 'instagram', enabled: true },
+      { id: 'ig', domain: '', service: 'instagram', enabled: true },
       { id: 'a1', domain: 'example.org', enabled: true },
-      { id: 'fb', domain: '', preset: 'facebook', enabled: true },
-      { id: 'xx', domain: '', preset: 'x', enabled: false },
+      { id: 'fb', domain: '', service: 'facebook', enabled: true },
+      { id: 'xx', domain: '', service: 'x', enabled: false },
       { id: 'b2', domain: 'example.net', enabled: true },
     ]
     const chipWith = (custom: Record<string, string>, settings = {}) =>
       vm({
         state: rule(),
-        desyncPresets: DESYNC_PRESETS,
+        desyncServices: DESYNC_SERVICES,
         desync: desyncSnapshot(
           desyncStatus({ settings: { custom: entries, ...settings } }),
           desyncAuto({
@@ -426,7 +426,7 @@ describe('useHomeViewModel: Desync chip', () => {
         ),
       }).desyncChip
 
-    it('names each switched-on preset like a service, before the sites', () => {
+    it('names each switched-on service like a service, before the sites', () => {
       const chip = chipWith({
         fb: 'ready',
         ig: 'unavailable',
@@ -436,8 +436,8 @@ describe('useHomeViewModel: Desync chip', () => {
       expect(chip?.services).toEqual([
         { key: 'youtube', name: 'YouTube', tone: 'ok' },
         { key: 'discord', name: 'Discord', tone: 'ok' },
-        { key: 'preset:facebook', name: 'Facebook', tone: 'ok' },
-        { key: 'preset:instagram', name: 'Instagram', tone: 'problem' },
+        { key: 'service:facebook', name: 'Facebook', tone: 'ok' },
+        { key: 'service:instagram', name: 'Instagram', tone: 'problem' },
         { key: 'custom', name: 'Sites 2', tone: 'ok' },
       ])
       expect(chip?.tooltip).toContain('Facebook: HTTPS available · automatic')
@@ -447,10 +447,10 @@ describe('useHomeViewModel: Desync chip', () => {
       expect(chip?.tooltip).not.toContain('X (Twitter)')
     })
 
-    it('shows the chip for preset-only Desync', () => {
+    it('shows the chip for service-only Desync', () => {
       const chip = vm({
         state: rule(),
-        desyncPresets: DESYNC_PRESETS,
+        desyncServices: DESYNC_SERVICES,
         desync: desyncSnapshot(
           desyncStatus({
             settings: {

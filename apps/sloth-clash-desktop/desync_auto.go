@@ -681,8 +681,8 @@ func (a *App) GetDesyncDiagnosticReport() string {
 	key := desyncReportKey()
 	custom := []map[string]any{}
 	for _, e := range status.Settings.Custom {
-		if e.Preset != "" {
-			custom = append(custom, map[string]any{"id": e.ID, "preset": e.Preset, "enabled": e.Enabled})
+		if e.Service != "" {
+			custom = append(custom, map[string]any{"id": e.ID, "preset": e.Service, "enabled": e.Enabled})
 			continue
 		}
 		custom = append(custom, map[string]any{"id": e.ID, "domain": desyncReportDigest(key, e.Domain), "enabled": e.Enabled})

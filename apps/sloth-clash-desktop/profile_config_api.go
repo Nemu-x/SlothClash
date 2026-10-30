@@ -264,7 +264,7 @@ func (a *App) ensureProfileConfigSnapshot(profileID string) error {
 		WithExternalController: false,
 		Traffic:                traffic,
 		EnableTun:              false,
-		Env:                    currentRuntimeConfigEnv(),
+		Env:                    runtimeConfigEnvFor(target),
 	}, nil)
 }
 

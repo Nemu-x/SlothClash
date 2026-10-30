@@ -54,7 +54,7 @@ function chip(id: string) {
 describe('DesyncPanel: custom domains', () => {
   it('adds a domain through the backend and clears the field', async () => {
     stubBackend()
-    const add = wailsApp.stub('AddDesyncCustomDomain', () =>
+    const add = wailsApp.stub('AddDesyncRule', () =>
       desyncStatus({ settings: { custom: [ORG] } }),
     )
     await renderCard()
@@ -63,14 +63,18 @@ describe('DesyncPanel: custom domains', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1))
     // Normalization is the backend's job; the UI only trims.
-    expect(add).toHaveBeenCalledWith('https://Example.org/x')
+    expect(add).toHaveBeenCalledWith({
+      kind: 'suffix',
+      value: 'https://Example.org/x',
+      route: 'desync',
+    })
     await waitFor(() => expect(input).toHaveValue(''))
     expect(within(customRow(ORG.id)).getByText('example.org')).toBeVisible()
   })
 
   it('shows a translated validation error and keeps the input', async () => {
     stubBackend()
-    wailsApp.stub('AddDesyncCustomDomain', () => {
+    wailsApp.stub('AddDesyncRule', () => {
       throw 'desync: builtin'
     })
     await renderCard()
@@ -89,7 +93,7 @@ describe('DesyncPanel: custom domains', () => {
 
   it('shows an unknown backend error verbatim', async () => {
     stubBackend()
-    wailsApp.stub('AddDesyncCustomDomain', () => {
+    wailsApp.stub('AddDesyncRule', () => {
       throw 'could not allocate a custom domain id'
     })
     await renderCard()
@@ -134,7 +138,7 @@ describe('DesyncPanel: custom domains', () => {
     await renderCard()
     fireEvent.click(screen.getByRole('switch', { name: 'YouTube' }))
     await waitFor(() => expect(set).toHaveBeenCalledTimes(1))
-    expect(wailsApp.fn('AddDesyncCustomDomain')).not.toHaveBeenCalled()
+    expect(wailsApp.fn('AddDesyncRule')).not.toHaveBeenCalled()
     expect(wailsApp.fn('RemoveDesyncCustomDomain')).not.toHaveBeenCalled()
   })
 
@@ -206,26 +210,26 @@ describe('DesyncPanel: custom domains', () => {
     expect(within(customRow(ORG.id)).queryByText(/through your VPN/)).toBeNull()
   })
 
-  it('lists the sites under "Sites"', async () => {
+  it('lists the rules under "My rules"', async () => {
     stubBackend(desyncStatus({ settings: { custom: [ORG] } }))
     await renderCard()
-    const sites = screen.getByRole('region', { name: 'Sites' })
+    const sites = screen.getByRole('region', { name: 'My rules' })
     expect(within(sites).getByText(ORG.domain)).toBeVisible()
     expect(screen.queryByText('Custom domains')).toBeNull()
     expect(screen.queryByText('Other sites')).toBeNull()
   })
 
   it('disables adding at the limit', async () => {
-    const many = Array.from({ length: 32 }, (_, i) => ({
+    const many = Array.from({ length: 128 }, (_, i) => ({
       id: `e${i}`,
       domain: `site${i}.example.org`,
+      kind: 'suffix',
+      route: i < 32 ? 'desync' : 'direct',
       enabled: true,
     }))
     stubBackend(desyncStatus({ settings: { custom: many } }))
     await renderCard()
     expect(screen.getByRole('textbox', { name: 'Domain' })).toBeDisabled()
-    expect(
-      screen.getByText('Up to 32 sites and popular services.'),
-    ).toBeVisible()
+    expect(screen.getByText('Up to 128 rules.')).toBeVisible()
   })
 })

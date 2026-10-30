@@ -685,7 +685,13 @@ func (a *App) GetDesyncDiagnosticReport() string {
 			custom = append(custom, map[string]any{"id": e.ID, "preset": e.Service, "enabled": e.Enabled})
 			continue
 		}
-		custom = append(custom, map[string]any{"id": e.ID, "domain": desyncReportDigest(key, e.Domain), "enabled": e.Enabled})
+		rule := map[string]any{"id": e.ID, "kind": e.kind(), "route": e.route(), "enabled": e.Enabled}
+		if e.kind() == desyncKindProcess {
+			rule["process"] = desyncReportDigest(key, strings.ToLower(e.Process))
+		} else {
+			rule["domain"] = desyncReportDigest(key, e.Domain)
+		}
+		custom = append(custom, rule)
 	}
 	report["customDomains"] = custom
 	if build, ok := debug.ReadBuildInfo(); ok {

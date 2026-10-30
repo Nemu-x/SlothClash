@@ -24,10 +24,20 @@ var DiscordDomains = []string{"discord.com", "discord.gg", "discordapp.com", "di
 func Rules(domains []string, route string) []string {
 	var rules []string
 	for _, domain := range domains {
-		rules = append(rules, "AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,"+domain+")),"+route)
-		rules = append(rules, "AND,((NETWORK,tcp),(DOMAIN-SUFFIX,"+domain+")),"+route)
+		rules = append(rules, MatchRules("DOMAIN-SUFFIX", domain, route)...)
 	}
 	return rules
+}
+
+// MatchRules returns the managed rules sending what one matcher (DOMAIN,
+// DOMAIN-SUFFIX or PROCESS-NAME with its value) matches through a Desync
+// route: TCP, plus UDP/443 so the route's candidates can reject QUIC and the
+// application falls back to TCP, where the transform applies.
+func MatchRules(matcher, value, route string) []string {
+	return []string{
+		"AND,((NETWORK,udp),(DST-PORT,443),(" + matcher + "," + value + "))," + route,
+		"AND,((NETWORK,tcp),(" + matcher + "," + value + "))," + route,
+	}
 }
 
 // DiscordUDPRules returns the managed rule for Discord voice (UDP).

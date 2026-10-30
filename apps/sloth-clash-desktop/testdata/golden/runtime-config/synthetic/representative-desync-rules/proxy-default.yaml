@@ -1,0 +1,753 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+mode: rule
+tcp-concurrent: true
+unified-delay: true
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+sniffer:
+    enable: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - +.ru
+        - '*.lan'
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - https://1.1.1.1/dns-query
+        - https://77.88.8.8/dns-query
+    nameserver-policy:
+        +.ru:
+            - https://77.88.8.8/dns-query
+    proxy-server-nameserver:
+        - 1.1.1.1
+        - 8.8.8.8
+        - 77.88.8.8
+    respect-rules: true
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: true
+geo-update-interval: 72
+reality-mlkem: auto
+proxies:
+    - cipher: aes-128-gcm
+      name: n1
+      password: pw
+      port: 443
+      server: s.example.com
+      type: ss
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-YOUTUBE-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-YOUTUBE-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
+proxy-groups:
+    - name: PROXY
+      proxies:
+        - n1
+        - DIRECT
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
+      hidden: true
+      name: SLOTH-DESYNC-YOUTUBE
+      proxies:
+        - SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
+        - SLOTH-DESYNC-YOUTUBE-s30879a4293
+        - SLOTH-DESYNC-YOUTUBE-s1855283037
+        - SLOTH-DESYNC-YOUTUBE-sf0976f29b4
+        - SLOTH-DESYNC-YOUTUBE-s554e5bf206
+        - SLOTH-DESYNC-YOUTUBE-se00f908f95
+        - SLOTH-DESYNC-YOUTUBE-saac5e9ce30
+        - SLOTH-DESYNC-YOUTUBE-se37a819919
+        - SLOTH-DESYNC-YOUTUBE-s5642b6c74f
+        - SLOTH-DESYNC-YOUTUBE-s09fcfddf9c
+        - SLOTH-DESYNC-YOUTUBE-s30e9c34c4a
+        - SLOTH-DESYNC-YOUTUBE-s49914f9987
+        - SLOTH-DESYNC-YOUTUBE-s03a1c27bb3
+        - SLOTH-DESYNC-YOUTUBE-s13ab09bb4d
+        - SLOTH-DESYNC-YOUTUBE-scacee1fcd5
+        - SLOTH-DESYNC-YOUTUBE-s4797c0aa21
+        - SLOTH-DESYNC-YOUTUBE-s9e8b15049f
+        - SLOTH-DESYNC-YOUTUBE-s62607cf66f
+        - SLOTH-DESYNC-YOUTUBE-sbdf889895a
+        - SLOTH-DESYNC-YOUTUBE-s6aafd402a0
+        - SLOTH-DESYNC-YOUTUBE-s6fae1e8a40
+        - SLOTH-DESYNC-YOUTUBE-s63fc503aca
+        - PASS
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d
+      proxies:
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s15f5cfcd23
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s1855283037
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-sf0976f29b4
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s554e5bf206
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-se00f908f95
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-saac5e9ce30
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-se37a819919
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s5642b6c74f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s09fcfddf9c
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30e9c34c4a
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s49914f9987
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s03a1c27bb3
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s13ab09bb4d
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-scacee1fcd5
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s4797c0aa21
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s9e8b15049f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s62607cf66f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-sbdf889895a
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6aafd402a0
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6fae1e8a40
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s63fc503aca
+        - DIRECT
+        - PASS
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: DIRECT
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-2b3c4d5e
+      proxies:
+        - DIRECT
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: PROXY
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-3c4d5e6f
+      proxies:
+        - PROXY
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: PROXY
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-4d5e6f70
+      proxies:
+        - PROXY
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: PROXY
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-5e6f7081
+      proxies:
+        - PROXY
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-6f708192
+      proxies:
+        - SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+        - PASS
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: DIRECT
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-708192a3
+      proxies:
+        - DIRECT
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: PROXY
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-8192a3b4
+      proxies:
+        - PROXY
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-CUSTOM-92a3b4c5-s30879a4293
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-92a3b4c5
+      proxies:
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s30879a4293
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s15f5cfcd23
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s1855283037
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-sf0976f29b4
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s554e5bf206
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-se00f908f95
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-saac5e9ce30
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-se37a819919
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s5642b6c74f
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s09fcfddf9c
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s30e9c34c4a
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s49914f9987
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s03a1c27bb3
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s13ab09bb4d
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-scacee1fcd5
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s4797c0aa21
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s9e8b15049f
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s62607cf66f
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-sbdf889895a
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s6aafd402a0
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s6fae1e8a40
+        - SLOTH-DESYNC-CUSTOM-92a3b4c5-s63fc503aca
+        - DIRECT
+        - PASS
+      type: select
+rules:
+    - DOMAIN,login.example.org,SLOTH-DESYNC-CUSTOM-2b3c4d5e
+    - DOMAIN-SUFFIX,music.youtube.com,SLOTH-DESYNC-CUSTOM-3c4d5e6f
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-1a2b3c4d
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-1a2b3c4d
+    - DOMAIN-SUFFIX,fbcdn.net,SLOTH-DESYNC-CUSTOM-8192a3b4
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,facebook.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,facebook.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,fbcdn.net)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,fbcdn.net)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,facebook.net)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,facebook.net)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,fbsbx.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,fbsbx.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,fb.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,fb.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,fb.me)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,fb.me)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,fb.watch)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,fb.watch)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,messenger.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,messenger.com)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,m.me)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,m.me)),SLOTH-DESYNC-CUSTOM-92a3b4c5
+    - DOMAIN-SUFFIX,ru,SLOTH-DESYNC-CUSTOM-4d5e6f70
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtu.be)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtu.be)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,googlevideo.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,googlevideo.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,ytimg.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,ytimg.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtubei.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtubei.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.googleapis.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,yt3.ggpht.com)),SLOTH-DESYNC-YOUTUBE
+    - PROCESS-NAME,Telegram.exe,SLOTH-DESYNC-CUSTOM-5e6f7081
+    - AND,((NETWORK,udp),(DST-PORT,443),(PROCESS-NAME,chrome.exe)),SLOTH-DESYNC-CUSTOM-6f708192
+    - AND,((NETWORK,tcp),(PROCESS-NAME,chrome.exe)),SLOTH-DESYNC-CUSTOM-6f708192
+    - PROCESS-NAME,steam.exe,SLOTH-DESYNC-CUSTOM-708192a3
+    - MATCH,PROXY

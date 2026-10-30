@@ -169,7 +169,9 @@ func TestDesyncServiceSanitize(t *testing.T) {
 		{ID: "a9", Domain: "pbs.twimg.com", Enabled: true},      // covered by x: dropped
 	}
 	got := sanitizeDesyncCustom(in)
-	want := []DesyncCustomEntry{in[1], in[6], in[8]}
+	site := in[6]
+	site.Kind, site.Route = desyncKindSuffix, desyncRouteAuto
+	want := []DesyncCustomEntry{in[1], site, in[8]}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sanitize:\n got %+v\nwant %+v", got, want)
 	}

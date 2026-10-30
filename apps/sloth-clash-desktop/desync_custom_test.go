@@ -254,7 +254,9 @@ func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
 	if err != nil || !status.Settings.Enabled {
 		t.Fatalf("enabling with only stored custom domains failed: %+v %v", status.Settings, err)
 	}
-	if !reflect.DeepEqual(status.Settings.Custom, stored) || !reflect.DeepEqual(currentDesyncSettings().Custom, stored) {
+	// Kept, read as the suffix rule through Desync it always was.
+	want := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Kind: desyncKindSuffix, Route: desyncRouteAuto, Enabled: true}}
+	if !reflect.DeepEqual(status.Settings.Custom, want) || !reflect.DeepEqual(currentDesyncSettings().Custom, want) {
 		t.Fatalf("custom list not kept: status %+v, prefs %+v", status.Settings.Custom, currentDesyncSettings().Custom)
 	}
 }

@@ -62,7 +62,10 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 	}
 	proxies := desyncSlice(m["proxies"])
 	groups := desyncSlice(m["proxy-groups"])
-	generated := []any{}
+	// Read before anything is added: only the profile's own rules and groups
+	// name its main group.
+	vpnTarget := desyncVPNTarget(rules, groups, proxies)
+	builtin := []any{}
 	caps := s.Caps
 	if caps.OS == "" {
 		caps = desync.Platform
@@ -104,60 +107,210 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": names[0], desync.ManagedKey: true})
 		if service == "voice" {
 			for _, r := range desync.DiscordUDPRules() {
-				generated = append(generated, r)
+				builtin = append(builtin, r)
 			}
 		} else {
 			for _, r := range desync.Rules(domains, route) {
-				generated = append(generated, r)
+				builtin = append(builtin, r)
 			}
 		}
 	}
-	// Custom domains: one hidden group per entry, after the built-in services
-	// (whose domains an entry can never repeat). Its members are the custom
-	// candidates, DIRECT (the site is not blocked) and PASS (nothing works:
-	// fall through to the profile's rules).
+	// The user's rules and the popular services: one hidden group per entry,
+	// named by its stable ID.
 	for _, entry := range s.Custom {
 		route := desync.CustomRoute(entry.ID)
-		cached := desync.CachedSelection(cache, network, desync.CustomService(desync.CustomEntryKey(entry.Domain, entry.Preset)))
-		names := []string{}
-		for _, c := range desync.Ordered("custom", caps, cached) {
-			proxies = append(proxies, c.Proxy(route))
-			names = append(names, c.Name(route))
+		group := map[string]any{"name": route, "type": "select", "hidden": true, desync.ManagedKey: true}
+		switch {
+		case entry.Preset == "" && entry.Target == DesyncTargetVPN:
+			// The profile's main group; PASS (the profile's own rules)
+			// when it has none.
+			member := vpnTarget
+			if member == "" {
+				member = "PASS"
+			}
+			group["proxies"] = []string{member}
+			group["default-selected"] = member
+		case entry.Preset == "" && entry.Target == DesyncTargetDirect:
+			group["proxies"] = []string{"DIRECT"}
+			group["default-selected"] = "DIRECT"
+		case entry.Preset == "" && entry.Kind == DesyncKindProcess:
+			// An application has no address to probe, so calibration
+			// cannot test strategies for it: the catalog's first (cheapest)
+			// TCP strategy, then PASS (also all there is should this OS
+			// run none).
+			names := []string{}
+			if candidates := desync.Candidates("custom", caps); len(candidates) > 0 {
+				proxies = append(proxies, candidates[0].Proxy(route))
+				names = append(names, candidates[0].Name(route))
+			}
+			names = append(names, "PASS")
+			group["proxies"] = names
+			group["default-selected"] = names[0]
+		default:
+			// Calibrated: the custom candidates, DIRECT (the site is not
+			// blocked) and PASS (nothing works: fall through to the
+			// profile's rules).
+			cached := desync.CachedSelection(cache, network, desync.CustomService(desync.CustomEntryKey(entry.Domain, entry.Preset)))
+			names := []string{}
+			for _, c := range desync.Ordered("custom", caps, cached) {
+				proxies = append(proxies, c.Proxy(route))
+				names = append(names, c.Name(route))
+			}
+			selected := names[0]
+			if cached == desync.DirectID {
+				selected = "DIRECT"
+			}
+			names = append(names, "DIRECT", "PASS")
+			group["proxies"] = names
+			group["default-selected"] = selected
 		}
-		selected := names[0]
-		if cached == desync.DirectID {
-			selected = "DIRECT"
-		}
-		names = append(names, "DIRECT", "PASS")
-		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": selected, desync.ManagedKey: true})
+		groups = append(groups, group)
 	}
-	generated = append(generated, customDesyncRules(s.Custom)...)
+	// Domain rules (the user's and the popular services') first, so a user's
+	// rule for a built-in service's domain overrides the service; then the
+	// built-in services; then the application rules, which a rule for the
+	// destination beats.
+	generated := customDesyncDomainRules(s.Custom)
+	generated = append(generated, builtin...)
+	generated = append(generated, customDesyncProcessRules(s.Custom)...)
 	m["proxies"] = proxies
 	m["proxy-groups"] = groups
 	m["rules"] = append(generated, rules...)
 }
 
-// customDesyncRules routes each entry's domains like a built-in service (TCP,
-// plus UDP/443 so the candidates can reject QUIC and the browser falls back
-// to TCP, where the transform applies). A more specific domain
-// (sub.example.org) goes before a broader one (example.org) so both work;
-// domains of equal depth keep the user's entry order, then the catalog order
-// within a preset.
-func customDesyncRules(entries []DesyncCustomRoute) []any {
-	type routed struct{ domain, route string }
+// desyncBuiltinTargets are the core's own outbounds: never a profile's main
+// group.
+var desyncBuiltinTargets = map[string]bool{"DIRECT": true, "REJECT": true, "REJECT-DROP": true, "PASS": true, "COMPATIBLE": true, "GLOBAL": true}
+
+// desyncVPNTarget is the group a user rule with the VPN target uses: the
+// target of the profile's MATCH rule when that is one of its proxy groups or
+// proxies, else the first visible proxy group with a member other than the
+// core's own outbounds (a profile whose catch-all is DIRECT keeps its proxy
+// selector there). "" when the profile has neither (a Desync-only profile).
+func desyncVPNTarget(rules, groups, proxies []any) string {
+	names := map[string]bool{}
+	for _, list := range [][]any{groups, proxies} {
+		for _, raw := range list {
+			if entry, ok := raw.(map[string]any); ok {
+				if name, ok := entry["name"].(string); ok && name != "" {
+					names[name] = true
+				}
+			}
+		}
+	}
+	for _, raw := range rules {
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		fields := strings.Split(text, ",")
+		if len(fields) < 2 || !strings.EqualFold(strings.TrimSpace(fields[0]), "MATCH") {
+			continue
+		}
+		if target := strings.TrimSpace(fields[1]); names[target] && !desyncBuiltinTargets[strings.ToUpper(target)] {
+			return target
+		}
+		break // the first MATCH ends the rules
+	}
+	for _, raw := range groups {
+		g, ok := raw.(map[string]any)
+		if !ok || g["hidden"] == true {
+			continue
+		}
+		name, _ := g["name"].(string)
+		if name == "" || desyncBuiltinTargets[strings.ToUpper(name)] {
+			continue
+		}
+		members := desyncSlice(g["proxies"])
+		// A group filled from providers or include-all lists no members.
+		usable := len(members) == 0 && (g["use"] != nil || g["include-all"] == true || g["include-all-proxies"] == true)
+		for _, member := range members {
+			if text, ok := member.(string); ok && !desyncBuiltinTargets[strings.ToUpper(strings.TrimSpace(text))] {
+				usable = true
+				break
+			}
+		}
+		if usable {
+			return name
+		}
+	}
+	return ""
+}
+
+// desyncUserRule reports a user rule (not a preset) with the given kind.
+func desyncUserRule(entry DesyncCustomRoute, kind string) bool {
+	return entry.Preset == "" && entry.Kind == kind
+}
+
+// desyncEntryRules is the rules sending what one matcher (DOMAIN,
+// DOMAIN-SUFFIX or PROCESS-NAME and its value) matches to entry's group: TCP
+// plus UDP/443 for a Desync target (desync.MatchRules: the candidates reject
+// QUIC so the application falls back to TCP, where the transform applies),
+// every network for the VPN and direct targets.
+func desyncEntryRules(entry DesyncCustomRoute, matcher, value string) []any {
+	route := desync.CustomRoute(entry.ID)
+	if entry.Preset == "" && (entry.Target == DesyncTargetVPN || entry.Target == DesyncTargetDirect) {
+		return []any{matcher + "," + value + "," + route}
+	}
+	var out []any
+	for _, rule := range desync.MatchRules(matcher, value, route) {
+		out = append(out, rule)
+	}
+	return out
+}
+
+// customDesyncDomainRules routes the domain entries: the user's domain and
+// suffix rules and the popular services' domains. A more specific domain
+// (sub.example.org) goes before a broader one (example.org) so both work; at
+// equal depth an exact-domain rule goes before a suffix rule and a user's rule
+// before a popular service's domain, so the user's choice wins; then the
+// user's entry order, and the catalog order within a service.
+func customDesyncDomainRules(entries []DesyncCustomRoute) []any {
+	type routed struct {
+		entry  DesyncCustomRoute
+		domain string
+		rank   int
+	}
 	var ordered []routed
 	for _, entry := range entries {
+		if desyncUserRule(entry, DesyncKindProcess) {
+			continue
+		}
+		rank := 1
+		switch {
+		case entry.Preset != "":
+			rank = 2
+		case entry.Kind == DesyncKindDomain:
+			rank = 0
+		}
 		for _, domain := range customDesyncDomains(entry, entries) {
-			ordered = append(ordered, routed{domain, desync.CustomRoute(entry.ID)})
+			ordered = append(ordered, routed{entry, domain, rank})
 		}
 	}
 	sort.SliceStable(ordered, func(i, j int) bool {
-		return strings.Count(ordered[i].domain, ".") > strings.Count(ordered[j].domain, ".")
+		di, dj := strings.Count(ordered[i].domain, "."), strings.Count(ordered[j].domain, ".")
+		if di != dj {
+			return di > dj
+		}
+		return ordered[i].rank < ordered[j].rank
 	})
 	var out []any
 	for _, r := range ordered {
-		for _, rule := range desync.Rules([]string{r.domain}, r.route) {
-			out = append(out, rule)
+		matcher := "DOMAIN-SUFFIX"
+		if desyncUserRule(r.entry, DesyncKindDomain) {
+			matcher = "DOMAIN"
+		}
+		out = append(out, desyncEntryRules(r.entry, matcher, r.domain)...)
+	}
+	return out
+}
+
+// customDesyncProcessRules routes the application rules, in the user's order.
+func customDesyncProcessRules(entries []DesyncCustomRoute) []any {
+	var out []any
+	for _, entry := range entries {
+		if desyncUserRule(entry, DesyncKindProcess) {
+			out = append(out, desyncEntryRules(entry, "PROCESS-NAME", entry.Process)...)
 		}
 	}
 	return out

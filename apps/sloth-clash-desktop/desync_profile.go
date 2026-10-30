@@ -40,12 +40,13 @@ func profileDesyncSettings(p Profile) DesyncSettings {
 	s = effectiveDesyncSettings(s)
 	if profileIsDesyncOnly(p) {
 		s.Enabled = true
+		s.Custom = withoutVPNRules(s.Custom)
 	}
 	return s
 }
 
 // desyncOtherProfileKeys is the cache keys (DesyncCustomEntry.key) of the
-// custom entries of every profile but the active one. The cache keeps their
+// calibrated entries of every profile but the active one. The cache keeps their
 // winners, so switching back to a profile does not search again. Guarded by
 // prefsMu, refreshed with prefsCurrent.Desync.
 var desyncOtherProfileKeys map[string]bool
@@ -64,7 +65,9 @@ func (a *App) syncActiveDesyncLocked() {
 		}
 		if p.Desync != nil {
 			for _, e := range sanitizeDesyncCustom(p.Desync.Custom) {
-				others[e.key()] = true
+				if e.calibrated() {
+					others[e.key()] = true
+				}
 			}
 		}
 	}

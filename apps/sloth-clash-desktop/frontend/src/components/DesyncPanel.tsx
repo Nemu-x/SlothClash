@@ -5,6 +5,7 @@ import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
 import {
   GetDesyncDiagnosticReport,
   ReconnectDiscordUDP,
+  type DesyncRuleInput,
   type DesyncSettings,
 } from '../api/desync'
 import { useDesyncServices } from '../hooks/queries/useDesyncServices'
@@ -12,7 +13,7 @@ import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import type { DesyncDraft } from '../hooks/useDesyncDraft'
 import {
   desyncErrorText,
-  DESYNC_CUSTOM_LIMIT,
+  DESYNC_RULE_LIMIT,
   desyncCustomViews,
   desyncEnablePatch,
   desyncServiceName,
@@ -22,6 +23,7 @@ import {
 } from '../utils/desyncStatus'
 
 import { DesyncCapabilities } from './DesyncCapabilities'
+import { DesyncRules } from './DesyncRules'
 import { DesyncServiceList } from './DesyncServiceList'
 import { DesyncStatusChip } from './DesyncStatusChip'
 import { DesyncStrategyLine } from './DesyncStrategyLine'
@@ -29,7 +31,8 @@ import { DesyncStrategyLine } from './DesyncStrategyLine'
 /**
  * - manage: the active profile's controls — master switch (not for a
  *   Desync-only profile, which is always on), "Popular services" (YouTube,
- *   Discord and the catalog) and "Sites" (the user's domains) with live
+ *   Discord and the catalog) and "My rules" (domains and apps sent through
+ *   Desync, the VPN or directly) with live
  *   status and the strategy in use, "What this computer can do", Check
  *   network / Copy diagnostics, and on the Discord row Reconnect voice /
  *   Turn on TUN.
@@ -89,7 +92,8 @@ export function DesyncPanel({
   const { error: pollError, retry: retryAuto } = live
   const {
     save: saveSettings,
-    addCustom,
+    addRule,
+    updateRule,
     addService,
     removeCustom,
     setCustomEnabled,
@@ -107,7 +111,6 @@ export function DesyncPanel({
   const catalog = useDesyncServices()
   const status = snapshot?.status ?? null
   const [saving, setSaving] = useState(false)
-  const [domainInput, setDomainInput] = useState('')
   const [customError, setCustomError] = useState('')
   const [serviceError, setServiceError] = useState<{
     id: string
@@ -158,13 +161,14 @@ export function DesyncPanel({
   const serviceName = (id: string) => desyncServiceName(catalog, id)
 
   /**
-   * One custom-list write. A domain write's validation error shows under the
-   * field, a service switch's (`service` = its catalog ID) under the Popular
-   * list.
+   * One custom-list write. A rule write's validation error shows under the
+   * form (worded for a process name with `forProcess`), a service switch's
+   * (`service` = its catalog ID) under the Popular list.
    */
   async function writeCustom(
     call: () => Promise<boolean>,
     service?: string,
+    forProcess = false,
   ): Promise<boolean> {
     if (!status || busy) return false
     setSaving(true)
@@ -178,6 +182,7 @@ export function DesyncPanel({
         const text = desyncErrorText(t, err, {
           serviceName,
           forService: service !== undefined,
+          forProcess,
         })
         if (service !== undefined) setServiceError({ id: service, text })
         else setCustomError(text)
@@ -203,11 +208,14 @@ export function DesyncPanel({
     }, view.id)
   }
 
-  async function submitDomain() {
-    const domain = domainInput.trim()
-    if (!domain) return
-    if ((await writeCustom(() => addCustom(domain))) && mountedRef.current)
-      setDomainInput('')
+  /** Add a rule, or replace rule `editing`. */
+  async function submitRule(rule: DesyncRuleInput, editing: string | null) {
+    const ok = await writeCustom(
+      () => (editing ? updateRule(editing, rule) : addRule(rule)),
+      undefined,
+      rule.kind === 'process',
+    )
+    return ok && mountedRef.current
   }
 
   async function retry() {
@@ -275,8 +283,9 @@ export function DesyncPanel({
   const serviceRows = snapshot
     ? desyncServiceViews(snapshot, { connected, mode, traffic }, catalog)
     : []
-  // The cap counts every entry, services included (desyncCustomLimit).
-  const atLimit = (status?.settings.custom?.length ?? 0) >= DESYNC_CUSTOM_LIMIT
+  // The whole list's cap (desyncRuleLimit); the backend refuses a rule or
+  // service past the cap on entries through Desync with its own error.
+  const atLimit = (status?.settings.custom?.length ?? 0) >= DESYNC_RULE_LIMIT
   const shownError = outerError || error || pollError
   const servicesTitleId = `${baseId}-services`
   const customTitleId = `${baseId}-custom`
@@ -441,117 +450,30 @@ export function DesyncPanel({
               {t('desync.custom.title')}
             </h4>
             <p className="small muted desyncCustomHint">
-              {t('desync.custom.hint')}
+              {t(
+                onboarding || status.desyncOnly
+                  ? 'desync.custom.hintDesyncOnly'
+                  : 'desync.custom.hint',
+              )}
             </p>
-            <div className="desyncSubgroup desyncOwnSites">
-              {customRows.length > 0 ? (
-                <ul className="desyncServices desyncCustomList">
-                  {customRows.map((row) => (
-                    <li
-                      key={row.id}
-                      className="desyncService desyncCustomRow"
-                      data-custom={row.id}
-                    >
-                      <span
-                        className="desyncServiceName desyncCustomDomain"
-                        title={row.domain}
-                      >
-                        {row.domain}
-                      </span>
-                      <div className="desyncServiceStatus">
-                        {onboarding ? null : (
-                          <>
-                            <DesyncStatusChip view={row.status} />
-                            <DesyncStrategyLine view={row.status} />
-                            {row.status.phase === 'unavailable' ? (
-                              <span className="desyncCustomNote">{ipHint}</span>
-                            ) : null}
-                          </>
-                        )}
-                      </div>
-                      <div className="desyncCustomControls">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={row.checked}
-                          aria-label={row.domain}
-                          className={`settingsSwitch${row.checked ? ' on' : ''}`}
-                          disabled={busy || (!supported && !row.checked)}
-                          onClick={() =>
-                            void writeCustom(() =>
-                              setCustomEnabled(row.id, !row.checked),
-                            )
-                          }
-                        >
-                          <span className="settingsSwitchKnob" aria-hidden />
-                        </button>
-                        <button
-                          type="button"
-                          className="desyncCustomRemove"
-                          aria-label={t('desync.custom.remove', {
-                            domain: row.domain,
-                          })}
-                          title={t('desync.custom.remove', {
-                            domain: row.domain,
-                          })}
-                          disabled={busy}
-                          onClick={() =>
-                            void writeCustom(() => removeCustom(row.id))
-                          }
-                        >
-                          <span aria-hidden>×</span>
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <form
-                className="desyncCustomAdd"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void submitDomain()
-                }}
-              >
-                <input
-                  className="input"
-                  type="text"
-                  value={domainInput}
-                  onChange={(e) => {
-                    setDomainInput(e.target.value)
-                    setCustomError('')
-                  }}
-                  placeholder="example.com"
-                  aria-label={t('desync.custom.inputLabel')}
-                  aria-invalid={customError ? true : undefined}
-                  aria-describedby={customError ? customErrorId : undefined}
-                  disabled={busy || atLimit || !supported}
-                  autoComplete="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                />
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={
-                    busy || atLimit || !supported || !domainInput.trim()
-                  }
-                >
-                  {t('desync.custom.add')}
-                </button>
-              </form>
-              {customError ? (
-                <p id={customErrorId} className="error small" role="alert">
-                  {customError}
-                </p>
-              ) : atLimit ? (
-                <p className="small muted">
-                  {t('desync.custom.limitReached', {
-                    limit: DESYNC_CUSTOM_LIMIT,
-                  })}
-                </p>
-              ) : null}
-            </div>
+            <DesyncRules
+              rows={customRows}
+              onboarding={onboarding}
+              busy={busy}
+              supported={supported}
+              allowVPN={!onboarding && status.desyncOnly !== true}
+              atLimit={atLimit}
+              limit={DESYNC_RULE_LIMIT}
+              ipHint={ipHint}
+              error={customError}
+              errorId={customErrorId}
+              onSubmit={submitRule}
+              onToggle={(id, on) =>
+                void writeCustom(() => setCustomEnabled(id, on))
+              }
+              onRemove={(id) => void writeCustom(() => removeCustom(id))}
+              onClearError={() => setCustomError('')}
+            />
           </section>
         ) : null}
         {children}

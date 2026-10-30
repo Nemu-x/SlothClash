@@ -158,7 +158,7 @@ func TestDesyncReportNamesPresetsAndHashesUserDomains(t *testing.T) {
 	key, _ := hex.DecodeString(secret)
 	report := parseDesyncReport(t, text)
 	want := []map[string]any{
-		{"id": customEntry.ID, "domain": desyncReportDigest(key, "example.org"), "enabled": true},
+		{"id": customEntry.ID, "domain": desyncReportDigest(key, "example.org"), "kind": "suffix", "route": "desync", "enabled": true},
 		{"id": serviceEntry.ID, "preset": "facebook", "enabled": true},
 	}
 	if !reflect.DeepEqual(report.Custom, want) {

@@ -73,11 +73,32 @@ type DesyncSettings struct {
 	Caps dlib.Capabilities
 }
 
-// DesyncCustomRoute is one enabled custom-domain entry: its stable ID (which
-// names the group) and its normalized domain, or the ID of a catalog preset
+// DesyncCustomRoute is one enabled entry of the user's rules: its stable ID
+// (which names the group) and what it matches, or the ID of a catalog preset
 // (desync.Services; Domain is then empty and the domains are the catalog's).
 type DesyncCustomRoute struct {
 	ID     string
 	Domain string
 	Preset string
+	// Kind is what a user rule matches: "" or DesyncKindSuffix (Domain and
+	// its subdomains), DesyncKindDomain (exactly Domain) or DesyncKindProcess
+	// (an application by its process name, Process). Unused for a preset.
+	Kind    string
+	Process string
+	// Target is where it goes: "" or DesyncTargetAuto (a Desync group, its
+	// strategy found by calibration; a process rule's is the catalog
+	// default), DesyncTargetVPN (the profile's main proxy group) or
+	// DesyncTargetDirect.
+	Target string
 }
+
+// Kinds and targets of a user rule (DesyncCustomRoute).
+const (
+	DesyncKindSuffix  = "suffix"
+	DesyncKindDomain  = "domain"
+	DesyncKindProcess = "process"
+
+	DesyncTargetAuto   = "desync"
+	DesyncTargetVPN    = "vpn"
+	DesyncTargetDirect = "direct"
+)

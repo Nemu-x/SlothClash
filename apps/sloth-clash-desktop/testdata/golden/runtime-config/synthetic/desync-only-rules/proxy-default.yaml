@@ -1,0 +1,278 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+proxy-groups:
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-1a2b3c4d
+      proxies:
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30879a4293
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s15f5cfcd23
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s1855283037
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-sf0976f29b4
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s554e5bf206
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-se00f908f95
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-saac5e9ce30
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-se37a819919
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s5642b6c74f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s09fcfddf9c
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s30e9c34c4a
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s49914f9987
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s03a1c27bb3
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s13ab09bb4d
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-scacee1fcd5
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s4797c0aa21
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s9e8b15049f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s62607cf66f
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-sbdf889895a
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6aafd402a0
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s6fae1e8a40
+        - SLOTH-DESYNC-CUSTOM-1a2b3c4d-s63fc503aca
+        - DIRECT
+        - PASS
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: DIRECT
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-2b3c4d5e
+      proxies:
+        - DIRECT
+      type: select
+    - _sloth-desync-managed: true
+      default-selected: SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+      hidden: true
+      name: SLOTH-DESYNC-CUSTOM-6f708192
+      proxies:
+        - SLOTH-DESYNC-CUSTOM-6f708192-s30879a4293
+        - PASS
+      type: select
+rules:
+    - DOMAIN,login.example.org,SLOTH-DESYNC-CUSTOM-2b3c4d5e
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-1a2b3c4d
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-1a2b3c4d
+    - AND,((NETWORK,udp),(DST-PORT,443),(PROCESS-NAME,Telegram.exe)),SLOTH-DESYNC-CUSTOM-6f708192
+    - AND,((NETWORK,tcp),(PROCESS-NAME,Telegram.exe)),SLOTH-DESYNC-CUSTOM-6f708192
+    - MATCH,DIRECT

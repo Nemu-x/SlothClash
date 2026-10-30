@@ -51,7 +51,9 @@ func TestDesyncCustomOverlayGroupsRulesAndRemoval(t *testing.T) {
 	broadQUIC := index("AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org))," + desync.CustomRoute("aa11"))
 	youtube := index(desync.Rules(desync.YouTubeDomains, desync.YouTubeRoute)[0])
 	profile := index("DOMAIN-SUFFIX,example.org,profile-node")
-	if youtube != 0 || narrowTCP < 0 || broadTCP < 0 || broadQUIC < 0 || !(narrowTCP < broadTCP && broadTCP < profile) {
+	// The user's domain rules go first (they never overlap a built-in
+	// service through Desync), the narrower one before the broader one.
+	if narrowTCP != 1 || broadTCP < 0 || broadQUIC < 0 || !(narrowTCP < broadTCP && broadTCP < youtube && youtube < profile) {
 		t.Fatalf("rule order youtube=%d narrow=%d broad=%d profile=%d: %v", youtube, narrowTCP, broadTCP, profile, rules)
 	}
 	first, _ := json.Marshal(doc)

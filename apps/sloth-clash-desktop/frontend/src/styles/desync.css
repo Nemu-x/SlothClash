@@ -234,6 +234,31 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+/* My rules: what a rule matches over its kind and route; the form picks the
+   kind and the route around the value field and wraps on narrow windows. */
+.desyncPanel .desyncRuleInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.desyncPanel .desyncRuleMeta {
+  font-size: var(--font-size-xs);
+  line-height: var(--leading-tight);
+  color: var(--text-muted);
+}
+.desyncPanel .desyncCustomRow[aria-current="true"] .desyncCustomDomain {
+  color: var(--accent);
+}
+.desyncPanel .desyncRuleForm {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.desyncPanel .desyncRuleForm .input {
+  flex: 1 1 10rem;
+}
+.desyncPanel .desyncRuleForm select {
+  flex: 0 0 auto;
+}
 .desyncPanel .desyncCustom .error,
 .desyncPanel .desyncCustom .desyncCustomAdd + .small {
   margin: var(--space-2) 0 0;

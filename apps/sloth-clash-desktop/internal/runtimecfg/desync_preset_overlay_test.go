@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/desync/desynctest"
 )
 
 // presetRuleRoutes maps each DOMAIN-SUFFIX of the generated custom rules to
@@ -28,12 +29,12 @@ func presetRuleRoutes(doc map[string]any) (map[string][]string, []string) {
 
 func TestDesyncPresetOverlayRoutesCatalogDomains(t *testing.T) {
 	doc := map[string]any{"rules": []any{"MATCH,DIRECT"}}
-	settings := DesyncSettings{Enabled: true, Custom: []DesyncCustomRoute{
+	settings := DesyncSettings{Enabled: true, Caps: desynctest.Windows(), Custom: []DesyncCustomRoute{
 		{ID: "ig01", Preset: "instagram"},
 		{ID: "pl01", Domain: "media.example.org"},
 		{ID: "fb01", Preset: "facebook"},
 	}}
-	cache := []desync.CacheEntry{{Network: "net", Custom: map[string]string{"preset:facebook": "split", "facebook": "r8"}, Updated: time.Now().Unix()}}
+	cache := []desync.CacheEntry{{Network: "net", Custom: map[string]string{"preset:facebook": "r3", "facebook": "r8"}, Updated: time.Now().Unix()}}
 	applyDesyncOverlay(doc, settings, cache, func() string { return "net" })
 	routes, order := presetRuleRoutes(doc)
 	fb, ig := desync.CustomRoute("fb01"), desync.CustomRoute("ig01")
@@ -60,7 +61,7 @@ func TestDesyncPresetOverlayRoutesCatalogDomains(t *testing.T) {
 		g := raw.(map[string]any)
 		selected[g["name"].(string)] = g["default-selected"]
 	}
-	if len(selected) != 3 || selected[fb] != fb+"-split" || selected[ig] != ig+"-r3" {
+	if len(selected) != 3 || selected[fb] != fb+"-"+presetID(t, "tlsrec-3s") || selected[ig] != ig+"-"+presetID(t, "tlsrec-1s") {
 		t.Fatalf("groups: %v", selected)
 	}
 	// Without Facebook, Instagram carries the shared CDN itself.

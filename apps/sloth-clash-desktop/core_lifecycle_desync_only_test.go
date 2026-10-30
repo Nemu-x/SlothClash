@@ -22,7 +22,7 @@ func TestCoreLifecycleDesyncOnlyProfileNoReserve(t *testing.T) {
 		phase     string
 		selected  string
 	}{
-		{name: "strategy works", phase: "ready", selected: desync.YouTubeRoute + "-r3"},
+		{name: "strategy works", phase: "ready", selected: desync.YouTubeRoute + "-" + candID("youtube", 0)},
 		{name: "nothing works", failDelay: true, phase: "no_strategy", selected: desyncProfileSelection},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

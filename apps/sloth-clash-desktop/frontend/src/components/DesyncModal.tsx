@@ -37,6 +37,7 @@ export function DesyncModal({
   refresh,
   onClose,
   onCreated,
+  onEnableTun,
   fallbackFocus,
 }: {
   view: DesyncPanelVariant
@@ -49,6 +50,11 @@ export function DesyncModal({
   onClose: () => void
   /** A Desync-only profile was created and activated. */
   onCreated: (name: string) => void
+  /**
+   * Manage: switch traffic to TUN exactly like Home's toggle; resolves to
+   * the error text, empty on success.
+   */
+  onEnableTun?: () => Promise<string | void>
   /**
    * Where focus goes on close when the element that opened the dialog is
    * gone, e.g. the empty-Home link replaced by the created profile's Home.
@@ -184,6 +190,7 @@ export function DesyncModal({
           error={error}
           onSavingChange={setPanelSaving}
           draft={onboarding ? draft : undefined}
+          onEnableTun={onboarding ? undefined : onEnableTun}
           footerNote={
             onboarding && status && chosen && !hasSelection ? (
               <span className="small muted desyncFooterNote">

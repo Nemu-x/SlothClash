@@ -63,6 +63,10 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 	proxies := desyncSlice(m["proxies"])
 	groups := desyncSlice(m["proxy-groups"])
 	generated := []any{}
+	caps := s.Caps
+	if caps.OS == "" {
+		caps = desync.Platform
+	}
 	network := ""
 	if networkKey != nil {
 		network = networkKey()
@@ -90,10 +94,12 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 			domains = desync.DiscordDomains
 		}
 		names := []string{}
-		for _, c := range desync.Ordered(service, desync.CachedSelection(cache, network, service)) {
+		for _, c := range desync.Ordered(service, caps, desync.CachedSelection(cache, network, service)) {
 			proxies = append(proxies, c.Proxy(route))
 			names = append(names, c.Name(route))
 		}
+		// PASS last: no strategy left (or none this OS can run) falls
+		// through to the profile's rules.
 		names = append(names, "PASS")
 		groups = append(groups, map[string]any{"name": route, "type": "select", "hidden": true, "proxies": names, "default-selected": names[0], desync.ManagedKey: true})
 		if service == "voice" {
@@ -114,7 +120,7 @@ func applyAutomaticDesyncOverlay(m map[string]any, s DesyncSettings, cache []des
 		route := desync.CustomRoute(entry.ID)
 		cached := desync.CachedSelection(cache, network, desync.CustomService(desync.CustomEntryKey(entry.Domain, entry.Preset)))
 		names := []string{}
-		for _, c := range desync.OrderedCustom(s.FakeTTL, cached) {
+		for _, c := range desync.Ordered("custom", caps, cached) {
 			proxies = append(proxies, c.Proxy(route))
 			names = append(names, c.Name(route))
 		}

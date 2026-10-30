@@ -25,6 +25,11 @@ export type DesyncPhaseView = {
   tone: DesyncTone
   attempt: number
   total: number
+  /**
+   * The strategy calibration reports for this line (a catalog ID, "direct"
+   * or "profile"); meaningful only in the phases desyncStrategyLabel shows.
+   */
+  candidate?: string
 }
 
 export type DesyncBuiltinView = {
@@ -116,6 +121,7 @@ function phaseView(phase: string, state?: DesyncAutoService): DesyncPhaseView {
     tone: desyncPhaseTone(phase),
     attempt: state?.attempt || 1,
     total: state?.total || 1,
+    ...(state?.candidate ? { candidate: state.candidate } : {}),
   }
 }
 

@@ -181,14 +181,14 @@ func TestDesyncSaveSelectionKeepsPresetWinners(t *testing.T) {
 		{ID: "5a6b7c8d", Domain: "example.org", Enabled: true},
 	}})
 	prefsMu.Lock()
-	prefsCurrent.DesyncCache = []DesyncNetworkCache{{Network: "net-a", Custom: map[string]string{"preset:facebook": "r3", "preset:x": "r1", "facebook": "r2"}}}
+	prefsCurrent.DesyncCache = []DesyncNetworkCache{{Network: "net-a", Custom: map[string]string{"preset:facebook": presetIDOf("oob-1"), "preset:x": "r1", "facebook": "r2"}}}
 	prefsMu.Unlock()
 	saveDesyncSelection("net-a", desync.CustomService("example.org"), "r4")
 	cache := currentDesktopPrefs().DesyncCache[0].Custom
-	if want := map[string]string{"preset:facebook": "r3", "example.org": "r4"}; !reflect.DeepEqual(cache, want) {
+	if want := map[string]string{"preset:facebook": presetIDOf("oob-1"), "example.org": "r4"}; !reflect.DeepEqual(cache, want) {
 		t.Fatalf("cache: %+v", cache)
 	}
-	if got := desyncCachedSelection("net-a", desync.CustomService(DesyncCustomEntry{Service: "facebook"}.key())); got != "r3" {
+	if got := desyncCachedSelection("net-a", desync.CustomService(DesyncCustomEntry{Service: "facebook"}.key())); got != presetIDOf("oob-1") {
 		t.Fatalf("cached service winner: %q", got)
 	}
 }

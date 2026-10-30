@@ -52,7 +52,7 @@ func runtimeConfigPrefsFrom(p DesktopPrefs) runtimecfg.Prefs {
 		TUN:         runtimecfg.TunSettings(p.TUN),
 		Traffic:     runtimecfg.TrafficSettings(p.Traffic),
 		Reality:     runtimecfg.RealitySettings(p.Reality),
-		Desync:      runtimecfg.DesyncSettings{Enabled: d.Enabled, YouTube: d.YouTube, Discord: d.Discord, DiscordUDP: d.DiscordUDP, Custom: desyncCustomRoutes(d.Custom), FakeTTL: desyncFakeTTLSupported},
+		Desync:      runtimecfg.DesyncSettings{Enabled: d.Enabled, YouTube: d.YouTube, Discord: d.Discord, DiscordUDP: d.DiscordUDP, Custom: desyncCustomRoutes(d.Custom), Caps: desyncCaps},
 		DesyncCache: desyncCacheEntries(p.DesyncCache),
 	}
 }

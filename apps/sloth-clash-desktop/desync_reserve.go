@@ -373,7 +373,7 @@ func (a *App) runDesyncVoiceReserve(ctx context.Context, lease uint64, network, 
 	lastProgress := time.Now()
 	previous := map[string]int64{}
 	nextProbe := time.Now()
-	candidates := desync.Ordered("voice", desyncCachedSelection(network, "voice"))
+	candidates := desync.Ordered("voice", desyncCaps, desyncCachedSelection(network, "voice"))
 	nextCandidate := 0
 	for ctx.Err() == nil {
 		var overview struct {

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"SlothClashDesktop/internal/desync/desynctest"
 	"SlothClashDesktop/internal/runtimecfg"
 	"SlothClashDesktop/internal/runtimecfg/runtimecfgtest"
 )
@@ -289,10 +290,10 @@ func withGoldenDesync(t *testing.T, s DesyncSettings) {
 	prefsMu.Lock()
 	prefsCurrent.Desync = s
 	prefsMu.Unlock()
-	// One custom candidate set on every OS: the fake-TTL one.
-	prev := desyncFakeTTLSupported
-	desyncFakeTTLSupported = true
-	t.Cleanup(func() { desyncFakeTTLSupported = prev })
+	// One candidate set on every OS: Windows' (every method).
+	prev := desyncCaps
+	desyncCaps = desynctest.Windows()
+	t.Cleanup(func() { desyncCaps = prev })
 }
 
 func generateGoldenRuntimeConfig(t *testing.T, server *goldenSubscriptionServer, p goldenProfile, traffic string, enableTun bool) []byte {

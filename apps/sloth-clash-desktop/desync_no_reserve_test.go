@@ -123,7 +123,7 @@ func TestDesyncStatusReportsDesyncOnlyProfile(t *testing.T) {
 // No strategy works: no reserve verification, the route falls through to
 // PASS (MATCH,DIRECT in this profile) and the service says no_strategy.
 func TestDesyncTCPNoReserveFailureGoesDirect(t *testing.T) {
-	core := newNoReserveCore(t, http.StatusServiceUnavailable, desync.YouTubeRoute+"-r3")
+	core := newNoReserveCore(t, http.StatusServiceUnavailable, desync.YouTubeRoute+"-"+candID("youtube", 0))
 	a := noReserveApp(t, core, DesyncSettings{Enabled: true, YouTube: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -163,7 +163,7 @@ func TestDesyncTCPNoReserveLeavesStalePass(t *testing.T) {
 	waitPhase(t, "ready", 15*time.Second, func() bool { return a.GetDesyncAutoStatus().YouTube.Phase == "ready" })
 	cancel()
 	<-done
-	if got := core.selections(); len(got) != 1 || got[0] != desync.YouTubeRoute+"-r3" {
+	if got := core.selections(); len(got) != 1 || got[0] != desync.YouTubeRoute+"-"+candID("youtube", 0) {
 		t.Fatalf("selections = %v, want the first strategy", got)
 	}
 	if core.reserve.Load() != 0 {
@@ -182,7 +182,7 @@ func TestDesyncVoiceNoReserveLeavesPass(t *testing.T) {
 		defer close(done)
 		a.runDesyncVoiceService(ctx, 1, a.desyncCtl.status.Network, a.core.listen, "", true)
 	}()
-	first := desync.Ordered("voice", "")[0].Name(desync.DiscordUDPRoute)
+	first := desync.Ordered("voice", desyncCaps, "")[0].Name(desync.DiscordUDPRoute)
 	waitPhase(t, "a voice candidate", 10*time.Second, func() bool {
 		got := core.selections()
 		return len(got) > 0
@@ -216,7 +216,7 @@ func TestDesyncTCPNoReserveRetriesQuietly(t *testing.T) {
 	retry := desyncNoStrategyRetry
 	desyncNoStrategyRetry = 20 * time.Millisecond
 	t.Cleanup(func() { desyncNoStrategyRetry = retry })
-	core := newNoReserveCore(t, http.StatusServiceUnavailable, desync.YouTubeRoute+"-r3")
+	core := newNoReserveCore(t, http.StatusServiceUnavailable, desync.YouTubeRoute+"-"+candID("youtube", 0))
 	a := noReserveApp(t, core, DesyncSettings{Enabled: true, YouTube: true})
 	var retried atomic.Int32
 	var flashed atomic.Value
@@ -240,7 +240,7 @@ func TestDesyncTCPNoReserveRetriesQuietly(t *testing.T) {
 	waitPhase(t, "no_strategy", 15*time.Second, func() bool { return a.GetDesyncAutoStatus().YouTube.Phase == "no_strategy" })
 	settled.Store(true)
 	// Several failed background rounds (a round probes every candidate).
-	rounds := int32(2 * len(desync.Ordered("youtube", "")))
+	rounds := int32(2 * len(desync.Ordered("youtube", desyncCaps, "")))
 	waitPhase(t, "background retries", 15*time.Second, func() bool { return retried.Load() > rounds })
 	if phase := flashed.Load(); phase != nil {
 		t.Fatalf("a background retry showed phase %q", phase)
@@ -270,7 +270,7 @@ func TestDesyncVoiceNoReserveNoStrategyKeepsCandidate(t *testing.T) {
 	prefsMu.Unlock()
 	t.Cleanup(func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() })
 
-	selected := desync.DiscordUDPRoute + "-f4"
+	selected := desync.DiscordUDPRoute + "-" + candID("voice", 0)
 	started := time.Now()
 	var healthy atomic.Bool
 	var puts, probes, reserve atomic.Int32
@@ -316,7 +316,7 @@ func TestDesyncVoiceNoReserveNoStrategyKeepsCandidate(t *testing.T) {
 	// The stall needs 8 s of separated samples before the search.
 	waitPhase(t, "voice no_strategy", 20*time.Second, func() bool { return a.GetDesyncAutoStatus().Voice.Phase == "no_strategy" })
 	state := a.GetDesyncAutoStatus().Voice
-	if state.Candidate != "f4" || state.Route != "desync" || state.Code == "" {
+	if state.Candidate != candID("voice", 0) || state.Route != "desync" || state.Code == "" {
 		t.Fatalf("voice state = %+v, want the kept candidate f4 on the Desync route with a reason", state)
 	}
 	if probes.Load() == 0 {

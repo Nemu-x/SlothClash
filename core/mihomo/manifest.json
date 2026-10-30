@@ -108,6 +108,11 @@
     {
       "file": "0024-reality-pq-browser-hellos.patch",
       "sha256": "b964333f7c3ec6dd2780249df850e14f79f67a194bcb65513af23416f92ce704"
+    },
+    {
+      "file": "0025-proxy-transfer-test.patch",
+      "sha256": "b79c287e4eafb92bf0d969450aa131d2c954ede86662652546a1ad0fe1344711",
+      "feature": "transfer-test"
     }
   ],
   "assets": {

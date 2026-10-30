@@ -229,6 +229,8 @@ func desyncErrorCode(err error) string {
 		return "canceled"
 	case strings.Contains(s, "dns") || strings.Contains(s, "resolve") || strings.Contains(s, "find ip"):
 		return "dns"
+	case strings.Contains(s, "stalled"):
+		return "stalled"
 	case strings.Contains(s, "timeout") || strings.Contains(s, "deadline"):
 		return "timeout"
 	case strings.Contains(s, "tls") || strings.Contains(s, "certificate") || strings.Contains(s, "eof"):
@@ -364,11 +366,15 @@ func waitDesyncGroup(ctx context.Context, endpoint, secret, route string) error 
 		}
 	}
 }
+
+// desyncTargets are the probe URLs of a service. The last one is a volume
+// target (desyncVolumeTargets): with the transfer test it must deliver more
+// than a frozen connection would.
 func desyncTargets(service string) []string {
 	if service == "youtube" {
-		return []string{"https://www.youtube.com/generate_204"}
+		return []string{"https://www.youtube.com/generate_204", "https://www.youtube.com/"}
 	}
-	return []string{"https://discord.com/api/v10/gateway", "https://cdn.discordapp.com/embed/avatars/0.png"}
+	return []string{"https://discord.com/api/v10/gateway", "https://cdn.discordapp.com/embed/avatars/0.png", "https://discord.com/login"}
 }
 
 // Stop at the first candidate which passes two independent rounds, rather than

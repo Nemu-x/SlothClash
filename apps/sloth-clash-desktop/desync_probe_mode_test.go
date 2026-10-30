@@ -111,3 +111,60 @@ func TestDesyncProbeModesSendTheirStatusFilter(t *testing.T) {
 		t.Fatalf("status filters: %v", seen)
 	}
 }
+
+func TestDesyncProbeUsesTransferTestWhenTheCoreHasIt(t *testing.T) {
+	var paths []string
+	var queries []map[string]string
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		q := map[string]string{}
+		for k := range r.URL.Query() {
+			q[k] = r.URL.Query().Get(k)
+		}
+		queries = append(queries, q)
+		if q["url"] == "https://discord.com/login" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "transfer stalled after 16384 bytes: nothing arrived for 2000 ms", "bytes": 16384})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"delay": 7, "bytes": 35})
+	}))
+	defer core.Close()
+	endpoint := strings.TrimPrefix(core.URL, "http://")
+
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
+	if _, err := probeDesyncOutbound(context.Background(), endpoint, "", "R", "https://discord.com/api/v10/gateway"); err != nil {
+		t.Fatal(err)
+	}
+	if paths[0] != "/proxies/R/delay" || queries[0]["max-bytes"] != "" {
+		t.Fatalf("core without transfer-test: %s %v", paths[0], queries[0])
+	}
+
+	withDesyncCoreFeatures(t, "desync", "desync-outbound", "transfer-test")
+	if _, err := probeDesyncOutbound(context.Background(), endpoint, "", "R", "https://discord.com/api/v10/gateway"); err != nil {
+		t.Fatal(err)
+	}
+	q := queries[1]
+	if paths[1] != "/proxies/R/transfer" || q["max-bytes"] != "65536" || q["min-bytes"] != "" || q["stall"] != "2000" || q["expected"] != "200-299" {
+		t.Fatalf("small target: %s %v", paths[1], q)
+	}
+	_, err := probeDesyncOutbound(context.Background(), endpoint, "", "R", "https://discord.com/login")
+	if q := queries[2]; q["min-bytes"] != "32768" {
+		t.Fatalf("volume target: %v", q)
+	}
+	if desyncErrorCode(err) != "stalled" {
+		t.Fatalf("frozen connection: code %q (%v)", desyncErrorCode(err), err)
+	}
+	if _, err := probeDesyncOutboundMode(context.Background(), endpoint, "", "R", "https://example.org/", desyncProbeReachable); err != nil {
+		t.Fatal(err)
+	}
+	if q := queries[3]; paths[3] != "/proxies/R/transfer" || q["expected"] != "100-599" || q["min-bytes"] != "" || q["max-bytes"] != "65536" {
+		t.Fatalf("custom domain: %s %v", paths[3], q)
+	}
+	for _, service := range []string{"youtube", "discord"} {
+		targets := desyncTargets(service)
+		if !desyncVolumeTargets[targets[len(targets)-1]] {
+			t.Errorf("%s: the last target is not a volume target: %v", service, targets)
+		}
+	}
+}

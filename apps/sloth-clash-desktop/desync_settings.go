@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"SlothClashDesktop/internal/runtimecfg"
@@ -54,6 +55,12 @@ func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
 // (patch 0023), which every generated strategy is.
 func desyncCoreSupported() bool {
 	return embeddedCoreHas("desync-outbound")
+}
+
+// desyncTransferCoreSupported reports the transfer test (patch 0025): probes
+// then read the response body over HTTP/2 instead of stopping at the headers.
+func desyncTransferCoreSupported() bool {
+	return embeddedCoreHas("transfer-test")
 }
 
 // desyncUDPCoreSupported also needs the UDP burst and voice probes (0019).
@@ -194,13 +201,45 @@ func (m desyncProbeMode) expected() string {
 // desyncCustomTarget is the probe URL of a custom domain.
 func desyncCustomTarget(domain string) string { return "https://" + domain + "/" }
 
+// desyncProbeMaxBytes is how much of a response body a transfer probe reads.
+// Networks that freeze a connection let its first tens of kilobytes through
+// (about 16 KB is the reported threshold), so a probe reading past that sees
+// the freeze where the headers alone would pass.
+const desyncProbeMaxBytes = 64 << 10
+
+// desyncVolumeMinBytes is how much a volume target must deliver: twice the
+// reported freeze threshold, small enough for a 5 s probe on a slow link.
+const desyncVolumeMinBytes = 32 << 10
+
+// desyncVolumeTargets are the service probe URLs whose bodies are known to
+// exceed desyncVolumeMinBytes (discord.com/login about 72 KB, the YouTube home
+// page about 1 MB, both measured 2026-10-30), so a short body there is a
+// failure rather than a small page.
+var desyncVolumeTargets = map[string]bool{
+	"https://discord.com/login": true,
+	"https://www.youtube.com/":  true,
+}
+
 func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target string) (int, error) {
 	return probeDesyncOutboundMode(ctx, endpoint, secret, route, target, desyncProbeStrict)
 }
 
+// probeDesyncOutboundMode probes route against target through the core. With
+// the transfer test (0025) the core sends GET with ALPN h2 and http/1.1 and
+// reads up to desyncProbeMaxBytes of the body, failing on a stall; a volume
+// target must also deliver desyncVolumeMinBytes. Without it, the delay test
+// checks the response headers only.
 func probeDesyncOutboundMode(ctx context.Context, endpoint, secret, route, target string, mode desyncProbeMode) (int, error) {
 	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {mode.expected()}}
 	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode()
+	if desyncTransferCoreSupported() {
+		q.Set("max-bytes", strconv.Itoa(desyncProbeMaxBytes))
+		q.Set("stall", "2000") // a frozen connection never resumes; fail before the caller's 5-6 s
+		if desyncVolumeTargets[target] {
+			q.Set("min-bytes", strconv.Itoa(desyncVolumeMinBytes))
+		}
+		path = "/proxies/" + url.PathEscape(route) + "/transfer?" + q.Encode()
+	}
 	resp, err := coreDoWithEndpoint(ctx, endpoint, secret, http.MethodGet, path, nil)
 	if err != nil {
 		return 0, err

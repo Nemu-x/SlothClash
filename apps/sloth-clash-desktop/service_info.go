@@ -45,10 +45,17 @@ var errIPCServiceVersionUnavailable = errors.New("service version unavailable")
 // the "old service silently runs after a reinstall" trap where the bundled/rolling
 // service lagged the code.
 //
-// ⚠️ SEQUENCING: only ship this bump once the 2.5.0 service binaries are actually
-// published (Release CI → rolling per-triple tags) and pulled by prebuild —
-// otherwise the banner can never clear.
-const expectedSlothServiceVersion = "2.5.0"
+// 2.6.0 reports gateway certificate refusals as a structured trust prompt
+// (cert_error / previous_servercert) and fixes a handler panic on non-ASCII
+// OpenConnect output. The client already copes with 2.5.0's plain errors, so
+// this bump is about getting every install onto the panic fix, not about
+// compatibility. Published to the rolling tags 2026-10-30 (Release CI run
+// 41044625143).
+//
+// ⚠️ SEQUENCING: only ship a bump once the service binaries for that version
+// are actually published (Release CI → rolling per-triple tags) and pulled by
+// prebuild (`pnpm run prebuild --force`) — otherwise the banner can never clear.
+const expectedSlothServiceVersion = "2.6.0"
 
 // ServiceRuntimeInfo is the health/version snapshot the UI uses to decide
 // whether to nudge the user to update the privileged helper service.

@@ -14,6 +14,10 @@ import {
   NewDesyncDraft as newDraft,
   DraftDesyncAddCustomDomain as draftAddCustom,
   DraftDesyncAddService as draftAddService,
+  AddDesyncRule as addRule,
+  UpdateDesyncRule as updateRule,
+  DraftDesyncAddRule as draftAddRule,
+  DraftDesyncUpdateRule as draftUpdateRule,
 } from '../../wailsjs/go/main/App'
 
 import { main } from './models'
@@ -27,17 +31,41 @@ export interface DesyncSettings {
   custom?: DesyncCustomEntry[]
 }
 
+/** What a user rule matches: a domain and its subdomains, one domain, an app. */
+export type DesyncRuleKind = 'suffix' | 'domain' | 'process'
 /**
- * One custom entry routed through Desync: a domain (its subdomains included)
- * or a catalog service (`service` set, `domain` empty: its domains come from the
- * catalog, see ListDesyncServices).
+ * Where a user rule sends the traffic: through Desync (a strategy found
+ * automatically), the profile's VPN group (not on a Desync-only profile) or
+ * directly.
+ */
+export type DesyncRuleRoute = 'desync' | 'vpn' | 'direct'
+
+/**
+ * One entry of the custom list: a user rule ("My rules": `kind`, the
+ * `domain` or `process` it matches, `route`) or a catalog service
+ * (`service` set, `domain` empty: its domains come from the catalog, see
+ * ListDesyncServices; always through Desync).
  */
 export interface DesyncCustomEntry {
   id: string
+  /** The rule's domain; empty for a process rule and a service. */
   domain: string
-  /** Catalog service ID; absent for a plain domain entry. */
+  /** The rule's process name (kind process). */
+  process?: string
+  /** A DesyncRuleKind; absent for a service, filled in for every rule. */
+  kind?: string
+  /** A DesyncRuleRoute; absent for a service, filled in for every rule. */
+  route?: string
+  /** Catalog service ID; absent for a rule. */
   service?: string
   enabled: boolean
+}
+
+/** A rule as the user typed it; the backend normalizes and validates it. */
+export interface DesyncRuleInput {
+  kind: DesyncRuleKind
+  value: string
+  route: DesyncRuleRoute
 }
 
 /** One catalog service: a service whose pages and media span several domains. */
@@ -76,6 +104,26 @@ export const DraftDesyncAddCustomDomain = (
   domain: string,
 ): Promise<DesyncSettings> =>
   draftAddCustom(main.DesyncSettings.createFrom(draft), domain)
+/** AddDesyncRule on a draft (a Desync-only profile's: no VPN route). */
+export const DraftDesyncAddRule = (
+  draft: DesyncSettings,
+  rule: DesyncRuleInput,
+): Promise<DesyncSettings> =>
+  draftAddRule(
+    main.DesyncSettings.createFrom(draft),
+    main.DesyncRuleInput.createFrom(rule),
+  )
+/** UpdateDesyncRule on a draft. */
+export const DraftDesyncUpdateRule = (
+  draft: DesyncSettings,
+  id: string,
+  rule: DesyncRuleInput,
+): Promise<DesyncSettings> =>
+  draftUpdateRule(
+    main.DesyncSettings.createFrom(draft),
+    id,
+    main.DesyncRuleInput.createFrom(rule),
+  )
 /** AddDesyncService on a draft: validated, nothing saved. */
 export const DraftDesyncAddService = (
   draft: DesyncSettings,
@@ -84,7 +132,19 @@ export const DraftDesyncAddService = (
   draftAddService(main.DesyncSettings.createFrom(draft), id)
 export const AddDesyncCustomDomain = (domain: string): Promise<DesyncStatus> =>
   addCustom(domain)
-/** Add catalog service `id` as one enabled entry; it replaces plain entries it covers. */
+/** Add a rule to the active profile, enabled. */
+export const AddDesyncRule = (rule: DesyncRuleInput): Promise<DesyncStatus> =>
+  addRule(main.DesyncRuleInput.createFrom(rule))
+/**
+ * Replace rule `id` in place, keeping its on/off state. A changed rule comes
+ * back under a new ID.
+ */
+export const UpdateDesyncRule = (
+  id: string,
+  rule: DesyncRuleInput,
+): Promise<DesyncStatus> =>
+  updateRule(id, main.DesyncRuleInput.createFrom(rule))
+/** Add catalog service `id` as one enabled entry; it replaces the Desync domain rules it covers. */
 export const AddDesyncService = (id: string): Promise<DesyncStatus> =>
   addService(id)
 /** The service catalog, in precedence order (fixed per build). */

@@ -6,12 +6,14 @@ import type { DesyncPhaseView } from './desyncStatus'
 
 /**
  * Phases in which calibration has applied a strategy (the candidate is the
- * one in use): HTTPS ready, and Discord voice traffic flowing on it. Other
+ * one in use): HTTPS ready, an app rule on the catalog default (fixed), and
+ * Discord voice traffic flowing on it. Other
  * phases either still search (the chip says so), carry the route another
  * way (VPN reserve, direct) or are not active.
  */
 const APPLIED_PHASES = new Set([
   'ready',
+  'fixed',
   'transport',
   'media',
   'receiving',

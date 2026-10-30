@@ -85,13 +85,13 @@ describe('DesyncPanel: services', () => {
         .map((s) => s.getAttribute('aria-label')),
     ).toEqual(['Facebook', 'Instagram', 'X (Twitter)', 'Demo'])
     // One "Popular services" section (YouTube and Discord, then the
-    // catalog), then "Sites" with the user's own domains.
+    // catalog), then "My rules" with the user's own domains.
     const popular = screen.getByRole('region', { name: 'Popular services' })
     expect(within(popular).getByRole('switch', { name: 'YouTube' })).toBe(
       screen.getByRole('switch', { name: 'YouTube' }),
     )
     expect(popular.contains(group)).toBe(true)
-    const own = screen.getByRole('region', { name: 'Sites' })
+    const own = screen.getByRole('region', { name: 'My rules' })
     expect(
       popular.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
@@ -223,7 +223,7 @@ describe('DesyncPanel: services', () => {
   it.each([
     [
       'desync: limit',
-      'Up to 32 entries, popular services included. Remove a site first.',
+      'Up to 32 popular services and rules can go through Desync. Remove one first, or send a rule to the VPN or directly.',
     ],
     [
       'desync: unknown_service',
@@ -256,7 +256,7 @@ describe('DesyncPanel: services', () => {
 
   it('a typed domain a service covers names the service', async () => {
     stubBackend(withCustom([FB]))
-    wailsApp.stub('AddDesyncCustomDomain', () => {
+    wailsApp.stub('AddDesyncRule', () => {
       throw 'desync: service_overlap: facebook'
     })
     await renderPanel()

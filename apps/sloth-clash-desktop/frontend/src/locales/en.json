@@ -792,7 +792,10 @@
       "not_needed": "Not blocked · Desync not needed",
       "unavailable": "Desync can't unblock this site",
       "no_strategy": "No working strategy · connecting directly, retrying automatically",
-      "failed_direct": "Desync unavailable · retrying automatically"
+      "failed_direct": "Desync unavailable · retrying automatically",
+      "fixed": "Default strategy · apps aren’t tested",
+      "route_vpn": "Through VPN",
+      "route_direct": "Directly"
     },
     "copyFailed": "Could not copy diagnostics",
     "homeChipAria": "Desync status · open Desync",
@@ -804,15 +807,15 @@
       "no_profile": "Add or choose a profile first: Desync settings belong to a profile."
     },
     "custom": {
-      "title": "Sites",
-      "hint": "Subdomains are included. Each site gets its own automatically tested strategy.",
+      "title": "My rules",
+      "hint": "Send a site or an app your way: through Desync (a working strategy is found automatically), through your VPN, or directly. Your rules go before the subscription’s.",
       "inputLabel": "Domain",
       "add": "Add",
       "remove": "Remove {{domain}}",
       "ipHint": "Likely blocked by IP address; it goes through your VPN.",
       "ipHintDirect": "Likely blocked by IP address. Without a VPN this site stays blocked.",
-      "limitReached": "Up to {{limit}} sites and popular services.",
-      "homeItem": "Sites {{count}}",
+      "limitReached": "Up to {{limit}} rules.",
+      "homeItem": "My rules {{count}}",
       "error": {
         "empty": "Enter a domain, for example example.com.",
         "invalid": "This is not a valid domain name.",
@@ -820,12 +823,21 @@
         "wildcard": "Enter the domain without * or +. — subdomains are included automatically.",
         "public_suffix": "Enter a site’s domain, not a whole zone such as com or co.uk.",
         "builtin": "This domain is covered by the built-in YouTube or Discord switch.",
-        "duplicate": "This domain is already in the list.",
-        "limit": "You can add up to {{limit}} sites and popular services.",
+        "duplicate": "This rule is already in the list.",
+        "limit": "Up to {{limit}} rules and popular services can go through Desync. Remove one, or send this one to the VPN or directly.",
         "not_found": "This entry no longer exists. The list was refreshed.",
         "service_overlap": "Already covered by {{name}} in Popular services.",
-        "unknown_service": "This service is not available in this version."
-      }
+        "unknown_service": "This service is not available in this version.",
+        "rule_limit": "You can add up to {{limit}} rules.",
+        "invalid_process": "Enter an app’s process name, for example Telegram.exe.",
+        "invalid_kind": "Choose what the rule matches.",
+        "invalid_route": "Choose where the rule sends traffic.",
+        "no_vpn": "This profile has no VPN. Choose Desync or Direct.",
+        "process_empty": "Enter a process name, for example Telegram.exe.",
+        "process_wildcard": "Enter the exact process name, without * or ?.",
+        "process_duplicate": "This app is already in the list."
+      },
+      "hintDesyncOnly": "Send a site or an app through Desync (a working strategy is found automatically) or directly."
     },
     "lead": "YouTube, Discord and the sites you add go directly through Desync, outside your VPN. Where Desync doesn't help, they go through the VPN.",
     "leadDesyncOnly": "Unblocks YouTube, Discord and the sites you add without a VPN. Everything else connects directly.",
@@ -859,7 +871,7 @@
       "replaced_other": "Replaced {{domains}}: {{name}} covers them.",
       "error": {
         "duplicate": "This service is already on the list.",
-        "limit": "Up to {{limit}} entries, popular services included. Remove a site first.",
+        "limit": "Up to {{limit}} popular services and rules can go through Desync. Remove one first, or send a rule to the VPN or directly.",
         "not_found": "This service entry no longer exists. The list was refreshed.",
         "unknown_service": "This service is not available in this version."
       }
@@ -883,7 +895,8 @@
         "fake-split": "Split and send a decoy packet first",
         "udp-zero": "Send decoy datagrams first",
         "udp-quic": "Send decoy QUIC packets first"
-      }
+      },
+      "catalogDefault": "default"
     },
     "caps": {
       "title": "What this computer can do",
@@ -904,6 +917,33 @@
         "fake-tcp": "Decoy packets (websites)",
         "fake-udp": "Decoy packets (voice)"
       }
+    },
+    "rules": {
+      "kindLabel": "Rule type",
+      "routeLabel": "Route",
+      "kind": {
+        "suffix": "Domain and subdomains",
+        "domain": "Exact domain",
+        "process": "App"
+      },
+      "kindShort": {
+        "suffix": "with subdomains",
+        "domain": "exact domain",
+        "process": "app"
+      },
+      "route": {
+        "desync": "Desync (auto)",
+        "vpn": "VPN",
+        "direct": "Direct"
+      },
+      "valueLabel": {
+        "domain": "Domain",
+        "process": "Process name"
+      },
+      "save": "Save",
+      "cancel": "Cancel",
+      "edit": "Edit {{value}}",
+      "processHint": "An app can’t be tested like a site, so Desync uses its default strategy for it."
     }
   }
 }

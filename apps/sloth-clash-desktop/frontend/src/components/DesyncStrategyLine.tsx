@@ -21,9 +21,13 @@ export function DesyncStrategyLine({
   const caps = useDesyncCapabilities()
   const label = desyncStrategyLabel(t, view, caps?.strategies ?? [])
   if (!label) return null
-  const strategy = label.strategy
-    ? `${label.text} · ${t('desync.strategy.automatic')}`
-    : label.text
+  // An app rule cannot be tested: it uses the catalog's default strategy.
+  const how = t(
+    view.phase === 'fixed'
+      ? 'desync.strategy.catalogDefault'
+      : 'desync.strategy.automatic',
+  )
+  const strategy = label.strategy ? `${label.text} · ${how}` : label.text
   return (
     <span
       className="desyncStrategy"

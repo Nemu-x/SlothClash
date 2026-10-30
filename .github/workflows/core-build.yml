@@ -173,7 +173,7 @@ jobs:
           chmod +x stock-mihomo dist/mihomo-linux-amd64
 
       - name: Pull Xray images
-        run: for v in 24.12.31 25.7.25 26.4.13 26.9.9; do docker pull -q teddysun/xray:$v; done
+        run: for v in 24.12.31 25.7.25 26.4.13 26.7.11 26.7.28 26.9.9 26.9.30 26.10.21 26.10.29; do docker pull -q teddysun/xray:$v; done
 
       - name: REALITY matrix (patched vs stock)
         working-directory: tests/reality-lab

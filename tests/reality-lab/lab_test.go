@@ -41,9 +41,18 @@ const (
 // a classic one is rejected, in between both are accepted. 26.7.11 and 26.7.28
 // also refuse clients below 26.3.27 when the server sets no minClientVer (the
 // default of XTLS/Xray-core af7eb680, commented out again in 47cfe999, the
-// 26.9.8 change that also requires the hybrid share). 26.9.30 and 26.10.21
-// track the current releases.
-var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21"}
+// 26.9.8 change that also requires the hybrid share). 26.9.30, 26.10.21 and
+// 26.10.29 track the current releases.
+var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21", "26.10.29"}
+
+// browserVersions get firefox and safari rows (Auto and forced) next to chrome:
+// one per key-share generation plus every current release, because core patch
+// 0024 gives those two families their own post-quantum hello.
+var browserVersions = map[string]bool{"24.12.31": true, "26.4.13": true, "26.9.9": true, "26.9.30": true, "26.10.21": true, "26.10.29": true}
+
+// patchedClientVersion is the REALITY client version the patched core sends
+// by default (core patch 0024).
+const patchedClientVersion = "26.10.29"
 
 // defaultMinClientVer is the minClientVer an Xray server applies when its
 // config sets none: 26.3.27 from 26.7.11 until 26.9.8, none otherwise.
@@ -114,7 +123,7 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 		}
 		switch {
 		case r.forced || policy == "on":
-			return acceptsShare(r.srv.version, true) // non-chrome prints are swapped to chrome
+			return acceptsShare(r.srv.version, true) // firefox/safari use their own hybrid hello (0024)
 		case policy == "off":
 			return acceptsShare(r.srv.version, false)
 		}
@@ -148,8 +157,10 @@ func TestRealityMatrix(t *testing.T) {
 	var rows []row
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
-		if s.variant == "plain" && (s.version == "24.12.31" || s.version == "26.9.9" || s.version == "26.10.21") {
-			rows = append(rows, row{srv: s, fingerprint: "firefox"}, row{srv: s, fingerprint: "safari"})
+		if s.variant == "plain" && browserVersions[s.version] {
+			for _, fp := range []string{"firefox", "safari"} {
+				rows = append(rows, row{srv: s, fingerprint: fp}, row{srv: s, fingerprint: fp, forced: true})
+			}
 		}
 	}
 
@@ -162,10 +173,10 @@ func TestRealityMatrix(t *testing.T) {
 	var scenarios []scenario
 	if patched != "" {
 		scenarios = append(scenarios,
-			scenario{"patched/no-keys", patched, nil, expectPatched("auto", "26.9.9")},
-			scenario{"patched/auto", patched, map[string]any{"reality-mlkem": "auto"}, expectPatched("auto", "26.9.9")},
-			scenario{"patched/off", patched, map[string]any{"reality-mlkem": "off"}, expectPatched("off", "26.9.9")},
-			scenario{"patched/on", patched, map[string]any{"reality-mlkem": "on"}, expectPatched("on", "26.9.9")},
+			scenario{"patched/no-keys", patched, nil, expectPatched("auto", patchedClientVersion)},
+			scenario{"patched/auto", patched, map[string]any{"reality-mlkem": "auto"}, expectPatched("auto", patchedClientVersion)},
+			scenario{"patched/off", patched, map[string]any{"reality-mlkem": "off"}, expectPatched("off", patchedClientVersion)},
+			scenario{"patched/on", patched, map[string]any{"reality-mlkem": "on"}, expectPatched("on", patchedClientVersion)},
 			scenario{"patched/version-1.9.0", patched, map[string]any{"reality-client-version": "1.9.0"}, expectPatched("auto", "1.9.0")},
 		)
 	}
@@ -175,9 +186,9 @@ func TestRealityMatrix(t *testing.T) {
 			map[string]any{"reality-mlkem": "on", "reality-client-version": "26.9.9"}, expectStock})
 	}
 
-	for _, sc := range scenarios {
+	for si, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			ports, coreLog := startCore(t, sc.bin, sc.keys, rows)
+			ports, coreLog := startCore(t, sc.bin, sc.keys, rows, listenerPortBase+si*listenerPortStride)
 			got := make([]bool, len(rows))
 			detail := make([]string, len(rows))
 			// Bounded parallelism: every probe is a fresh REALITY handshake plus
@@ -227,6 +238,9 @@ func TestRealityMatrix(t *testing.T) {
 				t.Logf("%s %-34s got=%-5v want=%v", mark, r.name(), got[i], want)
 			}
 			t.Logf("%s: %d/%d OK", sc.name, ok, len(rows))
+			if strings.HasPrefix(sc.name, "patched/") {
+				checkBrowserHellos(t, coreLog, sc.name, rows)
+			}
 		})
 	}
 }
@@ -284,12 +298,42 @@ func startServers(t *testing.T) []*server {
 	return servers
 }
 
+// Listener ports come from a fixed band below every ephemeral range (Linux
+// 32768+, Windows 49152+, Docker's published ports live there too), one block
+// per scenario. They used to come from freePort(): bind :0, close, reuse later.
+// That hands out the same port twice in ~11% of 54-row scenarios (measured on
+// Linux), so two proxies shared a listener and a probe reached the wrong
+// proxy — a random cell flipped in either direction, ~half of all lab runs.
+const (
+	listenerPortBase   = 20000
+	listenerPortStride = 200
+)
+
+// reservePorts returns n distinct ports from base upward that are free right
+// now, skipping any already taken.
+func reservePorts(t *testing.T, base, n int) []int {
+	t.Helper()
+	ports := make([]int, 0, n)
+	for p := base; len(ports) < n && p < base+listenerPortStride; p++ {
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+		if err != nil {
+			continue
+		}
+		l.Close()
+		ports = append(ports, p)
+	}
+	if len(ports) < n {
+		t.Fatalf("only %d free ports in %d..%d, need %d", len(ports), base, base+listenerPortStride-1, n)
+	}
+	return ports
+}
+
 // startCore runs the core with one mixed listener per row and returns the ports.
-func startCore(t *testing.T, bin string, keys map[string]any, rows []row) ([]int, string) {
+func startCore(t *testing.T, bin string, keys map[string]any, rows []row, portBase int) ([]int, string) {
 	t.Helper()
 	home := t.TempDir()
 	var proxies, listeners []any
-	ports := make([]int, len(rows))
+	ports := reservePorts(t, portBase, len(rows))
 	for i, r := range rows {
 		opts := map[string]any{"public-key": labPublicKey, "short-id": labShortID}
 		if r.forced {
@@ -301,11 +345,10 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row) ([]int
 			"flow": "xtls-rprx-vision", "tls": true, "servername": labSNI, "client-fingerprint": r.fingerprint,
 			"network": "tcp", "udp": true, "reality-opts": opts,
 		})
-		ports[i] = freePort(t)
 		listeners = append(listeners, map[string]any{"name": "l" + name, "type": "mixed", "listen": "127.0.0.1", "port": ports[i], "proxy": name})
 	}
 	cfg := map[string]any{
-		"mixed-port": 0, "log-level": "info", "mode": "global", "ipv6": false,
+		"mixed-port": 0, "log-level": "debug", "mode": "global", "ipv6": false,
 		"dns":     map[string]any{"enable": true, "nameserver": []string{"1.1.1.1"}},
 		"proxies": proxies, "listeners": listeners, "rules": []string{"MATCH,DIRECT"},
 	}
@@ -335,8 +378,47 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row) ([]int
 			}
 		}
 	})
-	waitTCP(t, ports[len(ports)-1], 20*time.Second)
+	// Every listener must be the core's own: wait for all of them, then make
+	// sure the core did not fail to bind any (a probe would hit nothing or
+	// someone else).
+	for _, p := range ports {
+		waitTCP(t, p, 20*time.Second)
+	}
+	if b, err := os.ReadFile(logf.Name()); err == nil {
+		if bad := grepLines(strings.ToLower(string(b)), "address already in use"); bad != "" {
+			t.Fatalf("core could not bind a listener:\n%s", bad)
+		}
+	}
 	return ports, logf.Name()
+}
+
+// checkBrowserHellos asserts what core patch 0024 promises: a firefox or
+// safari proxy that needs the hybrid share sends its own current hello (the
+// core logs "using Firefox 148" / "using Safari 26.3") and never borrows
+// chrome's. Needs the core at log-level debug.
+func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
+	t.Helper()
+	b, err := os.ReadFile(coreLog)
+	if err != nil {
+		t.Fatalf("read core log: %v", err)
+	}
+	logText := string(b)
+	for _, fp := range []struct{ client, hello string }{{"Firefox", "Firefox 148"}, {"Safari", "Safari 26.3"}} {
+		if bad := grepLines(logText, fp.client+" fingerprint has no X25519MLKEM768 share, using chrome"); bad != "" {
+			t.Errorf("%s: %s fell back to chrome:\n%s", scenario, fp.client, bad)
+		}
+		// Forced rows always take the hybrid path, unless the policy key or a
+		// stale verdict says otherwise; one forced row is enough to expect it.
+		forced := false
+		for _, r := range rows {
+			if r.forced && strings.EqualFold(r.fingerprint, fp.client) {
+				forced = true
+			}
+		}
+		if forced && !strings.Contains(logText, "using "+fp.hello) {
+			t.Errorf("%s: no forced %s handshake used %s", scenario, fp.client, fp.hello)
+		}
+	}
 }
 
 // probeParallel bounds how many cells are probed at once.
@@ -396,16 +478,6 @@ func writeJSON(t *testing.T, path string, v any) {
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
 }
 
 func waitTCP(t *testing.T, port int, d time.Duration) {

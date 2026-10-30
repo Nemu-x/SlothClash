@@ -104,6 +104,10 @@
       "file": "0023-desync-outbound.patch",
       "sha256": "c24dcc97c9006deb72b89b5d47723fc7edc5d86109adc7984d67c799be88b4db",
       "feature": "desync-outbound"
+    },
+    {
+      "file": "0024-reality-pq-browser-hellos.patch",
+      "sha256": "b964333f7c3ec6dd2780249df850e14f79f67a194bcb65513af23416f92ce704"
     }
   ],
   "assets": {

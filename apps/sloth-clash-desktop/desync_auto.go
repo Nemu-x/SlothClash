@@ -404,7 +404,7 @@ func chooseDesyncTCP(ctx context.Context, targets []string, candidates []desync.
 	return desync.Candidate{}, fmt.Errorf("no candidate passed")
 }
 func (a *App) findDesyncTCP(ctx context.Context, lease uint64, network, endpoint, secret, service, route string, background bool) (desync.Candidate, error) {
-	candidates := desync.Ordered(service, desyncCachedSelection(network, service))
+	candidates := desync.Ordered(service, desyncCaps, desyncCachedSelection(network, service))
 	startAt := a.desyncCtl.tcpStart(service, len(candidates))
 	candidates = append(append([]desync.Candidate{}, candidates[startAt:]...), candidates[:startAt]...)
 	if !background {
@@ -549,7 +549,7 @@ func desyncVoiceHealth(now time.Time, p desyncUDPActivity, stableSamples, mediaS
 	return "observing"
 }
 func (a *App) calibrateDesyncUDP(ctx context.Context, lease uint64, network, endpoint, secret, target string, rejected map[string]bool) (string, bool, error) {
-	candidates := desync.Ordered("voice", desyncCachedSelection(network, "voice"))
+	candidates := desync.Ordered("voice", desyncCaps, desyncCachedSelection(network, "voice"))
 	var group desyncUDPProxy
 	if err := autoCoreJSON(ctx, endpoint, secret, http.MethodGet, "/proxies/"+desync.DiscordUDPRoute, nil, &group); err != nil {
 		return "", false, err

@@ -56,773 +56,368 @@ proxies:
       server: s.example.com
       type: ss
     - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 4
-      name: SLOTH-DESYNC-DISCORD-UDP-f4
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 5
-      name: SLOTH-DESYNC-DISCORD-UDP-f5
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 3
-      name: SLOTH-DESYNC-DISCORD-UDP-f3
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 6
-      name: SLOTH-DESYNC-DISCORD-UDP-f6
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 2
-      name: SLOTH-DESYNC-DISCORD-UDP-f2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 7
-      name: SLOTH-DESYNC-DISCORD-UDP-f7
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 8
-      name: SLOTH-DESYNC-DISCORD-UDP-f8
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 10
-      name: SLOTH-DESYNC-DISCORD-UDP-f10
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 12
-      name: SLOTH-DESYNC-DISCORD-UDP-f12
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 16
-      name: SLOTH-DESYNC-DISCORD-UDP-f16
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 24
-      name: SLOTH-DESYNC-DISCORD-UDP-f24
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 32
-      name: SLOTH-DESYNC-DISCORD-UDP-f32
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 1
-      name: SLOTH-DESYNC-DISCORD-UDP-f1
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 9
-      name: SLOTH-DESYNC-DISCORD-UDP-f9
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 11
-      name: SLOTH-DESYNC-DISCORD-UDP-f11
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 13
-      name: SLOTH-DESYNC-DISCORD-UDP-f13
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 14
-      name: SLOTH-DESYNC-DISCORD-UDP-f14
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 15
-      name: SLOTH-DESYNC-DISCORD-UDP-f15
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 17
-      name: SLOTH-DESYNC-DISCORD-UDP-f17
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 18
-      name: SLOTH-DESYNC-DISCORD-UDP-f18
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 19
-      name: SLOTH-DESYNC-DISCORD-UDP-f19
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 20
-      name: SLOTH-DESYNC-DISCORD-UDP-f20
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 21
-      name: SLOTH-DESYNC-DISCORD-UDP-f21
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 22
-      name: SLOTH-DESYNC-DISCORD-UDP-f22
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 23
-      name: SLOTH-DESYNC-DISCORD-UDP-f23
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 25
-      name: SLOTH-DESYNC-DISCORD-UDP-f25
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 26
-      name: SLOTH-DESYNC-DISCORD-UDP-f26
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 27
-      name: SLOTH-DESYNC-DISCORD-UDP-f27
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 28
-      name: SLOTH-DESYNC-DISCORD-UDP-f28
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 29
-      name: SLOTH-DESYNC-DISCORD-UDP-f29
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 30
-      name: SLOTH-DESYNC-DISCORD-UDP-f30
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 1
-            stable-binding: true
-            ttl: 31
-      name: SLOTH-DESYNC-DISCORD-UDP-f31
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 4
-      name: SLOTH-DESYNC-DISCORD-UDP-f4-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 5
-      name: SLOTH-DESYNC-DISCORD-UDP-f5-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 3
-      name: SLOTH-DESYNC-DISCORD-UDP-f3-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 6
-      name: SLOTH-DESYNC-DISCORD-UDP-f6-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 8
-      name: SLOTH-DESYNC-DISCORD-UDP-f8-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 10
-      name: SLOTH-DESYNC-DISCORD-UDP-f10-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        udp:
-            packets: 3
-            repeats: 2
-            stable-binding: true
-            ttl: 12
-      name: SLOTH-DESYNC-DISCORD-UDP-f12-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 3+s
-      name: SLOTH-DESYNC-YOUTUBE-r3
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-YOUTUBE-r1
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 2+s
-      name: SLOTH-DESYNC-YOUTUBE-r2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 4+s
-      name: SLOTH-DESYNC-YOUTUBE-r4
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 8+s
-      name: SLOTH-DESYNC-YOUTUBE-r8
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        split: 1+s
-        split-delay-ms: 5
-      name: SLOTH-DESYNC-YOUTUBE-split
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 4
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f4
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 5
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f5
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 3
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f3
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 6
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f6
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 2
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f2
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 7
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f7
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 8
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f8
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 10
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f10
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 12
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f12
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 16
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f16
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 24
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f24
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 32
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f32
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 1
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f1
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 9
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f9
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 11
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f11
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 13
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f13
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 14
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f14
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 15
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f15
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 17
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f17
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 18
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f18
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 19
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f19
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 20
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f20
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 21
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f21
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 22
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f22
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 23
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f23
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 25
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f25
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 26
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f26
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 27
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f27
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 28
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f28
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 29
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f29
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 30
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f30
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        fake:
-            prefix: -1
-            ttl: 31
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-f31
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        tlsrec: 1+s
-      name: SLOTH-DESYNC-DISCORD-record
-      type: direct
-    - _sloth-desync-managed: true
-      desync:
-        dns-fallback: true
-        reject-quic: true
-        split: 1+s
-        split-delay-ms: 5
-      name: SLOTH-DESYNC-DISCORD-split
-      type: direct
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-UDP-uebdba14699
+      type: desync
+      udp:
+        repeats: 2
+        stable-binding: true
+        ttl: 5
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-UDP-u6ebe839e20
+      type: desync
+      udp:
+        stable-binding: true
+        ttl: 3
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-UDP-ud13ae97453
+      type: desync
+      udp:
+        stable-binding: true
+        ttl: 5
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-UDP-u8c9983f843
+      type: desync
+      udp:
+        stable-binding: true
+        ttl: 8
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-YOUTUBE-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-YOUTUBE-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-YOUTUBE-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-YOUTUBE-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s30879a4293
+      reject-quic: true
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s15f5cfcd23
+      reject-quic: true
+      tlsrec: 3+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s1855283037
+      reject-quic: true
+      tlsrec: -2+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-sf0976f29b4
+      reject-quic: true
+      tlsrec: 1+s,5+s,10+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s554e5bf206
+      random:
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-se00f908f95
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-saac5e9ce30
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-se37a819919
+      reject-quic: true
+      split: "1"
+      tlsrec: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s5642b6c74f
+      random:
+        split:
+            - from: "1"
+              to: "120"
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s09fcfddf9c
+      reject-quic: true
+      split: 1+s
+      split-wait: sent
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s30e9c34c4a
+      reject-quic: true
+      split: 1+s
+      split-wait: acked
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s49914f9987
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s03a1c27bb3
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s13ab09bb4d
+      oob: true
+      reject-quic: true
+      split: "1"
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-scacee1fcd5
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      name: SLOTH-DESYNC-DISCORD-s4797c0aa21
+      oob: true
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 3
+      name: SLOTH-DESYNC-DISCORD-s9e8b15049f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-DISCORD-s62607cf66f
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 8
+      name: SLOTH-DESYNC-DISCORD-sbdf889895a
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        randomize: true
+        sni:
+            - www.wikipedia.org
+        ttl: 5
+      name: SLOTH-DESYNC-DISCORD-s6aafd402a0
+      reject-quic: true
+      type: desync
+    - _sloth-desync-managed: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-DISCORD-s6fae1e8a40
+      reject-quic: true
+      split: 1+s
+      type: desync
+    - _sloth-desync-managed: true
+      disorder: true
+      dns-fallback: true
+      fake:
+        prefix: -1
+        ttl: 5
+      name: SLOTH-DESYNC-DISCORD-s63fc503aca
+      reject-quic: true
+      split: "1"
+      type: desync
 proxy-groups:
     - name: PROXY
       proxies:
@@ -830,103 +425,72 @@ proxy-groups:
         - DIRECT
       type: select
     - _sloth-desync-managed: true
-      default-selected: SLOTH-DESYNC-DISCORD-UDP-f4
+      default-selected: SLOTH-DESYNC-DISCORD-UDP-uebdba14699
       hidden: true
       name: SLOTH-DESYNC-DISCORD-UDP
       proxies:
-        - SLOTH-DESYNC-DISCORD-UDP-f4
-        - SLOTH-DESYNC-DISCORD-UDP-f5
-        - SLOTH-DESYNC-DISCORD-UDP-f3
-        - SLOTH-DESYNC-DISCORD-UDP-f6
-        - SLOTH-DESYNC-DISCORD-UDP-f2
-        - SLOTH-DESYNC-DISCORD-UDP-f7
-        - SLOTH-DESYNC-DISCORD-UDP-f8
-        - SLOTH-DESYNC-DISCORD-UDP-f10
-        - SLOTH-DESYNC-DISCORD-UDP-f12
-        - SLOTH-DESYNC-DISCORD-UDP-f16
-        - SLOTH-DESYNC-DISCORD-UDP-f24
-        - SLOTH-DESYNC-DISCORD-UDP-f32
-        - SLOTH-DESYNC-DISCORD-UDP-f1
-        - SLOTH-DESYNC-DISCORD-UDP-f9
-        - SLOTH-DESYNC-DISCORD-UDP-f11
-        - SLOTH-DESYNC-DISCORD-UDP-f13
-        - SLOTH-DESYNC-DISCORD-UDP-f14
-        - SLOTH-DESYNC-DISCORD-UDP-f15
-        - SLOTH-DESYNC-DISCORD-UDP-f17
-        - SLOTH-DESYNC-DISCORD-UDP-f18
-        - SLOTH-DESYNC-DISCORD-UDP-f19
-        - SLOTH-DESYNC-DISCORD-UDP-f20
-        - SLOTH-DESYNC-DISCORD-UDP-f21
-        - SLOTH-DESYNC-DISCORD-UDP-f22
-        - SLOTH-DESYNC-DISCORD-UDP-f23
-        - SLOTH-DESYNC-DISCORD-UDP-f25
-        - SLOTH-DESYNC-DISCORD-UDP-f26
-        - SLOTH-DESYNC-DISCORD-UDP-f27
-        - SLOTH-DESYNC-DISCORD-UDP-f28
-        - SLOTH-DESYNC-DISCORD-UDP-f29
-        - SLOTH-DESYNC-DISCORD-UDP-f30
-        - SLOTH-DESYNC-DISCORD-UDP-f31
-        - SLOTH-DESYNC-DISCORD-UDP-f4-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f5-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f3-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f6-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f8-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f10-r2
-        - SLOTH-DESYNC-DISCORD-UDP-f12-r2
+        - SLOTH-DESYNC-DISCORD-UDP-uebdba14699
+        - SLOTH-DESYNC-DISCORD-UDP-u6ebe839e20
+        - SLOTH-DESYNC-DISCORD-UDP-ud13ae97453
+        - SLOTH-DESYNC-DISCORD-UDP-u8c9983f843
         - PASS
       type: select
     - _sloth-desync-managed: true
-      default-selected: SLOTH-DESYNC-YOUTUBE-r3
+      default-selected: SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
       hidden: true
       name: SLOTH-DESYNC-YOUTUBE
       proxies:
-        - SLOTH-DESYNC-YOUTUBE-r3
-        - SLOTH-DESYNC-YOUTUBE-r1
-        - SLOTH-DESYNC-YOUTUBE-r2
-        - SLOTH-DESYNC-YOUTUBE-r4
-        - SLOTH-DESYNC-YOUTUBE-r8
-        - SLOTH-DESYNC-YOUTUBE-split
+        - SLOTH-DESYNC-YOUTUBE-s15f5cfcd23
+        - SLOTH-DESYNC-YOUTUBE-s30879a4293
+        - SLOTH-DESYNC-YOUTUBE-s1855283037
+        - SLOTH-DESYNC-YOUTUBE-sf0976f29b4
+        - SLOTH-DESYNC-YOUTUBE-s554e5bf206
+        - SLOTH-DESYNC-YOUTUBE-se00f908f95
+        - SLOTH-DESYNC-YOUTUBE-saac5e9ce30
+        - SLOTH-DESYNC-YOUTUBE-se37a819919
+        - SLOTH-DESYNC-YOUTUBE-s5642b6c74f
+        - SLOTH-DESYNC-YOUTUBE-s09fcfddf9c
+        - SLOTH-DESYNC-YOUTUBE-s30e9c34c4a
+        - SLOTH-DESYNC-YOUTUBE-s49914f9987
+        - SLOTH-DESYNC-YOUTUBE-s03a1c27bb3
+        - SLOTH-DESYNC-YOUTUBE-s13ab09bb4d
+        - SLOTH-DESYNC-YOUTUBE-scacee1fcd5
+        - SLOTH-DESYNC-YOUTUBE-s4797c0aa21
+        - SLOTH-DESYNC-YOUTUBE-s9e8b15049f
+        - SLOTH-DESYNC-YOUTUBE-s62607cf66f
+        - SLOTH-DESYNC-YOUTUBE-sbdf889895a
+        - SLOTH-DESYNC-YOUTUBE-s6aafd402a0
+        - SLOTH-DESYNC-YOUTUBE-s6fae1e8a40
+        - SLOTH-DESYNC-YOUTUBE-s63fc503aca
         - PASS
       type: select
     - _sloth-desync-managed: true
-      default-selected: SLOTH-DESYNC-DISCORD-f4
+      default-selected: SLOTH-DESYNC-DISCORD-s30879a4293
       hidden: true
       name: SLOTH-DESYNC-DISCORD
       proxies:
-        - SLOTH-DESYNC-DISCORD-f4
-        - SLOTH-DESYNC-DISCORD-f5
-        - SLOTH-DESYNC-DISCORD-f3
-        - SLOTH-DESYNC-DISCORD-f6
-        - SLOTH-DESYNC-DISCORD-f2
-        - SLOTH-DESYNC-DISCORD-f7
-        - SLOTH-DESYNC-DISCORD-f8
-        - SLOTH-DESYNC-DISCORD-f10
-        - SLOTH-DESYNC-DISCORD-f12
-        - SLOTH-DESYNC-DISCORD-f16
-        - SLOTH-DESYNC-DISCORD-f24
-        - SLOTH-DESYNC-DISCORD-f32
-        - SLOTH-DESYNC-DISCORD-f1
-        - SLOTH-DESYNC-DISCORD-f9
-        - SLOTH-DESYNC-DISCORD-f11
-        - SLOTH-DESYNC-DISCORD-f13
-        - SLOTH-DESYNC-DISCORD-f14
-        - SLOTH-DESYNC-DISCORD-f15
-        - SLOTH-DESYNC-DISCORD-f17
-        - SLOTH-DESYNC-DISCORD-f18
-        - SLOTH-DESYNC-DISCORD-f19
-        - SLOTH-DESYNC-DISCORD-f20
-        - SLOTH-DESYNC-DISCORD-f21
-        - SLOTH-DESYNC-DISCORD-f22
-        - SLOTH-DESYNC-DISCORD-f23
-        - SLOTH-DESYNC-DISCORD-f25
-        - SLOTH-DESYNC-DISCORD-f26
-        - SLOTH-DESYNC-DISCORD-f27
-        - SLOTH-DESYNC-DISCORD-f28
-        - SLOTH-DESYNC-DISCORD-f29
-        - SLOTH-DESYNC-DISCORD-f30
-        - SLOTH-DESYNC-DISCORD-f31
-        - SLOTH-DESYNC-DISCORD-record
-        - SLOTH-DESYNC-DISCORD-split
+        - SLOTH-DESYNC-DISCORD-s30879a4293
+        - SLOTH-DESYNC-DISCORD-s15f5cfcd23
+        - SLOTH-DESYNC-DISCORD-s1855283037
+        - SLOTH-DESYNC-DISCORD-sf0976f29b4
+        - SLOTH-DESYNC-DISCORD-s554e5bf206
+        - SLOTH-DESYNC-DISCORD-se00f908f95
+        - SLOTH-DESYNC-DISCORD-saac5e9ce30
+        - SLOTH-DESYNC-DISCORD-se37a819919
+        - SLOTH-DESYNC-DISCORD-s5642b6c74f
+        - SLOTH-DESYNC-DISCORD-s09fcfddf9c
+        - SLOTH-DESYNC-DISCORD-s30e9c34c4a
+        - SLOTH-DESYNC-DISCORD-s49914f9987
+        - SLOTH-DESYNC-DISCORD-s03a1c27bb3
+        - SLOTH-DESYNC-DISCORD-s13ab09bb4d
+        - SLOTH-DESYNC-DISCORD-scacee1fcd5
+        - SLOTH-DESYNC-DISCORD-s4797c0aa21
+        - SLOTH-DESYNC-DISCORD-s9e8b15049f
+        - SLOTH-DESYNC-DISCORD-s62607cf66f
+        - SLOTH-DESYNC-DISCORD-sbdf889895a
+        - SLOTH-DESYNC-DISCORD-s6aafd402a0
+        - SLOTH-DESYNC-DISCORD-s6fae1e8a40
+        - SLOTH-DESYNC-DISCORD-s63fc503aca
         - PASS
       type: select
 rules:

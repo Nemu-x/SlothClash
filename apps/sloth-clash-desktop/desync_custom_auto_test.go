@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"SlothClashDesktop/internal/desync"
+	"SlothClashDesktop/internal/desync/desynctest"
 )
 
 // customFakeCore answers the calls custom calibration makes. passes decides a
@@ -94,13 +95,13 @@ func customTestApp(t *testing.T, core *customFakeCore, entries ...DesyncCustomEn
 	prefsCurrent.Desync = DesyncSettings{Enabled: true, Custom: entries}
 	prefsCurrent.DesyncCache = nil
 	prefsMu.Unlock()
-	fake := desyncFakeTTLSupported
-	desyncFakeTTLSupported = false
+	caps := desyncCaps
+	desyncCaps = desynctest.Darwin() // no fake TCP: a shorter set
 	t.Cleanup(func() {
 		prefsMu.Lock()
 		prefsCurrent = previous
 		prefsMu.Unlock()
-		desyncFakeTTLSupported = fake
+		desyncCaps = caps
 	})
 	a := &App{core: coreProcess{listen: strings.TrimPrefix(core.srv.URL, "http://")}}
 	a.state.Connection.Status = "connected"
@@ -232,24 +233,24 @@ func TestDesyncCustomNotBlockedSelectsDirect(t *testing.T) {
 }
 
 func TestDesyncCustomFindsWinnerAfterFailedBaseline(t *testing.T) {
-	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-r2") })
+	core := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-"+presetIDOf("tlsrec-before-sni")) })
 	a, network := customTestApp(t, core, customEntry)
 	plan := &desyncCustomPlan{phase: "queued"}
 	calibrateCustomToEnd(a, 1, network, a.core.listen, "", customEntry, plan)
 	route := desync.CustomRoute(customEntry.ID)
-	if got := core.selections(route); len(got) != 1 || got[0] != route+"-r2" {
+	if got := core.selections(route); len(got) != 1 || got[0] != route+"-"+presetIDOf("tlsrec-before-sni") {
 		t.Fatalf("selections: %v", got)
 	}
 	state := a.GetDesyncAutoStatus().Custom[customEntry.ID]
-	if state.Phase != "ready" || state.Candidate != "r2" || plan.phase != "ready" {
+	if state.Phase != "ready" || state.Candidate != presetIDOf("tlsrec-before-sni") || plan.phase != "ready" {
 		t.Fatalf("state %+v", state)
 	}
-	if desyncCachedSelection(network, desync.CustomService("example.org")) != "r2" {
+	if desyncCachedSelection(network, desync.CustomService("example.org")) != presetIDOf("tlsrec-before-sni") {
 		t.Fatal("winner not cached")
 	}
 	probes := core.probeLog()
-	if !strings.HasPrefix(probes[0], "DIRECT ") || !strings.HasPrefix(probes[1], route+"-r3 ") {
-		t.Fatalf("baseline must come first, then the YouTube set: %v", probes)
+	if !strings.HasPrefix(probes[0], "DIRECT ") || !strings.HasPrefix(probes[1], route+"-"+candID("custom", 0)+" ") {
+		t.Fatalf("baseline must come first, then the catalog order: %v", probes)
 	}
 	for _, p := range probes {
 		if !strings.HasSuffix(p, " https://example.org/ 100-599") {
@@ -257,10 +258,10 @@ func TestDesyncCustomFindsWinnerAfterFailedBaseline(t *testing.T) {
 		}
 	}
 	// The cached winner is tried right after the baseline next time.
-	core2 := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-r2") })
+	core2 := newCustomFakeCore(t, func(name, _ string) bool { return strings.HasSuffix(name, "-"+presetIDOf("tlsrec-before-sni")) })
 	a.core.listen = strings.TrimPrefix(core2.srv.URL, "http://")
 	calibrateCustomToEnd(a, 1, network, a.core.listen, "", customEntry, &desyncCustomPlan{})
-	if probes := core2.probeLog(); len(probes) != 3 || !strings.HasPrefix(probes[1], route+"-r2 ") {
+	if probes := core2.probeLog(); len(probes) != 3 || !strings.HasPrefix(probes[1], route+"-"+presetIDOf("tlsrec-before-sni")+" ") {
 		t.Fatalf("cached winner not first: %v", probes)
 	}
 }
@@ -279,7 +280,7 @@ func TestDesyncCustomNothingWorksFallsBackToProfile(t *testing.T) {
 		t.Fatalf("state %+v plan %+v", state, plan)
 	}
 	// Every candidate once (one round each when it fails) plus the baseline.
-	if got, want := len(core.probeLog()), len(desync.CustomCandidates(false))+1; got != want {
+	if got, want := len(core.probeLog()), len(desync.Candidates("custom", desyncCaps))+1; got != want {
 		t.Fatalf("probes %d, want %d", got, want)
 	}
 	if desyncCachedSelection(network, desync.CustomService("example.org")) != "" {
@@ -310,7 +311,7 @@ func TestDesyncCustomStaleLeaseCannotSelect(t *testing.T) {
 func TestDesyncCustomWorkerWaitsForBuiltinsAndServesOneEntryAtATime(t *testing.T) {
 	second := DesyncCustomEntry{ID: "5a6b7c8d", Domain: "example.net", Enabled: true}
 	core := newCustomFakeCore(t, func(name, target string) bool {
-		return name == "DIRECT" && strings.Contains(target, "example.org") || strings.HasSuffix(name, "-split")
+		return name == "DIRECT" && strings.Contains(target, "example.org") || strings.HasSuffix(name, "-"+presetIDOf("split-1s"))
 	})
 	a, network := customTestApp(t, core, customEntry, second)
 	a.desyncCtl.status.YouTube = DesyncAutoService{Phase: "testing"}
@@ -340,7 +341,7 @@ func TestDesyncCustomWorkerWaitsForBuiltinsAndServesOneEntryAtATime(t *testing.T
 	if core.maxSeen.Load() != 1 {
 		t.Fatalf("%d probes ran at once", core.maxSeen.Load())
 	}
-	if got := core.selections(desync.CustomRoute(second.ID)); got[len(got)-1] != desync.CustomRoute(second.ID)+"-split" {
+	if got := core.selections(desync.CustomRoute(second.ID)); got[len(got)-1] != desync.CustomRoute(second.ID)+"-"+presetIDOf("split-1s") {
 		t.Fatalf("second entry selections: %v", got)
 	}
 	// Removing an entry drops its state without restarting the session.

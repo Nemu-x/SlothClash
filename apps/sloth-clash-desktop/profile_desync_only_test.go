@@ -15,7 +15,7 @@ var onboardingSelection = DesyncSettings{YouTube: true}
 
 func TestCreateDesyncOnlyProfile(t *testing.T) {
 	isolateAppDataRoot(t)
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	withDesyncPrefs(t, DesyncSettings{})
 	a := &App{}
 	a.state.Mode.Current = "global"
@@ -85,7 +85,7 @@ func blockProfilesStore(t *testing.T) {
 // profile, no active-profile or mode change, so a retry creates exactly one.
 func TestCreateDesyncOnlyProfileRollsBackOnPersistFailure(t *testing.T) {
 	isolateAppDataRoot(t)
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	withDesyncPrefs(t, DesyncSettings{})
 	sub := Profile{ID: "profile-1", Name: "Sub", Type: "subscription", URL: "https://example.com/s"}
 	for _, tc := range []struct {

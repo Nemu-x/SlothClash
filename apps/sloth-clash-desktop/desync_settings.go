@@ -50,18 +50,20 @@ func effectiveDesyncSettings(s DesyncSettings) DesyncSettings {
 	return s
 }
 
+// desyncCoreSupported reports a core with the "type: desync" outbound
+// (patch 0023), which every generated strategy is.
 func desyncCoreSupported() bool {
-	for _, feature := range embeddedCoreFeatures() {
-		if feature == "desync" {
-			return true
-		}
-	}
-	return false
+	return embeddedCoreHas("desync-outbound")
 }
 
+// desyncUDPCoreSupported also needs the UDP burst and voice probes (0019).
 func desyncUDPCoreSupported() bool {
+	return desyncCoreSupported() && embeddedCoreHas("desync-udp")
+}
+
+func embeddedCoreHas(token string) bool {
 	for _, feature := range embeddedCoreFeatures() {
-		if feature == "desync-udp" {
+		if feature == token {
 			return true
 		}
 	}

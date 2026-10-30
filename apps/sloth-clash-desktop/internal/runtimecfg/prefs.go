@@ -1,6 +1,10 @@
 package runtimecfg
 
-import "SlothClashDesktop/internal/desync"
+import (
+	dlib "github.com/Nemu-x/desync"
+
+	"SlothClashDesktop/internal/desync"
+)
 
 // Prefs is the slice of the desktop prefs the config generation reads. The
 // caller captures it ONCE, when a generation starts, and threads it down (as
@@ -63,9 +67,10 @@ type DesyncSettings struct {
 	// Custom is the enabled custom-domain entries, already validated (the
 	// domain goes into rules verbatim), in the user's order.
 	Custom []DesyncCustomRoute
-	// FakeTTL reports whether fake-TTL strategies work on this platform; it
-	// selects the custom candidate set.
-	FakeTTL bool
+	// Caps is what the desync library implements on the OS the core runs
+	// on: strategies needing anything else are not generated (the core
+	// rejects the whole config with them). Zero means desync.Platform.
+	Caps dlib.Capabilities
 }
 
 // DesyncCustomRoute is one enabled custom-domain entry: its stable ID (which

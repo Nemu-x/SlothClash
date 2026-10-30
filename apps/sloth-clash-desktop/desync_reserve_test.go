@@ -206,7 +206,7 @@ func TestDesyncVoiceReserveClosesOnlyConfirmedFailedOwnedFlows(t *testing.T) {
 			a.state.Mode.Current = "rule"
 			a.desyncCtl.epoch = 1
 			a.desyncCtl.status.Network = desyncNetworkKey()
-			changed := a.tryDesyncVoiceReserve(context.Background(), 1, a.core.listen, "", "104.29.1.1:19330", desync.DiscordUDPRoute+"-f4")
+			changed := a.tryDesyncVoiceReserve(context.Background(), 1, a.core.listen, "", "104.29.1.1:19330", desync.DiscordUDPRoute+"-"+candID("voice", 0))
 			if changed == recovered || puts.Load() != deletes.Load() || (!recovered && puts.Load() != 1) || (recovered && puts.Load() != 0) {
 				t.Fatalf("changed=%t puts=%d deletes=%d", changed, puts.Load(), deletes.Load())
 			}

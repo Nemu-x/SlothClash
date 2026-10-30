@@ -15,7 +15,7 @@ import (
 )
 
 func monitorConnection(ip string) ConnectionItem {
-	return ConnectionItem{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: ip, DestinationPort: "19330"}, Chains: []string{desync.DiscordUDPRoute + "-f4", desync.DiscordUDPRoute}}
+	return ConnectionItem{Metadata: ConnectionMeta{Network: "udp", Process: "Discord.exe", DestinationIP: ip, DestinationPort: "19330"}, Chains: []string{desync.DiscordUDPRoute + "-" + candID("voice", 0), desync.DiscordUDPRoute}}
 }
 
 func TestDesyncStreamStallDoesNotReplaceHealthyVoice(t *testing.T) {
@@ -84,15 +84,15 @@ func TestDesyncProbeWinnerCannotOverrideRecoveredApplicationTraffic(t *testing.T
 		case r.Method == http.MethodPost:
 			fmt.Fprint(w, `{"sent":12,"received":12,"maxConsecutiveLoss":0,"durationMS":2200}`)
 		case r.URL.Path == "/proxies/"+desync.DiscordUDPRoute:
-			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-"+candID("voice", 0))
 		default:
 			fmt.Fprintf(w, `{"desyncUDP":{"activity":[{"lastRXMS":%d,"rxPackets":100,"discoveryRX":3}]}}`, time.Now().UnixMilli())
 		}
 	}))
 	defer server.Close()
 	a := &App{}
-	selected, changed, err := a.calibrateDesyncUDP(context.Background(), 0, "test-network", strings.TrimPrefix(server.URL, "http://"), "", "104.29.1.1:19330", map[string]bool{"f4": true})
-	if err != nil || changed || puts != 0 || selected != desync.DiscordUDPRoute+"-f4" {
+	selected, changed, err := a.calibrateDesyncUDP(context.Background(), 0, "test-network", strings.TrimPrefix(server.URL, "http://"), "", "104.29.1.1:19330", map[string]bool{candID("voice", 0): true})
+	if err != nil || changed || puts != 0 || selected != desync.DiscordUDPRoute+"-"+candID("voice", 0) {
 		t.Fatalf("recovered application overridden: %s %t %d %v", selected, changed, puts, err)
 	}
 }
@@ -124,7 +124,7 @@ func TestDesyncReportSeparatesDirectAndProfileFlowsWithoutPrivateRoutes(t *testi
 	defer func() { prefsMu.Lock(); prefsCurrent = previous; prefsMu.Unlock() }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/connections" {
-			fmt.Fprintf(w, `{"connections":[{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.1","destinationPort":"19330"},"chains":[%q,%q]},{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.2","destinationPort":"19330"},"chains":["private subscription node"]}]}`, desync.DiscordUDPRoute+"-f4", desync.DiscordUDPRoute)
+			fmt.Fprintf(w, `{"connections":[{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.1","destinationPort":"19330"},"chains":[%q,%q]},{"metadata":{"network":"udp","process":"Discord.exe","destinationIP":"104.29.1.2","destinationPort":"19330"},"chains":["private subscription node"]}]}`, desync.DiscordUDPRoute+"-"+candID("voice", 0), desync.DiscordUDPRoute)
 			return
 		}
 		fmt.Fprint(w, `{}`)
@@ -160,7 +160,7 @@ func TestDesyncStreamFailureDoesNotProbeOrCloseWorkingCall(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/proxies/"+desync.DiscordUDPRoute {
-			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
+			fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-"+candID("voice", 0))
 			return
 		}
 		n := uint64(reads.Add(1))
@@ -213,11 +213,11 @@ func TestDesyncNativeProbeErrorDoesNotRejectEveryTTL(t *testing.T) {
 			fmt.Fprint(w, `{"message":"UDP candidate socket failed"}`)
 			return
 		}
-		fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-f4")
+		fmt.Fprintf(w, `{"now":%q}`, desync.DiscordUDPRoute+"-"+candID("voice", 0))
 	}))
 	defer server.Close()
 	a := &App{}
-	rejected := map[string]bool{"f4": true}
+	rejected := map[string]bool{candID("voice", 0): true}
 	_, _, err := a.calibrateDesyncUDP(context.Background(), 0, "test-network", strings.TrimPrefix(server.URL, "http://"), "", "104.29.1.1:19330", rejected)
 	if desyncErrorCode(err) != "native_socket" || posts != 1 || len(rejected) != 1 {
 		t.Fatalf("socket error caused TTL churn: posts=%d rejected=%v err=%v", posts, rejected, err)

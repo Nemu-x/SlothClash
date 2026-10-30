@@ -246,7 +246,7 @@ func withDesyncCoreFeatures(t *testing.T, features ...string) {
 }
 
 func TestDesyncSettingsEnableKeepsStoredCustomOnlySelection(t *testing.T) {
-	withDesyncCoreFeatures(t, "desync")
+	withDesyncCoreFeatures(t, "desync", "desync-outbound")
 	stored := []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Enabled: true}}
 	a := desyncProfileApp(t, desyncPtr(DesyncSettings{Custom: stored}), nil)
 	// The UI sends the toggles only: no YouTube/Discord and no Custom field.

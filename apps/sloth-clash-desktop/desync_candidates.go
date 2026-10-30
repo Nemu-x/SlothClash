@@ -12,6 +12,11 @@ import (
 	"SlothClashDesktop/internal/desync"
 )
 
+// desyncCaps is what the desync library implements on this OS; the config
+// generation and the calibration only use strategies it covers. A variable
+// so tests pin one platform's set.
+var desyncCaps = desync.Platform
+
 type DesyncNetworkCache struct {
 	Network string `json:"network"`
 	YouTube string `json:"youtube,omitempty"`

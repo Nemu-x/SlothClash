@@ -758,7 +758,13 @@
     "enabled": "启用 Desync",
     "unsupportedCore": "此版本未包含兼容的内核。",
     "voice": "Discord 语音",
-    "retry": "重新检测",
+    "checkNetwork": "检查网络",
+    "enableTun": "开启 TUN",
+    "enablingTun": "正在开启 TUN…",
+    "reconnectVoice": "重新连接语音",
+    "reconnecting": "正在重新连接…",
+    "reconnected": "Discord 正在重新连接语音",
+    "reconnectedNone": "没有可重新连接的语音连接",
     "copy": "复制诊断",
     "copying": "正在生成报告…",
     "copied": "已复制",
@@ -854,6 +860,47 @@
         "limit": "包括热门服务在内最多 {{limit}} 个条目。请先移除一个网站。",
         "not_found": "该服务条目已不存在，列表已刷新。",
         "unknown_service": "此版本中没有该服务。"
+      }
+    },
+    "strategy": {
+      "line": "策略：{{strategy}}",
+      "voiceLine": "语音策略：{{strategy}}",
+      "named": "{{name}}，方案 {{variant}}",
+      "automatic": "自动选择",
+      "kind": {
+        "tlsrec": "拆分 TLS 记录",
+        "tlsrec-random": "在随机位置拆分 TLS 记录",
+        "split": "拆分第一个数据包",
+        "split-random": "在随机位置拆分第一个数据包",
+        "tlsrec-split": "拆分 TLS 记录和第一个数据包",
+        "split-wait": "拆分第一个数据包并等待送达",
+        "disorder": "乱序发送第一部分",
+        "oob": "添加带外字节",
+        "disorder-oob": "乱序发送并添加带外字节",
+        "fake": "先发送诱饵数据包",
+        "fake-split": "拆分并先发送诱饵数据包",
+        "udp-zero": "先发送诱饵数据报",
+        "udp-quic": "先发送诱饵 QUIC 数据包"
+      }
+    },
+    "caps": {
+      "title": "这台电脑支持的功能",
+      "count": "{{supported}}/{{total}} 种方法可用",
+      "note": "这是此版本应用在本系统上能做到的事情，并非网络测试：哪种方法有效取决于你的网络。",
+      "supported": "可用",
+      "supportedInferred": "可用 · 时机为估算",
+      "inferredHint": "受支持，但等待的时机是估算的，而不是从系统读取的。",
+      "unsupported": "不可用",
+      "strategies": "自动选择会在这台电脑上尝试 {{total}} 种策略中的 {{tried}} 种。",
+      "method": {
+        "tlsrec": "拆分 TLS 记录",
+        "split": "拆分第一个数据包",
+        "split-wait-sent": "等待分段发出",
+        "split-wait-acked": "等待分段送达",
+        "disorder": "乱序发送分段",
+        "oob": "带外字节",
+        "fake-tcp": "诱饵数据包（网站）",
+        "fake-udp": "诱饵数据包（语音）"
       }
     }
   }

@@ -7,6 +7,7 @@ import {
   GetDesyncStatus as getStatus,
   GetDesyncAutoStatus as getAutoStatus,
   GetDesyncDiagnosticReport as getReport,
+  GetDesyncCapabilities as getCapabilities,
   RetryDesyncAuto as retryAuto,
   ReconnectDiscordUDP as reconnectUDP,
   SetDesyncSettings as setSettings,
@@ -119,3 +120,46 @@ export const GetDesyncAutoStatus = (): Promise<DesyncAutoStatus> =>
   getAutoStatus()
 export const RetryDesyncAuto = (): Promise<DesyncAutoStatus> => retryAuto()
 export const GetDesyncDiagnosticReport = (): Promise<string> => getReport()
+
+/**
+ * One method of the desync library and whether this build implements it on
+ * this OS. Read from the build, not measured on the network.
+ */
+export interface DesyncCapability {
+  /** "tlsrec", "split", "split-wait-sent", "split-wait-acked", "disorder", "oob", "fake-tcp", "fake-udp". */
+  method: string
+  supported: boolean
+  /** Why it is not supported here (the library's English text). */
+  reason?: string
+  /** Supported, but the moment it waits for is inferred, not read from the system. */
+  inferred?: boolean
+}
+
+/** One strategy (preset) of the library's catalog. */
+export interface DesyncStrategy {
+  /** The ID calibration reports in DesyncAutoService.candidate. */
+  id: string
+  name: string
+  /** "tcp" or "udp". */
+  protocol: string
+  /** Fixed vocabulary the UI translates (desync.strategy.kind.*). */
+  kind: string
+  /** 1-based number among the strategies of the same kind, catalog order. */
+  variant: number
+  /** The library's English technical description. */
+  description: string
+  available: boolean
+  reason?: string
+  /** Calibration tries it on this computer. */
+  tried: boolean
+}
+
+export interface DesyncCapabilityReport {
+  os: string
+  methods: DesyncCapability[]
+  strategies: DesyncStrategy[]
+}
+
+/** What this build can do on this OS (fixed while the app runs). */
+export const GetDesyncCapabilities = (): Promise<DesyncCapabilityReport> =>
+  getCapabilities()

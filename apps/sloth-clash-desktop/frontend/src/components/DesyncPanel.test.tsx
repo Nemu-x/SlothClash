@@ -368,13 +368,13 @@ describe('DesyncPanel: actions', () => {
     vi.restoreAllMocks()
   })
 
-  it('Check again is the primary action and calls RetryDesyncAuto', async () => {
+  it('Check network is the primary action and calls RetryDesyncAuto', async () => {
     stubBackend()
     const retry = wailsApp.stub('RetryDesyncAuto', () =>
       desyncAuto({ youtube: desyncService('queued') }),
     )
     await renderCard()
-    const btn = screen.getByRole('button', { name: 'Check again' })
+    const btn = screen.getByRole('button', { name: 'Check network' })
     expect(btn).toHaveClass('btn', 'primary')
     fireEvent.click(btn)
     await waitFor(() => expect(retry).toHaveBeenCalledTimes(1))
@@ -383,13 +383,13 @@ describe('DesyncPanel: actions', () => {
     )
   })
 
-  it('Check again is disabled when not connected or not in Rule mode', async () => {
+  it('Check network is disabled when not connected or not in Rule mode', async () => {
     stubBackend()
     renderWithProviders(
       <DesyncPanel connected={false} mode="rule" traffic="tun" />,
     )
     await screen.findByRole('switch', { name: 'YouTube' })
-    expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check network' })).toBeDisabled()
   })
 
   it('Copy diagnostics is a quiet link that copies the report', async () => {

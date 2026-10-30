@@ -196,7 +196,8 @@ func importedProfile(t *testing.T, a *App) Profile {
 
 func TestImportConnectDesyncIsTheUsersChoice(t *testing.T) {
 	withDesyncCoreFeatures(t, "desync", "desync-outbound")
-	only := desyncPtr(DesyncSettings{Enabled: true, Discord: true, Custom: []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Route: desyncRouteDirect, Enabled: true}}})
+	// YouTube runs on every OS (Discord through Desync is Windows-only).
+	only := desyncPtr(DesyncSettings{Enabled: true, YouTube: true, Custom: []DesyncCustomEntry{{ID: "0a1b2c3d", Domain: "example.org", Route: desyncRouteDirect, Enabled: true}}})
 	a := desyncProfileApp(t, nil, only)
 	url := subscriptionServer(t, "")
 
@@ -211,7 +212,7 @@ func TestImportConnectDesyncIsTheUsersChoice(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := profileDesyncSettings(importedProfile(t, a))
-	if !s.Enabled || !s.Discord || s.YouTube || len(s.Custom) != 1 || s.Custom[0].Domain != "example.org" {
+	if !s.Enabled || !s.YouTube || s.Discord || len(s.Custom) != 1 || s.Custom[0].Domain != "example.org" {
 		t.Fatalf("the Desync-only selection was not carried: %+v", s)
 	}
 }

@@ -106,6 +106,7 @@ export const FEATURE_ORDER = [
   'desync-udp',
   'desync-auto',
   'desync-outbound',
+  'transfer-test',
 ]
 
 /** The feature tokens of the manifest's series, in FEATURE_ORDER. */

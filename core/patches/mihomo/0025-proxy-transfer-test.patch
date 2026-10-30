@@ -1,0 +1,431 @@
+diff --git a/hub/route/proxies.go b/hub/route/proxies.go
+index 1f711a3..bfa9d21 100644
+--- a/hub/route/proxies.go
++++ b/hub/route/proxies.go
+@@ -30,6 +30,7 @@ func proxyRouter() http.Handler {
+ 		r.Use(parseProxyName, findProxyByName)
+ 		r.Get("/", getProxy)
+ 		r.Get("/delay", getProxyDelay)
++		r.Get("/transfer", getProxyTransfer)
+ 		r.Post("/desync/udp-probe", probeDesyncUDP)
+ 		r.Post("/desync/profile-probe", probeDesyncProfile)
+ 		r.Put("/", updateProxy)
+diff --git a/hub/route/proxy_transfer.go b/hub/route/proxy_transfer.go
+new file mode 100644
+index 0000000..c1cd7d0
+--- /dev/null
++++ b/hub/route/proxy_transfer.go
+@@ -0,0 +1,231 @@
++package route
++
++// SlothClash core patch 0025: GET /proxies/{name}/transfer, a delay test that
++// also reads the response body.
++//
++// The delay test (adapter.URLTest) sends one HEAD over HTTP/1.1 and passes as
++// soon as the response headers arrive, a few hundred bytes. Some networks let
++// a TLS connection through and then stop forwarding server data after the
++// first tens of kilobytes (the connection stays open and simply freezes), so a
++// desync strategy that "passes" the delay test can still leave the service
++// unusable. This test sends GET with ALPN h2 and http/1.1, as browsers do,
++// reads the body without compression up to max-bytes, and passes when that
++// much arrived or the body ended after at least min-bytes, with no stall
++// longer than stall ms between reads. A stall reports how many bytes got
++// through.
++//
++// Remove when the client no longer needs transfer-level probes; no upstream
++// issue is claimed.
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/url"
++	"strconv"
++	"sync/atomic"
++	"time"
++
++	"github.com/metacubex/chi/render"
++	"github.com/metacubex/http"
++	"github.com/metacubex/mihomo/common/utils"
++	"github.com/metacubex/mihomo/component/ca"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
++)
++
++const (
++	// transferMaxBytes bounds the body read: max-bytes and its default.
++	transferMaxBytes = 1 << 20
++	// transferMaxTimeout bounds the whole test.
++	transferMaxTimeout = 60 * time.Second
++	// transferDefaultStall is the longest pause between body reads.
++	transferDefaultStall = 3 * time.Second
++	transferMinStall     = 100 * time.Millisecond
++)
++
++// transferResult is the success response. Delay is comparable to the delay
++// test's: the time until the response headers.
++type transferResult struct {
++	Delay    int64  `json:"delay"`   // ms until the response headers
++	Elapsed  int64  `json:"elapsed"` // ms until the body was read
++	Bytes    int64  `json:"bytes"`
++	Status   int    `json:"status"`
++	Protocol string `json:"protocol"` // "HTTP/2.0" or "HTTP/1.1"
++}
++
++// transferError is a failed test; Bytes is how much of the body arrived.
++type transferError struct {
++	err   error
++	bytes int64
++}
++
++func (e *transferError) Error() string { return e.err.Error() }
++func (e *transferError) Unwrap() error { return e.err }
++
++var errTransferStalled = errors.New("transfer stalled")
++
++func getProxyTransfer(w http.ResponseWriter, r *http.Request) {
++	query := r.URL.Query()
++	bad := func(format string, v ...any) {
++		render.Status(r, http.StatusBadRequest)
++		render.JSON(w, r, newError(fmt.Sprintf(format, v...)))
++	}
++	target, err := url.Parse(query.Get("url"))
++	if err != nil || target.Scheme != "https" || target.Hostname() == "" {
++		bad("url must be an absolute https URL")
++		return
++	}
++	timeoutMS, err := strconv.ParseInt(query.Get("timeout"), 10, 64)
++	timeout := time.Duration(timeoutMS) * time.Millisecond
++	if err != nil || timeout <= 0 || timeout > transferMaxTimeout {
++		bad("timeout must be 1-%d ms", transferMaxTimeout.Milliseconds())
++		return
++	}
++	expected, err := utils.NewUnsignedRanges[uint16](query.Get("expected"))
++	if err != nil {
++		bad("expected: %v", err)
++		return
++	}
++	var minBytes int64
++	if v := query.Get("min-bytes"); v != "" {
++		if minBytes, err = strconv.ParseInt(v, 10, 64); err != nil || minBytes < 0 || minBytes > transferMaxBytes {
++			bad("min-bytes must be 0-%d", transferMaxBytes)
++			return
++		}
++	}
++	maxBytes := int64(transferMaxBytes)
++	if v := query.Get("max-bytes"); v != "" {
++		if maxBytes, err = strconv.ParseInt(v, 10, 64); err != nil || maxBytes < 1 || maxBytes > transferMaxBytes {
++			bad("max-bytes must be 1-%d", transferMaxBytes)
++			return
++		}
++	}
++	if minBytes > maxBytes {
++		bad("min-bytes must not exceed max-bytes")
++		return
++	}
++	stall := transferDefaultStall
++	if v := query.Get("stall"); v != "" {
++		ms, err := strconv.ParseInt(v, 10, 64)
++		stall = time.Duration(ms) * time.Millisecond
++		if err != nil || stall < transferMinStall || stall > timeout {
++			bad("stall must be %d ms to the timeout", transferMinStall.Milliseconds())
++			return
++		}
++	}
++
++	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
++	ctx, cancel := context.WithTimeout(r.Context(), timeout)
++	defer cancel()
++
++	out, err := proxyTransfer(ctx, proxy, target, expected, minBytes, maxBytes, stall)
++	if err == nil {
++		render.JSON(w, r, out)
++		return
++	}
++	var got int64
++	var te *transferError
++	if errors.As(err, &te) {
++		got = te.bytes
++	}
++	status, message := http.StatusServiceUnavailable, err.Error()
++	if ctx.Err() != nil && !errors.Is(err, errTransferStalled) {
++		status, message = http.StatusGatewayTimeout, fmt.Sprintf("transfer test timed out after %d ms: %v", timeoutMS, err)
++	}
++	log.Warnln("Transfer test for %s failed: %s", proxy.Name(), message)
++	render.Status(r, status)
++	render.JSON(w, r, render.M{"message": message, "bytes": got})
++}
++
++// proxyTransfer runs one transfer test through p. The certificate is verified
++// against the system roots for the URL's host, redirects are not followed.
++func proxyTransfer(ctx context.Context, p C.Proxy, target *url.URL, expected utils.IntRanges[uint16], minBytes, maxBytes int64, stall time.Duration) (transferResult, error) {
++	var out transferResult
++	port := target.Port()
++	if port == "" {
++		port = "443"
++	}
++	var metadata C.Metadata
++	if err := metadata.SetRemoteAddress(net.JoinHostPort(target.Hostname(), port)); err != nil {
++		return out, err
++	}
++	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
++	if err != nil {
++		return out, err
++	}
++	transport := &http.Transport{
++		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
++			m := metadata
++			return p.DialContext(ctx, &m)
++		},
++		TLSClientConfig:     tlsConfig,
++		ForceAttemptHTTP2:   true, // ALPN h2, http/1.1
++		DisableKeepAlives:   true,
++		DisableCompression:  true, // count the bytes the network carried
++		TLSHandshakeTimeout: 10 * time.Second,
++	}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++
++	// A stall cancels the request; stalled tells it from the caller's deadline.
++	reqCtx, cancel := context.WithCancel(ctx)
++	defer cancel()
++	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, target.String(), nil)
++	if err != nil {
++		return out, err
++	}
++	req.Header.Set("Accept-Encoding", "identity")
++
++	start := time.Now()
++	resp, err := client.Do(req)
++	if err != nil {
++		return out, err
++	}
++	defer resp.Body.Close()
++	out.Delay = transferMS(time.Since(start))
++	out.Status, out.Protocol = resp.StatusCode, resp.Proto
++	if expected != nil && !expected.Check(uint16(resp.StatusCode)) {
++		return out, fmt.Errorf("HTTP %d did not match the expected status", resp.StatusCode)
++	}
++
++	var stalled atomic.Bool
++	watchdog := time.AfterFunc(stall, func() { stalled.Store(true); cancel() })
++	defer watchdog.Stop()
++	buf := make([]byte, 32<<10)
++	for out.Bytes < maxBytes {
++		chunk := buf
++		if rest := maxBytes - out.Bytes; rest < int64(len(chunk)) {
++			chunk = chunk[:rest]
++		}
++		n, readErr := resp.Body.Read(chunk)
++		if n > 0 {
++			out.Bytes += int64(n)
++			watchdog.Reset(stall)
++		}
++		if readErr == io.EOF {
++			if out.Bytes < minBytes {
++				return out, &transferError{fmt.Errorf("body ended after %d bytes, min-bytes is %d", out.Bytes, minBytes), out.Bytes}
++			}
++			break
++		}
++		if readErr != nil {
++			if stalled.Load() {
++				return out, &transferError{fmt.Errorf("%w after %d bytes: nothing arrived for %d ms", errTransferStalled, out.Bytes, stall.Milliseconds()), out.Bytes}
++			}
++			return out, &transferError{fmt.Errorf("after %d bytes: %w", out.Bytes, readErr), out.Bytes}
++		}
++	}
++	out.Elapsed = transferMS(time.Since(start))
++	return out, nil
++}
++
++// transferMS is d in milliseconds, at least 1 so that success never reads as 0.
++func transferMS(d time.Duration) int64 {
++	if ms := d.Milliseconds(); ms > 1 {
++		return ms
++	}
++	return 1
++}
+diff --git a/hub/route/proxy_transfer_test.go b/hub/route/proxy_transfer_test.go
+new file mode 100644
+index 0000000..9821c8d
+--- /dev/null
++++ b/hub/route/proxy_transfer_test.go
+@@ -0,0 +1,176 @@
++package route
++
++import (
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/json"
++	"encoding/pem"
++	"math/big"
++	"net/url"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/http/httptest"
++	"github.com/metacubex/mihomo/component/ca"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/tls"
++)
++
++// transferServer serves https://discord.com/ locally over HTTP/2: size bytes
++// of body, of which only freezeAfter are sent before the handler blocks
++// (0 = never), the way a network that freezes a connection behaves.
++func transferServer(t *testing.T, status, size, freezeAfter int) (*reserveTestProxy, func()) {
++	t.Helper()
++	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	cert := &x509.Certificate{SerialNumber: big.NewInt(43), Subject: pkix.Name{CommonName: "local-transfer-test"}, DNSNames: []string{"discord.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true, IsCA: true}
++	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err = ca.AddCertificate(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))); err != nil {
++		t.Fatal(err)
++	}
++	release := make(chan struct{})
++	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.Method != http.MethodGet || r.Header.Get("Accept-Encoding") != "identity" {
++			w.WriteHeader(http.StatusTeapot)
++			return
++		}
++		w.WriteHeader(status)
++		body := []byte(strings.Repeat("x", size))
++		if freezeAfter > 0 && freezeAfter < size {
++			_, _ = w.Write(body[:freezeAfter])
++			w.(http.Flusher).Flush()
++			select {
++			case <-release:
++			case <-r.Context().Done():
++			}
++			return
++		}
++		_, _ = w.Write(body)
++	}))
++	server.EnableHTTP2 = true
++	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
++	server.StartTLS()
++	proxy := &reserveTestProxy{name: "SLOTH-DESYNC-DISCORD", kind: C.Direct, address: server.Listener.Addr().String()}
++	return proxy, func() { close(release); server.Close(); ca.ResetCertificate() }
++}
++
++func callTransfer(t *testing.T, proxy C.Proxy, query string) (int, map[string]any) {
++	t.Helper()
++	req := httptest.NewRequest("GET", "/transfer?"+query, nil)
++	req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, proxy))
++	w := httptest.NewRecorder()
++	getProxyTransfer(w, req)
++	var body map[string]any
++	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
++		t.Fatalf("HTTP %d: %s", w.Code, w.Body.String())
++	}
++	return w.Code, body
++}
++
++func transferQuery(kv ...string) string {
++	q := url.Values{"url": {"https://discord.com/login"}, "timeout": {"5000"}, "expected": {"200-299"}}
++	for i := 0; i+1 < len(kv); i += 2 {
++		q.Set(kv[i], kv[i+1])
++	}
++	return q.Encode()
++}
++
++func TestProxyTransferReadsMinBytesOverHTTP2(t *testing.T) {
++	proxy, done := transferServer(t, 200, 72<<10, 0)
++	defer done()
++	code, body := callTransfer(t, proxy, transferQuery("min-bytes", "32768", "max-bytes", "32768"))
++	if code != 200 || body["bytes"] != float64(32768) || body["protocol"] != "HTTP/2.0" || body["status"] != float64(200) {
++		t.Fatalf("HTTP %d %v", code, body)
++	}
++	if body["delay"].(float64) < 1 || body["elapsed"].(float64) < body["delay"].(float64) {
++		t.Fatalf("timings %v", body)
++	}
++	// Without max-bytes the whole body (up to 1 MiB) is read.
++	code, body = callTransfer(t, proxy, transferQuery())
++	if code != 200 || body["bytes"] != float64(72<<10) {
++		t.Fatalf("whole body: HTTP %d %v", code, body)
++	}
++	// max-bytes alone stops early; a body ending before it passes.
++	code, body = callTransfer(t, proxy, transferQuery("max-bytes", "65536"))
++	if code != 200 || body["bytes"] != float64(65536) {
++		t.Fatalf("max-bytes: HTTP %d %v", code, body)
++	}
++	code, body = callTransfer(t, proxy, transferQuery("max-bytes", "1048576"))
++	if code != 200 || body["bytes"] != float64(72<<10) {
++		t.Fatalf("body shorter than max-bytes: HTTP %d %v", code, body)
++	}
++}
++
++func TestProxyTransferReportsAFrozenConnection(t *testing.T) {
++	proxy, done := transferServer(t, 200, 72<<10, 16<<10)
++	defer done()
++	start := time.Now()
++	code, body := callTransfer(t, proxy, transferQuery("min-bytes", "32768", "stall", "300"))
++	if code != 503 || body["bytes"] != float64(16<<10) || !strings.Contains(body["message"].(string), "stalled after 16384 bytes") {
++		t.Fatalf("frozen connection: HTTP %d %v", code, body)
++	}
++	if time.Since(start) > 3*time.Second {
++		t.Fatal("the stall was not detected before the timeout")
++	}
++	// The delay test's view of the same server: headers arrive, so it passes.
++	// Here a frozen body below min-bytes 0 still fails: the body never ends.
++	code, _ = callTransfer(t, proxy, transferQuery("stall", "300"))
++	if code != 503 {
++		t.Fatalf("frozen whole-body read passed: HTTP %d", code)
++	}
++}
++
++func TestProxyTransferRejectsShortBodiesAndStatuses(t *testing.T) {
++	proxy, done := transferServer(t, 200, 1<<10, 0)
++	defer done()
++	code, body := callTransfer(t, proxy, transferQuery("min-bytes", "32768"))
++	if code != 503 || body["bytes"] != float64(1<<10) || !strings.Contains(body["message"].(string), "min-bytes is 32768") {
++		t.Fatalf("short body: HTTP %d %v", code, body)
++	}
++	blocked, done2 := transferServer(t, 403, 64<<10, 0)
++	defer done2()
++	code, body = callTransfer(t, blocked, transferQuery("min-bytes", "32768"))
++	if code != 503 || !strings.Contains(body["message"].(string), "HTTP 403") {
++		t.Fatalf("error page: HTTP %d %v", code, body)
++	}
++}
++
++func TestProxyTransferTimesOut(t *testing.T) {
++	proxy, done := transferServer(t, 200, 72<<10, 16<<10)
++	defer done()
++	// The default stall (3 s) is longer than the timeout: the deadline wins.
++	code, body := callTransfer(t, proxy, transferQuery("min-bytes", "32768", "timeout", "300"))
++	if code != 504 || body["bytes"] != float64(16<<10) || !strings.Contains(body["message"].(string), "timed out after 300 ms") {
++		t.Fatalf("HTTP %d %v", code, body)
++	}
++}
++
++func TestProxyTransferValidatesQuery(t *testing.T) {
++	proxy := &reserveTestProxy{name: "SLOTH-DESYNC-DISCORD", kind: C.Direct, address: "127.0.0.1:1"}
++	for _, q := range []string{
++		transferQuery("url", "http://discord.com/"),
++		transferQuery("url", "/relative"),
++		transferQuery("timeout", "0"),
++		transferQuery("timeout", "60001"),
++		transferQuery("min-bytes", "-1"),
++		transferQuery("min-bytes", "1048577"),
++		transferQuery("max-bytes", "0"),
++		transferQuery("max-bytes", "1048577"),
++		transferQuery("min-bytes", "40000", "max-bytes", "32768"),
++		transferQuery("stall", "50"),
++		transferQuery("stall", "6000"),
++		transferQuery("expected", "x"),
++	} {
++		if code, body := callTransfer(t, proxy, q); code != 400 {
++			t.Errorf("%s: HTTP %d %v", q, code, body)
++		}
++	}
++}

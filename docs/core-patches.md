@@ -411,6 +411,38 @@ static for now. The feature token is `desync-outbound`.
 Remove when the client generates only `type: desync` and mihomo carries an equivalent outbound; no
 upstream issue is claimed.
 
+## Transfer test
+
+Patch `0025-proxy-transfer-test.patch` adds `GET /proxies/{name}/transfer`, a delay test that also
+reads the response body. The delay test (`adapter.URLTest`) sends one HEAD over HTTP/1.1 and passes
+when the headers arrive, a few hundred bytes. Some networks let a TLS connection through and stop
+forwarding server data after the first tens of kilobytes (the connection stays open and freezes),
+so a desync strategy can pass the delay test and still leave the service unusable.
+
+```text
+GET /proxies/{name}/transfer?url=https://discord.com/login&timeout=5000&expected=200-299&min-bytes=32768&max-bytes=65536&stall=2000
+200 {"delay":298,"elapsed":343,"bytes":32768,"status":200,"protocol":"HTTP/2.0"}
+503 {"message":"transfer stalled after 16384 bytes: nothing arrived for 2000 ms","bytes":16384}
+```
+
+The test dials through the named proxy, sends GET with ALPN `h2` and `http/1.1` and
+`Accept-Encoding: identity` (so `bytes` is what the network carried), verifies the certificate
+against the system roots for the URL's host and does not follow redirects. It passes when
+`max-bytes` (1-1048576, default 1048576) arrived, or the body ended after at least `min-bytes`
+(default 0), with no pause longer than `stall` ms (100 to `timeout`, default 3000) between reads.
+`url` must be `https`; `timeout` is 1-60000 ms; `expected` is the delay test's status filter. A stall
+or a short body is `503` with the bytes received, the deadline `504`; failures go to the warning log
+with the proxy name, as 0018 does for the delay test. The test records no delay history. The feature
+token is `transfer-test`; the app uses the test for every desync HTTPS probe when the token is
+present (docs/desync.md).
+
+Tests: HTTP/2 and min-bytes against a local TLS server, a connection frozen after 16 KB reported as
+a stall with its byte count well before the deadline, a short body, an error status, the deadline,
+and query validation. Checked live through DIRECT: discord.com/login and www.youtube.com/ deliver
+32 KB over HTTP/2, the small Discord and YouTube targets pass with their whole bodies.
+
+Remove when the client no longer needs transfer-level probes; no upstream issue is claimed.
+
 ## Lab results (2026-10-04, Windows, same host and containers for every run)
 
 Stock v1.19.32 against the patched core, `chrome` fingerprint; "forced" = per-proxy

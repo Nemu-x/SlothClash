@@ -25,7 +25,7 @@ func TestDesyncTCPNeedsAllTargetsAndTwoRounds(t *testing.T) {
 		}
 		return nil
 	}, func(_ desync.Candidate, _ int, _ error, _ time.Duration) { records++ })
-	if err != nil || winner.ID != "second" || calls["first"] != 2 || calls["second"] != 4 || calls["unused"] != 0 || records != 2 {
+	if err != nil || winner.ID != "second" || calls["first"] != 2 || calls["second"] != 6 || calls["unused"] != 0 || records != 2 {
 		t.Fatalf("selection: %s %v %v", winner.ID, err, calls)
 	}
 }
@@ -204,7 +204,7 @@ func TestDesyncCalibrationAppliesOnlyVerifiedCandidateAndCachesIt(t *testing.T) 
 	a.desyncCtl.epoch = 1
 	a.desyncCtl.status.Network = network
 	err := a.calibrateDesyncTCP(context.Background(), 1, network, a.core.listen, "", "discord", desync.DiscordRoute)
-	if err != nil || selected != desync.DiscordRoute+"-"+candID("discord", 1) || checks != 5 || desyncCachedSelection(network, "discord") != candID("discord", 1) {
+	if err != nil || selected != desync.DiscordRoute+"-"+candID("discord", 1) || checks != 7 || desyncCachedSelection(network, "discord") != candID("discord", 1) {
 		t.Fatalf("calibration not applied: %q checks=%d err=%v", selected, checks, err)
 	}
 	status := a.GetDesyncAutoStatus()

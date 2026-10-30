@@ -84,6 +84,7 @@ func TestManifestFeatureTokens(t *testing.T) {
 		"desync-udp":      "0019-desync-dns-udp.patch",
 		"desync-auto":     "0020-desync-auto-diagnostics.patch",
 		"desync-outbound": "0023-desync-outbound.patch",
+		"transfer-test":   "0025-proxy-transfer-test.patch",
 	}
 	for f, file := range want {
 		if byFeature[f] != file {

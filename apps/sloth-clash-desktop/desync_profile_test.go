@@ -142,7 +142,7 @@ func TestDesyncLegacyPrefsMigrateIntoProfiles(t *testing.T) {
 	a := &App{}
 	a.loadProfilesFromDisk()
 	want := DesyncSettings{Enabled: true, Discord: true, DiscordUDP: true, Custom: []DesyncCustomEntry{
-		{ID: "a1", Domain: "example.org", Enabled: true},
+		{ID: "a1", Domain: "example.org", Kind: desyncKindSuffix, Route: desyncRouteAuto, Enabled: true},
 		{ID: "b2", Service: "facebook"},
 	}}
 	if got := a.profileDesync(t, "profile-1"); !reflect.DeepEqual(got, want) {

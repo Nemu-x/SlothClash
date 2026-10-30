@@ -96,6 +96,18 @@ func (c *desyncController) setCustom(lease uint64, id string, state DesyncAutoSe
 	c.status.Custom[id] = state
 }
 
+// setCustomOnce is setCustom unless the entry already shows that phase and
+// candidate (a steady state keeps its time).
+func (c *desyncController) setCustomOnce(lease uint64, id string, state DesyncAutoService) {
+	c.mu.Lock()
+	current, ok := c.status.Custom[id]
+	c.mu.Unlock()
+	if ok && current.Phase == state.Phase && current.Candidate == state.Candidate {
+		return
+	}
+	c.setCustom(lease, id, state)
+}
+
 // pruneCustom drops the state of entries that were removed or switched off.
 func (c *desyncController) pruneCustom(lease uint64, keep map[string]bool) {
 	c.mu.Lock()
@@ -117,9 +129,22 @@ func desyncBuiltinSearching(status DesyncAutoStatus, settings DesyncSettings) bo
 	return (settings.YouTube && busy(status.YouTube.Phase)) || (settings.Discord && busy(status.Discord.Phase))
 }
 
-// enabledDesyncCustom returns the entries the worker serves now (the stored
-// list is read on every pass, so adds/removes apply without a restart).
+// enabledDesyncCustom returns the entries the worker calibrates now (the
+// stored list is read on every pass, so adds/removes apply without a
+// restart): the switched-on popular services and domain rules through
+// Desync.
 func enabledDesyncCustom() []DesyncCustomEntry {
+	var out []DesyncCustomEntry
+	for _, e := range enabledDesyncRules() {
+		if e.calibrated() {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// enabledDesyncRules is every switched-on entry while Desync is on.
+func enabledDesyncRules() []DesyncCustomEntry {
 	settings := currentDesyncSettings()
 	if !settings.Enabled {
 		return nil
@@ -131,6 +156,25 @@ func enabledDesyncCustom() []DesyncCustomEntry {
 		}
 	}
 	return out
+}
+
+// markDesyncFixed reports the application rules through Desync: there is
+// nothing to calibrate (no address to probe), so they use the catalog's
+// first strategy, as the config generates them (state fixed). It returns
+// their IDs, which pruneCustom keeps.
+func (a *App) markDesyncFixed(lease uint64) map[string]bool {
+	ids := map[string]bool{}
+	candidate := ""
+	if candidates := desync.Candidates("custom", desyncCaps); len(candidates) > 0 {
+		candidate = candidates[0].ID
+	}
+	for _, e := range enabledDesyncRules() {
+		if e.throughDesync() && !e.calibrated() {
+			ids[e.ID] = true
+			a.desyncCtl.setCustomOnce(lease, e.ID, DesyncAutoService{Phase: "fixed", Candidate: candidate, Route: "desync"})
+		}
+	}
+	return ids
 }
 
 // desyncCustomTargets is the probe URLs of entry among the enabled entries:
@@ -161,9 +205,11 @@ func desyncCustomTargets(entry DesyncCustomEntry, enabled []DesyncCustomEntry) [
 	return out
 }
 
+// desyncCustomWanted reports whether entry is still to be calibrated. An
+// edited rule has a new ID, so the ID names what the entry matches.
 func desyncCustomWanted(entry DesyncCustomEntry) bool {
 	for _, e := range enabledDesyncCustom() {
-		if e == entry {
+		if e.ID == entry.ID {
 			return true
 		}
 	}
@@ -172,6 +218,7 @@ func desyncCustomWanted(entry DesyncCustomEntry) bool {
 
 func (a *App) runDesyncCustomService(ctx context.Context, lease uint64, network, endpoint, secret string, settings DesyncSettings) {
 	for start := time.Now(); desyncBuiltinSearching(a.desyncCtl.snapshot(), settings) && time.Since(start) < desyncCustomBuiltinWait; {
+		a.markDesyncFixed(lease)
 		if !desyncWait(ctx, time.Second) {
 			return
 		}
@@ -179,7 +226,7 @@ func (a *App) runDesyncCustomService(ctx context.Context, lease uint64, network,
 	plans := map[string]*desyncCustomPlan{}
 	for ctx.Err() == nil {
 		entries := enabledDesyncCustom()
-		keep := map[string]bool{}
+		keep := a.markDesyncFixed(lease)
 		for _, e := range entries {
 			keep[e.ID] = true
 		}

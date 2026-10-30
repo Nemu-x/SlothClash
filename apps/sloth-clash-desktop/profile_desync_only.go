@@ -89,7 +89,7 @@ func (a *App) CreateDesyncOnlyProfile(name string, settings DesyncSettings) (App
 		finalName = "Desync only"
 	}
 	settings.Enabled = true
-	settings.Custom = sanitizeDesyncCustom(settings.Custom)
+	settings.Custom = withoutVPNRules(sanitizeDesyncCustom(settings.Custom))
 	settings, err := validateDesyncSettings(settings, runtime.GOOS, desyncCoreSupported())
 	if err != nil {
 		return a.GetAppState(), err

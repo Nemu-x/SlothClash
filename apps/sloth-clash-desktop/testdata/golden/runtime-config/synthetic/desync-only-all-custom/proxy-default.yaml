@@ -878,6 +878,10 @@ proxy-groups:
         - PASS
       type: select
 rules:
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,media.example.org)),SLOTH-DESYNC-CUSTOM-5a6b7c8d
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,media.example.org)),SLOTH-DESYNC-CUSTOM-5a6b7c8d
+    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
+    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
     - AND,((NETWORK,udp),(PROCESS-NAME,Discord.exe),(DST-PORT,1024-65535)),SLOTH-DESYNC-DISCORD-UDP
     - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,youtube.com)),SLOTH-DESYNC-YOUTUBE
@@ -905,8 +909,4 @@ rules:
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,discord.media)),SLOTH-DESYNC-DISCORD
     - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,discordcdn.com)),SLOTH-DESYNC-DISCORD
     - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,discordcdn.com)),SLOTH-DESYNC-DISCORD
-    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,media.example.org)),SLOTH-DESYNC-CUSTOM-5a6b7c8d
-    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,media.example.org)),SLOTH-DESYNC-CUSTOM-5a6b7c8d
-    - AND,((NETWORK,udp),(DST-PORT,443),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
-    - AND,((NETWORK,tcp),(DOMAIN-SUFFIX,example.org)),SLOTH-DESYNC-CUSTOM-0a1b2c3d
     - MATCH,DIRECT

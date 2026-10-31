@@ -1,3 +1,73 @@
+## Sloth Clash desktop `0.10.0` — 2026-10-31
+
+> ℹ️ **You will be asked once to reinstall the helper service** after this update. This release needs helper service 2.6.0, and the core changed; on Windows the installer handles it, on macOS and Linux click the banner and accept the prompt.
+
+### English
+
+**🔓 Desync (experimental): YouTube, Discord and your sites without a VPN**
+- Desync makes services work on networks that block them by inspecting the TLS handshake, **without sending that traffic through a VPN**: the connection still goes straight to the real server, only its first packets are reshaped so the filter cannot match them. Strategies are found automatically, tested per service, remembered per network and re-checked in the background. Open it from the Desync chip on Home or **Settings → Desync**. It is marked **Experimental**: it may not work on every network, and its options can still change.
+- **Covers** YouTube, Discord (web, plus voice on Windows in TUN mode), and popular services with all their CDN domains so pictures and video load too: Facebook, Instagram, X.
+- **My rules**: send any domain, domain suffix or app (by process name) through Desync, directly, or through your VPN. Rules for a destination win over rules for an app.
+- **No subscription? "Desync only" profile.** On an empty Home choose *Unblock YouTube & Discord without VPN*: Desync routes, everything else direct, no servers needed.
+- **With a subscription, only if you choose it.** When adding a subscription, tick *Connect Desync to this subscription* (always unticked), or turn it on later. Desync runs in front of your subscription, and anything it cannot fix falls back to your subscription's rules (*Through VPN (Desync didn't work here)*). Settings are per profile.
+- **Honest checks.** Probes read real data (up to 64 KB over HTTP/2) instead of stopping at the headers, so a connection that opens and then freezes after the first kilobytes counts as a failure, not a success.
+- **For providers:** `X-Desync-Desktop-Mode: off | deny` on an HTTPS subscription switches Desync off for it or forbids it; a provider cannot switch it on. Every header the client sends and reads is now documented on the wiki (*Subscription Headers*).
+- **Copy diagnostics** produces an anonymised report (no URLs, names or IPs) to attach to a bug report.
+
+**🛰️ REALITY: works with current Xray servers**
+- Fixes timeouts against Xray 26.9.8+ (which requires the post-quantum `X25519MLKEM768` key share) and against servers that set `minClientVer`. The core now learns per server which handshake it needs, sends a current client version, and offers `reality-mlkem` / `reality-client-version` settings for the stubborn cases.
+- `firefox` and `safari` fingerprints now send current Firefox 148 / Safari 26.3 hellos with the post-quantum share, the same ones genuine Xray clients send, instead of silently switching to Chrome's. Checked against Xray 24.12.31 up to 26.10.29.
+
+**🧩 More of your panel's configs just work**
+- Configs written for Citrus-based panels load as-is: VLESS over XDrive, `type: chain` groups, per-proxy REALITY client version, `mldsa65-verify`, Xray fingerprint names, comma-separated pins and names, Xray-style ECH, OpenVPN server identity, QUIC `disable-mtu-discovery`, `tcp-connect-timeout`, `sniffer.skip-threshold`, `dns.serve-expired`. The subscription `User-Agent` now lists these capabilities, so panels can hand them out only to clients that support them.
+
+**🏢 Corporate VPN**
+- **Certificate rotation handled.** When the gateway renews its certificate, you now get a clear prompt showing the new certificate to trust, instead of an endless failure caused by the old pinned certificate. Nothing is ever trusted automatically and TLS verification is never turned off.
+- **macOS 12 and newer.** The macOS OpenConnect component is now built for macOS 12+; the previous one needed macOS 14 (Apple silicon) or 15 (Intel).
+
+**📺 Remote control for paired devices**
+- From a paired device's page you can now pick nodes and run delay tests, switch mode and profiles, update providers, list and close connections, and watch live traffic and logs, not just turn the VPN on and off.
+
+**🔧 Smaller improvements and fixes**
+- Connections: close a single connection, or every connection matching your search.
+- Subscriptions: failed updates are shown and retried sensibly instead of being swallowed, and "updated" means a new config was actually downloaded. Profiles created by older versions keep auto-updating after their first manual refresh.
+- Large subscriptions, connection lists and proxy lists are no longer silently cut off at an internal size limit (which could drop nodes); limits were raised to measured realistic sizes and an oversized response is now reported as an error.
+- Under the hood: the desktop backend and UI were reorganised into smaller modules, with new test harnesses for the core lifecycle and golden tests for the generated config. Go 1.26.10 toolchain.
+- **Mihomo core updated to `v1.19.33`**, built with our patch series in every release.
+
+### Русский
+
+**🔓 Desync (экспериментально): YouTube, Discord и ваши сайты без VPN**
+- Desync заставляет сервисы работать в сетях, которые блокируют их по TLS-рукопожатию, **не пропуская этот трафик через VPN**: соединение по-прежнему идёт напрямую к настоящему серверу, меняются только его первые пакеты, чтобы фильтр не мог их распознать. Стратегии подбираются автоматически, проверяются для каждого сервиса, запоминаются для каждой сети и перепроверяются в фоне. Открывается из чипа Desync на главной или **Настройки → Desync**. Функция помечена как **экспериментальная**: может работать не во всех сетях, а её настройки ещё могут меняться.
+- **Покрывает** YouTube, Discord (веб, плюс голос на Windows в режиме TUN) и популярные сервисы со всеми их CDN-доменами, чтобы грузились картинки и видео: Facebook, Instagram, X.
+- **Мои правила**: любой домен, суффикс домена или приложение (по имени процесса) можно отправить через Desync, напрямую или через VPN. Правило для адреса важнее правила для приложения.
+- **Нет подписки? Профиль «Только Desync».** На пустой главной выберите *Разблокировать YouTube и Discord без VPN*: маршруты Desync, всё остальное напрямую, серверы не нужны.
+- **С подпиской — только по вашему решению.** При добавлении подписки отметьте *Подключить Desync к этой подписке* (по умолчанию всегда снято) или включите позже. Desync работает перед подпиской, а то, что он исправить не смог, возвращается в правила подписки (*Через VPN (Desync здесь не помог)*). Настройки у каждого профиля свои.
+- **Честные проверки.** Проверка читает реальные данные (до 64 КБ по HTTP/2), а не останавливается на заголовках, поэтому соединение, которое открылось и замёрзло после первых килобайт, считается неудачей, а не успехом.
+- **Для провайдеров:** заголовок `X-Desync-Desktop-Mode: off | deny` у HTTPS-подписки выключает для неё Desync или запрещает его; включить его провайдер не может. Все заголовки, которые клиент отправляет и читает, теперь описаны в вики (*Заголовки подписки*).
+- **Скопировать диагностику** даёт обезличенный отчёт (без ссылок, имён и IP) — приложите его к сообщению об ошибке.
+
+**🛰️ REALITY: работает с актуальными серверами Xray**
+- Исправлены таймауты на Xray 26.9.8+ (там обязательна постквантовая доля ключа `X25519MLKEM768`) и на серверах с `minClientVer`. Ядро само запоминает, какое рукопожатие нужно каждому серверу, отправляет актуальную версию клиента и даёт настройки `reality-mlkem` / `reality-client-version` для упрямых случаев.
+- Отпечатки `firefox` и `safari` теперь отправляют актуальные hello Firefox 148 / Safari 26.3 с постквантовой долей — такие же, как настоящие клиенты Xray, — вместо молчаливой подмены на Chrome. Проверено на Xray от 24.12.31 до 26.10.29.
+
+**🧩 Больше конфигов панелей работают сразу**
+- Конфиги для панелей на Citrus загружаются как есть: VLESS через XDrive, группы `type: chain`, версия клиента REALITY для отдельного прокси, `mldsa65-verify`, имена отпечатков Xray, пины и имена через запятую, ECH в формате Xray, идентификация сервера OpenVPN, `disable-mtu-discovery` для QUIC, `tcp-connect-timeout`, `sniffer.skip-threshold`, `dns.serve-expired`. `User-Agent` подписки теперь перечисляет эти возможности, чтобы панели отдавали их только поддерживающим клиентам.
+
+**🏢 Корпоративный VPN**
+- **Смена сертификата шлюза.** Когда шлюз обновляет сертификат, теперь появляется понятный запрос с новым сертификатом для доверия, а не бесконечная ошибка из-за старого закреплённого. Ничего не принимается автоматически, проверка TLS никогда не отключается.
+- **macOS 12 и новее.** Компонент OpenConnect для macOS теперь собран под macOS 12+; прежний требовал macOS 14 (Apple silicon) или 15 (Intel).
+
+**📺 Удалённое управление подключёнными устройствами**
+- Со страницы подключённого устройства теперь можно выбирать узлы и проверять задержку, переключать режим и профили, обновлять провайдеров, смотреть и закрывать соединения, следить за трафиком и логами в реальном времени — а не только включать и выключать VPN.
+
+**🔧 Мелкие улучшения и исправления**
+- Соединения: можно закрыть одно соединение или все, подходящие под поиск.
+- Подписки: неудачные обновления показываются и повторяются разумно, а не теряются, а «обновлено» значит, что новый конфиг действительно скачан. Профили из старых версий продолжают обновляться автоматически после первого ручного обновления.
+- Большие подписки, списки соединений и прокси больше не обрезаются молча на внутреннем лимите размера (из-за чего могли пропадать узлы): лимиты подняты до измеренных реальных размеров, а слишком большой ответ теперь сообщается как ошибка.
+- Под капотом: бэкенд и интерфейс разложены на модули поменьше, добавлены тестовые стенды жизненного цикла ядра и эталонные тесты генерируемого конфига. Тулчейн Go 1.26.10.
+- **Ядро Mihomo обновлено до `v1.19.33`**, в каждом релизе собирается с нашей серией патчей.
+
 ## Sloth Clash desktop `0.9.4` — 2026-10-02
 
 > ℹ️ **You may be asked once to reinstall the helper service** after this update. The privileged service only spawns cores whose hash it has pinned, and the core changed — on Windows the installer re-pins it silently, on macOS click the banner and accept the prompt.

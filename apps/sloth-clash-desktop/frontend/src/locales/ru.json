@@ -787,7 +787,9 @@
     "advancedYaml": "Advanced YAML",
     "prepend": "Prepend",
     "append": "Append",
-    "addShort": "+ Добавить"
+    "addShort": "+ Добавить",
+    "experimental": "Эксперимент",
+    "experimentalHint": "Desync — новая функция: может работать не во всех сетях, а её настройки ещё могут меняться."
   },
   "installConfig": {
     "title": "Добавить подписку по ссылке?",

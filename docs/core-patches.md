@@ -328,9 +328,8 @@ Patch `0022-desync-profile-reserve.patch` adds bounded authenticated prospective
 ## Desync outbound
 
 Patch `0023-desync-outbound.patch` adds `type: desync`, a first-class outbound for the same client-side
-library, and moves the series to `github.com/Nemu-x/desync` main at 673cbef
-(`v0.2.1-0.20261029232908-673cbefddb80`, Nemu-x/desync#11; it becomes the `v0.2.1` tag once that
-is published), exact version and checksum in mihomo's `go.mod` / `go.sum`. It is a DIRECT connection whose first TLS ClientHello leaves the
+library, and moves the series to `github.com/Nemu-x/desync` `v0.2.1` (commit 673cbef,
+Nemu-x/desync#11), exact version and checksum in mihomo's `go.mod` / `go.sum`. It is a DIRECT connection whose first TLS ClientHello leaves the
 client's own socket transformed; non-TLS traffic and everything after the ClientHello pass through.
 Named `direct` outbounds with a `desync` mapping (0017-0022) keep working unchanged during the
 migration; the app generates `type: desync` outbounds from the desync presets catalog

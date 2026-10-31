@@ -2289,7 +2289,7 @@ index d91ef81..b595c23 100644
  		return "Shadowsocks"
  	case ShadowsocksR:
 diff --git a/go.mod b/go.mod
-index 2ffc91b..ffcd1c7 100644
+index 2ffc91b..2863884 100644
 --- a/go.mod
 +++ b/go.mod
 @@ -3,7 +3,7 @@ module github.com/metacubex/mihomo
@@ -2297,12 +2297,12 @@ index 2ffc91b..ffcd1c7 100644
  
  require (
 -	github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e
-+	github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80
++	github.com/Nemu-x/desync v0.2.1
  	github.com/bahlo/generic-list-go v0.2.0
  	github.com/coreos/go-iptables v0.8.0
  	github.com/dlclark/regexp2 v1.12.0
 diff --git a/go.sum b/go.sum
-index b2384a1..c8c71c1 100644
+index b2384a1..74ece45 100644
 --- a/go.sum
 +++ b/go.sum
 @@ -1,7 +1,5 @@
@@ -2310,8 +2310,8 @@ index b2384a1..c8c71c1 100644
 -github.com/Nemu-x/desync v0.0.0-20261024204049-3fa5a43f2e74/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
 -github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e h1:yYLGt9g/zY1uXhSku56cXLV483MDgCAVYO0XbEz5Nhs=
 -github.com/Nemu-x/desync v0.0.0-20261024221341-3d471713bd2e/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
-+github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80 h1:OmssuGLD8tPcVpmu0MM3T9mWThr7k/ALAjO24BDThXY=
-+github.com/Nemu-x/desync v0.2.1-0.20261029232908-673cbefddb80/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
++github.com/Nemu-x/desync v0.2.1 h1:qPBTgtL7NowYzBSANlG7Q0027ZVUKUkbLZliUL1cV3M=
++github.com/Nemu-x/desync v0.2.1/go.mod h1:U964vP0G6tv4W1e39flzZVldIZjWDgzFy5HQAZJuSag=
  github.com/RyuaNerin/go-krypto v1.3.0 h1:smavTzSMAx8iuVlGb4pEwl9MD2qicqMzuXR2QWp2/Pg=
  github.com/RyuaNerin/go-krypto v1.3.0/go.mod h1:9R9TU936laAIqAmjcHo/LsaXYOZlymudOAxjaBf62UM=
  github.com/RyuaNerin/testingutil v0.1.0 h1:IYT6JL57RV3U2ml3dLHZsVtPOP6yNK7WUVdzzlpNrss=

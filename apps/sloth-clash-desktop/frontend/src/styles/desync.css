@@ -487,3 +487,18 @@
   color: var(--desync-tone);
   font-weight: var(--weight-semibold);
 }
+
+.experimentalBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  vertical-align: middle;
+  color: var(--text-muted);
+  cursor: help;
+}

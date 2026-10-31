@@ -2,6 +2,8 @@
 
 Desync connects selected services and sites directly using automatically tested strategies in the embedded mihomo core, and applies [your own rules](#my-rules) for domains and apps. Other traffic follows the subscription, or goes directly with a [Desync-only profile](#desync-only-profile-no-vpn). The feature is off by default.
 
+Desync is **experimental**: the Desync window and the Settings card carry an *Experimental* label. It may not work on every network, and its options and generated configuration can still change between releases.
+
 ## Use
 
 Desync settings belong to a profile: whether it is on and what it covers (YouTube, Discord, popular services, your rules) are stored with each profile, and the active profile's settings apply. Turning Desync off on one profile leaves the others alone. Open **Settings → Desync** (or the Desync chip on Home), enable it and select YouTube or Discord. The Discord control enables its web and voice paths together in one settings update; their health is still reported separately. Connect in Rule mode. Desktop Discord voice additionally requires Windows and TUN. Manual TTL, repeat and method fields are no longer stored. Previously saved partial selections remain readable; toggling Discord off/on, or enabling Desync with Discord selected, enables the combined behavior. Other sites and apps can be added under **My rules** (see below). Turning off the last selected service, rule or popular service turns Desync off; enabling it with nothing selected is refused.

@@ -105,6 +105,11 @@ describe('DesyncModal: manage', () => {
     renderModal('manage')
     const dialog = screen.getByRole('dialog', { name: 'Desync' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
+    // Marked experimental next to the title, outside the dialog's name.
+    expect(within(dialog).getByText('Experimental')).toHaveAttribute(
+      'title',
+      'Desync is new: it may not work on every network, and its options can still change.',
+    )
     // A subscription profile: Desync takes the services off the VPN.
     await waitFor(() =>
       expect(dialog).toHaveAccessibleDescription(

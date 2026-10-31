@@ -5,6 +5,8 @@ import { useDesyncServices } from '../hooks/queries/useDesyncServices'
 import { useDesyncStatus } from '../hooks/queries/useDesyncStatus'
 import { desyncSelectionNames } from '../utils/desyncStatus'
 
+import { ExperimentalBadge } from './ExperimentalBadge'
+
 /**
  * Settings: a compact summary of Desync (on / off, what it covers) with an
  * Open button; the controls themselves live in the Desync modal.
@@ -37,6 +39,7 @@ export function DesyncSummaryCard({
           🔓
         </span>
         {t('desync.title')}
+        <ExperimentalBadge />
       </h3>
       <p className="muted settingsMicroHint">{t('desync.lead')}</p>
       <div className="settingsTunSummary">

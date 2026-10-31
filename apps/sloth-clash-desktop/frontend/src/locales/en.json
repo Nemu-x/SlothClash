@@ -785,7 +785,9 @@
     "advancedYaml": "Advanced YAML",
     "prepend": "Prepend",
     "append": "Append",
-    "addShort": "+ Add"
+    "addShort": "+ Add",
+    "experimental": "Experimental",
+    "experimentalHint": "Desync is new: it may not work on every network, and its options can still change."
   },
   "installConfig": {
     "title": "Add subscription from link?",

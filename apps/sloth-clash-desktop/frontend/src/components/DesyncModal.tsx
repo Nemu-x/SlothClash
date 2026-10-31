@@ -14,6 +14,7 @@ import {
 import { isDesyncOnlyProfile } from '../utils/profileKind'
 
 import { DesyncPanel, type DesyncPanelVariant } from './DesyncPanel'
+import { ExperimentalBadge } from './ExperimentalBadge'
 
 type CreatedProfile = { id: string; name: string; active: boolean }
 
@@ -171,6 +172,7 @@ export function DesyncModal({
         <header className="desyncModalHead">
           <h3 id={titleId} className="modalTitle">
             {onboarding ? t('desync.onboarding.title') : t('desync.title')}
+            <ExperimentalBadge />
           </h3>
           <p id={leadId} className="muted small desyncModalLead">
             {onboarding

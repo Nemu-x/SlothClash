@@ -784,7 +784,9 @@
     "advancedYaml": "Advanced YAML",
     "prepend": "Prepend",
     "append": "Append",
-    "addShort": "+ 添加"
+    "addShort": "+ 添加",
+    "experimental": "实验性",
+    "experimentalHint": "Desync 是新功能：可能并非在所有网络中都有效，其选项也可能仍会变化。"
   },
   "installConfig": {
     "title": "通过链接添加订阅？",

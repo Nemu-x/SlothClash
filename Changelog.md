@@ -2,6 +2,9 @@
 
 ### English
 
+**🧩 XHTTP: share links with data in headers work**
+- XHTTP nodes that send upload data in request headers or cookies (`uplink-data-placement: header` or `cookie`) without an `uplink-data-key` now use the standard names `X-Data-0`, `X-Data-1`, ... (`x_data_0`, ... for cookies), as Xray servers expect. Before, such nodes sent headers named `-0`, `-1` and never connected; share links leave the key out when it is the default, so they were affected. Nodes with an explicit key are unchanged.
+
 **🔒 XDrive: templated storage refused**
 - XDrive nodes with `service: template` are now refused, like `service: local` already was, wherever they come from: subscriptions, providers, manual and local profiles. A template lets the config choose the method, address, headers and body of HTTP requests sent from your computer, including to devices on your local network, as soon as a node is tested. Such a node keeps its name but shows as disabled and carries no traffic; Google Drive XDrive nodes are unaffected.
 
@@ -22,6 +25,9 @@
 - `geox-sha256` pins the GeoIP, GeoSite, MMDB and ASN databases by SHA-256: a download with another hash is refused and the previous file is kept. Without a pin nothing changes.
 
 ### Русский
+
+**🧩 XHTTP: ссылки с данными в заголовках работают**
+- Узлы XHTTP, которые передают данные отправки в заголовках или cookie запроса (`uplink-data-placement: header` или `cookie`) без `uplink-data-key`, теперь используют стандартные имена `X-Data-0`, `X-Data-1`, ... (`x_data_0`, ... для cookie), как ждут серверы Xray. Раньше такие узлы слали заголовки `-0`, `-1` и не подключались; в ссылках ключ по умолчанию не указывается, поэтому они были затронуты. Узлы с явным ключом не изменились.
 
 **🔒 XDrive: шаблонное хранилище отключено**
 - Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.

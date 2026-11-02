@@ -9,14 +9,6 @@
 - VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
 - A subscription with an XDrive node on a storage service this app does not run (for example `s3` from newer Xray) no longer fails to load as a whole: that node shows as disabled (REJECT) and the rest works.
 
-### Русский
-
-**🔒 XDrive: шаблонное хранилище отключено**
-- Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.
-
-**🔧 Исправления**
-- VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
-- Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
 **🛰️ Core: stock configs behave like stock mihomo**
 - REALITY's automatic post-quantum key-share choice no longer flips on network trouble. Only a server that actually answered with its cover site's certificate counts as a key-share mismatch; timeouts, resets and dial errors are ignored, so a flaky network can no longer switch an older Xray server to the post-quantum share and break it.
 - REALITY never replaces your fingerprint with Chrome's any more. `firefox` and `safari` use their current post-quantum hellos when a server needs one; other fingerprints (`ios`, `edge`, random) send their own hello unchanged. With `reality-mlkem: off`, `support-x25519mlkem768` behaves exactly as in stock mihomo.
@@ -25,6 +17,13 @@
 - Quieter logs: the REALITY policy line on every config load and the OpenVPN "no server identity check" note are now debug-level; failed delay tests no longer write warnings.
 
 ### Русский
+
+**🔒 XDrive: шаблонное хранилище отключено**
+- Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.
+
+**🔧 Исправления**
+- VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
+- Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
 
 **🛰️ Ядро: обычные конфиги работают как в обычном mihomo**
 - Автоматический выбор постквантовой доли ключа в REALITY больше не переключается из-за сбоев сети. Несовпадением доли ключа считается только ответ сервера сертификатом сайта-прикрытия; таймауты, сбросы и ошибки подключения игнорируются, поэтому нестабильная сеть больше не переводит старый сервер Xray на постквантовую долю и не ломает его.

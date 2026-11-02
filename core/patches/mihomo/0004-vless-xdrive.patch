@@ -1,3 +1,17 @@
+SlothClash core patch 0004: VLESS over XDrive, client side (network: xdrive).
+
+Origin: the XDrive client of Citrus (github.com/getmikan/Citrus) as of 8874a50c,
+plus the later Citrus dev fixes:
+  6f580ef9 muxcool: a stream's deadline or ctx no longer tears down the session
+  a2cfd331 muxcool: count each written chunk once in stream Write
+  94f62093 muxcool: close Mux.Cool sessions after 16s without streams
+  d447a87a muxcool: fail a session whose conn stops taking writes
+  b1835036 muxcool: test a dial cancelled after its New frame was queued
+  d3a24184 (xdrive hunk) default storage TLS client uses component/ca roots
+SlothClash's own: template keys the decoder does not know (Xray's two-step
+hrefPath / hrefMethod) are an error instead of being ignored. Go 1.20 module:
+no min/max builtins.
+
 diff --git a/adapter/outbound/vless.go b/adapter/outbound/vless.go
 index 1e5b168f..3753bb2b 100644
 --- a/adapter/outbound/vless.go
@@ -359,10 +373,10 @@ index 00000000..b13c5def
 +}
 diff --git a/transport/vless/muxcool/client.go b/transport/vless/muxcool/client.go
 new file mode 100644
-index 00000000..84a7be19
+index 00000000..4cce064b
 --- /dev/null
 +++ b/transport/vless/muxcool/client.go
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,499 @@
 +// Package muxcool implements the TCP client side of the Mux.Cool wire format.
 +// UDP uses the existing XUDP implementation in the VLESS adapter.
 +package muxcool
@@ -388,6 +402,21 @@ index 00000000..84a7be19
 +	chunkSize   = 8 * 1024
 +)
 +
++// idleTimeout closes a session that has had no streams for this long, as
++// Xray's mux client does; an idle XDrive session would otherwise keep
++// polling storage for the life of the proxy.
++// A Client reads it once, in NewClient.
++var idleTimeout = 16 * time.Second
++
++// writeTimeout fails a session whose conn takes this long to accept one
++// frame (a black-holed peer, stalled XDrive storage). A stream's own
++// deadline only fails that stream, so without it new dials would keep
++// queueing behind the dead conn.
++// A Client reads it once, in NewClient.
++var writeTimeout = 30 * time.Second
++
++var errWriteStalled = errors.New("Mux.Cool session write stalled")
++
 +type Client struct {
 +	dial     func(context.Context) (net.Conn, error)
 +	mu       sync.Mutex
@@ -395,10 +424,13 @@ index 00000000..84a7be19
 +	dialing  int
 +	closed   bool
 +	notify   chan struct{}
++
++	idleTimeout  time.Duration
++	writeTimeout time.Duration
 +}
 +
 +func NewClient(dial func(context.Context) (net.Conn, error)) *Client {
-+	return &Client{dial: dial, notify: make(chan struct{})}
++	return &Client{dial: dial, notify: make(chan struct{}), idleTimeout: idleTimeout, writeTimeout: writeTimeout}
 +}
 +func (c *Client) wakeLocked() { close(c.notify); c.notify = make(chan struct{}) }
 +func (c *Client) DialContext(ctx context.Context, addr string) (net.Conn, error) {
@@ -429,11 +461,17 @@ index 00000000..84a7be19
 +				continue
 +			}
 +			s.nextID++
++			s.disarmIdleLocked()
 +			st := &stream{session: s, id: s.nextID, data: make(chan []byte, 16), done: make(chan struct{}), readDeadline: deadline.MakePipeDeadline(), writeDeadline: deadline.MakePipeDeadline()}
 +			s.streams[st.id] = st
 +			c.mu.Unlock()
-+			if err := s.send(ctx, frame(st.id, 1, 0, target, nil), &st.writeDeadline); err != nil {
-+				st.finish(err)
++			if queued, err := s.send(ctx, frame(st.id, 1, 0, target, nil), &st.writeDeadline); err != nil {
++				if queued {
++					// The New frame still goes out, so end the stream on the server too.
++					st.Close()
++				} else {
++					st.finish(err)
++				}
 +				return nil, err
 +			}
 +			return st, nil
@@ -448,6 +486,7 @@ index 00000000..84a7be19
 +			if err == nil && !closed {
 +				s := &session{client: c, conn: conn, streams: make(map[uint16]*stream), done: make(chan struct{}), writes: make(chan writeRequest, 16)}
 +				c.sessions = append(c.sessions, s)
++				s.armIdleLocked()
 +				go s.readLoop()
 +				go s.writeLoop()
 +			}
@@ -501,33 +540,74 @@ index 00000000..84a7be19
 +	writes  chan writeRequest
 +	done    chan struct{}
 +	once    sync.Once
++	idle    *time.Timer // guarded by client.mu
++	idleSeq uint64      // guarded by client.mu; bumped on every arm and disarm
 +}
 +
-+func (s *session) send(ctx context.Context, data []byte, d *deadline.PipeDeadline) error {
++func (s *session) armIdleLocked() {
++	s.disarmIdleLocked()
++	seq := s.idleSeq
++	s.idle = time.AfterFunc(s.client.idleTimeout, func() { s.closeIfIdle(seq) })
++}
++func (s *session) disarmIdleLocked() {
++	s.idleSeq++
++	if s.idle != nil {
++		s.idle.Stop()
++		s.idle = nil
++	}
++}
++
++// closeIfIdle fails the session if it stayed idle since the timer that
++// called it was armed. It drops the session from client.sessions under
++// client.mu first, so no DialContext can add a stream to it meanwhile.
++func (s *session) closeIfIdle(seq uint64) {
++	c := s.client
++	c.mu.Lock()
++	if seq != s.idleSeq || len(s.streams) != 0 {
++		c.mu.Unlock()
++		return
++	}
++	s.idle = nil
++	for i, other := range c.sessions {
++		if other == s {
++			c.sessions = append(c.sessions[:i], c.sessions[i+1:]...)
++			break
++		}
++	}
++	c.mu.Unlock()
++	s.fail(io.EOF)
++}
++
++// send queues data for writeLoop and waits for it to be written. queued
++// reports whether the frame was handed to writeLoop: if so, it is written
++// whole later even when send gives up waiting on ctx or the deadline, so
++// that only fails the caller, not the session and its sibling streams.
++func (s *session) send(ctx context.Context, data []byte, d *deadline.PipeDeadline) (queued bool, err error) {
 +	req := writeRequest{data: data, done: make(chan error, 1)}
 +	select {
 +	case s.writes <- req:
 +	case <-ctx.Done():
-+		return ctx.Err()
++		return false, ctx.Err()
 +	case <-s.done:
-+		return net.ErrClosed
++		return false, net.ErrClosed
 +	case <-d.Wait():
-+		return os.ErrDeadlineExceeded
++		return false, os.ErrDeadlineExceeded
 +	}
 +	select {
 +	case err := <-req.done:
-+		return err
++		return true, err
 +	case <-ctx.Done():
-+		s.fail(ctx.Err())
-+		return ctx.Err()
++		return true, ctx.Err()
 +	case <-s.done:
-+		return net.ErrClosed
++		return true, net.ErrClosed
 +	case <-d.Wait():
-+		s.fail(os.ErrDeadlineExceeded)
-+		return os.ErrDeadlineExceeded
++		return true, os.ErrDeadlineExceeded
 +	}
 +}
 +func (s *session) writeLoop() {
++	stall := time.AfterFunc(s.client.writeTimeout, func() { s.fail(errWriteStalled) })
++	stall.Stop()
++	defer stall.Stop()
 +	for {
 +		select {
 +		case <-s.done:
@@ -535,6 +615,7 @@ index 00000000..84a7be19
 +		case req := <-s.writes:
 +			p := req.data
 +			var err error
++			stall.Reset(s.client.writeTimeout)
 +			for len(p) > 0 {
 +				var n int
 +				n, err = s.conn.Write(p)
@@ -549,6 +630,7 @@ index 00000000..84a7be19
 +					break
 +				}
 +			}
++			stall.Stop()
 +			req.done <- err
 +			if err != nil {
 +				s.fail(err)
@@ -621,6 +703,7 @@ index 00000000..84a7be19
 +	s.once.Do(func() {
 +		close(s.done)
 +		s.client.mu.Lock()
++		s.disarmIdleLocked()
 +		streams := make([]*stream, 0, len(s.streams))
 +		for _, st := range s.streams {
 +			streams = append(streams, st)
@@ -655,6 +738,13 @@ index 00000000..84a7be19
 +		delete(s.session.streams, s.id)
 +		s.session.client.wakeLocked()
 +		exhausted := s.session.nextID == 65535 && len(s.session.streams) == 0
++		if len(s.session.streams) == 0 && !exhausted {
++			select {
++			case <-s.session.done:
++			default:
++				s.session.armIdleLocked()
++			}
++		}
 +		s.session.client.mu.Unlock()
 +		if exhausted {
 +			go s.session.fail(io.EOF)
@@ -705,10 +795,15 @@ index 00000000..84a7be19
 +		if n > chunkSize {
 +			n = chunkSize
 +		}
-+		if err := s.session.send(context.Background(), frame(s.id, 2, 1, nil, p[:n]), &s.writeDeadline); err != nil {
++		queued, err := s.session.send(context.Background(), frame(s.id, 2, 1, nil, p[:n]), &s.writeDeadline)
++		if err == nil || queued && errors.Is(err, os.ErrDeadlineExceeded) {
++			// A chunk queued before the deadline is still written whole by
++			// writeLoop, so count it.
++			total += n
++		}
++		if err != nil {
 +			return total, err
 +		}
-+		total += n
 +		p = p[n:]
 +	}
 +	return total, nil
@@ -721,10 +816,12 @@ index 00000000..84a7be19
 +		default:
 +		}
 +		s.finish(net.ErrClosed)
-+		d := deadline.MakePipeDeadline()
-+		d.Set(time.Now().Add(time.Second))
-+		defer d.Set(time.Time{})
-+		_ = s.session.send(context.Background(), frame(s.id, 3, 0, nil, nil), &d)
++		// Queue the End frame without waiting for it: a slow conn must not
++		// block Close, and abandoning the wait must not fail the session.
++		go func() {
++			d := deadline.MakePipeDeadline()
++			_, _ = s.session.send(context.Background(), frame(s.id, 3, 0, nil, nil), &d)
++		}()
 +		s.readDeadline.Set(time.Time{})
 +		s.writeDeadline.Set(time.Time{})
 +	})
@@ -781,10 +878,10 @@ index 00000000..84a7be19
 +}
 diff --git a/transport/vless/muxcool/client_test.go b/transport/vless/muxcool/client_test.go
 new file mode 100644
-index 00000000..8f384fb8
+index 00000000..51a1e9d9
 --- /dev/null
 +++ b/transport/vless/muxcool/client_test.go
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,366 @@
 +package muxcool
 +
 +import (
@@ -860,6 +957,28 @@ index 00000000..8f384fb8
 +		t.Fatalf("opened %d sessions", n)
 +	}
 +}
++func TestWriteReportsBytesWritten(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	c := NewClient(func(context.Context) (net.Conn, error) {
++		a, b := net.Pipe()
++		go func() { defer b.Close(); _ = vmess.HandleMuxConnection(ctx, b, M.Metadata{}, echoHandler{}) }()
++		return a, nil
++	})
++	defer c.Close()
++	conn, err := c.DialContext(ctx, "echo.test:443")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	conn.SetDeadline(time.Now().Add(5 * time.Second))
++	want := bytes.Repeat([]byte{7}, 3*chunkSize+1)
++	go io.Copy(io.Discard, conn)
++	// io.Copy rejects a writer that reports more than it was given.
++	if n, err := conn.Write(want); err != nil || n != len(want) {
++		t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(want))
++	}
++}
 +func TestPendingReadDeadlineAndClose(t *testing.T) {
 +	ctx, cancel := context.WithCancel(context.Background())
 +	defer cancel()
@@ -892,6 +1011,241 @@ index 00000000..8f384fb8
 +	case <-done:
 +	case <-time.After(time.Second):
 +		t.Fatal("close did not unblock read")
++	}
++}
++
++func TestIdleSessionCloses(t *testing.T) {
++	defer func(d time.Duration) { idleTimeout = d }(idleTimeout)
++	idleTimeout = 100 * time.Millisecond
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	conns := make(chan *gatedConn, 2)
++	c := newGatedClient(ctx, conns)
++	defer c.Close()
++
++	conn, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	<-conns
++	// A live stream keeps the session open past the idle timeout.
++	time.Sleep(3 * idleTimeout)
++	conn.SetDeadline(time.Now().Add(5 * time.Second))
++	if _, err := conn.Write([]byte("x")); err != nil {
++		t.Fatalf("busy session closed: %v", err)
++	}
++	if _, err := io.ReadFull(conn, make([]byte, 1)); err != nil {
++		t.Fatalf("busy session closed: %v", err)
++	}
++	c.mu.Lock()
++	s := c.sessions[0]
++	c.mu.Unlock()
++	conn.Close()
++	select {
++	case <-s.done:
++	case <-time.After(2 * time.Second):
++		t.Fatal("idle session not closed")
++	}
++	c.mu.Lock()
++	n := len(c.sessions)
++	c.mu.Unlock()
++	if n != 0 {
++		t.Fatalf("idle session still listed: %d", n)
++	}
++	// The next dial opens a fresh session.
++	conn, err = c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	conn.Close()
++	if len(conns) != 1 {
++		t.Fatal("no new session dialed")
++	}
++}
++
++// gatedConn blocks writes while held, like a slow uplink.
++type gatedConn struct {
++	net.Conn
++	mu   sync.Mutex
++	gate chan struct{}
++}
++
++func (c *gatedConn) hold() { c.mu.Lock(); c.gate = make(chan struct{}); c.mu.Unlock() }
++func (c *gatedConn) release() {
++	c.mu.Lock()
++	if c.gate != nil {
++		close(c.gate)
++		c.gate = nil
++	}
++	c.mu.Unlock()
++}
++func (c *gatedConn) Write(p []byte) (int, error) {
++	c.mu.Lock()
++	gate := c.gate
++	c.mu.Unlock()
++	if gate != nil {
++		<-gate
++	}
++	return c.Conn.Write(p)
++}
++
++func newGatedClient(ctx context.Context, conns chan<- *gatedConn) *Client {
++	return NewClient(func(context.Context) (net.Conn, error) {
++		a, b := net.Pipe()
++		go func() { defer b.Close(); _ = vmess.HandleMuxConnection(ctx, b, M.Metadata{}, echoHandler{}) }()
++		gc := &gatedConn{Conn: a}
++		if conns != nil {
++			conns <- gc
++		}
++		return gc, nil
++	})
++}
++
++func TestStreamDeadlineDoesNotFailSiblings(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	conns := make(chan *gatedConn, 1)
++	c := newGatedClient(ctx, conns)
++	defer c.Close()
++	s1, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	gc := <-conns
++	s2, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s2.Close()
++
++	gc.hold()
++	s1.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
++	n, err := s1.Write([]byte("a"))
++	if !errors.Is(err, os.ErrDeadlineExceeded) {
++		t.Fatalf("s1 write: %v", err)
++	}
++	if n != 1 {
++		t.Fatalf("queued chunk not counted: n=%d", n)
++	}
++	closed := make(chan struct{})
++	go func() { s1.Close(); close(closed) }()
++	select {
++	case <-closed:
++	case <-time.After(time.Second):
++		t.Fatal("Close blocked on a slow conn")
++	}
++	gc.release()
++
++	s2.SetDeadline(time.Now().Add(5 * time.Second))
++	if _, err := s2.Write([]byte("ping")); err != nil {
++		t.Fatalf("sibling write: %v", err)
++	}
++	got := make([]byte, 4)
++	if _, err := io.ReadFull(s2, got); err != nil || string(got) != "ping" {
++		t.Fatalf("sibling read: %q %v", got, err)
++	}
++}
++
++func TestStalledWriteFailsSession(t *testing.T) {
++	defer func(d time.Duration) { writeTimeout = d }(writeTimeout)
++	writeTimeout = 100 * time.Millisecond
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	conns := make(chan *gatedConn, 2)
++	c := newGatedClient(ctx, conns)
++	defer c.Close()
++	s1, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s1.Close()
++	gc := <-conns
++	defer gc.release()
++
++	gc.hold()
++	written := make(chan error, 1)
++	go func() { _, err := s1.Write([]byte("a")); written <- err }()
++	select {
++	case err := <-written:
++		if !errors.Is(err, net.ErrClosed) {
++			t.Fatalf("write on a stalled session: %v", err)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("stalled session not failed")
++	}
++	// The next dial must not queue behind the dead conn.
++	s2, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s2.Close()
++	if len(conns) != 1 {
++		t.Fatal("no new session dialed")
++	}
++	s2.SetDeadline(time.Now().Add(5 * time.Second))
++	if _, err := s2.Write([]byte("ping")); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := io.ReadFull(s2, make([]byte, 4)); err != nil {
++		t.Fatal(err)
++	}
++}
++
++// endHandler echoes like echoHandler and reports each stream the server
++// saw end.
++type endHandler struct{ ended chan struct{} }
++
++func (h endHandler) NewConnection(ctx context.Context, c net.Conn, m M.Metadata) error {
++	defer func() { h.ended <- struct{}{} }()
++	return echoHandler{}.NewConnection(ctx, c, m)
++}
++func (endHandler) NewPacketConnection(context.Context, N.PacketConn, M.Metadata) error {
++	return errors.New("UDP not used")
++}
++func (endHandler) NewError(context.Context, error) {}
++
++func TestDialCancelledAfterQueueEndsStream(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	h := endHandler{ended: make(chan struct{}, 4)}
++	var gc *gatedConn
++	c := NewClient(func(context.Context) (net.Conn, error) {
++		a, b := net.Pipe()
++		go func() { defer b.Close(); _ = vmess.HandleMuxConnection(ctx, b, M.Metadata{}, h) }()
++		gc = &gatedConn{Conn: a}
++		return gc, nil
++	})
++	defer c.Close()
++	s1, err := c.DialContext(ctx, "echo.test:80")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s1.Close()
++
++	// The New frame is queued but the conn does not take it before the
++	// dial ctx ends.
++	gc.hold()
++	dialCtx, dialCancel := context.WithTimeout(ctx, 50*time.Millisecond)
++	defer dialCancel()
++	if _, err := c.DialContext(dialCtx, "echo.test:80"); !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatalf("dial: %v", err)
++	}
++	gc.release()
++
++	// The server got End for the abandoned stream ...
++	select {
++	case <-h.ended:
++	case <-time.After(2 * time.Second):
++		t.Fatal("abandoned stream never ended on the server")
++	}
++	// ... and the cancelled dial did not take the session down.
++	s1.SetDeadline(time.Now().Add(5 * time.Second))
++	if _, err := s1.Write([]byte("ping")); err != nil {
++		t.Fatalf("sibling write: %v", err)
++	}
++	got := make([]byte, 4)
++	if _, err := io.ReadFull(s1, got); err != nil || string(got) != "ping" {
++		t.Fatalf("sibling read: %q %v", got, err)
 +	}
 +}
 diff --git a/transport/xdrive/LICENSE b/transport/xdrive/LICENSE
@@ -1275,10 +1629,10 @@ index 00000000..a612ad98
 +  defined by the Mozilla Public License, v. 2.0.
 diff --git a/transport/xdrive/client.go b/transport/xdrive/client.go
 new file mode 100644
-index 00000000..efa892e5
+index 00000000..46a4832d
 --- /dev/null
 +++ b/transport/xdrive/client.go
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,196 @@
 +// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
 +
 +package xdrive
@@ -1289,6 +1643,8 @@ index 00000000..efa892e5
 +	"io"
 +	"sync"
 +	"time"
++
++	"github.com/metacubex/mihomo/component/ca"
 +
 +	"github.com/metacubex/tls"
 +	"net"
@@ -1401,7 +1757,14 @@ index 00000000..efa892e5
 +				raw.Close()
 +				return nil, err
 +			}
-+			conn := tls.Client(raw, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}})
++			// The roots of component/ca (tls.custom-certifactes, the embedded
++			// bundle), not a bare tls.Config with only the platform's.
++			config, err := ca.GetTLSConfig(ca.Option{TLSConfig: &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}}})
++			if err != nil {
++				raw.Close()
++				return nil, err
++			}
++			conn := tls.Client(raw, config)
 +			handshakeCtx, cancel := context.WithTimeout(ctx, driveTimeout)
 +			defer cancel()
 +			if err := conn.HandshakeContext(handshakeCtx); err != nil {
@@ -1465,6 +1828,60 @@ index 00000000..efa892e5
 +		t.h1Hosts.Store(r.URL.Host, true)
 +	}
 +	return resp, err
++}
+diff --git a/transport/xdrive/client_ca_test.go b/transport/xdrive/client_ca_test.go
+new file mode 100644
+index 00000000..63262a49
+--- /dev/null
++++ b/transport/xdrive/client_ca_test.go
+@@ -0,0 +1,48 @@
++package xdrive
++
++import (
++	"context"
++	"encoding/pem"
++	"net"
++	stdhttp "net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/metacubex/mihomo/component/ca"
++)
++
++// The default storage client verifies against the pool of component/ca: a
++// root added there (tls.custom-certifactes) is trusted, and without it the
++// same server is refused. Citrus d3a24184.
++func TestHTTPClientUsesCAPool(t *testing.T) {
++	srv := httptest.NewTLSServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
++		w.WriteHeader(stdhttp.StatusNoContent)
++	}))
++	defer srv.Close()
++	ca.ResetCertificate()
++	t.Cleanup(ca.ResetCertificate)
++
++	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
++		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
++	}
++	// httptest's certificate is issued for example.com.
++	const url = "https://example.com/"
++
++	if resp, err := NewHTTPClient(dial, nil).Get(url); err == nil {
++		_ = resp.Body.Close()
++		t.Fatal("a server whose root is not in the pool was trusted")
++	}
++
++	root := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
++	if err := ca.AddCertificate(string(root)); err != nil {
++		t.Fatal(err)
++	}
++	resp, err := NewHTTPClient(dial, nil).Get(url)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = resp.Body.Close()
++	if resp.StatusCode != stdhttp.StatusNoContent {
++		t.Fatalf("status %d", resp.StatusCode)
++	}
 +}
 diff --git a/transport/xdrive/config.go b/transport/xdrive/config.go
 new file mode 100644
@@ -3710,10 +4127,10 @@ index 00000000..c08e2c96
 +func (disabledLocalStorage) Close() error { return nil }
 diff --git a/transport/xdrive/template.go b/transport/xdrive/template.go
 new file mode 100644
-index 00000000..eb26239e
+index 00000000..cf546a01
 --- /dev/null
 +++ b/transport/xdrive/template.go
-@@ -0,0 +1,452 @@
+@@ -0,0 +1,461 @@
 +// Adapted from XTLS/Xray-core transport/internet/xdrive at 92ccc939aaf4.
 +// Copyright Xray-core contributors. Licensed under MPL-2.0.
 +// SPDX-License-Identifier: MPL-2.0
@@ -3790,7 +4207,16 @@ index 00000000..eb26239e
 +	if err != nil {
 +		return nil, err
 +	}
-+	if err := json.Unmarshal(payload, tmpl); err != nil {
++	// SlothClash: a key this decoder does not know is an error, not ignored.
++	// Xray added two-step operations (hrefPath / hrefMethod, Xray 00c02777)
++	// after this port; silently dropping them would run a different storage
++	// protocol than the panel configured and fail later in an obscure way.
++	dec := json.NewDecoder(bytes.NewReader(payload))
++	dec.DisallowUnknownFields()
++	if err := dec.Decode(tmpl); err != nil {
++		if strings.HasPrefix(err.Error(), "json: unknown field ") {
++			return nil, newError("template uses a key this core does not support (two-step hrefPath/hrefMethod operations are not implemented)").Base(err)
++		}
 +		return nil, newError("invalid template").Base(err)
 +	}
 +	if tmpl.Put.URL == "" || tmpl.Get.URL == "" || tmpl.List.URL == "" || tmpl.Delete.URL == "" {
@@ -4168,10 +4594,10 @@ index 00000000..eb26239e
 +}
 diff --git a/transport/xdrive/template_test.go b/transport/xdrive/template_test.go
 new file mode 100644
-index 00000000..753657a8
+index 00000000..c344eec3
 --- /dev/null
 +++ b/transport/xdrive/template_test.go
-@@ -0,0 +1,273 @@
+@@ -0,0 +1,321 @@
 +// Adapted from XTLS/Xray-core at 92ccc939aaf4; SPDX-License-Identifier: MPL-2.0
 +
 +package xdrive
@@ -4443,6 +4869,54 @@ index 00000000..753657a8
 +	storage := newTemplateBackend(t, store, map[string]interface{}{"type": "none"}, nil)
 +	if cap(storage.inflight) != driveMaxInflight {
 +		t.Fatalf("default inflight cap is %d, want %d", cap(storage.inflight), driveMaxInflight)
++	}
++}
++
++// SlothClash: a template key the decoder does not know (Xray's later two-step
++// hrefPath / hrefMethod operations, a typo) fails the storage with an error
++// that names it, instead of being dropped silently.
++func TestTemplateRejectsUnknownKeys(t *testing.T) {
++	op := func(extra map[string]interface{}) map[string]interface{} {
++		m := map[string]interface{}{"method": "GET", "url": "https://storage.invalid/{name}"}
++		for k, v := range extra {
++			m[k] = v
++		}
++		return m
++	}
++	tmpl := func(put map[string]interface{}, top map[string]interface{}) map[string]interface{} {
++		m := map[string]interface{}{
++			"put":    put,
++			"get":    op(nil),
++			"delete": op(nil),
++			"list":   op(map[string]interface{}{"namesRegex": `"name":"([^"]+)"`}),
++		}
++		for k, v := range top {
++			m[k] = v
++		}
++		return m
++	}
++	cases := map[string]struct {
++		tmpl map[string]interface{}
++		key  string
++	}{
++		"hrefPath":   {tmpl(op(map[string]interface{}{"hrefPath": "href"}), nil), "hrefPath"},
++		"hrefMethod": {tmpl(op(map[string]interface{}{"hrefMethod": "PUT"}), nil), "hrefMethod"},
++		"top level":  {tmpl(op(nil), map[string]interface{}{"presign": true}), "presign"},
++		"auth":       {tmpl(op(nil), map[string]interface{}{"auth": map[string]interface{}{"type": "none", "scope": "x"}}), "scope"},
++	}
++	for name, tc := range cases {
++		t.Run(name, func(t *testing.T) {
++			_, err := newTemplateStorage(NewHTTPClient(nil, nil), &Config{RemoteFolder: "f", Service: "template", Template: tc.tmpl})
++			if err == nil {
++				t.Fatal("template with an unknown key was accepted")
++			}
++			if !strings.Contains(err.Error(), tc.key) || !strings.Contains(err.Error(), "does not support") {
++				t.Fatalf("error %q does not name the unsupported key %q", err, tc.key)
++			}
++		})
++	}
++	if _, err := newTemplateStorage(NewHTTPClient(nil, nil), &Config{RemoteFolder: "f", Service: "template", Template: tmpl(op(nil), nil)}); err != nil {
++		t.Fatalf("known keys only: %v", err)
 +	}
 +}
 diff --git a/transport/xdrive/wal.go b/transport/xdrive/wal.go

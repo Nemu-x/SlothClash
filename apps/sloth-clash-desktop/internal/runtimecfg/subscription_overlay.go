@@ -325,6 +325,7 @@ func applyCorpVpnSplitInvariant(m map[string]any, enableTun bool, split CorpVpnS
 func reassertCriticalRuntimeInvariants(m map[string]any, mixedPort, ctrlPort int, secret string, withExternalController bool, enableTun bool, env Env) {
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 	applyXDriveHardening(m)
+	applyXDriveServiceAllowList(m)
 	applyDesyncOverlay(m, env.Prefs.Desync, env.Prefs.DesyncCache, env.DesyncNetworkKey)
 	applyCorpVpnSplitInvariant(m, enableTun, env.CorpVpn)
 }
@@ -333,6 +334,7 @@ func overlaySlothRuntimeOnMap(m map[string]any, mixedPort, ctrlPort int, secret,
 	p := env.Prefs
 	applyCoreEndpointInvariants(m, mixedPort, ctrlPort, secret, withExternalController)
 	applyXDriveHardening(m)
+	applyXDriveServiceAllowList(m)
 
 	// LAN exposure is a user decision (default off = localhost only). When it
 	// is on, a loopback `bind-address` inherited from the profile would silently

@@ -186,12 +186,24 @@ twelve patches make the client side of its config surface work on this core with
 the series [ClashFest](https://github.com/Nemu-x/ClashFest) ships as its 0003-0014, applied in the same
 order after our 0003 (so ClashFest's number is ours minus one). Ten files are byte-identical to
 ClashFest's, and their code comments keep ClashFest's numbering; syncing a later fix is a copy. The
-two that differ:
+three that differ:
 
 - **0005** drops ClashFest's own `ParseRealityClientVersion` and uses the one from our 0003, which
   also takes a leading `v` (both reject anything that is not `x.y.z` with parts 0..255).
 - **0007** adds `github.com/metacubex/mldsa v0.1.1` to mihomo's own `go.mod` / `go.sum`: the core is
   built from mihomo's module here, while ClashFest pins the dependency in its outer module.
+- **0004** carries later Citrus `dev` fixes of the XDrive client (its header lists them):
+  `6f580ef9` + `a2cfd331` (a stream's write deadline or a cancelled dial fails that stream only, not
+  the Mux.Cool session and its siblings; End frames are queued without blocking Close), `d447a87a`
+  (a session whose conn takes over 30 s to accept one frame fails, so new dials stop queueing behind
+  a dead storage), `94f62093` (a session without streams closes after 16 s, as Xray's mux client,
+  instead of polling storage for the life of the proxy), `b1835036` (test of the cancelled-dial
+  path), and the `transport/xdrive` hunk of `d3a24184` (the default storage TLS client verifies
+  against `component/ca`'s roots, so `custom-certifactes` applies). Our own addition: a `template`
+  key the decoder does not know is an error naming it, instead of being dropped; Xray's two-step
+  `hrefPath` / `hrefMethod` operations (Xray `00c02777`) are not implemented and would otherwise run
+  a different storage protocol than the panel configured. Mux.Cool is only used by `network:
+  xdrive`; plain VLESS does not touch it.
 
 | Patch | What a config gains | UA token |
 |---|---|---|
@@ -282,6 +294,13 @@ utls release whose `firefox` / `safari` parrots carry the hybrid share.
   them separately (`localNodesRejected`, `templateNodesRejected`). Keys are matched the way the
   core's decoder matches them (`Xdrive_Opts` counts). Both run again after a profile's JavaScript
   override, so a script cannot bring them back.
+- **XDrive services.** The shipped build runs `service: google-drive` (and its alias `Google Drive`)
+  only. Any other service, such as `s3` from newer Xray, a typo or a missing one, would make mihomo
+  fail the whole config (a top-level proxy that does not parse) or the whole provider, so
+  `xdrive_unknown_service.go` turns such a node, in `proxies` and inline provider payloads, into
+  `type: reject` with the same name, next to the hardening above and again after the script.
+  Providers the core fetches itself are outside the app's reach; there the core's error still fails
+  that one provider.
 - **Credentials.** `xdrive-opts.secrets`, `template.auth` and credential-looking headers, query values
   and bodies of template operations are shown as `[redacted]` in the script preview; credential query
   values (`token`, `key`, `signature`, ...) are redacted in the log views and the TUN diagnostics. The

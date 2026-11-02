@@ -1,5 +1,80 @@
+diff --git a/adapter/provider/xdrive_unknown_service_test.go b/adapter/provider/xdrive_unknown_service_test.go
+new file mode 100644
+index 00000000..a140bf0c
+--- /dev/null
++++ b/adapter/provider/xdrive_unknown_service_test.go
+@@ -0,0 +1,69 @@
++package provider
++
++import (
++	"context"
++	"strings"
++	"testing"
++
++	C "github.com/metacubex/mihomo/constant"
++)
++
++// SlothClash core patch 0016: a proxy-provider document with an XDrive node
++// whose service this build does not implement still loads, with every node;
++// only the unsupported node fails, when it is dialed.
++func TestProviderLoadsUnsupportedXDriveService(t *testing.T) {
++	const doc = `proxies:
++- name: unsupported
++  type: vless
++  server: 192.0.2.1
++  port: 443
++  uuid: 27848739-7e62-4138-9fd3-098a63964b6b
++  network: xdrive
++  encryption: mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I
++  xdrive-opts:
++    service: s3
++    remote-folder: folder
++- name: drive
++  type: vless
++  server: 192.0.2.2
++  port: 443
++  uuid: 27848739-7e62-4138-9fd3-098a63964b6b
++  network: xdrive
++  encryption: mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I
++  xdrive-opts:
++    service: google-drive
++    remote-folder: folder-id
++    secrets: [client-id, client-secret, refresh-token]
++`
++	parser, err := NewProxiesParser("test", nil, "", "", "", "", overrideSchema{}, "")
++	if err != nil {
++		t.Fatal(err)
++	}
++	proxies, err := parser([]byte(doc))
++	if err != nil {
++		t.Fatalf("provider with an unsupported XDrive service failed: %v", err)
++	}
++	t.Cleanup(func() {
++		for _, p := range proxies {
++			_ = p.Close()
++		}
++	})
++	if len(proxies) != 2 || proxies[0].Name() != "unsupported" || proxies[1].Name() != "drive" {
++		t.Fatalf("proxies = %v, want both nodes", proxies)
++	}
++
++	metadata := &C.Metadata{NetWork: C.TCP, Host: "example.com", DstPort: 443}
++	conn, err := proxies[0].DialContext(context.Background(), metadata)
++	if err == nil {
++		_ = conn.Close()
++		t.Fatal("dial through an unsupported XDrive service succeeded")
++	}
++	if want := `xdrive service "s3" is not supported by this build`; !strings.Contains(err.Error(), want) {
++		t.Fatalf("dial error = %v, want it to contain %q", err, want)
++	}
++
++	// A malformed google-drive node still fails the document.
++	if _, err := parser([]byte(strings.Replace(doc, "[client-id, client-secret, refresh-token]", "[client-id]", 1))); err == nil {
++		t.Fatal("malformed google-drive options accepted")
++	}
++}
 diff --git a/transport/xdrive/config.go b/transport/xdrive/config.go
-index ba53fca2..4f6c908c 100644
+index ba53fca2..dd33c00e 100644
 --- a/transport/xdrive/config.go
 +++ b/transport/xdrive/config.go
 @@ -5,9 +5,9 @@ import (
@@ -13,7 +88,7 @@ index ba53fca2..4f6c908c 100644
  )
  
  type Config struct {
-@@ -32,12 +32,31 @@ type Config struct {
+@@ -32,13 +32,72 @@ type Config struct {
  // storage that refuses every operation: it never touches the filesystem and
  // every dial through it fails. This covers http and file proxy-providers too
  // (the app's YAML hardening only sees config.yaml and inline payloads).
@@ -43,9 +118,60 @@ index ba53fca2..4f6c908c 100644
 +// `service: template` storage while AllowTemplateService is off.
 +var ErrTemplateServiceDisabled = errors.New("xdrive service template is disabled in this build")
 +
++// UnsupportedServiceError is returned by every operation of an xdrive node
++// whose service this build does not implement. SlothClash core patch 0016:
++// such a node (`service: s3`, a typo, an empty service) loads like a refused
++// local or template one, so one entry the build cannot use does not fail a
++// whole proxy-provider or config, but every dial through it fails and it sends
++// no request.
++type UnsupportedServiceError struct{ Service string }
++
++func (e *UnsupportedServiceError) Error() string {
++	return fmt.Sprintf("xdrive service %q is not supported by this build", e.Service)
++}
++
++// refusal reports why this build will not run the node's storage, or nil when
++// it will. SlothClash core patch 0016.
++func (c Config) refusal() error {
++	switch c.Service {
++	case "google-drive", "Google Drive":
++		return nil
++	case "local":
++		if AllowLocalService {
++			return nil
++		}
++		return ErrLocalServiceDisabled
++	case "template":
++		if AllowTemplateService {
++			return nil
++		}
++		return ErrTemplateServiceDisabled
++	default:
++		return &UnsupportedServiceError{Service: c.Service}
++	}
++}
++
++// Validate checks the options of a service this build runs. A node the build
++// refuses (see refusal) is valid whatever its other options: none of them is
++// ever used, and the node fails on its first dial instead (SlothClash core
++// patch 0016).
  func (c Config) Validate() error {
++	if c.refusal() != nil {
++		return nil
++	}
  	if c.Fronting != "" {
  		host, port, err := net.SplitHostPort(c.Fronting)
+ 		p, portErr := strconv.ParseUint(port, 10, 16)
+@@ -65,7 +124,8 @@ func (c Config) Validate() error {
+ 			return fmt.Errorf("xdrive template service requires a template object")
+ 		}
+ 	default:
+-		return fmt.Errorf("unsupported xdrive service %q", c.Service)
++		// refusal covers every other service.
++		return &UnsupportedServiceError{Service: c.Service}
+ 	}
+ 	return nil
+ }
 diff --git a/transport/xdrive/local_gate_test.go b/transport/xdrive/local_gate_test.go
 new file mode 100644
 index 00000000..93c28ddb
@@ -84,36 +210,35 @@ index 51c592dc..36d011d5 100644
  	ctx, cancel := context.WithCancel(context.Background())
  	l := &Listener{ctx: ctx, cancel: cancel, storage: storage, http: h, params: paramsFromConfig(&c), accepted: make(chan net.Conn, 32), active: make(map[string]*Conn), handled: make(map[string]time.Time), idleSince: make(map[string]time.Time)}
 diff --git a/transport/xdrive/storage.go b/transport/xdrive/storage.go
-index c08e2c96..697bbc2f 100644
+index c08e2c96..9e720712 100644
 --- a/transport/xdrive/storage.go
 +++ b/transport/xdrive/storage.go
-@@ -3,6 +3,7 @@ package xdrive
- import (
- 	"context"
- 	"errors"
-+	"fmt"
- 	"io"
+@@ -34,6 +34,9 @@ type Storage interface {
+ }
  
- 	"github.com/metacubex/http"
-@@ -43,31 +44,33 @@ func newStorage(c Config, client *http.Client) (Storage, error) {
+ func newStorage(c Config, client *http.Client) (Storage, error) {
++	if err := c.refusal(); err != nil {
++		return disabledStorage{err}, nil
++	}
+ 	if err := c.Validate(); err != nil {
+ 		return nil, err
+ 	}
+@@ -42,32 +45,28 @@ func newStorage(c Config, client *http.Client) (Storage, error) {
+ 	}
  	switch c.Service {
  	case "local":
- 		if !AllowLocalService {
+-		if !AllowLocalService {
 -			return disabledLocalStorage{}, nil
-+			return disabledStorage{ErrLocalServiceDisabled}, nil
- 		}
+-		}
  		return newLocalStorage(c.RemoteFolder)
  	case "google-drive", "Google Drive":
  		return newDriveStorage(client, &c)
 -	default:
 +	case "template":
-+		if !AllowTemplateService {
-+			return disabledStorage{ErrTemplateServiceDisabled}, nil
-+		}
  		return newTemplateStorage(client, &c)
 +	default:
-+		// Validate refuses every other service.
-+		return nil, fmt.Errorf("unsupported xdrive service %q", c.Service)
++		// refusal covers every other service.
++		return nil, &UnsupportedServiceError{Service: c.Service}
  	}
  }
  
@@ -122,9 +247,9 @@ index c08e2c96..697bbc2f 100644
 -// operation, so the proxy loads but cannot be used.
 -type disabledLocalStorage struct{}
 +// disabledStorage stands in for a service the build refuses: `service: local`
-+// while AllowLocalService is off (ClashFest core patch 0003) and
-+// `service: template` while AllowTemplateService is off (SlothClash core patch
-+// 0016). It touches nothing, no filesystem and no network, and refuses every
++// while AllowLocalService is off (ClashFest core patch 0003),
++// `service: template` while AllowTemplateService is off and any service the
++// build does not implement (SlothClash core patch 0016). It touches nothing, no filesystem and no network, and refuses every
 +// operation with err, so the proxy loads but cannot be used.
 +type disabledStorage struct{ err error }
  
@@ -214,5 +339,90 @@ index 00000000..0caf01f9
 +	cloud := Config{Service: "google-drive", RemoteFolder: "id", Secrets: []string{"a", "b", "c"}}
 +	if err := cloud.Validate(); err != nil {
 +		t.Fatalf("google-drive must not be affected: %v", err)
++	}
++}
+diff --git a/transport/xdrive/unknown_service_test.go b/transport/xdrive/unknown_service_test.go
+new file mode 100644
+index 00000000..e709aae9
+--- /dev/null
++++ b/transport/xdrive/unknown_service_test.go
+@@ -0,0 +1,79 @@
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"sync/atomic"
++	"testing"
++
++	"github.com/metacubex/http"
++)
++
++// countingTransport fails every request and counts it.
++type countingTransport struct{ requests atomic.Int32 }
++
++func (t *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
++	t.requests.Add(1)
++	return nil, errors.New("unexpected request")
++}
++
++// SlothClash core patch 0016: a node whose service this build does not
++// implement loads, fails every dial and listen with a clear error and sends no
++// request.
++func TestUnsupportedServiceLoadsButNeverDials(t *testing.T) {
++	for _, service := range []string{"s3", "google_drive", "GOOGLE-DRIVE", "Template", ""} {
++		t.Run(service, func(t *testing.T) {
++			transport := &countingTransport{}
++			client := &http.Client{Transport: transport}
++			// Every other option is malformed too: none of them is used.
++			cfg := Config{Service: service, Fronting: "not an address", Template: map[string]any{"put": map[string]any{"url": "http://127.0.0.1:1/"}}}
++
++			if err := cfg.Validate(); err != nil {
++				t.Fatalf("an unsupported service must still validate: %v", err)
++			}
++			c, err := NewClient(cfg, client)
++			if err != nil {
++				t.Fatalf("client for an unsupported service: %v", err)
++			}
++			_, err = c.Dial(context.Background())
++			var unsupported *UnsupportedServiceError
++			if !errors.As(err, &unsupported) || unsupported.Service != service {
++				t.Fatalf("dial through an unsupported service: got %v", err)
++			}
++			want := `xdrive service "` + service + `" is not supported by this build`
++			if err.Error() != want {
++				t.Fatalf("error = %q, want %q", err, want)
++			}
++			if err := c.Close(); err != nil {
++				t.Fatalf("close: %v", err)
++			}
++			if _, err := Listen(cfg, client); !errors.As(err, &unsupported) {
++				t.Fatalf("listen on an unsupported service: got %v", err)
++			}
++			if n := transport.requests.Load(); n != 0 {
++				t.Fatalf("an unsupported service sent %d requests", n)
++			}
++		})
++	}
++}
++
++// Malformed options of a service the build runs are still refused at load.
++func TestSupportedServiceStillValidated(t *testing.T) {
++	for name, cfg := range map[string]Config{
++		"drive-two-secrets":    {Service: "google-drive", RemoteFolder: "id", Secrets: []string{"a", "b"}},
++		"drive-blank-secret":   {Service: "Google Drive", RemoteFolder: "id", Secrets: []string{"a", " ", "c"}},
++		"drive-no-folder":      {Service: "google-drive", Secrets: []string{"a", "b", "c"}},
++		"drive-bad-fronting":   {Service: "google-drive", RemoteFolder: "id", Secrets: []string{"a", "b", "c"}, Fronting: "host"},
++		"template-no-template": {Service: "template", RemoteFolder: "f"},
++		"local-no-folder":      {Service: "local"},
++	} {
++		t.Run(name, func(t *testing.T) {
++			if err := cfg.Validate(); err == nil {
++				t.Fatal("malformed options accepted")
++			}
++			if _, err := NewClient(cfg, nil); err == nil {
++				t.Fatal("client for malformed options")
++			}
++		})
 +	}
 +}

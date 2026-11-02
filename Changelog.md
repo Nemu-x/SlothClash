@@ -4,6 +4,7 @@
 
 **🔒 XDrive: templated storage refused**
 - XDrive nodes with `service: template` are now refused, like `service: local` already was, wherever they come from: subscriptions, providers, manual and local profiles. A template lets the config choose the method, address, headers and body of HTTP requests sent from your computer, including to devices on your local network, as soon as a node is tested. Such a node keeps its name but shows as disabled and carries no traffic; Google Drive XDrive nodes are unaffected.
+- An XDrive node with a storage service Sloth Clash does not support (anything but Google Drive, for example `s3` or a misspelled name) no longer makes a whole subscription or provider fail to load. The other nodes work; that node fails when used, with the message `xdrive service "s3" is not supported by this build`, and sends nothing over the network.
 
 **🔧 Fixes**
 - VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
@@ -25,6 +26,7 @@
 
 **🔒 XDrive: шаблонное хранилище отключено**
 - Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.
+- Узел XDrive с хранилищем, которое Sloth Clash не поддерживает (всё, кроме Google Drive, например `s3` или название с опечаткой), больше не ломает загрузку всей подписки или провайдера. Остальные узлы работают; этот узел при использовании выдаёт ошибку `xdrive service "s3" is not supported by this build` и ничего не отправляет в сеть.
 
 **🔧 Исправления**
 - VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.

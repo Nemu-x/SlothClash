@@ -1,5 +1,5 @@
 diff --git a/component/tls/utls.go b/component/tls/utls.go
-index d48a1ba6..6440c708 100644
+index d48a1ba6..948bee1d 100644
 --- a/component/tls/utls.go
 +++ b/component/tls/utls.go
 @@ -4,6 +4,7 @@ import (
@@ -10,23 +10,30 @@ index d48a1ba6..6440c708 100644
  	"unsafe"
  
  	"github.com/metacubex/mihomo/common/once"
-@@ -40,7 +41,9 @@ func NewListener(inner net.Listener, config *Config) net.Listener {
+@@ -40,6 +41,17 @@ func NewListener(inner net.Listener, config *Config) net.Listener {
  }
  
  func GetFingerprint(clientFingerprint string) (UClientHelloID, bool) {
--	if len(clientFingerprint) == 0 || clientFingerprint == "none" {
-+	clientFingerprint = strings.ToLower(clientFingerprint) // like Xray, ClashFest core patch 0007
-+	switch clientFingerprint {
-+	case "", "none", "unsafe", "hellogolang": // "unsafe" and "hellogolang" are Xray's names for no uTLS
++	// Stock names match exactly, as in stock mihomo ("Chrome" stays an unknown
++	// name). Only the Xray-only names are case-insensitive, as Xray reads them.
++	if _, exact := fingerprints[clientFingerprint]; !exact {
++		lower := strings.ToLower(clientFingerprint)
++		if xrayNoUTLS[lower] {
++			return UClientHelloID{}, false
++		}
++		if _, ok := xrayFingerprints[lower]; ok {
++			clientFingerprint = lower
++		}
++	}
+ 	if len(clientFingerprint) == 0 || clientFingerprint == "none" {
  		return UClientHelloID{}, false
  	}
- 
 diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
 new file mode 100644
-index 00000000..a7b38946
+index 00000000..91782d3e
 --- /dev/null
 +++ b/component/tls/utls_xray_names.go
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,86 @@
 +package tls
 +
 +// ClashFest core patch 0007: client-fingerprint accepts the names Xray-core uses
@@ -37,6 +44,9 @@ index 00000000..a7b38946
 +// 9c9b0856 (written for metacubex/utls v1.8.8); no utls fork is involved.
 +
 +import utls "github.com/metacubex/utls"
++
++// xrayNoUTLS are Xray's names for Go's own TLS hello (no uTLS).
++var xrayNoUTLS = map[string]bool{"unsafe": true, "hellogolang": true}
 +
 +var xrayFingerprints = map[string]UClientHelloID{
 +	"randomizedalpn":   utls.HelloRandomizedALPN,
@@ -112,10 +122,10 @@ index 00000000..a7b38946
 +}
 diff --git a/component/tls/utls_xray_names_test.go b/component/tls/utls_xray_names_test.go
 new file mode 100644
-index 00000000..4c25dfd5
+index 00000000..5ce834ee
 --- /dev/null
 +++ b/component/tls/utls_xray_names_test.go
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,48 @@
 +package tls
 +
 +import (
@@ -153,7 +163,14 @@ index 00000000..4c25dfd5
 +			t.Fatalf("GetFingerprint(%q) should mean no uTLS", name)
 +		}
 +	}
-+	if got, _ := GetFingerprint("Chrome"); got.Client != utls.HelloChrome_Auto.Client {
++	if got, _ := GetFingerprint("chrome"); got.Client != utls.HelloChrome_Auto.Client {
 +		t.Fatalf("mihomo names changed: chrome = %s", got.Client)
++	}
++	// Stock names stay case-sensitive, as in stock mihomo: a misspelled case is
++	// an unknown name there (Go's own hello), and must stay one here.
++	for _, name := range []string{"Chrome", "FIREFOX", "Safari", "iOS", "None", "Random", "Randomized"} {
++		if got, ok := GetFingerprint(name); ok {
++			t.Fatalf("GetFingerprint(%q) = %s, want the stock unknown-name result", name, got.Client)
++		}
 +	}
 +}

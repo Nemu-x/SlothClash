@@ -26,7 +26,7 @@ index f5b536aa..c68b046c 100644
  	}
  	return nil, nil
 diff --git a/component/tls/reality.go b/component/tls/reality.go
-index 46793a4f..e8f516f6 100644
+index 1af2cc4f..d2790384 100644
 --- a/component/tls/reality.go
 +++ b/component/tls/reality.go
 @@ -1,15 +1,11 @@
@@ -64,7 +64,7 @@ index 46793a4f..e8f516f6 100644
  	SupportX25519MLKEM768 bool
  }
  
-@@ -172,7 +173,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+@@ -186,7 +187,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
  	}
  	for retry := 0; ; retry++ {
  		verifier := &realityVerifier{
@@ -74,20 +74,23 @@ index 46793a4f..e8f516f6 100644
  		}
  		uConfig := &utls.Config{
  			Time:                   ntp.Now,
-@@ -314,21 +316,18 @@ func realityClientFallback(uConn net.Conn, serverName string, fingerprint utls.C
+@@ -335,23 +337,20 @@ func realityClientFallback(uConn net.Conn, serverName string, fingerprint utls.C
  
  type realityVerifier struct {
  	*utls.UConn
 -	serverName string
 -	authKey    []byte
 -	verified   bool
+-	answered   bool // the server sent its certificate chain (VerifyConnection ran)
 +	serverName    string
 +	authKey       []byte
 +	mldsa65Verify *mldsa.PublicKey
 +	verified      bool
++	answered      bool // the server sent its certificate chain (VerifyConnection ran)
  }
  
  func (c *realityVerifier) VerifyConnection(state utls.ConnectionState) error {
+ 	c.answered = true
  	log.Debugln("REALITY localAddr: %v is using X25519MLKEM768 for TLS' communication: %v", c.RemoteAddr(), c.HandshakeState.ServerHello.ServerShare.Group == utls.X25519MLKEM768)
  	certs := state.PeerCertificates
 -	if pub, ok := certs[0].PublicKey.(ed25519.PublicKey); ok {

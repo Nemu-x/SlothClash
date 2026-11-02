@@ -137,19 +137,36 @@ Xray releases.
 
 ### 0002 REALITY: adaptive X25519MLKEM768
 
-Xray generations disagree about the post-quantum key share: servers before 25.x silently drop a
-hybrid ClientHello (5 s timeout), 26.9.8+ servers (XTLS/REALITY `8cdf7bf`) reject a classic one,
-25.x and 26.4 accept both, and no server tells which it is. The patch adds
+Xray generations disagree about the post-quantum key share: servers before 25.x do not accept a
+hybrid ClientHello, 26.9.8+ servers (XTLS/REALITY `8cdf7bf`) do not accept a classic one, 25.x and
+26.4 accept both, and no server tells which it is. A server that does not accept the hello does not
+fail the handshake either: it treats the client as unauthenticated and relays it to its cover site,
+so the client completes a TLS handshake with the cover site's certificate and REALITY verification
+fails (measured 2026-11-02 against 24.12.31 with a hybrid hello and 26.10.29 with a classic one:
+`REALITY authentication failed` within 300 ms on loopback). The patch adds
 `tlsC.SetRealityMLKEMPolicy` (Auto / On / Off). In Auto the outcome is remembered per server
 address and public key: classic first, flip after one failure, pin after one success, flip again
 after three failures of a pinned verdict (servers get upgraded). A per-proxy
 `support-x25519mlkem768: true` still forces the hybrid share.
 
+Only that signal moves the memo: a handshake counts as failed when the server sent a certificate
+chain and it was not the REALITY one. Dial and DNS errors (they happen before the handshake),
+resets, EOFs, timeouts, non-TLS answers and cancelled requests leave it alone, so a flaky network
+cannot flip a classic-only server to the hybrid share and kill it. The cost: a server whose cover
+site is unreachable closes the connection instead of relaying it, and Auto then never learns its
+key share; `reality-mlkem: on` (or the per-proxy key) covers that case.
+
 Only the chrome specs in `metacubex/utls` 1.8.8 carry the hybrid share; firefox, safari, ios and
-edge cannot offer it. When a hybrid handshake is needed and the configured fingerprint cannot
-produce one, the patch uses chrome for that handshake, because the alternative is a node that
-can never reach a 26.9.8+ server. 0024 narrows that: firefox and safari now switch to their own
-current browser hello instead; chrome stays the fallback only for the families that have none.
+edge cannot offer it. The fingerprint is the user's choice and is never swapped: when a hybrid
+handshake is wanted and the configured fingerprint cannot produce one, its classic hello goes out
+unchanged (logged once per fingerprint at debug level) and that handshake is not reported to the
+memo, since it says nothing about the server. 0024 gives firefox and safari their own current
+browser hello for that case. With `reality-mlkem: off` and the stock `support-x25519mlkem768` key
+the handshake is the stock one.
+
+Tests in the patch run real handshakes on loopback: servers that close, reset, stay silent past the
+deadline, answer with plain HTTP, or meet a cancelled request leave the memo untouched; a cover-site
+answer flips it; ios and edge keep their classic hello under a hybrid verdict and never report it.
 
 The core logs each verdict, which is the main diagnostic signal in the Logs screen:
 
@@ -172,7 +189,7 @@ reality-client-version: "26.10.29" # x.y.z, each part 0..255; absent = core defa
 ```
 
 Invalid values fail the config with a message naming the key. On load the core logs
-`REALITY policy: client version 26.10.29, X25519MLKEM768 auto`. An unpatched mihomo ignores
+`REALITY policy: client version 26.10.29, X25519MLKEM768 auto` at debug level. An unpatched mihomo ignores
 unknown top-level keys, so the same config still starts on a stock core.
 
 The app writes them from Settings → REALITY ("ML-KEM key share": Auto / Always / Never, "Client
@@ -211,10 +228,10 @@ three that differ:
 | 0005 REALITY per-proxy client version | `reality-opts.client-version` overrides the global one from 0001/0003 | |
 | 0006 chain groups | `type: chain`: hops in `proxies`, each dialed through the one before (`dialer-proxy` wiring at load), health check names the first broken hop | `chain` |
 | 0007 REALITY mldsa65-verify | `reality-opts.mldsa65-verify` (Xray `mldsa65Verify`, share link `pqv`); without the patch the key is ignored and the client only believes it pins the server | `mldsa65` |
-| 0008 Xray fingerprint names | `client-fingerprint: hellochrome_131`, `randomizednoalpn`, ... map to the nearest utls parrot instead of falling back to Go's own hello | |
+| 0008 Xray fingerprint names | `client-fingerprint: hellochrome_131`, `randomizednoalpn`, ... map to the nearest utls parrot instead of falling back to Go's own hello. Only these Xray names are case-insensitive; stock names match exactly, as in stock mihomo (`Chrome` stays an unknown name) | |
 | 0009 pin and name lists | `fingerprint` and `name-cert-verify` take comma-separated lists | `pin-list` |
 | 0010 ECH Xray forms | `ech-opts.config` takes the `ECH CONFIGS` PEM; `ech-opts.query-server` | `ech-xray` |
-| 0011 OpenVPN server identity | `verify-x509-name` / `-type`, `verify-server-name`, `tls-version-min` are enforced (vanilla ignores them: any certificate of the CA is trusted) | |
+| 0011 OpenVPN server identity | `verify-x509-name` / `-type`, `verify-server-name`, `tls-version-min` are enforced (vanilla ignores them: any certificate of the CA is trusted); a proxy without them is noted at debug level | |
 | 0012 QUIC disable-mtu-discovery | the option on hysteria2 and masque | |
 | 0013 tcp-connect-timeout | top-level `tcp-connect-timeout` (ms, 100..600000, default 5000) | |
 | 0014 sniffer.skip-threshold | failed sniffs before a destination is skipped (was the constant 5) | |
@@ -256,9 +273,10 @@ Delete together with 0004, or when XDrive drops local and template storage.
 
 Xray 26.9.8+ forwards a REALITY ClientHello without X25519MLKEM768 to the cover site, and in
 `metacubex/utls` 1.8.8 only chrome (Chrome 133) has that share: `firefox` is Firefox 120 and
-`safari` is Safari 16.0. 0002 therefore sent chrome's hello for such a server, so a proxy set to
-firefox or safari silently changed its fingerprint (and Chrome 133-149 hellos are reported to be
-rate-limited on some networks). The patch carries `HelloFirefox_148` and `HelloSafari_26_3` from
+`safari` is Safari 16.0. 0002 keeps the configured fingerprint, so without this patch a proxy set
+to firefox or safari could only send its classic hello to such a server (swapping in chrome's hello
+would silently change the fingerprint, and Chrome 133-149 hellos are reported to be rate-limited on
+some networks). The patch carries `HelloFirefox_148` and `HelloSafari_26_3` from
 `metacubex/utls` branch `v1.9.0-mod-meta` (`a6a364a`), the parrots Xray 26.10.x itself sends as
 `firefox` / `safari`, as data in `component/tls/reality_pq_specs.go`, applied through
 `HelloCustom` + `ApplyPreset`; the library stays on the released 1.8.8. Firefox sends one X25519
@@ -266,8 +284,9 @@ key in both the hybrid and the standalone share, so after `ApplyPreset` the stan
 rewritten to the hybrid's key (1.8.8 would generate two). Safari keeps two keys, as in the spec.
 
 Only the handshakes that need the hybrid share use these hellos (forced, policy `on`, or Auto
-after the classic hello failed); the classic attempt is unchanged. ios, edge and the randomized
-families have no post-quantum parrot and still borrow chrome's. The default client version moves
+after the classic hello was relayed); the classic attempt is unchanged. With `reality-mlkem: off` a
+forced share keeps the stock parrot, as in stock mihomo. ios, edge and the randomized families have
+no post-quantum parrot and send their classic hello. The default client version moves
 from `26.9.9` to `26.10.29`, the Xray release the series was checked against (an explicit
 `reality-client-version` still wins).
 
@@ -349,9 +368,9 @@ were checked against proxies instead of `sub-rules`.
 
 Patch `0019-desync-dns-udp.patch` adds explicit DNS fallback for named Desync outbounds when direct DNS returns no IP, plus a validated Windows UDP fake option with per-outbound counters. The ordinary direct route and subscription resolvers are retained. Tests cover cold empty resolution, retry scope/cancellation, UDP configuration, native datagram integrity and the core wrapper path. Desktop media routing is enabled independently in Settings; live network success remains an owner-run measurement.
 
-Patch `0020-desync-auto-diagnostics.patch` provides the `desync-auto` capability used by automatic client calibration. Its authenticated UDP probe is limited to an owned candidate and an active public Discord UDP endpoint, sends a bounded discovery sequence, and validates complete replies. Separate bounded application-only activity counters distinguish discovery from RTP-shaped traffic without storing payloads; internal probes do not populate them. Controller request cancellation stops pending probes, and explicit expected HTTP status ranges are enforced for HTTPS tests. Tests cover endpoint scope, mismatched replies, initial-only response loss, cancellation, telemetry bounds and error-page rejection. Candidate selection, network caching and recovery policy live in the client rather than the transport library.
+Patch `0020-desync-auto-diagnostics.patch` provides the `desync-auto` capability used by automatic client calibration. Its authenticated UDP probe is limited to an owned candidate and an active public Discord UDP endpoint, sends a bounded discovery sequence, and validates complete replies. Separate bounded application-only activity counters distinguish discovery from RTP-shaped traffic without storing payloads; internal probes do not populate them. For delay tests that opt in with `detail=1`, controller request cancellation stops the pending probe and an explicit expected HTTP status range is enforced (`503` on a mismatch); without it `GET /proxies/{name}/delay` keeps the stock timeout and reports the latency of a mismatching response. Tests cover endpoint scope, mismatched replies, initial-only response loss, cancellation, telemetry bounds and error-page rejection. Candidate selection, network caching and recovery policy live in the client rather than the transport library.
 
-Patch `0018-probe-error-details.patch` preserves URL-test error messages in controller responses and writes failed manual delay tests to the core warning log with the outbound name. It covers dial/TLS failures, timeouts, zero-delay failures and successful responses with deterministic HTTP-handler tests. Warning assertions wait for the matching event under one fixed deadline and explicitly tolerate unrelated asynchronous log events. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
+Patch `0018-probe-error-details.patch` makes `GET /proxies/{name}/delay?...&detail=1` return the URL-test error message (`504` with the timeout and its cause, `503` with the dial/TLS error) and log the failure with the outbound name at debug level. Without `detail=1` the endpoint answers exactly as stock mihomo (`504 {"message":"Timeout"}`, `503 {"message":"An error occurred in the delay test"}`), so panels and scripts written for stock mihomo see no change. The app's Desync probes send `detail=1` when the core has no transfer test. Tests cover both forms for dial/TLS failures, timeouts, zero-delay failures and successful responses; log assertions wait for the matching event under one fixed deadline and tolerate unrelated asynchronous log events. A controller `503` indicates a failed core test, not necessarily an upstream HTTP status.
 
 Patch `0021-desync-stable-udp-binding.patch` adds the explicit `desync.udp.stable-binding` option. It reuses a native socket only for the same Discord TUN source/process/inbound/interface/server/discovery-session identity, across local port replacement. Discovery replies and logical deadlines remain independent; private socket starts, other traffic and inner probes are excluded from sharing. Buffers, memberships and idle lifetime are bounded, and adapter shutdown owns cleanup. Private diagnostics expose aggregate counts only. Regression coverage includes concurrent sessions, handover/old-close behavior, native library fake-window continuity, deadlines, bounds, shutdown and a 75-second native core PacketConn test. Remove this patch when upstream offers equivalent scoped association continuity and lifecycle guarantees; no upstream issue is claimed.
 

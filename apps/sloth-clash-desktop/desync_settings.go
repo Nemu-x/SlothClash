@@ -235,10 +235,12 @@ func probeDesyncOutbound(ctx context.Context, endpoint, secret, route, target st
 // the transfer test (0025) the core sends GET with ALPN h2 and http/1.1 and
 // reads up to desyncProbeMaxBytes of the body, failing on a stall; a volume
 // target must also deliver desyncVolumeMinBytes. Without it, the delay test
-// checks the response headers only.
+// checks the response headers only; detail=1 asks the patched core for the
+// failure reason and to fail a status outside the expected range (a stock core
+// ignores it and reports the latency, the core's own answer by default).
 func probeDesyncOutboundMode(ctx context.Context, endpoint, secret, route, target string, mode desyncProbeMode) (int, error) {
 	q := url.Values{"url": {target}, "timeout": {"10000"}, "expected": {mode.expected()}}
-	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode()
+	path := "/proxies/" + url.PathEscape(route) + "/delay?" + q.Encode() + "&detail=1"
 	if desyncTransferCoreSupported() {
 		q.Set("max-bytes", strconv.Itoa(desyncProbeMaxBytes))
 		q.Set("stall", "2000") // a frozen connection never resumes; fail before the caller's 5-6 s

@@ -25,6 +25,20 @@ func xdriveProxy(name, service string, extra map[string]any) map[string]any {
 	}
 }
 
+// testXDriveTemplate is a complete storage template aimed at loopback, the
+// request surface `service: template` would hand to the config.
+func testXDriveTemplate() map[string]any {
+	op := func(method, path string) map[string]any {
+		return map[string]any{"method": method, "url": "http://127.0.0.1:1/" + path}
+	}
+	list := op("GET", "{folder}/")
+	list["namesRegex"] = `"([^"]+)"`
+	return map[string]any{
+		"put": op("PUT", "{folder}/{name}"), "get": op("GET", "{folder}/{name}"),
+		"delete": op("DELETE", "{folder}/{name}"), "list": list,
+	}
+}
+
 func xdriveHardeningProfile() map[string]any {
 	// Spellings the core's decoder accepts must not hide a node from the check.
 	sneaky := map[string]any{
@@ -36,18 +50,22 @@ func xdriveHardeningProfile() map[string]any {
 	return map[string]any{
 		"proxies": []any{
 			xdriveProxy("local-node", "local", nil),
+			xdriveProxy("template-node", "template", map[string]any{"template": testXDriveTemplate()}),
 			xdriveProxy("drive-node", "google-drive", map[string]any{"secrets": []any{"id", "secret", "refresh"}}),
 			sneaky,
 		},
 		"proxy-providers": map[string]any{
-			"inline": map[string]any{"type": "inline", "Payload": []any{xdriveProxy("inline-local", "local", nil)}},
+			"inline": map[string]any{"type": "inline", "Payload": []any{
+				xdriveProxy("inline-local", "local", nil),
+				xdriveProxy("inline-template", " TEMPLATE ", map[string]any{"template": testXDriveTemplate()}),
+			}},
 		},
 		"listeners": []any{
 			map[string]any{"name": "xin", "type": "vless", "port": 10001, "xdrive-config": map[string]any{"service": "google-drive"}},
 			map[string]any{"name": "mixed-in", "type": "mixed", "port": 10002},
 		},
 		"proxy-groups": []any{
-			map[string]any{"name": "PROXY", "type": "select", "proxies": []any{"local-node", "drive-node", "sneaky"}, "use": []any{"inline"}},
+			map[string]any{"name": "PROXY", "type": "select", "proxies": []any{"local-node", "template-node", "drive-node", "sneaky"}, "use": []any{"inline"}},
 		},
 		"rules": []any{"MATCH,PROXY"},
 	}
@@ -72,6 +90,9 @@ function main(config) {
   config.proxies.push({ name: 'script-local', type: 'vless', server: '127.0.0.1', port: 443,
     uuid: '27848739-7e62-4138-9fd3-098a63964b6b', network: 'xdrive', encryption: '` + testXDriveEncryption + `',
     'xdrive-opts': { service: 'local', 'remote-folder': '/tmp/s' } })
+  config.proxies.push({ name: 'script-template', type: 'vless', server: '127.0.0.1', port: 443,
+    uuid: '27848739-7e62-4138-9fd3-098a63964b6b', network: 'xdrive', encryption: '` + testXDriveEncryption + `',
+    'xdrive-opts': { service: 'Template', 'remote-folder': 'f', template: { put: { url: 'http://127.0.0.1:1/' } } } })
   return config
 }`
 	if err := finalizeRuntimeConfigPipelineWithScript(m, t.TempDir(), 54333, 9097, "secret", "tun", true, true, script, &res, testEnv()); err != nil {
@@ -85,8 +106,8 @@ function main(config) {
 	}
 	for _, it := range m["proxies"].([]any) {
 		pm := it.(map[string]any)
-		if pm["name"] == "script-local" && pm["type"] != "reject" {
-			t.Errorf("script-local survived as %#v", pm)
+		if (pm["name"] == "script-local" || pm["name"] == "script-template") && pm["type"] != "reject" {
+			t.Errorf("%s survived as %#v", pm["name"], pm)
 		}
 	}
 }
@@ -98,7 +119,7 @@ func assertXDriveHardened(t *testing.T, m map[string]any) {
 		pm := it.(map[string]any)
 		byName[pm["name"].(string)] = pm
 	}
-	for _, name := range []string{"local-node", "sneaky"} {
+	for _, name := range []string{"local-node", "template-node", "sneaky"} {
 		pm := byName[name]
 		if pm == nil || pm["type"] != "reject" || len(pm) != 2 {
 			t.Errorf("%s: want a bare REJECT proxy of the same name, got %#v", name, pm)
@@ -108,12 +129,56 @@ func assertXDriveHardened(t *testing.T, m map[string]any) {
 		t.Errorf("a remote-storage XDrive node must pass untouched: %#v", drive)
 	}
 	inline := m["proxy-providers"].(map[string]any)["inline"].(map[string]any)["Payload"].([]any)
-	if p := inline[0].(map[string]any); p["type"] != "reject" || p["name"] != "inline-local" {
-		t.Errorf("inline provider payload not neutralised: %#v", p)
+	for i, name := range []string{"inline-local", "inline-template"} {
+		if p := inline[i].(map[string]any); p["type"] != "reject" || p["name"] != name || len(p) != 2 {
+			t.Errorf("inline provider payload not neutralised: %#v", p)
+		}
 	}
 	listeners, _ := m["listeners"].([]any)
 	if len(listeners) != 1 || listeners[0].(map[string]any)["name"] != "mixed-in" {
 		t.Errorf("listeners = %#v, want only mixed-in", listeners)
+	}
+}
+
+func TestRefusedXDriveService(t *testing.T) {
+	cases := map[string]struct {
+		proxy map[string]any
+		want  string
+	}{
+		"local":          {xdriveProxy("a", "local", nil), "local"},
+		"template":       {xdriveProxy("a", "template", nil), "template"},
+		"template-case":  {xdriveProxy("a", "\tTemPlate ", nil), "template"},
+		"google-drive":   {xdriveProxy("a", "google-drive", nil), ""},
+		"lookalike":      {xdriveProxy("a", "templates", nil), ""},
+		"not-xdrive":     {map[string]any{"name": "a", "type": "vless", "network": "ws", "xdrive-opts": map[string]any{"service": "template"}}, ""},
+		"service-number": {map[string]any{"name": "a", "network": "xdrive", "xdrive-opts": map[string]any{"service": 1}}, ""},
+		"key-spelling":   {map[string]any{"name": "a", "NETWORK": "xdrive", "xdrive_opts": map[string]any{"SERVICE": "template"}}, "template"},
+		// Two spellings of the key: the decoder may read either, so local wins.
+		"both": {map[string]any{"name": "a", "network": "xdrive", "xdrive-opts": map[string]any{"service": "template", "Service": "local"}}, "local"},
+	}
+	for name, tc := range cases {
+		if got := refusedXDriveService(tc.proxy); got != tc.want {
+			t.Errorf("%s: refusedXDriveService = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+func TestNeutralizeRefusedXDriveProxiesCounts(t *testing.T) {
+	proxies := []any{
+		xdriveProxy("l", "local", nil),
+		xdriveProxy("t1", "template", nil),
+		xdriveProxy("t2", "Template", nil),
+		xdriveProxy("g", "google-drive", nil),
+		"not a map",
+	}
+	got := neutralizeRefusedXDriveProxies(proxies)
+	if got != (refusedXDriveCounts{local: 1, template: 2}) {
+		t.Fatalf("counts = %+v", got)
+	}
+	for i, want := range []string{"reject", "reject", "reject", "vless"} {
+		if typ := proxies[i].(map[string]any)["type"]; typ != want {
+			t.Errorf("proxy %d: type %v, want %s", i, typ, want)
+		}
 	}
 }
 
@@ -231,6 +296,34 @@ func TestXDriveLocalStorageRefusedByShippedCore(t *testing.T) {
 	}
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
 		t.Fatalf("core created the local XDrive folder %s (stat err %v): patch 0016 is not in effect", folder, err)
+	}
+}
+
+// TestXDriveTemplateRefusedByShippedCore checks the template gate of core
+// patch 0016 on the built core. The core builds a node's storage while loading
+// the config, and a template storage needs put, get, list and delete: a core
+// with the gate open refuses a put-only template at load, while the gated core
+// accepts the node and gives it a storage that never sends a request. The
+// config goes straight to the core, past the app's own hardening.
+func TestXDriveTemplateRefusedByShippedCore(t *testing.T) {
+	bin := runtimecfgtest.CoreBinary()
+	if bin == "" {
+		t.Skip("no core binary (set SLOTH_MIHOMO_BIN or run prebuild)")
+	}
+	root := t.TempDir()
+
+	probe := filepath.Join(root, "probe")
+	writeTestConfig(t, probe, "proxies:\n- {name: p, type: vless, server: 127.0.0.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, network: xdrive, encryption: "+testXDriveEncryption+"}\nrules:\n- MATCH,p\n")
+	if err := Preflight(bin, probe, testPrefs()); err == nil {
+		t.Skip("core has no XDrive support (stock build?)")
+	} else if !strings.Contains(err.Error(), "xdrive") {
+		t.Fatalf("probe config failed for another reason: %v", err)
+	}
+
+	dir := filepath.Join(root, "cfg")
+	writeTestConfig(t, dir, "proxies:\n- name: template-node\n  type: vless\n  server: 127.0.0.1\n  port: 443\n  uuid: 27848739-7e62-4138-9fd3-098a63964b6b\n  network: xdrive\n  encryption: "+testXDriveEncryption+"\n  xdrive-opts:\n    service: template\n    remote-folder: f\n    template:\n      put: {method: PUT, url: 'http://127.0.0.1:1/{folder}/{name}'}\nrules:\n- MATCH,template-node\n")
+	if err := Preflight(bin, dir, testPrefs()); err != nil {
+		t.Fatalf("core built a template storage (patch 0016 template gate not in effect?): %v", err)
 	}
 }
 

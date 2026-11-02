@@ -70,8 +70,8 @@
       "sha256": "4122639557882fea67efd205e9a19f3bb551a15649224921577730c4a360dbf8"
     },
     {
-      "file": "0016-xdrive-local-storage-tests-only.patch",
-      "sha256": "8195081fc5218d7a60c98083b4a891753e002842c2d510b785dbbc3567404565"
+      "file": "0016-xdrive-local-template-tests-only.patch",
+      "sha256": "ffc53b8977e90cd04ebd5548e83f6c75c2b91b73932479b259f2d57ce58c4755"
     },
     {
       "file": "0017-direct-desync.patch",

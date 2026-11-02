@@ -16,10 +16,17 @@ import (
 //     cloud storage, a reverse tunnel into this machine that no bind address
 //     contains. Dropped.
 //   - `xdrive-opts.service: local`: a storage folder whose path comes from the
-//     subscription. The core refuses it in shipped builds (patch 0016, which
-//     also covers proxy-providers the core fetches itself); here such a node
-//     keeps its name, so groups and rules that use it stay valid, and becomes
-//     `type: reject` — it shows as disabled instead of failing on every dial.
+//     config.
+//   - `xdrive-opts.service: template`: the config picks the method, URL,
+//     headers and body of every storage request, sent from this machine
+//     (loopback and LAN included) as soon as a health check dials the node.
+//
+// SlothClash ships vanilla XDrive: both services are refused wherever the node
+// comes from (subscription, inline provider, manual or local profile). The
+// core refuses them in shipped builds (patch 0016, which also covers
+// proxy-providers the core fetches itself); here such a node keeps its name,
+// so groups and rules that use it stay valid, and becomes `type: reject` — it
+// shows as disabled instead of failing on every dial.
 //
 // Both are re-applied after the profile's JavaScript override (see
 // reassertCriticalRuntimeInvariants): a script must not be able to win.
@@ -60,13 +67,14 @@ func mihomoStringOf(m map[string]any, field string) string {
 	return ""
 }
 
-// applyXDriveHardening drops XDrive listeners and turns local-storage XDrive
-// nodes (top-level proxies and inline proxy-provider payloads) into REJECT.
+// applyXDriveHardening drops XDrive listeners and turns local- and
+// template-storage XDrive nodes (top-level proxies and inline proxy-provider
+// payloads) into REJECT.
 func applyXDriveHardening(m map[string]any) {
 	listeners := dropXDriveListeners(m)
-	nodes := 0
+	var nodes refusedXDriveCounts
 	if proxies, ok := m["proxies"].([]any); ok {
-		nodes += neutralizeLocalXDriveProxies(proxies)
+		nodes.add(neutralizeRefusedXDriveProxies(proxies))
 	}
 	if providers, ok := m["proxy-providers"].(map[string]any); ok {
 		for _, raw := range providers {
@@ -81,15 +89,15 @@ func applyXDriveHardening(m map[string]any) {
 					continue
 				}
 				if payload, ok := v.([]any); ok {
-					nodes += neutralizeLocalXDriveProxies(payload)
+					nodes.add(neutralizeRefusedXDriveProxies(payload))
 				}
 			}
 		}
 	}
-	if listeners > 0 || nodes > 0 {
+	if listeners > 0 || nodes.local > 0 || nodes.template > 0 {
 		debugLog("config", "XDRIVE-1", "xdrive_hardening.go:applyXDriveHardening",
 			"neutralised XDrive config surface",
-			map[string]any{"droppedListeners": listeners, "localNodesRejected": nodes})
+			map[string]any{"droppedListeners": listeners, "localNodesRejected": nodes.local, "templateNodesRejected": nodes.template})
 	}
 }
 
@@ -117,24 +125,41 @@ func dropXDriveListeners(m map[string]any) int {
 	return dropped
 }
 
-// neutralizeLocalXDriveProxies replaces, in place, every local-storage XDrive
-// proxy with a REJECT proxy of the same name. Returns how many it replaced.
-func neutralizeLocalXDriveProxies(proxies []any) int {
-	n := 0
+// refusedXDriveCounts counts the nodes neutralised per refused service.
+type refusedXDriveCounts struct{ local, template int }
+
+func (c *refusedXDriveCounts) add(o refusedXDriveCounts) {
+	c.local += o.local
+	c.template += o.template
+}
+
+// neutralizeRefusedXDriveProxies replaces, in place, every local- or
+// template-storage XDrive proxy with a REJECT proxy of the same name.
+func neutralizeRefusedXDriveProxies(proxies []any) refusedXDriveCounts {
+	var n refusedXDriveCounts
 	for i, it := range proxies {
 		pm, ok := it.(map[string]any)
-		if !ok || !isLocalXDriveProxy(pm) {
+		if !ok {
+			continue
+		}
+		switch refusedXDriveService(pm) {
+		case "local":
+			n.local++
+		case "template":
+			n.template++
+		default:
 			continue
 		}
 		proxies[i] = map[string]any{"name": mihomoStringOf(pm, "name"), "type": "reject"}
-		n++
 	}
 	return n
 }
 
-// isLocalXDriveProxy over-matches on purpose: any spelling the decoder could
-// pick counts.
-func isLocalXDriveProxy(pm map[string]any) bool {
+// refusedXDriveService returns "local" or "template" for an XDrive proxy that
+// uses one of the refused storage services, else "". It over-matches on
+// purpose: any spelling the decoder could pick counts, and the service is
+// compared trimmed and case-insensitively; local wins when both are present.
+func refusedXDriveService(pm map[string]any) string {
 	xdrive := false
 	for _, v := range mihomoValuesOf(pm, "network") {
 		if s, ok := v.(string); ok && strings.EqualFold(strings.TrimSpace(s), "xdrive") {
@@ -142,20 +167,28 @@ func isLocalXDriveProxy(pm map[string]any) bool {
 		}
 	}
 	if !xdrive {
-		return false
+		return ""
 	}
+	found := ""
 	for _, v := range mihomoValuesOf(pm, "xdrive-opts") {
 		opts, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
 		for _, s := range mihomoValuesOf(opts, "service") {
-			if str, ok := s.(string); ok && strings.EqualFold(strings.TrimSpace(str), "local") {
-				return true
+			str, ok := s.(string)
+			if !ok {
+				continue
+			}
+			switch svc := strings.TrimSpace(str); {
+			case strings.EqualFold(svc, "local"):
+				return "local"
+			case strings.EqualFold(svc, "template"):
+				found = "template"
 			}
 		}
 	}
-	return false
+	return found
 }
 
 // xdriveRedacted replaces an XDrive credential in read-only views.

@@ -154,7 +154,7 @@ without gating anything.
 ```bash
 cd tests/citrus-lab
 CITRUS_LAB=1 SLOTH_MIHOMO_BIN=<patched core> SLOTH_MIHOMO_STOCK_BIN=<stock core> \
-  CITRUS_LAB_FLAVOR=release go test -v -count=1 -timeout 15m .
+  CITRUS_LAB_FLAVOR=release go test -v -count=1 -parallel 12 -timeout 15m .
 ```
 
 `CITRUS_LAB_FLAVOR` is `release`, `dev` or `head`; `CITRUS_BIN` (with `CITRUS_SRC` for its source

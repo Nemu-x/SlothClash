@@ -5,7 +5,7 @@
 // docs/core-patches.md.
 //
 //	CITRUS_LAB=1 SLOTH_MIHOMO_BIN=<patched core> [SLOTH_MIHOMO_STOCK_BIN=<stock core>] \
-//	  [CITRUS_LAB_FLAVOR=release|dev|head] go test -v -count=1 -timeout 15m .
+//	  [CITRUS_LAB_FLAVOR=release|dev|head] go test -v -count=1 -parallel 12 -timeout 15m .
 //
 // Stage 1 (TestCitrusOwnSuite) runs Citrus' own TestMihomoClientCitrusServer
 // from the Citrus checkout with the patched core as the client. Stage 2

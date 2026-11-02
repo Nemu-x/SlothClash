@@ -235,7 +235,7 @@ jobs:
           CITRUS_LAB_LOG_DIR: ${{ runner.temp }}/citrus-lab-logs
           SLOTH_MIHOMO_BIN: ${{ github.workspace }}/dist/mihomo-linux-amd64
           SLOTH_MIHOMO_STOCK_BIN: ${{ github.workspace }}/stock-mihomo
-        run: go test -v -count=1 -timeout 15m .
+        run: go test -v -count=1 -parallel 12 -timeout 15m .
 
       - name: Upload logs
         if: ${{ failure() }}

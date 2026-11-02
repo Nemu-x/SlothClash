@@ -13,7 +13,7 @@ func TestCoreBuildInfoFromFS(t *testing.T) {
 	bundle := fstest.MapFS{
 		"build/sidecar/core-version.txt": {Data: []byte("v1.19.32\n")},
 		"build/sidecar/core-build.json": {Data: []byte(`{"version":"v1.19.32","source":"patched","ref":"9a09ac799e9c63ed170cbbc039670be65311afff",
-			"patches":["0001-a.patch","0002-b.patch"],"features":["xdrive","chain","bad token","chain"],"sha256":"x"}`)},
+			"patches":["0001-a.patch","0002-b.patch"],"features":["xdrive","chain","bad token","chain"],"citrusCompat":" v1.0.0-beta.2 ","sha256":"x"}`)},
 	}
 	got := coreBuildInfoFromFS(bundle)
 	if got.Version != "v1.19.32" || got.Source != "patched" || len(got.Patches) != 2 {
@@ -21,6 +21,13 @@ func TestCoreBuildInfoFromFS(t *testing.T) {
 	}
 	if strings.Join(got.Features, ",") != "xdrive,chain" {
 		t.Errorf("features %q, want the well-formed distinct tokens in order", got.Features)
+	}
+	if got.CitrusCompat != "v1.0.0-beta.2" {
+		t.Errorf("citrusCompat %q, want the trimmed tag", got.CitrusCompat)
+	}
+	bad := coreBuildInfoFromFS(fstest.MapFS{"build/sidecar/core-build.json": {Data: []byte(`{"citrusCompat":"v1.0.0 x"}`)}})
+	if bad.CitrusCompat != "" {
+		t.Errorf("malformed citrusCompat parsed as %q, want empty", bad.CitrusCompat)
 	}
 	if got.PatchesURL != slothRepoURL+"/tree/9a09ac799e9c63ed170cbbc039670be65311afff/core/patches/mihomo" {
 		t.Errorf("patches url %q", got.PatchesURL)
@@ -31,6 +38,9 @@ func TestCoreBuildInfoFromFS(t *testing.T) {
 	if bare.Features == nil || len(bare.Features) != 0 {
 		t.Errorf("bare bundle features = %#v, want empty (non-nil): no file, no claims", bare.Features)
 	}
+	if bare.CitrusCompat != "" {
+		t.Errorf("bare bundle citrusCompat = %q, want empty: no file, no claims", bare.CitrusCompat)
+	}
 	if bare.Source != "" || len(bare.Patches) != 0 || bare.Patches == nil {
 		t.Errorf("bare bundle = %+v, want unknown source and an empty (non-nil) patch list", bare)
 	}
@@ -39,11 +49,11 @@ func TestCoreBuildInfoFromFS(t *testing.T) {
 	}
 }
 
-// TestManifestFeatureTokens checks the patch -> token mapping the subscription
-// User-Agent is built from (core/mihomo/manifest.json; prebuild writes the
-// tokens of the built series, in scripts/core-build.mjs FEATURE_ORDER, into
-// core-build.json). A token without its patch, a malformed token or a token
-// declared twice would make the UA claim a feature the core does not have.
+// TestManifestFeatureTokens checks the patch -> capability token mapping
+// (core/mihomo/manifest.json; prebuild writes the tokens of the built series,
+// in scripts/core-build.mjs FEATURE_ORDER, into core-build.json). A token
+// without its patch, a malformed token or a token declared twice would make the
+// app assume a capability the core does not have.
 func TestManifestFeatureTokens(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "core", "mihomo", "manifest.json"))
 	if err != nil {
@@ -93,5 +103,28 @@ func TestManifestFeatureTokens(t *testing.T) {
 	}
 	if len(byFeature) != len(want) {
 		t.Errorf("manifest declares %d features, this test knows %d: update both together", len(byFeature), len(want))
+	}
+}
+
+// TestManifestCitrusCompat checks the Citrus release the subscription
+// User-Agent advertises as citrus/<tag>: a release tag (vX.Y.Z[-pre]), the same
+// shape scripts/core-build.mjs CITRUS_RELEASE_RE enforces at build time.
+// Bump it only together with a Citrus release sync of the compat suite.
+func TestManifestCitrusCompat(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "core", "mihomo", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		CitrusCompat *string `json:"citrusCompat"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.CitrusCompat == nil {
+		t.Fatal("manifest has no citrusCompat: the User-Agent would drop the citrus token")
+	}
+	if got := validCitrusRelease(*m.CitrusCompat); got == "" || got != *m.CitrusCompat {
+		t.Fatalf("manifest citrusCompat %q is not a Citrus release tag (vX.Y.Z[-pre])", *m.CitrusCompat)
 	}
 }

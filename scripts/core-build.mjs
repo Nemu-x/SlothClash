@@ -92,9 +92,9 @@ export function verifyPatchSeries(m = readManifest()) {
 
 /**
  * Capability tokens a patch can declare with `"feature"` in the manifest, in
- * the order the subscription User-Agent lists them. They tell panels which
- * transports this core accepts beyond a stock mihomo, so only the tokens of
- * the series actually built are ever reported (prebuild -> core-build.json).
+ * a fixed order. The app checks them before using a capability only the
+ * patched core has (Desync), so only the tokens of the series actually built
+ * are ever reported (prebuild -> core-build.json).
  */
 export const FEATURE_ORDER = [
   'xdrive',
@@ -125,6 +125,34 @@ export function coreFeatures(m = readManifest()) {
     seen.add(p.feature)
   }
   return FEATURE_ORDER.filter((f) => seen.has(f))
+}
+
+/**
+ * Shape of the manifest's `citrusCompat`: a Citrus release tag, vX.Y.Z with an
+ * optional pre-release (`v1.0.0-beta.2`). It ends up in the subscription
+ * User-Agent as `citrus/<tag>`, so nothing that could split the header token
+ * (spaces, control characters) is accepted.
+ */
+export const CITRUS_RELEASE_RE =
+  /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/
+
+/**
+ * The Citrus release whose client surface the compat suite covers, from the
+ * manifest's `citrusCompat`; '' when the manifest does not name one (then the
+ * User-Agent sends no citrus token: never a made-up version). A malformed
+ * value fails the build instead of being dropped silently.
+ */
+export function coreCitrusCompat(m = readManifest()) {
+  if (m.citrusCompat === undefined || m.citrusCompat === '') return ''
+  if (
+    typeof m.citrusCompat !== 'string' ||
+    !CITRUS_RELEASE_RE.test(m.citrusCompat)
+  ) {
+    throw new Error(
+      `manifest citrusCompat ${JSON.stringify(m.citrusCompat)} is not a Citrus release tag (vX.Y.Z[-pre])`,
+    )
+  }
+  return m.citrusCompat
 }
 
 /**

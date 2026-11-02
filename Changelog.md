@@ -31,6 +31,13 @@
 - API `/proxies/{name}/delay` снова отвечает как в обычном mihomo (обычный таймаут, `504 {"message":"Timeout"}`, задержка при неожиданном статусе). Подробные ошибки, которые использует само приложение, включаются параметром `detail=1`.
 - Имена `client-fingerprint` из обычного mihomo снова чувствительны к регистру (как в обычном mihomo); без учёта регистра сравниваются только имена Xray, например `HelloChrome_131`.
 - Меньше шума в логах: строка политики REALITY при каждой загрузке конфига и заметка OpenVPN об отсутствии проверки сервера теперь на уровне debug; неудачные проверки задержки больше не пишут предупреждения.
+**🔧 Smaller improvements and fixes**
+- The subscription `User-Agent` now says which Citrus release the client is compatible with, the way Citrus itself does: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Panels that serve Citrus features by the `citrus/` token now recognise SlothClash; the capability list in brackets is gone. The `clash.meta/` prefix and the core version stay first, so format and protocol selection on other panels is unchanged.
+
+### Русский
+
+**🔧 Мелкие улучшения и исправления**
+- `User-Agent` подписки теперь сообщает, с каким релизом Citrus совместим клиент, так же как это делает сам Citrus: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Панели, которые выдают возможности Citrus по токену `citrus/`, теперь узнают SlothClash; список возможностей в скобках убран. Префикс `clash.meta/` и версия ядра остаются первыми, так что выбор формата и протоколов на других панелях не меняется.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

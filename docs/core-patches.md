@@ -300,12 +300,18 @@ utls release whose `firefox` / `safari` parrots carry the hybrid share.
 
 ## What the app does with the Citrus surface
 
-- **User-Agent.** A patch may declare a `feature` in the manifest. prebuild writes the tokens of the
-  series it actually built into `core-build.json`, and the subscription User-Agent appends them as a
-  comment: `clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain; mldsa65; pin-list; ech-xray)`. The
-  `clash.meta/` prefix and the version stay first, so panels keep selecting the format and the core
-  version as before. A stock core (`MIHOMO_CORE_VERSION`) or a `SLOTH_CORE_FILE` binary has no tokens
-  and no comment: a token is only ever sent for a patch that is in the binary.
+- **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a
+  Citrus core writes its own: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. The
+  `clash.meta/` prefix and the core version stay first, so panels keep selecting the format and the
+  core version as before; panels tell a Citrus client from a stock mihomo by `\bcitrus/(\S+)`. The
+  citrus tag is the manifest's `citrusCompat`: the latest Citrus release whose client surface the
+  compat suite covers, not our core version. It is bumped together with a Citrus release sync, and
+  `scripts/core-build.mjs` fails the build on a value that is not a `vX.Y.Z[-pre]` tag. prebuild
+  writes it into `core-build.json` only for our own build: a stock core (`MIHOMO_CORE_VERSION`) or a
+  `SLOTH_CORE_FILE` binary sends no citrus token, and neither does a manifest without the field.
+- **Capability tokens.** A patch may declare a `feature` in the manifest. prebuild writes the tokens
+  of the series it actually built into `core-build.json`, and the app checks them before using a
+  capability only the patched core has (Desync). They are not sent to panels.
 - **XDrive hardening.** The config pipeline drops `listeners` entries with `xdrive-config` (an XDrive
   inbound polls cloud storage: a reverse tunnel into this machine that no bind address contains) and
   turns `service: local` and `service: template` nodes (value trimmed, any case), in `proxies` and

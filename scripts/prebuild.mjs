@@ -14,6 +14,7 @@ import { extract } from 'tar'
 import {
   buildCore,
   coreBuildKey,
+  coreCitrusCompat,
   coreFeatures,
   readManifest as readCoreManifest,
   verifyBuiltCore,
@@ -242,9 +243,10 @@ async function sha256File(p) {
 // About can say exactly what core this build ships: upstream tag + patches.
 // ref = the commit the build came from (CI), so the patch links show exactly
 // that series; empty for local builds (links fall back to main).
-// features = the capability tokens of the series this binary was built from,
-// for the subscription User-Agent; only for our own build: a stock core has
-// none, and a SLOTH_CORE_FILE binary's series is unknown.
+// features = the capability tokens of the series this binary was built from;
+// citrusCompat = the Citrus release whose client surface that series covers,
+// for the subscription User-Agent. Both only for our own build: a stock core
+// has neither, and a SLOTH_CORE_FILE binary's series is unknown.
 async function writeCoreBuildInfo(source, sha256) {
   await fsp.writeFile(
     path.join(SIDECAR_DIR, 'core-version.txt'),
@@ -260,6 +262,7 @@ async function writeCoreBuildInfo(source, sha256) {
         : '',
     patches: source === 'stock' ? [] : CORE_MANIFEST.patches.map((p) => p.file),
     features: source === 'patched' ? coreFeatures(CORE_MANIFEST) : [],
+    citrusCompat: source === 'patched' ? coreCitrusCompat(CORE_MANIFEST) : '',
     sha256,
   }
   await fsp.writeFile(

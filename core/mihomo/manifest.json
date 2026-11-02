@@ -1,8 +1,9 @@
 {
-  "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by scripts/core-build.mjs in every release run (desktop-artifacts.yml -> core-build.yml). See docs/core-patches.md. Bump: edit tag/commit (and patch hashes), open a PR; the Core build workflow must pass. A patch's optional feature is the token the subscription User-Agent advertises while that patch is in the built series (scripts/core-build.mjs FEATURE_ORDER).",
+  "$comment": "Patched mihomo core shipped by SlothClash: upstream tag + core/patches/mihomo, built by scripts/core-build.mjs in every release run (desktop-artifacts.yml -> core-build.yml). See docs/core-patches.md. Bump: edit tag/commit (and patch hashes), open a PR; the Core build workflow must pass. A patch's optional feature is a capability token of the built series (scripts/core-build.mjs FEATURE_ORDER) the app checks before using that capability. citrusCompat is the latest Citrus release tag whose client surface the compat suite covers; the subscription User-Agent advertises it as citrus/<tag>. Bump it together with a Citrus release sync.",
   "upstream": "https://github.com/MetaCubeX/mihomo",
   "tag": "v1.19.33",
   "commit": "3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8",
+  "citrusCompat": "v1.0.0-beta.2",
   "patches": [
     {
       "file": "0001-reality-configurable-client-version.patch",

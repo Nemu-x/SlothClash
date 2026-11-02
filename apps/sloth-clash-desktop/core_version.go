@@ -67,11 +67,15 @@ type CoreBuildInfo struct {
 	Ref     string   `json:"ref,omitempty"` // commit the build came from; "" = local build
 	Patches []string `json:"patches"`
 	// Features are the capability tokens of the series this core was built
-	// from (core/mihomo/manifest.json), in User-Agent order; empty for a stock
+	// from (core/mihomo/manifest.json), in FEATURE_ORDER; empty for a stock
 	// core or a SLOTH_CORE_FILE binary.
-	Features   []string `json:"features"`
-	PatchesURL string   `json:"patchesUrl"`
-	DocURL     string   `json:"docUrl"`
+	Features []string `json:"features"`
+	// CitrusCompat is the Citrus release tag whose client surface this core's
+	// series covers (manifest citrusCompat), e.g. v1.0.0-beta.2; "" when
+	// unknown, for a stock core or a SLOTH_CORE_FILE binary.
+	CitrusCompat string `json:"citrusCompat"`
+	PatchesURL   string `json:"patchesUrl"`
+	DocURL       string `json:"docUrl"`
 }
 
 const (
@@ -91,6 +95,7 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 					info.Patches = raw.Patches
 				}
 				info.Features = validCoreFeatures(raw.Features)
+				info.CitrusCompat = validCitrusRelease(raw.CitrusCompat)
 			}
 		}
 		info.Version = coreVersionFromFS(bundle)
@@ -106,9 +111,8 @@ func coreBuildInfoFromFS(bundle fs.FS) CoreBuildInfo {
 	return info
 }
 
-// coreFeatureToken is the shape of a capability token: it ends up inside the
-// User-Agent comment, so nothing that could break out of it (`;`, `)`, spaces,
-// control characters) is ever accepted.
+// coreFeatureToken is the shape of a capability token: lowercase words, so a
+// token from a hand-edited core-build.json can never smuggle in anything else.
 var coreFeatureToken = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // validCoreFeatures keeps the well-formed, distinct tokens in their order.
@@ -126,6 +130,21 @@ func validCoreFeatures(raw []string) []string {
 	return out
 }
 
+// citrusReleaseTag is the shape of a Citrus release tag (vX.Y.Z with an
+// optional dot-separated pre-release, scripts/core-build.mjs
+// CITRUS_RELEASE_RE). It becomes the `citrus/<tag>` User-Agent token, so
+// nothing that could split a header token is ever accepted.
+var citrusReleaseTag = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$`)
+
+// validCitrusRelease returns the trimmed tag, or "" when it is not one.
+func validCitrusRelease(raw string) string {
+	tag := strings.TrimSpace(raw)
+	if len(tag) > 64 || !citrusReleaseTag.MatchString(tag) {
+		return ""
+	}
+	return tag
+}
+
 var (
 	embeddedCoreFeaturesOnce  sync.Once
 	embeddedCoreFeaturesValue []string
@@ -138,6 +157,20 @@ func embeddedCoreFeatures() []string {
 		embeddedCoreFeaturesValue = coreBuildInfoFromFS(bundledResources).Features
 	})
 	return embeddedCoreFeaturesValue
+}
+
+var (
+	embeddedCoreCitrusCompatOnce  sync.Once
+	embeddedCoreCitrusCompatValue string
+)
+
+// embeddedCoreCitrusCompat returns the Citrus release the embedded core's
+// series covers, read once; "" when unknown.
+func embeddedCoreCitrusCompat() string {
+	embeddedCoreCitrusCompatOnce.Do(func() {
+		embeddedCoreCitrusCompatValue = coreBuildInfoFromFS(bundledResources).CitrusCompat
+	})
+	return embeddedCoreCitrusCompatValue
 }
 
 // GetCoreBuild is the Wails-exposed description of the embedded core.

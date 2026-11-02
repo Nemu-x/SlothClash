@@ -111,6 +111,56 @@ cd tests/reality-lab
 XRAY_LAB=1 SLOTH_MIHOMO_BIN=<patched core> SLOTH_MIHOMO_STOCK_BIN=<stock core> go test -v -count=1 .
 ```
 
+### Citrus lab
+
+`tests/citrus-lab` runs real [Citrus](https://github.com/getmikan/Citrus) servers on the loopback
+against the core under test: a local HTTP echo, a UDP echo and a local TLS 1.3 REALITY target, no
+internet past the downloads and no Docker. Which Citrus is pinned in `tests/citrus-lab/citrus.json`:
+`release` (a published build, checked against the pinned sha256 and the release's `checksums.txt`) and
+`dev` (a pinned commit of the dev branch, built from source). Four stages:
+
+1. **Citrus' own client suite.** `TestMihomoClientCitrusServer` from the Citrus checkout at that
+   version (about 30 inbounds with TCP and UDP echo), run as Citrus wrote it, with the patched core as
+   the client. Cases the patched core fails by design are listed in `knownDivergences` with the
+   reason (today one: a client without `support-x25519mlkem768` is not refused by a
+   `require-x25519mlkem768` server, because adaptive X25519MLKEM768 from 0002 retries with the hybrid
+   share); a listed case that starts passing fails the test, so the list cannot go stale.
+2. **The lab's matrix.** Each case has an expected outcome (traffic reaches the echo through the
+   Citrus inbound, or the client is refused) for the patched core and for the stock core of the same
+   tag: REALITY `mldsa65-verify` right and wrong, `min-client-ver` / `max-client-ver` against the
+   default and the per-proxy `client-version`, `reality-mlkem` auto/on/off/forced against a
+   `require-x25519mlkem768` server, wrong UUID and short-id, XHTTP stream-up, packet-up with the
+   uplink in GET headers, XHTTP over HTTP/3, ECH in base64, `xray tls ech --pem` and wrapped form plus
+   a wrong config, `type: chain` across two Citrus inbounds (the entry hop's log must show the exit
+   hop, not the echo), ShadowQUIC, and XDrive `local` / `template`, which the shipped core must refuse
+   without writing to the storage. A case the Citrus version does not serve is skipped by name
+   (read from its source: `max-client-ver`, XHTTP/3 and XDrive are dev-only today).
+3. **UDP block** (`TestCitrusUDP`), on vless-reality-vision, vless-xhttp, hysteria2, tuic-v5,
+   mieru-udp and anytls, one protocol at a time: echoes of 74, 1200 and 1400 bytes, 12 calls in a
+   row (a fresh UDP ASSOCIATE each, closed after), 8 at once, 200 voice-sized packets 1 ms apart with
+   loss under 5 %, and `[UDP]` in the server log. The same burst with no spacing is logged, not
+   asserted.
+4. **Long idle** (`TestCitrusUDPLongIdle`, skipped under `-short`): one association per protocol for
+   90 s, a packet every 2 s, 35 s of silence in the middle; the first packets after the silence must
+   come back.
+
+Flake handling follows the REALITY lab: fixed port bands per cell (22000 and up), at most eight
+cells at once, three probes per cell, a mismatch counts only if it reproduces when the cell is run
+again alone (logged as `~~` otherwise), readiness and bind checks for every process, and the process
+logs of a failing cell in the output. "Core build" runs it for both Citrus versions on every core
+PR and every release; `citrus-lab-head.yml` runs it weekly against the current dev head of Citrus
+without gating anything.
+
+```bash
+cd tests/citrus-lab
+CITRUS_LAB=1 SLOTH_MIHOMO_BIN=<patched core> SLOTH_MIHOMO_STOCK_BIN=<stock core> \
+  CITRUS_LAB_FLAVOR=release go test -v -count=1 -timeout 15m .
+```
+
+`CITRUS_LAB_FLAVOR` is `release`, `dev` or `head`; `CITRUS_BIN` (with `CITRUS_SRC` for its source
+tree) uses a local Citrus instead; `CITRUS_LAB_LOG_DIR` keeps every process log and config. To bump
+Citrus, change `citrus.json` (the sha256 is the asset's line in the release's `checksums.txt`).
+
 ## Current series
 
 ### 0001 REALITY: configurable client version

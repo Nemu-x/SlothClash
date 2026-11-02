@@ -1,0 +1,672 @@
+diff --git a/component/geodata/init.go b/component/geodata/init.go
+index 7b878442..dc5600d3 100644
+--- a/component/geodata/init.go
++++ b/component/geodata/init.go
+@@ -2,9 +2,11 @@ package geodata
+ 
+ import (
+ 	"context"
++	"crypto/sha256"
+ 	"fmt"
+ 	"io"
+ 	"os"
++	"path/filepath"
+ 	"sync"
+ 	"time"
+ 
+@@ -68,7 +70,12 @@ func SetASNUrl(url string) {
+ 	asnUrl = url
+ }
+ 
+-func downloadToPath(url string, path string) (err error) {
++// downloadToPath downloads the database asset from url to path. ClashFest core patch 0027: with a
++// geox-sha256 pin for asset it goes through a temporary file that replaces path only when it matches.
++func downloadToPath(asset AssetType, url string, path string) (err error) {
++	if pinned(asset) {
++		return downloadPinned(asset, url, path)
++	}
+ 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*90)
+ 	defer cancel()
+ 	resp, err := mihomoHttp.HttpRequest(ctx, url, http.MethodGet, nil, nil)
+@@ -87,25 +94,68 @@ func downloadToPath(url string, path string) (err error) {
+ 	return err
+ }
+ 
++// downloadPinned is downloadToPath for a pinned asset.
++func downloadPinned(asset AssetType, url string, path string) (err error) {
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second*90)
++	defer cancel()
++	resp, err := mihomoHttp.HttpRequest(ctx, url, http.MethodGet, nil, nil)
++	if err != nil {
++		return
++	}
++	defer resp.Body.Close()
++
++	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
++	if err != nil {
++		return err
++	}
++	tmpPath := f.Name()
++	defer func() {
++		if err != nil {
++			_ = os.Remove(tmpPath)
++		}
++	}()
++	h := sha256.New()
++	_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
++	if closeErr := f.Close(); err == nil {
++		err = closeErr
++	}
++	if err != nil {
++		return err
++	}
++	var digest [sha256.Size]byte
++	copy(digest[:], h.Sum(nil))
++	if err = VerifyRemoteDigest(asset, digest); err != nil {
++		return err
++	}
++	if err = os.Chmod(tmpPath, 0o644); err != nil {
++		return err
++	}
++	return os.Rename(tmpPath, path)
++}
++
+ func InitGeoSite() error {
+ 	geoSiteEnable.Store(true)
+ 	initGeoSiteMutex.Lock()
+ 	defer initGeoSiteMutex.Unlock()
+ 	if _, err := os.Stat(C.Path.GeoSite()); os.IsNotExist(err) {
+ 		log.Infoln("Can't find GeoSite.dat, start download")
+-		if err := downloadToPath(GeoSiteUrl(), C.Path.GeoSite()); err != nil {
++		if err := downloadToPath(AssetGeoSite, GeoSiteUrl(), C.Path.GeoSite()); err != nil {
+ 			return fmt.Errorf("can't download GeoSite.dat: %s", err.Error())
+ 		}
+ 		log.Infoln("Download GeoSite.dat finish")
+ 		initGeoSite = false
+ 	}
+ 	if !initGeoSite {
+-		if err := Verify(C.GeositeName); err != nil {
++		err := Verify(C.GeositeName)
++		if err == nil {
++			err = verifyExistingAsset(AssetGeoSite, C.Path.GeoSite()) // ClashFest core patch 0027
++		}
++		if err != nil {
+ 			log.Warnln("GeoSite.dat invalid, remove and download: %s", err)
+ 			if err := os.Remove(C.Path.GeoSite()); err != nil {
+ 				return fmt.Errorf("can't remove invalid GeoSite.dat: %s", err.Error())
+ 			}
+-			if err := downloadToPath(GeoSiteUrl(), C.Path.GeoSite()); err != nil {
++			if err := downloadToPath(AssetGeoSite, GeoSiteUrl(), C.Path.GeoSite()); err != nil {
+ 				return fmt.Errorf("can't download GeoSite.dat: %s", err.Error())
+ 			}
+ 		}
+@@ -121,7 +171,7 @@ func InitGeoIP() error {
+ 	if GeodataMode() {
+ 		if _, err := os.Stat(C.Path.GeoIP()); os.IsNotExist(err) {
+ 			log.Infoln("Can't find GeoIP.dat, start download")
+-			if err := downloadToPath(GeoIpUrl(), C.Path.GeoIP()); err != nil {
++			if err := downloadToPath(AssetGeoIP, GeoIpUrl(), C.Path.GeoIP()); err != nil {
+ 				return fmt.Errorf("can't download GeoIP.dat: %s", err.Error())
+ 			}
+ 			log.Infoln("Download GeoIP.dat finish")
+@@ -129,12 +179,16 @@ func InitGeoIP() error {
+ 		}
+ 
+ 		if initGeoIP != 1 {
+-			if err := Verify(C.GeoipName); err != nil {
++			err := Verify(C.GeoipName)
++			if err == nil {
++				err = verifyExistingAsset(AssetGeoIP, C.Path.GeoIP()) // ClashFest core patch 0027
++			}
++			if err != nil {
+ 				log.Warnln("GeoIP.dat invalid, remove and download: %s", err)
+ 				if err := os.Remove(C.Path.GeoIP()); err != nil {
+ 					return fmt.Errorf("can't remove invalid GeoIP.dat: %s", err.Error())
+ 				}
+-				if err := downloadToPath(GeoIpUrl(), C.Path.GeoIP()); err != nil {
++				if err := downloadToPath(AssetGeoIP, GeoIpUrl(), C.Path.GeoIP()); err != nil {
+ 					return fmt.Errorf("can't download GeoIP.dat: %s", err.Error())
+ 				}
+ 			}
+@@ -145,18 +199,19 @@ func InitGeoIP() error {
+ 
+ 	if _, err := os.Stat(C.Path.MMDB()); os.IsNotExist(err) {
+ 		log.Infoln("Can't find MMDB, start download")
+-		if err := downloadToPath(MmdbUrl(), C.Path.MMDB()); err != nil {
++		if err := downloadToPath(AssetMMDB, MmdbUrl(), C.Path.MMDB()); err != nil {
+ 			return fmt.Errorf("can't download MMDB: %s", err.Error())
+ 		}
+ 	}
+ 
+ 	if initGeoIP != 2 {
+-		if !mmdb.Verify(C.Path.MMDB()) {
++		// ClashFest core patch 0027: a pinned MMDB with another SHA-256 is replaced as well
++		if !mmdb.Verify(C.Path.MMDB()) || verifyExistingAsset(AssetMMDB, C.Path.MMDB()) != nil {
+ 			log.Warnln("MMDB invalid, remove and download")
+ 			if err := os.Remove(C.Path.MMDB()); err != nil {
+ 				return fmt.Errorf("can't remove invalid MMDB: %s", err.Error())
+ 			}
+-			if err := downloadToPath(MmdbUrl(), C.Path.MMDB()); err != nil {
++			if err := downloadToPath(AssetMMDB, MmdbUrl(), C.Path.MMDB()); err != nil {
+ 				return fmt.Errorf("can't download MMDB: %s", err.Error())
+ 			}
+ 		}
+@@ -171,19 +226,20 @@ func InitASN() error {
+ 	defer initASNMutex.Unlock()
+ 	if _, err := os.Stat(C.Path.ASN()); os.IsNotExist(err) {
+ 		log.Infoln("Can't find ASN.mmdb, start download")
+-		if err := downloadToPath(ASNUrl(), C.Path.ASN()); err != nil {
++		if err := downloadToPath(AssetASN, ASNUrl(), C.Path.ASN()); err != nil {
+ 			return fmt.Errorf("can't download ASN.mmdb: %s", err.Error())
+ 		}
+ 		log.Infoln("Download ASN.mmdb finish")
+ 		initASN = false
+ 	}
+ 	if !initASN {
+-		if !mmdb.Verify(C.Path.ASN()) {
++		// ClashFest core patch 0027: a pinned ASN database with another SHA-256 is replaced as well
++		if !mmdb.Verify(C.Path.ASN()) || verifyExistingAsset(AssetASN, C.Path.ASN()) != nil {
+ 			log.Warnln("ASN invalid, remove and download")
+ 			if err := os.Remove(C.Path.ASN()); err != nil {
+ 				return fmt.Errorf("can't remove invalid ASN: %s", err.Error())
+ 			}
+-			if err := downloadToPath(ASNUrl(), C.Path.ASN()); err != nil {
++			if err := downloadToPath(AssetASN, ASNUrl(), C.Path.ASN()); err != nil {
+ 				return fmt.Errorf("can't download ASN: %s", err.Error())
+ 			}
+ 		}
+diff --git a/component/geodata/pin.go b/component/geodata/pin.go
+new file mode 100644
+index 00000000..0c94bd97
+--- /dev/null
++++ b/component/geodata/pin.go
+@@ -0,0 +1,120 @@
++package geodata
++
++// ClashFest core patch 0027: geox-sha256, Citrus' optional SHA-256 pins of the remote geodata
++// (getmikan/Citrus 395e8d4b, 85e07053, component/geodata/auth.go). A pinned database with another
++// SHA-256 is refused, whether it is downloaded at start, found on disk or fetched by the updater.
++// Without a pin (the key absent or empty) nothing is checked, as in mihomo: the publishers sign none
++// of these files.
++
++import (
++	"crypto/sha256"
++	"crypto/subtle"
++	"encoding/hex"
++	"errors"
++	"fmt"
++	"os"
++	"strings"
++	"sync/atomic"
++)
++
++type AssetType string
++
++const (
++	AssetGeoIP   AssetType = "geoip"
++	AssetMMDB    AssetType = "mmdb"
++	AssetASN     AssetType = "asn"
++	AssetGeoSite AssetType = "geosite"
++)
++
++var ErrAssetPinMismatch = errors.New("remote geodata SHA-256 mismatch")
++
++// VerificationPolicy holds the per-type SHA-256 pins, lowercase hex; "" is no pin.
++type VerificationPolicy struct {
++	GeoIP, MMDB, ASN, GeoSite string
++}
++
++// IsZero reports whether no database is pinned.
++func (p VerificationPolicy) IsZero() bool { return p == VerificationPolicy{} }
++
++var verificationPolicy atomic.Pointer[VerificationPolicy]
++
++func SetVerificationPolicy(policy VerificationPolicy) {
++	policy.GeoIP = strings.ToLower(strings.TrimSpace(policy.GeoIP))
++	policy.MMDB = strings.ToLower(strings.TrimSpace(policy.MMDB))
++	policy.ASN = strings.ToLower(strings.TrimSpace(policy.ASN))
++	policy.GeoSite = strings.ToLower(strings.TrimSpace(policy.GeoSite))
++	verificationPolicy.Store(&policy)
++}
++
++func CurrentVerificationPolicy() VerificationPolicy {
++	if policy := verificationPolicy.Load(); policy != nil {
++		return *policy
++	}
++	return VerificationPolicy{}
++}
++
++// ValidatePin checks a geox-sha256 value: empty or 64 hex characters.
++func ValidatePin(pin string) error {
++	pin = strings.TrimSpace(pin)
++	if pin == "" {
++		return nil
++	}
++	if b, err := hex.DecodeString(pin); err != nil || len(b) != sha256.Size {
++		return errors.New("must be a 64-character SHA-256 hex digest")
++	}
++	return nil
++}
++
++func (p VerificationPolicy) pin(asset AssetType) string {
++	switch asset {
++	case AssetGeoIP:
++		return p.GeoIP
++	case AssetMMDB:
++		return p.MMDB
++	case AssetASN:
++		return p.ASN
++	case AssetGeoSite:
++		return p.GeoSite
++	default:
++		return ""
++	}
++}
++
++// pinned reports whether asset has a pin.
++func pinned(asset AssetType) bool {
++	return CurrentVerificationPolicy().pin(asset) != ""
++}
++
++// VerifyRemoteAsset checks data against the pin of asset; no pin passes.
++func VerifyRemoteAsset(asset AssetType, data []byte) error {
++	return VerifyRemoteDigest(asset, sha256.Sum256(data))
++}
++
++// VerifyRemoteDigest checks a SHA-256 digest against the pin of asset; no pin passes.
++func VerifyRemoteDigest(asset AssetType, digest [sha256.Size]byte) error {
++	pin := CurrentVerificationPolicy().pin(asset)
++	if pin == "" {
++		return nil
++	}
++	want, err := hex.DecodeString(pin)
++	if err != nil || len(want) != sha256.Size {
++		return fmt.Errorf("invalid configured SHA-256 pin for %s", asset)
++	}
++	if subtle.ConstantTimeCompare(digest[:], want) != 1 {
++		return fmt.Errorf("%w: %s", ErrAssetPinMismatch, asset)
++	}
++	return nil
++}
++
++// verifyExistingAsset checks the file at path against the pin of asset. Without a pin the file is
++// not read.
++func verifyExistingAsset(asset AssetType, path string) error {
++	if !pinned(asset) {
++		return nil
++	}
++	data, err := os.ReadFile(path)
++	if err != nil {
++		return err
++	}
++	return VerifyRemoteAsset(asset, data)
++}
+diff --git a/component/geodata/pin_test.go b/component/geodata/pin_test.go
+new file mode 100644
+index 00000000..d4ccf34c
+--- /dev/null
++++ b/component/geodata/pin_test.go
+@@ -0,0 +1,126 @@
++package geodata
++
++// ClashFest core patch 0027: geox-sha256 pins.
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"errors"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++)
++
++func usePins(t *testing.T, policy VerificationPolicy) {
++	t.Helper()
++	old := CurrentVerificationPolicy()
++	t.Cleanup(func() { SetVerificationPolicy(old) })
++	SetVerificationPolicy(policy)
++}
++
++func pinOf(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
++
++func TestValidatePin(t *testing.T) {
++	for _, ok := range []string{"", "  ", strings.Repeat("a", 64), strings.Repeat("F", 64)} {
++		if err := ValidatePin(ok); err != nil {
++			t.Errorf("%q: %v", ok, err)
++		}
++	}
++	for _, bad := range []string{"abc", strings.Repeat("a", 63), strings.Repeat("g", 64), strings.Repeat("a", 66)} {
++		if err := ValidatePin(bad); err == nil {
++			t.Errorf("%q accepted", bad)
++		}
++	}
++}
++
++func TestVerifyRemoteAsset(t *testing.T) {
++	data := []byte("geo")
++	pin := pinOf(data)
++	usePins(t, VerificationPolicy{GeoIP: pin, MMDB: pin, ASN: pin, GeoSite: strings.ToUpper(pin)})
++	for _, asset := range []AssetType{AssetGeoIP, AssetMMDB, AssetASN, AssetGeoSite} {
++		if err := VerifyRemoteAsset(asset, data); err != nil {
++			t.Errorf("%s correct pin: %v", asset, err)
++		}
++		if err := VerifyRemoteAsset(asset, []byte("tampered")); !errors.Is(err, ErrAssetPinMismatch) {
++			t.Errorf("%s accepted a wrong digest: %v", asset, err)
++		}
++	}
++	// no pin, the default: everything passes, as in mihomo
++	SetVerificationPolicy(VerificationPolicy{})
++	if err := VerifyRemoteAsset(AssetGeoIP, data); err != nil {
++		t.Fatalf("unpinned database rejected: %v", err)
++	}
++	// one pinned type does not pin the others
++	SetVerificationPolicy(VerificationPolicy{GeoSite: pin})
++	if err := VerifyRemoteAsset(AssetGeoIP, []byte("anything")); err != nil {
++		t.Fatalf("unpinned geoip rejected: %v", err)
++	}
++}
++
++func TestExistingAssetMustMatchCurrentPin(t *testing.T) {
++	data := []byte("existing")
++	path := filepath.Join(t.TempDir(), "GeoIP.dat")
++	if err := os.WriteFile(path, data, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	usePins(t, VerificationPolicy{})
++	// without a pin the file is not even read
++	if err := verifyExistingAsset(AssetGeoIP, filepath.Join(t.TempDir(), "missing")); err != nil {
++		t.Fatal(err)
++	}
++	SetVerificationPolicy(VerificationPolicy{GeoIP: pinOf(data)})
++	if err := verifyExistingAsset(AssetGeoIP, path); err != nil {
++		t.Fatal(err)
++	}
++	SetVerificationPolicy(VerificationPolicy{GeoIP: fmt.Sprintf("%064x", 1)})
++	if err := verifyExistingAsset(AssetGeoIP, path); err == nil {
++		t.Fatal("an existing file bypassed the pin")
++	}
++}
++
++func TestPinnedDownload(t *testing.T) {
++	payload := []byte("candidate database")
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) }))
++	defer srv.Close()
++	dir := t.TempDir()
++	path := filepath.Join(dir, "GeoSite.dat")
++	old := bytes.Repeat([]byte{'x'}, 100)
++	if err := os.WriteFile(path, old, 0o644); err != nil {
++		t.Fatal(err)
++	}
++
++	// a download with another SHA-256 leaves the old file and no temporary file
++	usePins(t, VerificationPolicy{GeoSite: fmt.Sprintf("%064x", 1)})
++	if err := downloadToPath(AssetGeoSite, srv.URL, path); !errors.Is(err, ErrAssetPinMismatch) {
++		t.Fatalf("want a pin mismatch, got %v", err)
++	}
++	if got, _ := os.ReadFile(path); !bytes.Equal(got, old) {
++		t.Fatal("a rejected download replaced the file")
++	}
++	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
++		t.Fatalf("temporary files left behind: %v", entries)
++	}
++
++	// the matching one replaces the file as a whole
++	SetVerificationPolicy(VerificationPolicy{GeoSite: pinOf(payload)})
++	if err := downloadToPath(AssetGeoSite, srv.URL, path); err != nil {
++		t.Fatal(err)
++	}
++	if got, _ := os.ReadFile(path); !bytes.Equal(got, payload) {
++		t.Fatalf("file has %q", got)
++	}
++
++	// without a pin mihomo's download runs
++	SetVerificationPolicy(VerificationPolicy{})
++	fresh := filepath.Join(dir, "GeoIP.dat")
++	if err := downloadToPath(AssetGeoIP, srv.URL, fresh); err != nil {
++		t.Fatal(err)
++	}
++	if got, _ := os.ReadFile(fresh); !bytes.Equal(got, payload) {
++		t.Fatalf("file has %q", got)
++	}
++}
+diff --git a/component/updater/update_geo.go b/component/updater/update_geo.go
+index 63e6d150..ee02dcd2 100644
+--- a/component/updater/update_geo.go
++++ b/component/updater/update_geo.go
+@@ -54,6 +54,10 @@ func UpdateMMDB() (err error) {
+ 	if err != nil {
+ 		return fmt.Errorf("can't download MMDB database file: %w", err)
+ 	}
++	// ClashFest core patch 0027: a pinned database with another SHA-256 is refused (no pin: nil)
++	if err = geodata.VerifyRemoteAsset(geodata.AssetMMDB, data); err != nil {
++		return fmt.Errorf("authenticate MMDB database file: %w", err)
++	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
+ 		return nil
+ 	}
+@@ -85,6 +89,10 @@ func UpdateASN() (err error) {
+ 	if err != nil {
+ 		return fmt.Errorf("can't download ASN database file: %w", err)
+ 	}
++	// ClashFest core patch 0027: a pinned database with another SHA-256 is refused (no pin: nil)
++	if err = geodata.VerifyRemoteAsset(geodata.AssetASN, data); err != nil {
++		return fmt.Errorf("authenticate ASN database file: %w", err)
++	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
+ 		return nil
+ 	}
+@@ -118,6 +126,10 @@ func UpdateGeoIp() (err error) {
+ 	if err != nil {
+ 		return fmt.Errorf("can't download GeoIP database file: %w", err)
+ 	}
++	// ClashFest core patch 0027: a pinned database with another SHA-256 is refused (no pin: nil)
++	if err = geodata.VerifyRemoteAsset(geodata.AssetGeoIP, data); err != nil {
++		return fmt.Errorf("authenticate GeoIP database file: %w", err)
++	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
+ 		return nil
+ 	}
+@@ -148,6 +160,10 @@ func UpdateGeoSite() (err error) {
+ 	if err != nil {
+ 		return fmt.Errorf("can't download GeoSite database file: %w", err)
+ 	}
++	// ClashFest core patch 0027: a pinned database with another SHA-256 is refused (no pin: nil)
++	if err = geodata.VerifyRemoteAsset(geodata.AssetGeoSite, data); err != nil {
++		return fmt.Errorf("authenticate GeoSite database file: %w", err)
++	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
+ 		return nil
+ 	}
+diff --git a/config/config.go b/config/config.go
+index 149b313c..d4696015 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -55,6 +55,7 @@ type General struct {
+ 	Interface         string                  `json:"interface-name"`
+ 	RoutingMark       int                     `json:"routing-mark"`
+ 	GeoXUrl           GeoXUrl                 `json:"geox-url"`
++	GeoXSHA256        *GeoXSHA256             `json:"geox-sha256,omitempty"` // ClashFest core patch 0027, nil: no pin
+ 	GeoAutoUpdate     bool                    `json:"geo-auto-update"`
+ 	GeoUpdateInterval int                     `json:"geo-update-interval"`
+ 	GeodataMode       bool                    `json:"geodata-mode"`
+@@ -100,6 +101,14 @@ type GeoXUrl struct {
+ 	GeoSite string `json:"geo-site"`
+ }
+ 
++// GeoXSHA256 holds the geox-sha256 pins (ClashFest core patch 0027), lowercase hex, "" is no pin.
++type GeoXSHA256 struct {
++	GeoIp   string `json:"geoip"`
++	Mmdb    string `json:"mmdb"`
++	ASN     string `json:"asn"`
++	GeoSite string `json:"geosite"`
++}
++
+ // Controller config
+ type Controller struct {
+ 	ExternalController            string
+@@ -380,6 +389,15 @@ type RawProfile struct {
+ 	StoreFakeIP   bool `yaml:"store-fake-ip" json:"store-fake-ip"`
+ }
+ 
++// RawGeoXSHA256 is geox-sha256 (ClashFest core patch 0027, Citrus): optional SHA-256 pins of the
++// databases geox-url downloads.
++type RawGeoXSHA256 struct {
++	GeoIp   string `yaml:"geoip" json:"geoip"`
++	Mmdb    string `yaml:"mmdb" json:"mmdb"`
++	ASN     string `yaml:"asn" json:"asn"`
++	GeoSite string `yaml:"geosite" json:"geosite"`
++}
++
+ type RawGeoXUrl struct {
+ 	GeoIp   string `yaml:"geoip" json:"geoip"`
+ 	Mmdb    string `yaml:"mmdb" json:"mmdb"`
+@@ -487,6 +505,7 @@ type RawConfig struct {
+ 	Experimental  RawExperimental           `yaml:"experimental" json:"experimental"`
+ 	Profile       RawProfile                `yaml:"profile" json:"profile"`
+ 	GeoXUrl       RawGeoXUrl                `yaml:"geox-url" json:"geox-url"`
++	GeoXSHA256    RawGeoXSHA256             `yaml:"geox-sha256" json:"geox-sha256"` // ClashFest core patch 0027
+ 	Sniffer       RawSniffer                `yaml:"sniffer" json:"sniffer"`
+ 	TLS           RawTLS                    `yaml:"tls" json:"tls"`
+ 
+@@ -808,6 +827,28 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
+ //go:linkname temporaryUpdateGeneral
+ func temporaryUpdateGeneral(general *General) func()
+ 
++// parseGeoXSHA256 validates geox-sha256 (ClashFest core patch 0027): every pin empty or 64 hex
++// characters. No pin at all is nil, so a config without the key changes nothing.
++func parseGeoXSHA256(raw RawGeoXSHA256) (*GeoXSHA256, error) {
++	pins := GeoXSHA256{
++		GeoIp:   strings.ToLower(strings.TrimSpace(raw.GeoIp)),
++		Mmdb:    strings.ToLower(strings.TrimSpace(raw.Mmdb)),
++		ASN:     strings.ToLower(strings.TrimSpace(raw.ASN)),
++		GeoSite: strings.ToLower(strings.TrimSpace(raw.GeoSite)),
++	}
++	for _, p := range []struct{ name, value string }{
++		{"geoip", pins.GeoIp}, {"mmdb", pins.Mmdb}, {"asn", pins.ASN}, {"geosite", pins.GeoSite},
++	} {
++		if err := geodata.ValidatePin(p.value); err != nil {
++			return nil, fmt.Errorf("geox-sha256.%s %w", p.name, err)
++		}
++	}
++	if pins == (GeoXSHA256{}) {
++		return nil, nil
++	}
++	return &pins, nil
++}
++
+ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 	if cfg.GlobalClientFingerprint != "" {
+ 		log.Errorln("The `global-client-fingerprint` configuration is removed, please set `client-fingerprint` directly on the proxy instead")
+@@ -815,6 +856,10 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
+ 		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)
+ 	}
++	geoXSHA256, err := parseGeoXSHA256(cfg.GeoXSHA256)
++	if err != nil {
++		return nil, err
++	}
+ 	return &General{
+ 		Inbound: Inbound{
+ 			Port:              cfg.Port,
+@@ -844,6 +889,7 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 			ASN:     cfg.GeoXUrl.ASN,
+ 			GeoSite: cfg.GeoXUrl.GeoSite,
+ 		},
++		GeoXSHA256:        geoXSHA256,
+ 		GeoAutoUpdate:     cfg.GeoAutoUpdate,
+ 		GeoUpdateInterval: cfg.GeoUpdateInterval,
+ 		GeodataMode:       cfg.GeodataMode,
+diff --git a/config/geox_sha256_test.go b/config/geox_sha256_test.go
+new file mode 100644
+index 00000000..c0290a63
+--- /dev/null
++++ b/config/geox_sha256_test.go
+@@ -0,0 +1,37 @@
++package config
++
++// ClashFest core patch 0027: geox-sha256 is optional and validated.
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestParseGeoXSHA256(t *testing.T) {
++	for _, doc := range []string{"", "geox-sha256: {}\n", "geox-sha256:\n  geoip: \"\"\n  geosite: \"\"\n  mmdb: \"\"\n  asn: \"\"\n"} {
++		raw, err := UnmarshalRawConfig([]byte(doc))
++		require.NoError(t, err)
++		general, err := parseGeneral(raw)
++		require.NoError(t, err)
++		// no pin: nothing is checked and /configs shows no geox-sha256
++		assert.Nil(t, general.GeoXSHA256, "%q", doc)
++	}
++
++	pin := strings.Repeat("AB", 32)
++	raw, err := UnmarshalRawConfig([]byte("geox-sha256:\n  geosite: " + pin + "\n"))
++	require.NoError(t, err)
++	general, err := parseGeneral(raw)
++	require.NoError(t, err)
++	require.NotNil(t, general.GeoXSHA256)
++	assert.Equal(t, GeoXSHA256{GeoSite: strings.ToLower(pin)}, *general.GeoXSHA256)
++
++	for _, bad := range []string{"abc", strings.Repeat("z", 64)} {
++		raw, err := UnmarshalRawConfig([]byte("geox-sha256:\n  mmdb: " + bad + "\n"))
++		require.NoError(t, err)
++		_, err = parseGeneral(raw)
++		assert.ErrorContains(t, err, "geox-sha256.mmdb")
++	}
++}
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index 47e6bdb2..55ac0ca7 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -172,6 +172,7 @@ func GetGeneral() *config.General {
+ 			ASN:     geodata.ASNUrl(),
+ 			GeoSite: geodata.GeoSiteUrl(),
+ 		},
++		GeoXSHA256:        geoXSHA256(), // ClashFest core patch 0027
+ 		GeoAutoUpdate:     updater.GeoAutoUpdate(),
+ 		GeoUpdateInterval: updater.GeoUpdateInterval(),
+ 		GeodataMode:       geodata.GeodataMode(),
+@@ -406,6 +407,26 @@ func temporaryUpdateGeneral(general *config.General) func() {
+ 	}
+ }
+ 
++// geoXSHA256 returns the installed geox-sha256 pins, nil when there are none (ClashFest core patch 0027).
++func geoXSHA256() *config.GeoXSHA256 {
++	policy := geodata.CurrentVerificationPolicy()
++	if policy.IsZero() {
++		return nil
++	}
++	return &config.GeoXSHA256{GeoIp: policy.GeoIP, Mmdb: policy.MMDB, ASN: policy.ASN, GeoSite: policy.GeoSite}
++}
++
++// setGeoXSHA256 installs the geox-sha256 pins, nil clears them (ClashFest core patch 0027).
++func setGeoXSHA256(pins *config.GeoXSHA256) {
++	if pins == nil {
++		geodata.SetVerificationPolicy(geodata.VerificationPolicy{})
++		return
++	}
++	geodata.SetVerificationPolicy(geodata.VerificationPolicy{
++		GeoIP: pins.GeoIp, MMDB: pins.Mmdb, ASN: pins.ASN, GeoSite: pins.GeoSite,
++	})
++}
++
+ func updateGeneral(general *config.General, logging bool) {
+ 	tunnel.SetMode(general.Mode)
+ 	tunnel.SetFindProcessMode(general.FindProcessMode)
+@@ -441,6 +462,7 @@ func updateGeneral(general *config.General, logging bool) {
+ 	geodata.SetGeoSiteUrl(general.GeoXUrl.GeoSite)
+ 	geodata.SetMmdbUrl(general.GeoXUrl.Mmdb)
+ 	geodata.SetASNUrl(general.GeoXUrl.ASN)
++	setGeoXSHA256(general.GeoXSHA256) // ClashFest core patch 0027
+ 	mihomoHttp.SetUA(general.GlobalUA)
+ 	resource.SetETag(general.ETagSupport)
+ }

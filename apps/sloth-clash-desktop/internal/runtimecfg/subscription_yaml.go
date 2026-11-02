@@ -88,6 +88,8 @@ var canonicalRuntimeKeyOrder = []string{
 	"geo-auto-update",
 	"geo-update-interval",
 	"geox-url",
+	// SlothClash core key (core patch 0027) — see slothRuntimeKeys.
+	"geox-sha256",
 	"geoip",
 	"geosite",
 	"hosts",
@@ -124,6 +126,7 @@ var slothRuntimeKeys = []string{
 	"reality-mlkem",          // patch 0003
 	"reality-client-version", // patch 0003
 	"tcp-connect-timeout",    // patch 0013 (Citrus)
+	"geox-sha256",            // patch 0027 (Citrus)
 }
 
 // reorderTopLevelMapping rewrites the top-level key sequence of a

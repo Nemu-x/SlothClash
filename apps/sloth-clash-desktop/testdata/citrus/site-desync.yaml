@@ -1,0 +1,32 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@62d1f567 site/src/content/docs/en/start/desync.mdx lines 9-33; site/src/content/docs/start/desync.mdx (same block)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - stub proxy `vpn-node` added, the reserve the example group names
+
+proxies:
+  - name: desync-yt
+    type: desync
+    tlsrec: "1+s"            # positions, comma-separated
+    # split: "2"             # optional: separate TCP writes
+    # split-delay: 0         # ms between them, 0–1000
+    # split-wait: sent       # sent | acked
+    # disorder: true         # needs split
+    # oob: true              # needs split
+    # random:
+    #   tlsrec: [{ from: "-8+s", to: "8+s", count: 2 }]
+    # fake: { ttl: 4, prefix: -1, sni: [www.example.com], randomize: true }
+    # udp: { ttl: 4, template: quic, quic-only: true }
+  - {name: vpn-node, type: ss, server: 192.0.2.1, port: 443, cipher: chacha20-ietf-poly1305, password: password}
+
+proxy-groups:
+  - name: youtube
+    type: fallback
+    proxies: [desync-yt, vpn-node]   # desync first, a proxy node as reserve
+    url: https://www.youtube.com/generate_204
+    interval: 300
+
+rules:
+  - DOMAIN-SUFFIX,youtube.com,youtube
+  - DOMAIN-SUFFIX,googlevideo.com,youtube
+  - MATCH,DIRECT

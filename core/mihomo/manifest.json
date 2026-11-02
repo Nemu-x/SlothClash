@@ -114,6 +114,14 @@
       "file": "0025-proxy-transfer-test.patch",
       "sha256": "b79c287e4eafb92bf0d969450aa131d2c954ede86662652546a1ad0fe1344711",
       "feature": "transfer-test"
+    },
+    {
+      "file": "0026-ca-policy.patch",
+      "sha256": "db0a3d609ace90ddb732cff9be042fd17a1cd0d5e045a101d124a1fc6d03fc49"
+    },
+    {
+      "file": "0027-geox-sha256.patch",
+      "sha256": "db29611e1c40f94d8a3295e9cb43cd3c33d199240c7d79e57317c82905f534a2"
     }
   ],
   "assets": {

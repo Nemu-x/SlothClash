@@ -1,0 +1,44 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@62d1f567 docs/config.yaml lines 1836-1867 (the desync outbound, commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - the commented-out outbound uncommented and wrapped into a minimal profile; its trailing notes (1868-1873) left out
+#   - `fake` and `fake.auto-ttl` are Windows/Linux/Android options: on macOS the core refuses them, as Citrus does
+
+proxies:
+  - name: desync-yt
+    type: desync
+    tlsrec: "1+s"              # split the ClientHello into TLS records here
+    split: "2"                 # optional: send it in separate TCP writes
+    split-delay: 0             # ms between those writes, 0-1000
+    split-wait: sent           # sent | acked: before each further piece, wait until the kernel reports the earlier bytes sent/acknowledged (macOS: acked only; Android: sent is checked per connection)
+    split-wait-timeout: 2000   # ms per wait (also bounds disorder), 0-60000, default 2000
+    disorder: true             # the first split piece goes out with hop limit 1 and is retransmitted later (needs split; Android: checked per connection)
+    oob: true                  # one urgent byte after the first split piece (needs split); with disorder: disoob
+    oob-byte: "a"              # that byte, one ASCII character, default "a"
+    random:                    # random cuts per connection, added to tlsrec/split
+      tlsrec:
+        - { from: "-8+s", to: "8+s", count: 2, min-piece: 2 } # count cuts from from..to (both absolute or both +s), min-piece bytes apart
+      split:
+        - { from: 1, to: 120 } # count and min-piece default to 1
+      seed: 0                  # 0: a new seed per connection; another value repeats the same cuts (tests, bug reports)
+    fake:                      # Windows, Linux, Android (checked per connection): the first transmission of the prefix (or of the split piece ending at it) carries a low-TTL decoy
+      ttl: 4                   # hop limit of the decoy; with auto-ttl the fallback (0: no fallback, the connection fails)
+      auto-ttl: { delta: 1, min: 3, max: 20 } # TTL = hops to the server - delta, from the SYN-ACK; observable on Linux/Android over IPv6 only; {} = these defaults
+      prefix: -1               # end of the fake piece after record splitting, negative from the end
+      timeout: 3000            # ms for the native send
+      sni: [www.example.com, "cdn-##.example.net"] # decoy ClientHello for one of these names; * ? # are random characters
+      randomize: true          # fresh random, session ID and key shares in the decoy
+      from-original: false     # build the decoy from the real ClientHello (needs sni or randomize)
+      offset: 0                # start the decoy at this byte
+    udp:                       # Windows, Linux, Android, macOS: low-TTL datagrams before the first ones to each peer; without it UDP is plain DIRECT
+      ttl: 4
+      repeats: 6               # 1-16
+      packets: 3               # 1-8
+      template: quic           # zero (64 zero bytes, default) | quic (a QUIC v1 Initial for sni)
+      sni: www.wikipedia.org   # with template: quic
+      quic-only: true          # burst only before datagrams that look like a QUIC Initial
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [desync-yt]}
+rules:
+  - MATCH,GLOBAL

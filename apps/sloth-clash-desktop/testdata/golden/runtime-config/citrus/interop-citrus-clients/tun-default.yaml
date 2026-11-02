@@ -231,5 +231,72 @@ proxies:
       type: vless
       udp: false
       uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+    - alpn:
+        - h3
+      fingerprint: abababababababababababababababababababababababababababababababab
+      name: xhttp-h3-packet-up
+      network: xhttp
+      port: 10443
+      server: 127.0.0.1
+      servername: www.example.com
+      tls: true
+      type: vless
+      udp: false
+      uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+      xhttp-opts:
+        mode: packet-up
+        path: /xh
+    - alpn:
+        - h3
+      fingerprint: abababababababababababababababababababababababababababababababab
+      name: xhttp-h3-stream-one
+      network: xhttp
+      port: 10443
+      server: 127.0.0.1
+      servername: www.example.com
+      tls: true
+      type: vless
+      udp: false
+      uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+      xhttp-opts:
+        mode: stream-one
+        path: /xh
+    - alpn:
+        - h3
+      fingerprint: abababababababababababababababababababababababababababababababab
+      name: xhttp-h3-stream-up
+      network: xhttp
+      port: 10443
+      server: 127.0.0.1
+      servername: www.example.com
+      tls: true
+      type: vless
+      udp: false
+      uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+      xhttp-opts:
+        mode: stream-up
+        path: /xh
+    - client-fingerprint: chrome
+      flow: xtls-rprx-vision
+      name: singbox-vless-reality-vision
+      network: tcp
+      port: 10443
+      reality-opts:
+        public-key: CrrQSjAG_YkHLwvM2M-7XkKJilgL5upBKCp0od0tLhE
+        short-id: 10f897e26c4b9478
+      server: 127.0.0.1
+      servername: www.example.com
+      tls: true
+      type: vless
+      udp: true
+      uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+    - fingerprint: abababababababababababababababababababababababababababababababab
+      name: singbox-hysteria2
+      password: interop-password
+      port: 10443
+      server: 127.0.0.1
+      sni: www.example.com
+      type: hysteria2
+      udp: true
 rules:
     - MATCH,DIRECT

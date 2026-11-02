@@ -298,6 +298,76 @@ spec. The REALITY lab checks firefox and safari, forced and Auto, against 24.12.
 mihomo: issue MetaCubeX/mihomo#3319 (closed: no unreleased utls). Delete when mihomo moves to a
 utls release whose `firefox` / `safari` parrots carry the hybrid share.
 
+### 0026 Citrus: root CA policy (`tls.ca-roots`, `tls.ca-denylist`)
+
+Citrus (6183f272, 6b5ce5b9, d3a24184) lets a config choose where the roots of the core's own TLS
+clients (proxies, DoH/DoT/DoQ, provider and geodata downloads) come from, and refuses chains through
+state interception CAs (the Russian Trusted Root / Sub CAs, Kazakhstan's Qaznet and ISCA roots,
+matched by the SHA-256 of their public key). Without the patch the core ignores both keys.
+
+Citrus turns both on by default. Here they are opt-in: without the keys the pool is mihomo's own
+(the system roots plus the `ca-certificates.crt` the build embeds, which is empty in mihomo's git and
+in this build) and nothing is checked after verification, so a vanilla config behaves exactly as on
+a stock core.
+
+| Key | Effect |
+|---|---|
+| `ca-roots: both` | the system pool plus the embedded Mozilla bundle (`DISABLE_SYSTEM_CA` / `DISABLE_EMBED_CA` still narrow it) |
+| `ca-roots: bundle` | the Mozilla bundle only: CAs installed on the device are ignored |
+| `ca-roots: system` | the system pool only |
+| `ca-denylist: true` | a verified chain through a denylisted CA fails with `certificate chain goes through the distrusted CA`; one clean chain is enough |
+
+`tls.custom-certifactes` is added on top in every mode, and a chain anchored at one of them is exempt
+from the denylist. `fingerprint` pinning and `skip-cert-verify` are explicit choices and are not
+affected. The denylist is checked in `GetTLSConfig`, the `name-cert-verify` verifier, and the JLS,
+Restls and ShadowQUIC clients that use the pool directly; with a policy set, the Sudoku `wss` client
+also verifies against the core's pool instead of the platform's, and the DoH HTTP/3 probe keeps the
+verifier. The XDrive storage client needs no hunk here: 0004 already builds its TLS config with
+`GetTLSConfig`, so it follows the policy like every other client. The Tailscale control client is an exception, as in Citrus.
+
+Most proxies keep the pool they were built with, and mihomo rebuilds it only in `ApplyConfig`, after
+the proxies are parsed. With a policy (or when the running config had one), the config's pool is
+installed before its proxies are parsed and put back if the config fails to parse; without one,
+mihomo's flow is untouched.
+
+The bundle is the file Citrus commits, curl's extract of Mozilla's store (Mozilla data of
+2026-10-20), embedded as `component/ca/mozilla-roots.crt` and pinned by its SHA-256
+(`796f1389…3e3cbe`) in a test. It adds about 200 KB to every core binary, whether or not a config
+uses it.
+
+Tests in the patch: the default policy builds mihomo's pool and installs no `VerifyConnection`;
+`bundle` / `system` / `both` pools; a denylisted root is left out of the bundle and rejected from the
+system pool; custom certificates win; pinning and `skip-cert-verify` pass; the caller's own
+`VerifyConnection` still runs; every denylist entry matches its certificate (`testdata/denylist`);
+the config's pool reaches an HTTPS proxy on the first parse and a failed parse restores the previous
+one.
+
+No mihomo counterpart. Delete when mihomo gets an equivalent root policy.
+
+### 0027 Citrus: geodata SHA-256 pins (`geox-sha256`)
+
+Citrus (395e8d4b, 85e07053) takes optional SHA-256 pins of the databases `geox-url` downloads:
+
+```yaml
+geox-sha256:
+  geoip: ""   # 64 hex characters, "" = no pin
+  geosite: ""
+  mmdb: ""
+  asn: ""
+```
+
+A pinned database with another SHA-256 is refused: a download at start goes to a temporary file
+that replaces the old one only when it matches, a file already on disk that does not match is
+replaced, and the updater refuses the new data. An invalid pin is a config error. Without a pin
+(absent or empty) nothing is checked and the download path is mihomo's own; `/configs` shows
+`geox-sha256` only when a pin is set. The app keeps the key in its place next to `geox-url`.
+
+Tests in the patch: pin validation, per-type pins, an existing file against the current pin, a
+mismatched download leaves the old file and no temporary file, an unpinned download is unchanged,
+and `geox-sha256` parsing.
+
+No mihomo counterpart. Delete when mihomo verifies geodata itself.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a
@@ -363,12 +433,29 @@ cd apps/sloth-clash-desktop
 SLOTH_MIHOMO_BIN=<patched core> go test -count=1 -run TestCitrusCompat -v .
 ```
 
-Without a core that carries the series the test skips. Outcomes at Citrus `ecaa9466` (2026-10-23):
-145 cases, 140 accept, 4 unsupported (`PROTOCOL` rule, DNSCrypt, BitTorrent sniffer, server log
-format), 1 deferred (TrustTunnel timers); `skip-host-key-check` is ignored and harmless. Running it the
-first time found two app bugs, fixed with it: a subscription's own url-test group named `Auto` that
-another group uses was pruned as if it were the app's synthetic fallback group, and `SUB-RULE` targets
-were checked against proxies instead of `sub-rules`.
+Without a core that carries the series the test skips. Outcomes at Citrus `62d1f567` (dev,
+2026-11-02): 156 cases, 149 accept, 6 unsupported, 1 deferred (at `ecaa9466`: 145, 140 / 4 / 1).
+
+- **accept**: everything before, plus `geox-sha256` in the general example (0027),
+  `tls.ca-roots` / `tls.ca-denylist` (`citrus-tls-ca-policy`, 0026), the `type: desync` outbound of
+  `docs/config.yaml` with every option uncommented and of the desync site page (0023; all 28 option
+  paths are read), the `vless-xdrive` Google Drive proxy (0004), and the new interop clients: XHTTP
+  over HTTP/3 (`alpn: [h3]`, three modes; vanilla) and the two Citrus clients of the sing-box suite.
+- **unsupported**: `PROTOCOL` rule, DNSCrypt, BitTorrent sniffer, server log format, and XDrive
+  `service: local` / `service: template` (`citrus-xdrive-local`, `citrus-xdrive-template`; owner
+  decision, see 0016). The template case shows its gap only together with the template refusal
+  (the app turns such nodes into `reject`); until that lands it is the one failing case.
+- **deferred**: TrustTunnel timers.
+- `skip-host-key-check` is ignored and harmless.
+
+Not copied, by the refresh rules: `egress-guard`, PROXY protocol, `fallbacks` / `fallback-page`,
+listener `alpn: [h3]`, `zero-rtt` and KCPTun server keys (server side), `external-ui-sha256`,
+`external-ui-allow-insecure` and the WebSocket ticket options (controller). The Windows TUN
+forwarding note is a comment and a runtime event, not a key.
+
+Running it the first time found two app bugs, fixed with it: a subscription's own url-test group
+named `Auto` that another group uses was pruned as if it were the app's synthetic fallback group, and
+`SUB-RULE` targets were checked against proxies instead of `sub-rules`.
 
 ## Controller diagnostics
 

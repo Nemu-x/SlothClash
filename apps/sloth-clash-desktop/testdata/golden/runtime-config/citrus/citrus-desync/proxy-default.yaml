@@ -1,0 +1,98 @@
+mixed-port: 7890
+socks-port: 0
+port: 0
+ipv6: true
+allow-lan: false
+external-controller: 127.0.0.1:9090
+secret: golden-secret
+profile:
+    store-fake-ip: false
+    store-selected: true
+tun:
+    auto-detect-interface: true
+    auto-route: true
+    dns-hijack:
+        - any:53
+    enable: false
+    stack: gvisor
+    strict-route: false
+dns:
+    default-nameserver:
+        - system
+        - 1.1.1.1
+        - 8.8.8.8
+    enable: true
+    enhanced-mode: fake-ip
+    fake-ip-filter:
+        - '*.lan'
+        - '*.local'
+        - '*.arpa'
+        - time.*.com
+        - ntp.*.com
+        - +.market.xiaomi.com
+        - localhost.ptlogin2.qq.com
+        - '*.msftncsi.com'
+        - www.msftconnecttest.com
+    fake-ip-filter-mode: blacklist
+    fake-ip-range: 198.18.0.1/16
+    fake-ip-range6: fdfe:dcba:9876::1/64
+    ipv6: true
+    listen: :1053
+    nameserver:
+        - 8.8.8.8
+        - 1.1.1.1
+        - https://1.1.1.1/dns-query
+    respect-rules: false
+    use-hosts: true
+geodata-mode: true
+geo-auto-update: false
+reality-mlkem: auto
+proxies:
+    - disorder: true
+      fake:
+        auto-ttl:
+            delta: 1
+            max: 20
+            min: 3
+        from-original: false
+        offset: 0
+        prefix: -1
+        randomize: true
+        sni:
+            - www.example.com
+            - cdn-##.example.net
+        timeout: 3000
+        ttl: 4
+      name: desync-yt
+      oob: true
+      oob-byte: a
+      random:
+        seed: 0
+        split:
+            - from: 1
+              to: 120
+        tlsrec:
+            - count: 2
+              from: -8+s
+              min-piece: 2
+              to: 8+s
+      split: "2"
+      split-delay: 0
+      split-wait: sent
+      split-wait-timeout: 2000
+      tlsrec: 1+s
+      type: desync
+      udp:
+        packets: 3
+        quic-only: true
+        repeats: 6
+        sni: www.wikipedia.org
+        template: quic
+        ttl: 4
+proxy-groups:
+    - name: GLOBAL
+      proxies:
+        - desync-yt
+      type: select
+rules:
+    - MATCH,GLOBAL

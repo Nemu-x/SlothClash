@@ -1,0 +1,191 @@
+diff --git a/transport/xhttp/config.go b/transport/xhttp/config.go
+index 855ab291..d595af38 100644
+--- a/transport/xhttp/config.go
++++ b/transport/xhttp/config.go
+@@ -117,7 +117,7 @@ func (c *Config) GetRequestHeader() http.Header {
+ func (c *Config) GetRequestHeaderWithPayload(payload []byte, uplinkChunkSize Range) http.Header {
+ 	header := c.GetRequestHeader()
+ 
+-	key := c.UplinkDataKey
++	key := c.GetNormalizedUplinkDataKey(PlacementHeader)
+ 	encodedData := base64.RawURLEncoding.EncodeToString(payload)
+ 
+ 	for i := 0; len(encodedData) > 0; i++ {
+@@ -137,7 +137,7 @@ func (c *Config) GetRequestHeaderWithPayload(payload []byte, uplinkChunkSize Ran
+ func (c *Config) GetRequestCookiesWithPayload(payload []byte, uplinkChunkSize Range) []*http.Cookie {
+ 	cookies := []*http.Cookie{}
+ 
+-	key := c.UplinkDataKey
++	key := c.GetNormalizedUplinkDataKey(PlacementCookie)
+ 	encodedData := base64.RawURLEncoding.EncodeToString(payload)
+ 
+ 	for i := 0; len(encodedData) > 0; i++ {
+@@ -312,6 +312,21 @@ func (c *Config) GetNormalizedSeqKey() string {
+ 	}
+ }
+ 
++// GetNormalizedUplinkDataKey returns the name the uplink data chunks are
++// sent under (and looked for) for the given placement. Without an explicit
++// uplink-data-key it falls back to the Xray-core defaults, "X-Data" for
++// headers and "x_data" for cookies; an empty key would put the payload in
++// headers named "-0", "-1", ... that no Xray-compatible server reads.
++func (c *Config) GetNormalizedUplinkDataKey(placement string) string {
++	if c.UplinkDataKey != "" {
++		return c.UplinkDataKey
++	}
++	if placement == PlacementCookie {
++		return "x_data"
++	}
++	return "X-Data"
++}
++
+ type Range struct {
+ 	Min int
+ 	Max int
+diff --git a/transport/xhttp/server.go b/transport/xhttp/server.go
+index d56ae98a..d0f3c3fb 100644
+--- a/transport/xhttp/server.go
++++ b/transport/xhttp/server.go
+@@ -332,10 +332,10 @@ func (h *requestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 	if r.Method != http.MethodGet && sessionId != "" && seqStr != "" && h.allowPacketUpUpload() {
+ 		scMaxEachPostBytes := h.scMaxEachPostBytes.Max
+ 		dataPlacement := h.config.GetNormalizedUplinkDataPlacement()
+-		uplinkDataKey := h.config.UplinkDataKey
+ 		var headerPayload []byte
+ 		var err error
+ 		if dataPlacement == PlacementAuto || dataPlacement == PlacementHeader {
++			uplinkDataKey := h.config.GetNormalizedUplinkDataKey(PlacementHeader)
+ 			var headerPayloadChunks []string
+ 			for i := 0; true; i++ {
+ 				chunk := r.Header.Get(fmt.Sprintf("%s-%d", uplinkDataKey, i))
+@@ -354,6 +354,7 @@ func (h *requestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 
+ 		var cookiePayload []byte
+ 		if dataPlacement == PlacementAuto || dataPlacement == PlacementCookie {
++			uplinkDataKey := h.config.GetNormalizedUplinkDataKey(PlacementCookie)
+ 			var cookiePayloadChunks []string
+ 			for i := 0; true; i++ {
+ 				cookieName := fmt.Sprintf("%s_%d", uplinkDataKey, i)
+diff --git a/transport/xhttp/uplink_data_key_test.go b/transport/xhttp/uplink_data_key_test.go
+new file mode 100644
+index 00000000..5ad818ac
+--- /dev/null
++++ b/transport/xhttp/uplink_data_key_test.go
+@@ -0,0 +1,117 @@
++package xhttp
++
++import (
++	"bytes"
++	"encoding/base64"
++	"fmt"
++	"net"
++	"strings"
++	"testing"
++
++	"github.com/metacubex/http"
++	"github.com/metacubex/http/httptest"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestUplinkDataKeyDefaults(t *testing.T) {
++	assert.Equal(t, "X-Data", (&Config{}).GetNormalizedUplinkDataKey(PlacementHeader))
++	assert.Equal(t, "x_data", (&Config{}).GetNormalizedUplinkDataKey(PlacementCookie))
++	assert.Equal(t, "X-Data", (&Config{}).GetNormalizedUplinkDataKey(PlacementAuto))
++
++	explicit := &Config{UplinkDataKey: "X-Custom"}
++	assert.Equal(t, "X-Custom", explicit.GetNormalizedUplinkDataKey(PlacementHeader))
++	assert.Equal(t, "X-Custom", explicit.GetNormalizedUplinkDataKey(PlacementCookie))
++}
++
++// packetRequest builds a packet-up upload the way the client does.
++func packetRequest(t *testing.T, cfg *Config, method string, data []byte) *http.Request {
++	t.Helper()
++	req := httptest.NewRequest(method, "https://example.com/xhttp/session-a/0", nil)
++	require.NoError(t, cfg.FillPacketRequest(req, "session-a", "0", data))
++	return req
++}
++
++func decodeChunks(t *testing.T, chunks []string) []byte {
++	t.Helper()
++	out, err := base64.RawURLEncoding.DecodeString(strings.Join(chunks, ""))
++	require.NoError(t, err)
++	return out
++}
++
++func TestUplinkDataInHeadersUsesDefaultKey(t *testing.T) {
++	data := bytes.Repeat([]byte("synthetic-uplink-"), 300) // several chunks
++	cfg := &Config{Path: "/xhttp", Mode: "packet-up", UplinkHTTPMethod: http.MethodGet, UplinkDataPlacement: PlacementHeader, UplinkChunkSize: "1000"}
++	req := packetRequest(t, cfg, http.MethodGet, data)
++
++	var chunks []string
++	for i := 0; ; i++ {
++		v := req.Header.Get(fmt.Sprintf("X-Data-%d", i))
++		if v == "" {
++			break
++		}
++		chunks = append(chunks, v)
++	}
++	require.Greater(t, len(chunks), 1)
++	assert.Equal(t, data, decodeChunks(t, chunks))
++	for name := range req.Header {
++		assert.False(t, strings.HasPrefix(name, "-"), "header with an empty key prefix: %q", name)
++	}
++}
++
++func TestUplinkDataInCookiesUsesDefaultKey(t *testing.T) {
++	data := []byte("synthetic-uplink")
++	cfg := &Config{Path: "/xhttp", Mode: "packet-up", UplinkDataPlacement: PlacementCookie}
++	req := packetRequest(t, cfg, http.MethodPost, data)
++
++	c, err := req.Cookie("x_data_0")
++	require.NoError(t, err)
++	assert.Equal(t, data, decodeChunks(t, []string{c.Value}))
++	_, err = req.Cookie("_0")
++	assert.Error(t, err)
++}
++
++func TestUplinkDataExplicitKeyIsKept(t *testing.T) {
++	data := []byte("synthetic-uplink")
++	cfg := &Config{Path: "/xhttp", Mode: "packet-up", UplinkDataPlacement: PlacementHeader, UplinkDataKey: "X-Custom"}
++	req := packetRequest(t, cfg, http.MethodPost, data)
++	assert.Equal(t, data, decodeChunks(t, []string{req.Header.Get("X-Custom-0")}))
++	assert.Empty(t, req.Header.Get("X-Data-0"))
++
++	cfg = &Config{Path: "/xhttp", Mode: "packet-up", UplinkDataPlacement: PlacementCookie, UplinkDataKey: "custom"}
++	req = packetRequest(t, cfg, http.MethodPost, data)
++	c, err := req.Cookie("custom_0")
++	require.NoError(t, err)
++	assert.Equal(t, data, decodeChunks(t, []string{c.Value}))
++}
++
++// The server reads the same defaults, so a client and server that both leave
++// uplink-data-key unset agree with each other and with Xray-core.
++func TestServerReadsUplinkDataUnderDefaultKey(t *testing.T) {
++	for _, placement := range []string{PlacementHeader, PlacementCookie} {
++		t.Run(placement, func(t *testing.T) {
++			cfg := Config{Path: "/xhttp", Mode: "packet-up", UplinkDataPlacement: placement}
++			handler, err := NewServerHandler(ServerOption{
++				Config:      cfg,
++				ConnHandler: func(conn net.Conn) { _ = conn.Close() },
++			})
++			require.NoError(t, err)
++
++			data := []byte("synthetic-uplink")
++			req := packetRequest(t, &cfg, http.MethodPost, data)
++			if placement == PlacementHeader {
++				require.NotEmpty(t, req.Header.Get("X-Data-0"))
++			}
++			rec := httptest.NewRecorder()
++			handler.ServeHTTP(rec, req)
++			require.Equal(t, http.StatusOK, rec.Result().StatusCode)
++
++			session := handler.(*requestHandler).getSession("session-a")
++			require.NotNil(t, session)
++			buf := make([]byte, 64)
++			n, err := session.uploadQueue.Read(buf)
++			require.NoError(t, err)
++			assert.Equal(t, data, buf[:n])
++		})
++	}
++}

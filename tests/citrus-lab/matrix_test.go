@@ -152,13 +152,13 @@ func matrixCases(f *fixtures) []labCase {
 		{name: "xhttp/reality-packet-up-GET-header", patched: pass, stock: pass,
 			why:   "XHTTP packet-up with the uplink carried in GET headers under the key Xray and Citrus use by default (X-Data)",
 			build: xhttpGET(f, "X-Data")},
-		// The core sends header uplink data under "<uplink-data-key>-<n>" and
-		// leaves the key empty when the config sets none ("-0", "-1", ...),
-		// where Xray and Citrus default to X-Data: a share link without the
-		// key does not work in either core. Encoded as it is today; flip it
-		// when the core fills in the default.
-		{name: "xhttp/reality-packet-up-GET-header-default-key", patched: refused, stock: refused,
-			why:   "known gap: no default uplink-data-key in the core (header \"-0\" instead of \"X-Data-0\")",
+		// Stock mihomo sends header uplink data under "<uplink-data-key>-<n>"
+		// and leaves the key empty when the config sets none ("-0", "-1", ...),
+		// where Xray and Citrus default to X-Data; share links leave the key
+		// out when it is the default. Patch 0028 fills in X-Data (x_data for
+		// cookies), so the patched core passes and the stock core does not.
+		{name: "xhttp/reality-packet-up-GET-header-default-key", patched: pass, stock: refused,
+			why:   "no uplink-data-key: patch 0028 defaults it to X-Data; stock sends header \"-0\" instead of \"X-Data-0\"",
 			build: xhttpGET(f, "")},
 	}
 	for _, mode := range []string{"stream-one", "packet-up", "stream-up"} {

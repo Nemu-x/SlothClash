@@ -418,6 +418,33 @@ and `geox-sha256` parsing.
 
 No mihomo counterpart. Delete when mihomo verifies geodata itself.
 
+### 0028 XHTTP: default uplink-data-key
+
+With `uplink-data-placement: header` or `cookie` (packet-up, uplink data in the request instead of
+the body), mihomo names the chunks `<uplink-data-key>-<n>` (headers) or `<uplink-data-key>_<n>`
+(cookies) and uses `uplink-data-key` as written. With the key unset it sends headers named `-0`,
+`-1`, ... and cookies `_0`, `_1`, ..., which no Xray-compatible server reads: the upload is
+dropped and the connection never carries data. Xray-core fills the key in when it loads the config
+(`X-Data` for header and auto, `x_data` for cookie), Citrus does the same, and share links leave
+`uplinkDataKey` out when it is the default, so such links did not work on this core.
+
+The patch adds `Config.GetNormalizedUplinkDataKey(placement)`: an explicit key is returned as is,
+otherwise `X-Data` for headers and `x_data` for cookies. The client builders
+(`GetRequestHeaderWithPayload`, `GetRequestCookiesWithPayload`) and the inbound packet-up reader use
+it, so a mihomo server with the key unset accepts uploads from Xray clients too. Only configs
+that leave the key unset change, and those sent malformed requests before; an explicit key behaves
+as in vanilla. Unlike Xray, a server in `auto` placement looks for cookies under `x_data` (Xray
+looks for `X-Data_<n>`), the name a client in `cookie` placement actually sends. This is one
+default, not the Citrus XHTTP defaults declined under 0004-0015.
+
+Tests in the patch: default and explicit keys for both placements, a multi-chunk upload in GET
+headers carrying `X-Data-0`, `X-Data-1`, ... and no header with an empty prefix, cookies named
+`x_data_<n>`, and an upload built by the client read back by the server handler under the default
+key for both placements. The Citrus lab cell `xhttp/reality-packet-up-GET-header-default-key`
+passes on the patched core (the stock core still sends `-0`).
+
+No upstream issue is claimed. Delete when mihomo defaults the key itself.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a
@@ -493,8 +520,7 @@ Without a core that carries the series the test skips. Outcomes at Citrus `62d1f
   over HTTP/3 (`alpn: [h3]`, three modes; vanilla) and the two Citrus clients of the sing-box suite.
 - **unsupported**: `PROTOCOL` rule, DNSCrypt, BitTorrent sniffer, server log format, and XDrive
   `service: local` / `service: template` (`citrus-xdrive-local`, `citrus-xdrive-template`; owner
-  decision, see 0016). The template case shows its gap only together with the template refusal
-  (the app turns such nodes into `reject`); until that lands it is the one failing case.
+  decision, see 0016). The template case passes because the app turns such nodes into `reject`.
 - **deferred**: TrustTunnel timers.
 - `skip-host-key-check` is ignored and harmless.
 

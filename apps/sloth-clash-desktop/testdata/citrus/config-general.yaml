@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (mixed-port 3-3, find-process-mode 37-37, mode 39-39, geox-url 42-45, geo-auto-update 47-47, geo-update-interval 48-48, log-level 55-55, ipv6 62-62, experimental 204-211, hosts 214-214, profile 222-226)
+# Source: getmikan/Citrus@62d1f567 docs/config.yaml (mixed-port 3-3, find-process-mode 37-37, mode 39-39, geox-url 42-45, geox-sha256 47-51, geo-auto-update 53-53, geo-update-interval 54-54, log-level 61-61, ipv6 68-68, experimental 258-265, hosts 268-268, profile 276-280)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - only the client-side top-level keys; allow-lan, authentication, lan-*, tls, external-*, secret and listeners are server/controller material and left out
@@ -11,6 +11,12 @@ geox-url:
   geoip: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   mmdb: "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
+# Optional: pin the exact file, a database with another SHA-256 is rejected.
+geox-sha256:
+  geoip: ""   # 64 hex characters
+  geosite: ""
+  mmdb: ""
+  asn: ""
 geo-auto-update: false # 是否自动更新 geodata
 geo-update-interval: 24 # 更新间隔，单位：小时
 log-level: debug # 日志等级 silent/error/warning/info/debug

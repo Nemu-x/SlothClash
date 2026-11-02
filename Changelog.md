@@ -33,6 +33,15 @@
 - API `/proxies/{name}/delay` снова отвечает как в обычном mihomo (обычный таймаут, `504 {"message":"Timeout"}`, задержка при неожиданном статусе). Подробные ошибки, которые использует само приложение, включаются параметром `detail=1`.
 - Имена `client-fingerprint` из обычного mihomo снова чувствительны к регистру (как в обычном mihomo); без учёта регистра сравниваются только имена Xray, например `HelloChrome_131`.
 - Меньше шума в логах: строка политики REALITY при каждой загрузке конфига и заметка OpenVPN об отсутствии проверки сервера теперь на уровне debug; неудачные проверки задержки больше не пишут предупреждения.
+**🧩 More Citrus configs work**
+- `tls.ca-roots` (`both`, `bundle` or `system`) chooses which root certificates the core trusts: with `bundle` it uses only the built-in Mozilla list and ignores certificates installed on the device. `tls.ca-denylist: true` refuses connections whose certificate chain goes through a state interception CA (Russian Trusted Root / Sub CA, Kazakhstan's Qaznet and ISCA roots). Both are off unless the config sets them; the built-in list adds about 200 KB to the core.
+- `geox-sha256` pins the GeoIP, GeoSite, MMDB and ASN databases by SHA-256: a download with another hash is refused and the previous file is kept. Without a pin nothing changes.
+
+### Русский
+
+**🧩 Больше конфигов Citrus работают**
+- `tls.ca-roots` (`both`, `bundle` или `system`) задаёт, каким корневым сертификатам доверяет ядро: с `bundle` — только встроенному списку Mozilla, а сертификаты, установленные на устройстве, игнорируются. `tls.ca-denylist: true` отклоняет соединения, цепочка сертификатов которых проходит через государственный CA для перехвата трафика (Russian Trusted Root / Sub CA, казахстанские Qaznet и ISCA). Оба ключа выключены, пока конфиг их не задаст; встроенный список добавляет к ядру около 200 КБ.
+- `geox-sha256` закрепляет базы GeoIP, GeoSite, MMDB и ASN по SHA-256: загрузка с другим хешем отклоняется, прежний файл остаётся. Без пина ничего не меняется.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (proxies 525-1721)
+# Source: getmikan/Citrus@62d1f567 docs/config.yaml (proxies 582-1873)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - placeholders `[YOUR_SERVER_IP]` / `[YOUR_SS_PASSWORD]` / `[YOUR_RESTLS_PASSWORD]` (YAML lists) replaced by strings
@@ -8,6 +8,7 @@
 #   - vless-encryption: the format description in `encryption` replaced by a value of that format
 #   - vless-reality-vision: `public-key: xxx` / `short-id: xxx` replaced by the values of vless-reality-grpc
 #   - ssh-out: `private-key: path` (a file that does not exist) dropped, the password stays
+#   - vless-xdrive: `REPLACE_WITH_SERVER_PUBLIC_KEY` in `encryption` replaced by the key of vless-encryption
 #   - openvpn: the `MIIB...example` placeholder CA replaced by a throwaway self-signed CA certificate; the placeholder cert/key replaced by the auth-user-pass alternative the comments describe
 
 proxies: # socks5
@@ -492,6 +493,55 @@ proxies: # socks5
         Connection:
           - keep-alive
     # ip-version: ipv4 # 设置使用 IP 类型偏好，可选：ipv4，ipv6，dual，默认值：dual
+
+  # XDRIVE carries VLESS through a shared storage folder, compatible with Xray.
+  # The UUID, encryption/decryption keys, backend and folder must match the peer.
+  # Mux.Cool for TCP and XUDP for UDP are internal; do not enable smux or flow.
+  # API URLs select the actual network endpoints; server/port are node metadata.
+  # HTTPS APIs use certificate verification and the client TLS options below.
+  - name: "vless-xdrive"
+    type: vless
+    server: storage-node
+    port: 443
+    uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+    network: xdrive
+    udp: true
+    encryption: "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    client-fingerprint: chrome
+    # alpn: [h2, http/1.1]
+    # skip-cert-verify: false
+    # dialer-proxy: another-proxy # applies to all storage API requests
+    xdrive-opts:
+      service: google-drive # google-drive, template, local
+      remote-folder: GOOGLE_DRIVE_FOLDER_ID
+      secrets: [CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN]
+      # fronting: "api-connection.example:443" # optional connection address override; preserves API Host/SNI
+      # segment-bytes: 524288 # default 512 KiB; maximum 16 MiB
+      # flush-interval-ms: 20
+      # poll-interval-ms: 50
+      # max-poll-interval-ms: 500
+      # eager-window-ms: 2000
+      # hole-timeout-ms: 30000
+      # session-ttl-seconds: 300
+      # concurrency: 8 # parallel segment requests; maximum 64
+      # local uses a shared filesystem path as remote-folder and needs no secrets.
+      # local and template are refused in http proxy providers (skipped with a warning);
+      # top-level proxies, file and inline providers can use them.
+      # template uses the same template object and placeholders as Xray:
+      # template:
+      #   flatten: true
+      #   auth:
+      #     type: basic
+      #     username: "{secret0}"
+      #     password: "{secret1}"
+      #   put: { method: PUT, url: "https://storage.example/{folder}/{name}" }
+      #   get: { method: GET, url: "https://storage.example/{folder}/{name}" }
+      #   delete: { method: DELETE, url: "https://storage.example/{folder}/{name}" }
+      #   list:
+      #     method: PROPFIND
+      #     url: "https://storage.example/{folder}/"
+      #     namesRegex: '<d:href>/folder/([^<]+)</d:href>'
+      #   retry: { status: [429, 500, 502, 503, 504] }
 
   - name: "vless-xhttp"
     type: vless
@@ -1208,3 +1258,49 @@ proxies: # socks5
     type: direct
     interface-name: en1
     routing-mark: 6667
+
+  # desync: a DIRECT connection adapted to networks with DPI filtering. Only
+  # the first TLS ClientHello is transformed, before it is sent; the server
+  # receives the same handshake, everything after it and any non-TLS traffic
+  # pass unchanged. Routed like DIRECT (rules, groups; put it first in a
+  # fallback group with a proxy node as reserve). It is not a tunnel.
+  # Positions: "3" is byte 3 of the TLS input, "1+s" one byte after the start
+  # of the server name; several are comma-separated.
+  # - name: desync-yt
+  #   type: desync
+  #   tlsrec: "1+s"              # split the ClientHello into TLS records here
+  #   split: "2"                 # optional: send it in separate TCP writes
+  #   split-delay: 0             # ms between those writes, 0-1000
+  #   split-wait: sent           # sent | acked: before each further piece, wait until the kernel reports the earlier bytes sent/acknowledged (macOS: acked only; Android: sent is checked per connection)
+  #   split-wait-timeout: 2000   # ms per wait (also bounds disorder), 0-60000, default 2000
+  #   disorder: true             # the first split piece goes out with hop limit 1 and is retransmitted later (needs split; Android: checked per connection)
+  #   oob: true                  # one urgent byte after the first split piece (needs split); with disorder: disoob
+  #   oob-byte: "a"              # that byte, one ASCII character, default "a"
+  #   random:                    # random cuts per connection, added to tlsrec/split
+  #     tlsrec:
+  #       - { from: "-8+s", to: "8+s", count: 2, min-piece: 2 } # count cuts from from..to (both absolute or both +s), min-piece bytes apart
+  #     split:
+  #       - { from: 1, to: 120 } # count and min-piece default to 1
+  #     seed: 0                  # 0: a new seed per connection; another value repeats the same cuts (tests, bug reports)
+  #   fake:                      # Windows, Linux, Android (checked per connection): the first transmission of the prefix (or of the split piece ending at it) carries a low-TTL decoy
+  #     ttl: 4                   # hop limit of the decoy; with auto-ttl the fallback (0: no fallback, the connection fails)
+  #     auto-ttl: { delta: 1, min: 3, max: 20 } # TTL = hops to the server - delta, from the SYN-ACK; observable on Linux/Android over IPv6 only; {} = these defaults
+  #     prefix: -1               # end of the fake piece after record splitting, negative from the end
+  #     timeout: 3000            # ms for the native send
+  #     sni: [www.example.com, "cdn-##.example.net"] # decoy ClientHello for one of these names; * ? # are random characters
+  #     randomize: true          # fresh random, session ID and key shares in the decoy
+  #     from-original: false     # build the decoy from the real ClientHello (needs sni or randomize)
+  #     offset: 0                # start the decoy at this byte
+  #   udp:                       # Windows, Linux, Android, macOS: low-TTL datagrams before the first ones to each peer; without it UDP is plain DIRECT
+  #     ttl: 4
+  #     repeats: 6               # 1-16
+  #     packets: 3               # 1-8
+  #     template: quic           # zero (64 zero bytes, default) | quic (a QUIC v1 Initial for sni)
+  #     sni: www.wikipedia.org   # with template: quic
+  #     quic-only: true          # burst only before datagrams that look like a QUIC Initial
+  #   # interface-name, routing-mark and ip-version work as for direct.
+  #   # tfo, mptcp and dialer-proxy are refused. A method this OS does not
+  #   # implement is a config error that says why. On Android, split-wait sent,
+  #   # disorder and fake need TCP_INFO unsent bytes (Linux 4.6+): accepted,
+  #   # and a connection whose socket lacks them fails before sending. A
+  #   # suitable TTL depends on the network.

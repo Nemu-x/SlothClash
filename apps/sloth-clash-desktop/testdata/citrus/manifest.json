@@ -1,11 +1,18 @@
 {
-  "citrus": "ecaa9466",
+  "citrus": "62d1f567",
   "fixtures": [
     {
       "file": "config-general.yaml",
       "cases": {
         "": {
-          "outcome": "accept"
+          "outcome": "accept",
+          "citrus-only": [
+            "geox-sha256.geoip",
+            "geox-sha256.geosite",
+            "geox-sha256.mmdb",
+            "geox-sha256.asn"
+          ],
+          "note": "geox-sha256 is core patch 0027"
         }
       }
     },
@@ -129,6 +136,10 @@
         },
         "vless-http": {
           "outcome": "accept"
+        },
+        "vless-xdrive": {
+          "outcome": "accept",
+          "note": "core patch 0004 (google-drive storage)"
         },
         "vless-xhttp": {
           "outcome": "accept"
@@ -685,6 +696,106 @@
         },
         "grpc-reality": {
           "outcome": "accept"
+        },
+        "xhttp-h3-packet-up": {
+          "outcome": "accept",
+          "note": "XHTTP over HTTP/3; vanilla reads alpn [h3]"
+        },
+        "xhttp-h3-stream-one": {
+          "outcome": "accept",
+          "note": "XHTTP over HTTP/3; vanilla reads alpn [h3]"
+        },
+        "xhttp-h3-stream-up": {
+          "outcome": "accept",
+          "note": "XHTTP over HTTP/3; vanilla reads alpn [h3]"
+        },
+        "singbox-vless-reality-vision": {
+          "outcome": "accept"
+        },
+        "singbox-hysteria2": {
+          "outcome": "accept"
+        }
+      }
+    },
+    {
+      "file": "site-desync.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "note": "core patch 0023"
+        }
+      }
+    },
+    {
+      "file": "citrus-desync.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "proxies[0].tlsrec",
+            "proxies[0].split",
+            "proxies[0].split-delay",
+            "proxies[0].split-wait",
+            "proxies[0].split-wait-timeout",
+            "proxies[0].disorder",
+            "proxies[0].oob",
+            "proxies[0].oob-byte",
+            "proxies[0].random",
+            "proxies[0].random.tlsrec",
+            "proxies[0].random.split",
+            "proxies[0].random.seed",
+            "proxies[0].fake",
+            "proxies[0].fake.ttl",
+            "proxies[0].fake.auto-ttl",
+            "proxies[0].fake.prefix",
+            "proxies[0].fake.timeout",
+            "proxies[0].fake.sni",
+            "proxies[0].fake.randomize",
+            "proxies[0].fake.from-original",
+            "proxies[0].fake.offset",
+            "proxies[0].udp",
+            "proxies[0].udp.ttl",
+            "proxies[0].udp.repeats",
+            "proxies[0].udp.packets",
+            "proxies[0].udp.template",
+            "proxies[0].udp.sni",
+            "proxies[0].udp.quic-only"
+          ],
+          "note": "core patch 0023; fake is refused on macOS, as in Citrus"
+        }
+      }
+    },
+    {
+      "file": "citrus-tls-ca-policy.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": [
+            "tls.ca-roots",
+            "tls.ca-denylist"
+          ],
+          "note": "core patch 0026; opt-in: without the keys the core keeps its own roots and no denylist"
+        }
+      }
+    },
+    {
+      "file": "citrus-xdrive-local.yaml",
+      "cases": {
+        "": {
+          "outcome": "unsupported:XDrive local storage, a folder named by the config; refused (owner): the app turns such nodes into reject, the core never opens the folder (patch 0016)",
+          "citrus-only": [
+            "proxies[0].xdrive-opts.service",
+            "proxies[0].xdrive-opts.remote-folder"
+          ]
+        }
+      }
+    },
+    {
+      "file": "citrus-xdrive-template.yaml",
+      "cases": {
+        "": {
+          "outcome": "unsupported:XDrive template storage, storage requests (method, URL, headers, body) chosen by the config; refused (owner): the app turns such nodes into reject, the core never sends them (patch 0016)",
+          "citrus-only": ["proxies[0].xdrive-opts.template"]
         }
       }
     }

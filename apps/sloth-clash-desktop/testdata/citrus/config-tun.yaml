@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@ecaa9466 docs/config.yaml (tun 229-287)
+# Source: getmikan/Citrus@62d1f567 docs/config.yaml (tun 283-344)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 
 tun:
@@ -16,6 +16,9 @@ tun:
   # strict-route: true # 将所有连接路由到 tun 来防止泄漏，但你的设备将无法其他设备被访问
   # disable-icmp-forwarding: true # 禁用 ICMP 转发，防止某些情况下的 ICMP 环回问题，ping 将不会显示真实的延迟
   # congestion-controller: cubic # TCP congestion controller: cubic, reno, bbr, or bbr3; only effective on mips
+  # Windows with auto-route: when Forwarding or WeakHostSend is on for the egress interface (Internet Connection Sharing
+  # and Mobile Hotspot turn it on), the core's own connections loop back into the TUN. The core does not change the flags:
+  # it logs a warning and sends a tun.forwarding event on GET /events, and an info line and a cleared event when it is gone.
   route-address-set: # 将指定规则集中的目标 IP CIDR 规则添加到防火墙, 不匹配的流量将绕过路由, 仅支持 Linux，且需要 nftables，`auto-route` 和 `auto-redirect` 已启用。
     - ruleset-1
     - ruleset-2

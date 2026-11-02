@@ -1,0 +1,43 @@
+# Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
+# Source: getmikan/Citrus@62d1f567 docs/config.yaml lines 1070-1082 (the vless-xdrive proxy) and 1083, 1098-1112 (service template, commented out there)
+# License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
+# Changes from the source (ClashFest):
+#   - `service: template` with the commented-out template object uncommented; two dummy secrets for {secret0} / {secret1}
+#   - `REPLACE_WITH_SERVER_PUBLIC_KEY` replaced by the key of config-proxies.yaml's vless-encryption
+
+proxies:
+  - name: "vless-xdrive"
+    type: vless
+    server: storage-node
+    port: 443
+    uuid: 27848739-7e62-4138-9fd3-098a63964b6b
+    network: xdrive
+    udp: true
+    encryption: "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    client-fingerprint: chrome
+    # alpn: [h2, http/1.1]
+    # skip-cert-verify: false
+    # dialer-proxy: another-proxy # applies to all storage API requests
+    xdrive-opts:
+      service: template
+      remote-folder: folder
+      secrets: [user, password]
+      template:
+        flatten: true
+        auth:
+          type: basic
+          username: "{secret0}"
+          password: "{secret1}"
+        put: { method: PUT, url: "https://storage.example/{folder}/{name}" }
+        get: { method: GET, url: "https://storage.example/{folder}/{name}" }
+        delete: { method: DELETE, url: "https://storage.example/{folder}/{name}" }
+        list:
+          method: PROPFIND
+          url: "https://storage.example/{folder}/"
+          namesRegex: '<d:href>/folder/([^<]+)</d:href>'
+        retry: { status: [429, 500, 502, 503, 504] }
+
+proxy-groups:
+  - {name: GLOBAL, type: select, proxies: [vless-xdrive]}
+rules:
+  - MATCH,GLOBAL

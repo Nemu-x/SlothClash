@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@ecaa9466 component/tls/utls.go lines 111-163 (the Xray-core fingerprint names Citrus accepts)
+# Source: getmikan/Citrus@62d1f567 component/tls/utls.go lines 111-163 (the Xray-core fingerprint names Citrus accepts)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - one VLESS+TLS proxy per name, the name as both the proxy name and its client-fingerprint

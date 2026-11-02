@@ -117,7 +117,7 @@
     },
     {
       "file": "0026-ca-policy.patch",
-      "sha256": "e06d80c26a7bbd31331db32f571af8d10fbfd51f29a2e6f6ca4466d774b3e645"
+      "sha256": "db0a3d609ace90ddb732cff9be042fd17a1cd0d5e045a101d124a1fc6d03fc49"
     },
     {
       "file": "0027-geox-sha256.patch",

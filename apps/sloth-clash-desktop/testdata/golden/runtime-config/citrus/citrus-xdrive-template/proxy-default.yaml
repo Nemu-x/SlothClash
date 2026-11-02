@@ -48,47 +48,8 @@ geodata-mode: true
 geo-auto-update: false
 reality-mlkem: auto
 proxies:
-    - client-fingerprint: chrome
-      encryption: mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I
-      name: vless-xdrive
-      network: xdrive
-      port: 443
-      server: storage-node
-      type: vless
-      udp: true
-      uuid: 27848739-7e62-4138-9fd3-098a63964b6b
-      xdrive-opts:
-        remote-folder: folder
-        secrets:
-            - user
-            - password
-        service: template
-        template:
-            auth:
-                password: '{secret1}'
-                type: basic
-                username: '{secret0}'
-            delete:
-                method: DELETE
-                url: https://storage.example/{folder}/{name}
-            flatten: true
-            get:
-                method: GET
-                url: https://storage.example/{folder}/{name}
-            list:
-                method: PROPFIND
-                namesRegex: <d:href>/folder/([^<]+)</d:href>
-                url: https://storage.example/{folder}/
-            put:
-                method: PUT
-                url: https://storage.example/{folder}/{name}
-            retry:
-                status:
-                    - 429
-                    - 500
-                    - 502
-                    - 503
-                    - 504
+    - name: vless-xdrive
+      type: reject
 proxy-groups:
     - name: GLOBAL
       proxies:

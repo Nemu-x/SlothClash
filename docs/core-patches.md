@@ -321,8 +321,9 @@ a stock core.
 from the denylist. `fingerprint` pinning and `skip-cert-verify` are explicit choices and are not
 affected. The denylist is checked in `GetTLSConfig`, the `name-cert-verify` verifier, and the JLS,
 Restls and ShadowQUIC clients that use the pool directly; with a policy set, the Sudoku `wss` client
-and the XDrive storage client also verify against the core's pool instead of the platform's, and the
-DoH HTTP/3 probe keeps the verifier. The Tailscale control client is an exception, as in Citrus.
+also verifies against the core's pool instead of the platform's, and the DoH HTTP/3 probe keeps the
+verifier. The XDrive storage client needs no hunk here: 0004 already builds its TLS config with
+`GetTLSConfig`, so it follows the policy like every other client. The Tailscale control client is an exception, as in Citrus.
 
 Most proxies keep the pool they were built with, and mihomo rebuilds it only in `ApplyConfig`, after
 the proxies are parsed. With a policy (or when the running config had one), the config's pool is

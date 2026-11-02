@@ -4654,34 +4654,3 @@ index 2e758de4..7e46d26f 100644
  		d.TLSClient = func(conn net.Conn, hostname string) net.Conn {
  			return tls.Client(conn, tlsConfig)
  		}
-diff --git a/transport/xdrive/client.go b/transport/xdrive/client.go
-index efa892e5..2a3b179c 100644
---- a/transport/xdrive/client.go
-+++ b/transport/xdrive/client.go
-@@ -9,6 +9,8 @@ import (
- 	"sync"
- 	"time"
- 
-+	"github.com/metacubex/mihomo/component/ca"
-+
- 	"github.com/metacubex/tls"
- 	"net"
- )
-@@ -120,7 +122,16 @@ func NewHTTPClient(dial, dialTLS func(context.Context, string, string) (net.Conn
- 				raw.Close()
- 				return nil, err
- 			}
--			conn := tls.Client(raw, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}})
-+			config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}}
-+			// ClashFest core patch 0026: with tls.ca-roots or tls.ca-denylist the storage client
-+			// verifies against the core's pool and denylist; without them it keeps the platform roots.
-+			if !ca.CurrentRootPolicy().IsDefault() {
-+				if config, err = ca.GetTLSConfig(ca.Option{TLSConfig: config}); err != nil {
-+					raw.Close()
-+					return nil, err
-+				}
-+			}
-+			conn := tls.Client(raw, config)
- 			handshakeCtx, cancel := context.WithTimeout(ctx, driveTimeout)
- 			defer cancel()
- 			if err := conn.HandshakeContext(handshakeCtx); err != nil {

@@ -16,7 +16,8 @@ import (
 // probeCore is a stand-in for the core's GET /proxies/{name}/delay that does
 // what the patched core does (mihomo adapter.URLTest + patch 0020): a HEAD to
 // url without following redirects, TLS verified against the trusted roots
-// for the URL's host, and 503 when the status is outside `expected`. Every
+// for the URL's host, and, with detail=1 only, 503 when the status is outside
+// `expected` (without it the core reports the latency, as stock mihomo). Every
 // name dials backend, as if DNS pointed the probed host there. The real
 // core's behavior on these cases was measured against public hosts (see
 // docs/desync.md, custom domains).
@@ -45,7 +46,7 @@ func probeCore(t *testing.T, backend string, roots *x509.CertPool) *httptest.Ser
 		lo, hi, _ := strings.Cut(expected, "-")
 		min, _ := strconv.Atoi(lo)
 		max, _ := strconv.Atoi(hi)
-		if resp.StatusCode < min || resp.StatusCode > max {
+		if r.URL.Query().Get("detail") == "1" && (resp.StatusCode < min || resp.StatusCode > max) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "HTTP response did not match the expected status"})
 			return
@@ -136,7 +137,7 @@ func TestDesyncProbeUsesTransferTestWhenTheCoreHasIt(t *testing.T) {
 	if _, err := probeDesyncOutbound(context.Background(), endpoint, "", "R", "https://discord.com/api/v10/gateway"); err != nil {
 		t.Fatal(err)
 	}
-	if paths[0] != "/proxies/R/delay" || queries[0]["max-bytes"] != "" {
+	if paths[0] != "/proxies/R/delay" || queries[0]["max-bytes"] != "" || queries[0]["detail"] != "1" {
 		t.Fatalf("core without transfer-test: %s %v", paths[0], queries[0])
 	}
 
@@ -145,7 +146,7 @@ func TestDesyncProbeUsesTransferTestWhenTheCoreHasIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := queries[1]
-	if paths[1] != "/proxies/R/transfer" || q["max-bytes"] != "65536" || q["min-bytes"] != "" || q["stall"] != "2000" || q["expected"] != "200-299" {
+	if paths[1] != "/proxies/R/transfer" || q["max-bytes"] != "65536" || q["min-bytes"] != "" || q["stall"] != "2000" || q["expected"] != "200-299" || q["detail"] != "" {
 		t.Fatalf("small target: %s %v", paths[1], q)
 	}
 	_, err := probeDesyncOutbound(context.Background(), endpoint, "", "R", "https://discord.com/login")

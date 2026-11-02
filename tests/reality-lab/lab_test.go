@@ -122,6 +122,10 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 			return false
 		}
 		switch {
+		case r.forced && policy == "off":
+			// reality-mlkem off keeps the stock parrots: of the lab's
+			// fingerprints only chrome's carries the forced hybrid share.
+			return acceptsShare(r.srv.version, r.fingerprint == "chrome")
 		case r.forced || policy == "on":
 			return acceptsShare(r.srv.version, true) // firefox/safari use their own hybrid hello (0024)
 		case policy == "off":
@@ -392,10 +396,11 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row, portBa
 	return ports, logf.Name()
 }
 
-// checkBrowserHellos asserts what core patch 0024 promises: a firefox or
-// safari proxy that needs the hybrid share sends its own current hello (the
-// core logs "using Firefox 148" / "using Safari 26.3") and never borrows
-// chrome's. Needs the core at log-level debug.
+// checkBrowserHellos asserts what core patches 0002 and 0024 promise: a
+// firefox or safari proxy that needs the hybrid share sends its own current
+// hello (the core logs "using Firefox 148" / "using Safari 26.3") and never
+// borrows chrome's; with reality-mlkem off it keeps the stock parrot. Needs the
+// core at log-level debug.
 func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
 	t.Helper()
 	b, err := os.ReadFile(coreLog)
@@ -411,6 +416,9 @@ func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
 		// stale verdict says otherwise; one forced row is enough to expect it.
 		forced := false
 		for _, r := range rows {
+			if scenario == "patched/off" {
+				break // stock parrots: no post-quantum browser hello expected
+			}
 			if r.forced && strings.EqualFold(r.fingerprint, fp.client) {
 				forced = true
 			}

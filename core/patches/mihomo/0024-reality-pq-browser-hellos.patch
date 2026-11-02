@@ -1,5 +1,5 @@
 diff --git a/component/tls/reality.go b/component/tls/reality.go
-index e8f516f..1ce9849 100644
+index d2790384..8c00ab55 100644
 --- a/component/tls/reality.go
 +++ b/component/tls/reality.go
 @@ -31,7 +31,7 @@ const RealityMaxShortIDLen = 8
@@ -11,7 +11,7 @@ index e8f516f..1ce9849 100644
  
  type RealityConfig struct {
  	PublicKey *ecdh.PublicKey
-@@ -171,6 +171,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+@@ -185,6 +185,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
  			realityReportMLKEM(memoKey, useMLKEM, ok, conn.RemoteAddr())
  		}
  	}
@@ -19,7 +19,7 @@ index e8f516f..1ce9849 100644
  	for retry := 0; ; retry++ {
  		verifier := &realityVerifier{
  			serverName:    serverName,
-@@ -184,21 +185,36 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+@@ -198,20 +199,34 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
  			VerifyConnection:       verifier.VerifyConnection,
  		}
  
@@ -39,40 +39,36 @@ index e8f516f..1ce9849 100644
  		}
 +		verifier.UConn = uConn
  
--		// Only the chrome specs in utls carry the hybrid share. When the hybrid
--		// handshake is wanted (forced, or learned because the server rejected the
--		// classic one) and this fingerprint cannot produce it, chrome is the only
--		// hello that can still reach that server; swap it for this handshake.
--		if useMLKEM && !realityHasMLKEMShare(uConn) && fingerprint.Client != utls.HelloChrome_Auto.Client {
--			log.Debugln("REALITY %v: %s fingerprint has no X25519MLKEM768 share, using chrome", conn.RemoteAddr(), fingerprint.Client)
--			fingerprint = utls.HelloChrome_Auto
--			continue
+-		// The hybrid handshake is wanted (forced, or learned because the server
+-		// relayed a classic hello) but this fingerprint's utls parrot cannot offer
+-		// the share. The fingerprint is the user's choice and is kept: its classic
+-		// hello goes out unchanged, exactly as with the memo off. That handshake
+-		// says nothing about the key share the server wants, so its outcome is
+-		// not reported to the memo either.
 +		// When the hybrid handshake is wanted (forced, or learned because the
-+		// server rejected the classic one) and this fingerprint's utls parrot
-+		// cannot offer the share: firefox and safari switch to their current
-+		// browser hello (reality_pq_specs.go), which has it; any other family
-+		// (ios, edge, random, ...) has no such hello and borrows chrome's.
-+		if useMLKEM && !realityHasMLKEMShare(uConn) {
-+			if hello, ok := realityPQHelloFor(fingerprint); ok && pqHello == nil {
++		// server relayed a classic hello) and this fingerprint's utls parrot
++		// cannot offer the share, firefox and safari switch to their current
++		// browser hello (reality_pq_specs.go), which has it; with reality-mlkem
++		// off a forced share keeps the stock behaviour, the parrot as it is. Any
++		// other family (ios, edge, random, ...) has no such hello and is kept
++		// too: the fingerprint is the user's choice. Its classic hello goes out
++		// unchanged and, saying nothing about the key share the server wants, is
++		// not reported to the memo.
+ 		if useMLKEM && !realityHasMLKEMShare(uConn) {
++			if hello, ok := realityPQHelloFor(fingerprint); ok && pqHello == nil && GetRealityMLKEMPolicy() != RealityMLKEMOff {
 +				log.Debugln("REALITY %v: %s fingerprint has no X25519MLKEM768 share, using %s", conn.RemoteAddr(), fingerprint.Client, hello.name)
 +				pqHello = &hello
 +				continue
 +			}
-+			if fingerprint.Client != utls.HelloChrome_Auto.Client {
-+				log.Debugln("REALITY %v: %s fingerprint has no X25519MLKEM768 share, using chrome", conn.RemoteAddr(), fingerprint.Client)
-+				fingerprint = utls.HelloChrome_Auto
-+				pqHello = nil
-+				continue
-+			}
+ 			realityLogNoMLKEMShare(fingerprint)
+ 			adaptive = false
  		}
- 
- 		if !useMLKEM { // for X25519MLKEM768 does not work properly with the old reality server
 diff --git a/component/tls/reality_pq_specs.go b/component/tls/reality_pq_specs.go
 new file mode 100644
-index 0000000..5986727
+index 00000000..4c11c739
 --- /dev/null
 +++ b/component/tls/reality_pq_specs.go
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,308 @@
 +package tls
 +
 +import (
@@ -87,9 +83,10 @@ index 0000000..5986727
 +// X25519MLKEM768 key share (Xray 26.9.8+ forwards a hello without it to the
 +// cover site). In metacubex/utls v1.8.8 only the chrome parrot carries that
 +// share: "firefox" is Firefox 120 and "safari" is Safari 16.0, both older than
-+// post-quantum TLS. Without these specs a firefox or safari proxy has to borrow
-+// chrome's hello for such a server, which changes the fingerprint the user
-+// chose.
++// post-quantum TLS. Without these specs a firefox or safari proxy could only
++// send its classic hello to such a server (the core never swaps the fingerprint
++// the user chose for another one), and that server would relay it. They are
++// used while reality-mlkem is auto or on; off keeps the stock parrots.
 +//
 +// The two specs are HelloFirefox_148 and HelloSafari_26_3 from metacubex/utls
 +// branch v1.9.0-mod-meta (a6a364a), the same parrots Xray 26.10.x itself sends
@@ -382,10 +379,10 @@ index 0000000..5986727
 +}
 diff --git a/component/tls/reality_pq_specs_test.go b/component/tls/reality_pq_specs_test.go
 new file mode 100644
-index 0000000..fe0c008
+index 00000000..2b99548b
 --- /dev/null
 +++ b/component/tls/reality_pq_specs_test.go
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,141 @@
 +package tls
 +
 +import (
@@ -512,4 +509,18 @@ index 0000000..fe0c008
 +			t.Errorf("%s must not get a post-quantum spec", fp.Client)
 +		}
 +	}
++}
++
++// Firefox and Safari reach a server that wants the hybrid share with their own
++// current hello; with reality-mlkem off a forced share keeps the stock parrot.
++func TestRealityPQHelloKeepsBrowserFamily(t *testing.T) {
++	runRealityFingerprintCases(t, []realityFingerprintCase{
++		{"auto learned hybrid, firefox", RealityMLKEMAuto, false, utls.HelloFirefox_Auto, true},
++		{"auto learned hybrid, safari", RealityMLKEMAuto, false, utls.HelloSafari_Auto, true},
++		{"on, firefox", RealityMLKEMOn, false, utls.HelloFirefox_Auto, true},
++		{"auto, forced, safari", RealityMLKEMAuto, true, utls.HelloSafari_Auto, true},
++		{"off, forced, firefox", RealityMLKEMOff, true, utls.HelloFirefox_Auto, false},
++		{"off, forced, safari", RealityMLKEMOff, true, utls.HelloSafari_Auto, false},
++		{"auto learned hybrid, ios", RealityMLKEMAuto, false, utls.HelloIOS_Auto, false},
++	})
 +}

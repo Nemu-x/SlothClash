@@ -17,6 +17,21 @@
 **🔧 Исправления**
 - VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
 - Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
+**🛰️ Core: stock configs behave like stock mihomo**
+- REALITY's automatic post-quantum key-share choice no longer flips on network trouble. Only a server that actually answered with its cover site's certificate counts as a key-share mismatch; timeouts, resets and dial errors are ignored, so a flaky network can no longer switch an older Xray server to the post-quantum share and break it.
+- REALITY never replaces your fingerprint with Chrome's any more. `firefox` and `safari` use their current post-quantum hellos when a server needs one; other fingerprints (`ios`, `edge`, random) send their own hello unchanged. With `reality-mlkem: off`, `support-x25519mlkem768` behaves exactly as in stock mihomo.
+- The `/proxies/{name}/delay` API answers as in stock mihomo again (stock timeout handling, `504 {"message":"Timeout"}`, latency reported for an unexpected status). The detailed errors the app's own probes use are opt-in with `detail=1`.
+- `client-fingerprint` names of stock mihomo are case-sensitive again (as in stock mihomo); only Xray-only names such as `HelloChrome_131` are matched case-insensitively.
+- Quieter logs: the REALITY policy line on every config load and the OpenVPN "no server identity check" note are now debug-level; failed delay tests no longer write warnings.
+
+### Русский
+
+**🛰️ Ядро: обычные конфиги работают как в обычном mihomo**
+- Автоматический выбор постквантовой доли ключа в REALITY больше не переключается из-за сбоев сети. Несовпадением доли ключа считается только ответ сервера сертификатом сайта-прикрытия; таймауты, сбросы и ошибки подключения игнорируются, поэтому нестабильная сеть больше не переводит старый сервер Xray на постквантовую долю и не ломает его.
+- REALITY больше никогда не подменяет ваш отпечаток на Chrome. `firefox` и `safari` используют свои актуальные постквантовые hello, когда серверу это нужно; остальные отпечатки (`ios`, `edge`, случайный) отправляют свой hello без изменений. С `reality-mlkem: off` ключ `support-x25519mlkem768` работает ровно как в обычном mihomo.
+- API `/proxies/{name}/delay` снова отвечает как в обычном mihomo (обычный таймаут, `504 {"message":"Timeout"}`, задержка при неожиданном статусе). Подробные ошибки, которые использует само приложение, включаются параметром `detail=1`.
+- Имена `client-fingerprint` из обычного mihomo снова чувствительны к регистру (как в обычном mihomo); без учёта регистра сравниваются только имена Xray, например `HelloChrome_131`.
+- Меньше шума в логах: строка политики REALITY при каждой загрузке конфига и заметка OpenVPN об отсутствии проверки сервера теперь на уровне debug; неудачные проверки задержки больше не пишут предупреждения.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

@@ -10,11 +10,11 @@
     },
     {
       "file": "0002-reality-adaptive-mlkem.patch",
-      "sha256": "39dae2c2327581f8c2802f5fbe83fce784d9f8fdd2c842286d5ad196b756eda6"
+      "sha256": "53ff6ad9e8ddf6cf1c0845a06b005ab25686e68074951223cf8db1433ecb59c3"
     },
     {
       "file": "0003-reality-config-keys.patch",
-      "sha256": "8524faf333caa15214b4b87ba3a7a8ca0d039defd54a26b8148260a57a6f1b07"
+      "sha256": "ebe91114a0081eb2863d70e0d243f8e5d8d8261ca585821a5639db619a3ae350"
     },
     {
       "file": "0004-vless-xdrive.patch",
@@ -32,12 +32,12 @@
     },
     {
       "file": "0007-reality-mldsa65-verify.patch",
-      "sha256": "30e4f0be8a366e5bcedb652a07645b665c4f74b6d90ea8be69e4ade4abf92e00",
+      "sha256": "a0f5a28c79d91381eb4d5a2c1cdcab4ef9d1446405d6b7896ddeab05f1958b9f",
       "feature": "mldsa65"
     },
     {
       "file": "0008-tls-xray-fingerprint-names.patch",
-      "sha256": "276942d8827c8e3cc6aecbd3f5eef5a71c61389c4f5277271ba56ed1eb27d51f"
+      "sha256": "cd756cad18be06a4ae3ebd6a396af12a946a141816c993ade0739f3e9b1f8d3a"
     },
     {
       "file": "0009-tls-pin-and-name-lists.patch",
@@ -51,7 +51,7 @@
     },
     {
       "file": "0011-openvpn-server-identity.patch",
-      "sha256": "094333187beb7ca84cdd9611510a6d25ce5a4a6c16c970ba75e8a6b65602ef7a"
+      "sha256": "8ca6bff53debbb34371180a9c896950910cd1258987eeac5ffe8c22aada63c43"
     },
     {
       "file": "0012-quic-disable-mtu-discovery.patch",
@@ -80,7 +80,7 @@
     },
     {
       "file": "0018-probe-error-details.patch",
-      "sha256": "a465f539ac7e32cbba2dff87a5a68d2168942f405377d59834448555ff4c5176"
+      "sha256": "0ec39b16aae00dc01c57478bf47bf2cbc2040a804e07ddc974145b2ce4ae49cf"
     },
     {
       "file": "0019-desync-dns-udp.patch",
@@ -89,7 +89,7 @@
     },
     {
       "file": "0020-desync-auto-diagnostics.patch",
-      "sha256": "f8228def1cb7ecd7e9125dd4943db0870987846aa10a5146c9e029c4095f744b",
+      "sha256": "b5bc34ef8ccd552687a28d51fdff64b62937fe7d671c8f561284db225a499465",
       "feature": "desync-auto"
     },
     {
@@ -107,7 +107,7 @@
     },
     {
       "file": "0024-reality-pq-browser-hellos.patch",
-      "sha256": "b964333f7c3ec6dd2780249df850e14f79f67a194bcb65513af23416f92ce704"
+      "sha256": "2c513c471a9d8ce4f22cb766e4aaa677a889d95381b3cf73e2f4d1f21f64783f"
     },
     {
       "file": "0025-proxy-transfer-test.patch",

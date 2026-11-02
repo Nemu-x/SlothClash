@@ -1,5 +1,5 @@
 diff --git a/adapter/outbound/base.go b/adapter/outbound/base.go
-index d6942ba..aa7e0cd 100644
+index d6942ba0..aa7e0cdc 100644
 --- a/adapter/outbound/base.go
 +++ b/adapter/outbound/base.go
 @@ -376,6 +376,13 @@ type autoCloseProxyAdapter struct {
@@ -18,7 +18,7 @@ index d6942ba..aa7e0cd 100644
  	if err != nil {
 diff --git a/adapter/outbound/desync_probe_wrapper_test.go b/adapter/outbound/desync_probe_wrapper_test.go
 new file mode 100644
-index 0000000..886d1c4
+index 00000000..886d1c40
 --- /dev/null
 +++ b/adapter/outbound/desync_probe_wrapper_test.go
 @@ -0,0 +1,26 @@
@@ -49,7 +49,7 @@ index 0000000..886d1c4
 +	}
 +}
 diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
-index 41103f3..8b01f88 100644
+index 41103f39..8b01f887 100644
 --- a/adapter/outbound/direct.go
 +++ b/adapter/outbound/direct.go
 @@ -22,6 +22,7 @@ type Direct struct {
@@ -71,7 +71,7 @@ index 41103f3..8b01f88 100644
  	return d.loopBack.NewPacketConn(NewPacketConn(pc, d)), nil
  }
 diff --git a/adapter/outbound/direct_desync.go b/adapter/outbound/direct_desync.go
-index c73f1f7..b818af7 100644
+index c73f1f76..b818af7f 100644
 --- a/adapter/outbound/direct_desync.go
 +++ b/adapter/outbound/direct_desync.go
 @@ -45,6 +45,7 @@ func (d *Direct) MarshalJSON() ([]byte, error) {
@@ -92,7 +92,7 @@ index c73f1f7..b818af7 100644
  }
 diff --git a/adapter/outbound/direct_desync_activity.go b/adapter/outbound/direct_desync_activity.go
 new file mode 100644
-index 0000000..4a06db2
+index 00000000..4a06db22
 --- /dev/null
 +++ b/adapter/outbound/direct_desync_activity.go
 @@ -0,0 +1,132 @@
@@ -230,7 +230,7 @@ index 0000000..4a06db2
 +}
 diff --git a/adapter/outbound/direct_desync_activity_test.go b/adapter/outbound/direct_desync_activity_test.go
 new file mode 100644
-index 0000000..e0dab2c
+index 00000000..e0dab2cc
 --- /dev/null
 +++ b/adapter/outbound/direct_desync_activity_test.go
 @@ -0,0 +1,37 @@
@@ -273,7 +273,7 @@ index 0000000..e0dab2c
 +}
 diff --git a/hub/route/desync_udp.go b/hub/route/desync_udp.go
 new file mode 100644
-index 0000000..51723dc
+index 00000000..51723dc5
 --- /dev/null
 +++ b/hub/route/desync_udp.go
 @@ -0,0 +1,169 @@
@@ -448,7 +448,7 @@ index 0000000..51723dc
 +}
 diff --git a/hub/route/desync_udp_test.go b/hub/route/desync_udp_test.go
 new file mode 100644
-index 0000000..dc3290c
+index 00000000..dc3290c8
 --- /dev/null
 +++ b/hub/route/desync_udp_test.go
 @@ -0,0 +1,153 @@
@@ -606,7 +606,7 @@ index 0000000..dc3290c
 +	}
 +}
 diff --git a/hub/route/proxies.go b/hub/route/proxies.go
-index d90595a..882abcf 100644
+index 8be22410..5516c3ba 100644
 --- a/hub/route/proxies.go
 +++ b/hub/route/proxies.go
 @@ -30,6 +30,7 @@ func proxyRouter() http.Handler {
@@ -617,41 +617,80 @@ index d90595a..882abcf 100644
  		r.Put("/", updateProxy)
  		r.Delete("/", unfixedProxy)
  	})
-@@ -123,10 +124,13 @@ func getProxyDelay(w http.ResponseWriter, r *http.Request) {
+@@ -129,10 +130,20 @@ func getProxyDelay(w http.ResponseWriter, r *http.Request) {
  
  	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
  
 -	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeout))
-+	ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
++	// A detail probe also ends with its request (the app's calibration gives up
++	// on a candidate), and fails on a response outside the expected range rather
++	// than reporting its latency as stock mihomo does.
++	parent := context.Background()
++	if detail {
++		parent = r.Context()
++	}
++	ctx, cancel := context.WithTimeout(parent, time.Millisecond*time.Duration(timeout))
  	defer cancel()
  
  	delay, err := proxy.URLTest(ctx, url, expectedStatus)
-+	if err == nil && expectedStatus != nil && !proxy.AliveForTestUrl(url) {
++	if detail && err == nil && expectedStatus != nil && !proxy.AliveForTestUrl(url) {
 +		err = fmt.Errorf("HTTP response did not match the expected status")
 +	}
  	if ctx.Err() != nil {
- 		message := fmt.Sprintf("delay test timed out after %d ms", timeout)
- 		if err != nil {
+ 		if detail {
+ 			message := fmt.Sprintf("delay test timed out after %d ms", timeout)
 diff --git a/hub/route/proxies_delay_test.go b/hub/route/proxies_delay_test.go
-index c866aa2..df6c8e8 100644
+index ca734d50..07d795cc 100644
 --- a/hub/route/proxies_delay_test.go
 +++ b/hub/route/proxies_delay_test.go
-@@ -22,6 +22,18 @@ type delayTestProxy struct {
+@@ -20,6 +20,40 @@ type delayTestProxy struct {
+ 	delay          uint16
+ 	err            error
  	waitForTimeout bool
- }
- 
++	blockOnCancel  bool // fail only if the test context is already done
++}
++
 +func (*delayTestProxy) AliveForTestUrl(string) bool { return false }
 +
-+func TestProxyDelayRejectsUnexpectedHTTPStatus(t *testing.T) {
-+	req := httptest.NewRequest("GET", "/delay?url=https%3A%2F%2Fwww.youtube.com%2Fgenerate_204&timeout=1000&expected=200-299", nil)
-+	req = req.WithContext(context.WithValue(req.Context(), CtxKeyProxy, C.Proxy(&delayTestProxy{delay: 12})))
-+	response := httptest.NewRecorder()
-+	getProxyDelay(response, req)
++func TestProxyDelayUnexpectedHTTPStatus(t *testing.T) {
++	// Stock: the latency of the mismatching response is reported (the proxy is
++	// marked dead for that URL separately).
++	response := delayRequest(&delayTestProxy{delay: 12}, "&expected=200-299")
++	if response.Code != 200 || strings.TrimSpace(response.Body.String()) != `{"delay":12}` {
++		t.Fatalf("stock answer changed: %d %s", response.Code, response.Body.String())
++	}
++	// detail=1: a blocked or error page is a failed probe.
++	response = delayRequest(&delayTestProxy{delay: 12}, "&expected=200-299&detail=1")
 +	if response.Code != 503 || !strings.Contains(response.Body.String(), "expected status") {
 +		t.Fatalf("accepted blocked/error page: %d %s", response.Code, response.Body.String())
 +	}
 +}
 +
- func (*delayTestProxy) Name() string { return "SLOTH-DESYNC-YOUTUBE" }
++func TestProxyDelayDetailFollowsRequest(t *testing.T) {
++	for _, tc := range []struct {
++		query  string
++		status int
++	}{{"", 200}, {"&detail=1", 504}} {
++		proxy := &delayTestProxy{delay: 7, blockOnCancel: true}
++		req := httptest.NewRequest("GET", "/delay?url=https%3A%2F%2Fwww.youtube.com%2Fgenerate_204&timeout=200"+tc.query, nil)
++		ctx, cancel := context.WithCancel(context.WithValue(req.Context(), CtxKeyProxy, C.Proxy(proxy)))
++		cancel() // the caller already gave up
++		response := httptest.NewRecorder()
++		getProxyDelay(response, req.WithContext(ctx))
++		if response.Code != tc.status {
++			t.Fatalf("query %q: HTTP %d %s, want %d", tc.query, response.Code, response.Body.String(), tc.status)
++		}
++	}
+ }
  
- func (p *delayTestProxy) URLTest(ctx context.Context, _ string, _ utils.IntRanges[uint16]) (uint16, error) {
+ func (*delayTestProxy) Name() string { return "SLOTH-DESYNC-YOUTUBE" }
+@@ -29,6 +63,9 @@ func (p *delayTestProxy) URLTest(ctx context.Context, _ string, _ utils.IntRange
+ 		<-ctx.Done()
+ 		return 0, ctx.Err()
+ 	}
++	if p.blockOnCancel && ctx.Err() != nil {
++		return 0, ctx.Err()
++	}
+ 	return p.delay, p.err
+ }
+ 

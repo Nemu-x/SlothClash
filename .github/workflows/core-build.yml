@@ -3,7 +3,7 @@
 #
 # The release workflow (desktop-artifacts.yml) calls this on every tag: the app
 # is built only from the core-dist artifact produced here, so a patch that no
-# longer applies, a failing patch test or a REALITY lab regression stops the
+# longer applies, a failing patch test or a REALITY or Citrus lab regression stops the
 # release before any app build starts. On its own it runs on PRs and pushes
 # that touch the core, so a broken patch shows up long before a tag does.
 # Patch policy and bump flow: docs/core-patches.md.
@@ -182,3 +182,66 @@ jobs:
           SLOTH_MIHOMO_BIN: ${{ github.workspace }}/dist/mihomo-linux-amd64
           SLOTH_MIHOMO_STOCK_BIN: ${{ github.workspace }}/stock-mihomo
         run: go test -v -count=1 -timeout 20m .
+
+  # Citrus servers (a published release and a pinned dev commit, both from
+  # tests/citrus-lab/citrus.json) against the patched core and the stock core
+  # of the same tag: Citrus' own client suite, then the lab's matrix, the UDP
+  # block and the 90 s idle sessions. All local, no Docker, no internet past
+  # the downloads. The current dev head runs weekly in citrus-lab-head.yml.
+  citrus-lab:
+    name: citrus-lab (${{ matrix.citrus }})
+    needs: dist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - citrus: release
+            flavor: release
+          - citrus: dev-pinned
+            flavor: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      # The core's Go release is pinned in core/mihomo/.tool-versions (setup-go
+      # v5 cannot read that file); the script also forces it via GOTOOLCHAIN.
+      - name: Core Go version
+        id: go
+        run: echo "version=$(awk '$1 == "golang" { print $2 }' core/mihomo/.tool-versions)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-dist
+          path: dist
+
+      - name: Stock core of the same tag (comparison column)
+        run: |
+          TAG=$(node -p "require('./core/mihomo/manifest.json').tag")
+          curl -fsSL "https://github.com/MetaCubeX/mihomo/releases/download/$TAG/mihomo-linux-amd64-v2-$TAG.gz" | gunzip > stock-mihomo
+          chmod +x stock-mihomo dist/mihomo-linux-amd64
+
+      - name: Citrus lab (patched vs stock)
+        working-directory: tests/citrus-lab
+        env:
+          CITRUS_LAB: '1'
+          CITRUS_LAB_FLAVOR: ${{ matrix.flavor }}
+          CITRUS_LAB_CACHE: ${{ runner.temp }}/citrus-lab-cache
+          CITRUS_LAB_LOG_DIR: ${{ runner.temp }}/citrus-lab-logs
+          SLOTH_MIHOMO_BIN: ${{ github.workspace }}/dist/mihomo-linux-amd64
+          SLOTH_MIHOMO_STOCK_BIN: ${{ github.workspace }}/stock-mihomo
+        run: go test -v -count=1 -parallel 12 -timeout 15m .
+
+      - name: Upload logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: citrus-lab-logs-${{ matrix.citrus }}
+          path: ${{ runner.temp }}/citrus-lab-logs
+          if-no-files-found: ignore
+          retention-days: 14

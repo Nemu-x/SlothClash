@@ -1,0 +1,22 @@
+{
+  "comment": "Citrus versions the Citrus lab runs against (tests/citrus-lab, docs/core-patches.md). release: a published build, verified against the pinned sha256 and the release's checksums.txt; commit is the tag's commit, whose test/interop suite stage 1 runs. dev: a pinned commit of the dev branch, built from source. Bump: change the values; the sha256 is the line for the asset in checksums.txt of the release.",
+  "repo": "https://github.com/getmikan/Citrus",
+  "release": {
+    "tag": "v1.0.0-beta.2",
+    "commit": "ecaa9466cd072a62b9b5b2d9ab465c572ab75531",
+    "assets": {
+      "linux-amd64": {
+        "name": "citrus-linux-amd64-v1.0.0-beta.2.gz",
+        "sha256": "c56826cc84435d1c3e5263a81e62c9a99cb2a71df3f2574714918b03750b8192"
+      },
+      "windows-amd64": {
+        "name": "citrus-windows-amd64-v1.0.0-beta.2.zip",
+        "sha256": "631d1ad1ca8c3401e3dd030156bd37b5e00fb7d9ed4c30228e3df24c5f1d6e63"
+      }
+    }
+  },
+  "dev": {
+    "branch": "dev",
+    "commit": "62d1f567711c5e009115f471ea89882c196d00e5"
+  }
+}

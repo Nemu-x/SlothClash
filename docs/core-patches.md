@@ -195,7 +195,7 @@ two that differ:
 
 | Patch | What a config gains | UA token |
 |---|---|---|
-| 0004 VLESS over XDrive | `network: xdrive` + `xdrive-opts` (Google Drive or a templated HTTP storage), client side only | `xdrive` |
+| 0004 VLESS over XDrive | `network: xdrive` + `xdrive-opts` (Google Drive; the templated HTTP and local storages are refused in shipped builds, see 0016), client side only | `xdrive` |
 | 0005 REALITY per-proxy client version | `reality-opts.client-version` overrides the global one from 0001/0003 | |
 | 0006 chain groups | `type: chain`: hops in `proxies`, each dialed through the one before (`dialer-proxy` wiring at load), health check names the first broken hop | `chain` |
 | 0007 REALITY mldsa65-verify | `reality-opts.mldsa65-verify` (Xray `mldsa65Verify`, share link `pqv`); without the patch the key is ignored and the client only believes it pins the server | `mldsa65` |
@@ -214,20 +214,31 @@ touches). Origin, design notes and the condition under which each patch goes awa
 rule (it comes with a mihomo release), Citrus' XHTTP defaults, ML-KEM on by default, the protocols
 Citrus removed, library forks.
 
-### 0016 XDrive: local storage only in tests
+### 0016 XDrive: local and template storage only in tests
 
-XDrive's `service: local` keeps the storage in a folder whose path comes from the config. ClashFest
-refuses it on Android only; here the core can run under the privileged helper service (SYSTEM on
-Windows, root on macOS and Linux), where a subscription-chosen folder would be a privileged file read
-and write. The patch turns `xdrive.AllowLocalService` into `testing.Testing()`: the series' own tests
-keep using local storage, a shipped binary never does. Such a node still loads, so one bad node does
-not fail a subscription, but it creates nothing and every dial through it fails with `xdrive service
-local (a folder on the device) is disabled in this build`. The gate sits in the core, so it also covers
-proxy-providers the core fetches itself. `xdrive_hardening_test.go` checks it on the built core: the
-folder of a local node must not exist after the config is loaded (a build with the gate open creates
-it).
+SlothClash ships vanilla XDrive: Google Drive only. Two storages of 0004 let a config reach into
+the user's machine and network, and both are refused wherever the node comes from (config.yaml,
+http, file and inline proxy-providers, manual and local profiles):
 
-Delete together with 0004, or when XDrive drops local storage.
+- `service: local` keeps the storage in a folder whose path comes from the config. ClashFest refuses
+  it on Android only; here the core can run under the privileged helper service (SYSTEM on Windows,
+  root on macOS and Linux), where a config-chosen folder would be a privileged file read and write.
+- `service: template` lets the config choose the method, URL, headers and body of every storage
+  request. They are sent from the user's machine, to loopback and LAN hosts too, as soon as a health
+  check dials the node: a subscription could drive requests against local services. Citrus refuses
+  both services in http proxy-providers only; we refuse them everywhere.
+
+The patch turns `xdrive.AllowLocalService` into `testing.Testing()` and adds
+`xdrive.AllowTemplateService`, also `testing.Testing()`: the series' own tests keep using both
+storages, a shipped binary never does. Such a node still loads, so one bad node does not fail a
+subscription, but its storage (`disabledStorage`) touches no file and sends no request: every dial
+through it fails with `xdrive service local (a folder on the device) is disabled in this build` or
+`xdrive service template is disabled in this build`. The gate sits in the core, so it also covers
+proxy-providers the core fetches itself. `TestTemplateServiceGate` checks that a refused template node sends no request to a
+test server; `xdrive_hardening_test.go` checks the local gate on the built core: the folder of a local
+node must not exist after the config is loaded (a build with the gate open creates it).
+
+Delete together with 0004, or when XDrive drops local and template storage.
 
 ### 0024 REALITY: current Firefox and Safari hellos for the hybrid share
 
@@ -266,9 +277,11 @@ utls release whose `firefox` / `safari` parrots carry the hybrid share.
   and no comment: a token is only ever sent for a patch that is in the binary.
 - **XDrive hardening.** The config pipeline drops `listeners` entries with `xdrive-config` (an XDrive
   inbound polls cloud storage: a reverse tunnel into this machine that no bind address contains) and
-  turns `service: local` nodes, in `proxies` and inline provider payloads, into `type: reject` with the
-  same name. Keys are matched the way the core's decoder matches them (`Xdrive_Opts` counts). Both run
-  again after a profile's JavaScript override, so a script cannot bring them back.
+  turns `service: local` and `service: template` nodes (value trimmed, any case), in `proxies` and
+  inline provider payloads, into `type: reject` with the same name. The `XDRIVE-1` debug log counts
+  them separately (`localNodesRejected`, `templateNodesRejected`). Keys are matched the way the
+  core's decoder matches them (`Xdrive_Opts` counts). Both run again after a profile's JavaScript
+  override, so a script cannot bring them back.
 - **Credentials.** `xdrive-opts.secrets`, `template.auth` and credential-looking headers, query values
   and bodies of template operations are shown as `[redacted]` in the script preview; credential query
   values (`token`, `key`, `signature`, ...) are redacted in the log views and the TUN diagnostics. The

@@ -1,3 +1,15 @@
+## Sloth Clash desktop — Unreleased
+
+### English
+
+**🔒 XDrive: templated storage refused**
+- XDrive nodes with `service: template` are now refused, like `service: local` already was, wherever they come from: subscriptions, providers, manual and local profiles. A template lets the config choose the method, address, headers and body of HTTP requests sent from your computer, including to devices on your local network, as soon as a node is tested. Such a node keeps its name but shows as disabled and carries no traffic; Google Drive XDrive nodes are unaffected.
+
+### Русский
+
+**🔒 XDrive: шаблонное хранилище отключено**
+- Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.
+
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 
 > ℹ️ **You will be asked once to reinstall the helper service** after this update. This release needs helper service 2.6.0, and the core changed; on Windows the installer handles it, on macOS and Linux click the banner and accept the prompt.

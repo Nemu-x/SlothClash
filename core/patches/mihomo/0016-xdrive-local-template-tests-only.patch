@@ -1,0 +1,218 @@
+diff --git a/transport/xdrive/config.go b/transport/xdrive/config.go
+index ba53fca2..4f6c908c 100644
+--- a/transport/xdrive/config.go
++++ b/transport/xdrive/config.go
+@@ -5,9 +5,9 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"net"
+-	"runtime"
+ 	"strconv"
+ 	"strings"
++	"testing"
+ )
+ 
+ type Config struct {
+@@ -32,12 +32,31 @@ type Config struct {
+ // storage that refuses every operation: it never touches the filesystem and
+ // every dial through it fails. This covers http and file proxy-providers too
+ // (the app's YAML hardening only sees config.yaml and inline payloads).
+-var AllowLocalService = runtime.GOOS != "android"
++//
++// SlothClash core patch 0016: off in every shipped binary, not only on
++// Android. The desktop core can run under the privileged helper service
++// (SYSTEM / root), where a folder named by a subscription would be a
++// privileged file read/write. Test binaries keep it on for the series' own
++// tests of the transport.
++var AllowLocalService = testing.Testing()
+ 
+ // ErrLocalServiceDisabled is returned by every operation of a `service: local`
+ // storage while AllowLocalService is off.
+ var ErrLocalServiceDisabled = errors.New("xdrive service local (a folder on the device) is disabled in this build")
+ 
++// AllowTemplateService gates `service: template`. SlothClash core patch 0016:
++// a template lets the config pick the method, URL, headers and body of every
++// storage request, sent from this machine (loopback and LAN included) as soon
++// as a health check dials the node. Off in every shipped binary, wherever the
++// node comes from (config.yaml, http, file or inline proxy-providers); test
++// binaries keep it on for the transport's own tests. A refused template node
++// loads like a refused local one but never sends a request.
++var AllowTemplateService = testing.Testing()
++
++// ErrTemplateServiceDisabled is returned by every operation of a
++// `service: template` storage while AllowTemplateService is off.
++var ErrTemplateServiceDisabled = errors.New("xdrive service template is disabled in this build")
++
+ func (c Config) Validate() error {
+ 	if c.Fronting != "" {
+ 		host, port, err := net.SplitHostPort(c.Fronting)
+diff --git a/transport/xdrive/local_gate_test.go b/transport/xdrive/local_gate_test.go
+new file mode 100644
+index 00000000..93c28ddb
+--- /dev/null
++++ b/transport/xdrive/local_gate_test.go
+@@ -0,0 +1,16 @@
++package xdrive
++
++import "testing"
++
++// SlothClash core patch 0016: local and template storage are test-only
++// backends. A shipped binary is not a test binary, so the gates are off there;
++// the app checks that on the built core (xdrive_hardening_test.go in
++// SlothClash).
++func TestLocalServiceOnlyInTestBinaries(t *testing.T) {
++	if !testing.Testing() || !AllowLocalService {
++		t.Fatalf("AllowLocalService = %v in a test binary, want true", AllowLocalService)
++	}
++	if !AllowTemplateService {
++		t.Fatalf("AllowTemplateService = %v in a test binary, want true", AllowTemplateService)
++	}
++}
+diff --git a/transport/xdrive/session.go b/transport/xdrive/session.go
+index 51c592dc..36d011d5 100644
+--- a/transport/xdrive/session.go
++++ b/transport/xdrive/session.go
+@@ -133,8 +133,8 @@ func Listen(c Config, h *http.Client) (*Listener, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if _, disabled := storage.(disabledLocalStorage); disabled {
+-		return nil, ErrLocalServiceDisabled
++	if disabled, ok := storage.(disabledStorage); ok {
++		return nil, disabled.err
+ 	}
+ 	ctx, cancel := context.WithCancel(context.Background())
+ 	l := &Listener{ctx: ctx, cancel: cancel, storage: storage, http: h, params: paramsFromConfig(&c), accepted: make(chan net.Conn, 32), active: make(map[string]*Conn), handled: make(map[string]time.Time), idleSince: make(map[string]time.Time)}
+diff --git a/transport/xdrive/storage.go b/transport/xdrive/storage.go
+index c08e2c96..697bbc2f 100644
+--- a/transport/xdrive/storage.go
++++ b/transport/xdrive/storage.go
+@@ -3,6 +3,7 @@ package xdrive
+ import (
+ 	"context"
+ 	"errors"
++	"fmt"
+ 	"io"
+ 
+ 	"github.com/metacubex/http"
+@@ -43,31 +44,33 @@ func newStorage(c Config, client *http.Client) (Storage, error) {
+ 	switch c.Service {
+ 	case "local":
+ 		if !AllowLocalService {
+-			return disabledLocalStorage{}, nil
++			return disabledStorage{ErrLocalServiceDisabled}, nil
+ 		}
+ 		return newLocalStorage(c.RemoteFolder)
+ 	case "google-drive", "Google Drive":
+ 		return newDriveStorage(client, &c)
+-	default:
++	case "template":
++		if !AllowTemplateService {
++			return disabledStorage{ErrTemplateServiceDisabled}, nil
++		}
+ 		return newTemplateStorage(client, &c)
++	default:
++		// Validate refuses every other service.
++		return nil, fmt.Errorf("unsupported xdrive service %q", c.Service)
+ 	}
+ }
+ 
+-// disabledLocalStorage stands in for `service: local` while AllowLocalService
+-// is off (ClashFest core patch 0003). It creates nothing and refuses every
+-// operation, so the proxy loads but cannot be used.
+-type disabledLocalStorage struct{}
++// disabledStorage stands in for a service the build refuses: `service: local`
++// while AllowLocalService is off (ClashFest core patch 0003) and
++// `service: template` while AllowTemplateService is off (SlothClash core patch
++// 0016). It touches nothing, no filesystem and no network, and refuses every
++// operation with err, so the proxy loads but cannot be used.
++type disabledStorage struct{ err error }
+ 
+-func (disabledLocalStorage) Put(context.Context, string, []byte) error {
+-	return ErrLocalServiceDisabled
+-}
+-func (disabledLocalStorage) Get(context.Context, string) ([]byte, error) {
+-	return nil, ErrLocalServiceDisabled
+-}
+-func (disabledLocalStorage) Delete(context.Context, string) error {
+-	return ErrLocalServiceDisabled
+-}
+-func (disabledLocalStorage) List(context.Context, string) ([]Entry, error) {
+-	return nil, ErrLocalServiceDisabled
++func (s disabledStorage) Put(context.Context, string, []byte) error   { return s.err }
++func (s disabledStorage) Get(context.Context, string) ([]byte, error) { return nil, s.err }
++func (s disabledStorage) Delete(context.Context, string) error        { return s.err }
++func (s disabledStorage) List(context.Context, string) ([]Entry, error) {
++	return nil, s.err
+ }
+-func (disabledLocalStorage) Close() error { return nil }
++func (disabledStorage) Close() error { return nil }
+diff --git a/transport/xdrive/template_gate_test.go b/transport/xdrive/template_gate_test.go
+new file mode 100644
+index 00000000..0caf01f9
+--- /dev/null
++++ b/transport/xdrive/template_gate_test.go
+@@ -0,0 +1,63 @@
++package xdrive
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"net/http/httptest"
++	"sync/atomic"
++	"testing"
++)
++
++// SlothClash core patch 0016: with AllowTemplateService off, a template node
++// still loads but sends no request at all and fails every dial and listen with
++// ErrTemplateServiceDisabled.
++func TestTemplateServiceGate(t *testing.T) {
++	saved := AllowTemplateService
++	t.Cleanup(func() { AllowTemplateService = saved })
++
++	var hits atomic.Int32
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		hits.Add(1)
++		w.WriteHeader(http.StatusNotFound)
++	}))
++	t.Cleanup(srv.Close)
++
++	cfg := Config{Service: "template", RemoteFolder: "f", Template: map[string]any{
++		"put":    map[string]any{"method": "PUT", "url": srv.URL + "/{folder}/{name}"},
++		"get":    map[string]any{"method": "GET", "url": srv.URL + "/{folder}/{name}"},
++		"delete": map[string]any{"method": "DELETE", "url": srv.URL + "/{folder}/{name}"},
++		"list":   map[string]any{"method": "GET", "url": srv.URL + "/{folder}/", "namesRegex": `"([^"]+)"`},
++	}}
++
++	AllowTemplateService = true
++	if _, err := newStorage(cfg, nil); err != nil {
++		t.Fatalf("template storage allowed: %v", err)
++	}
++
++	AllowTemplateService = false
++	if err := cfg.Validate(); err != nil {
++		t.Fatalf("a refused template node must still validate: %v", err)
++	}
++	client, err := NewClient(cfg, nil)
++	if err != nil {
++		t.Fatalf("client for a refused template node: %v", err)
++	}
++	if _, err := client.Dial(context.Background()); !errors.Is(err, ErrTemplateServiceDisabled) {
++		t.Fatalf("dial through a refused template node: got %v", err)
++	}
++	if err := client.Close(); err != nil {
++		t.Fatalf("close: %v", err)
++	}
++	if _, err := Listen(cfg, nil); !errors.Is(err, ErrTemplateServiceDisabled) {
++		t.Fatalf("listen on a refused template node: got %v", err)
++	}
++	if n := hits.Load(); n != 0 {
++		t.Fatalf("a refused template node sent %d requests", n)
++	}
++
++	cloud := Config{Service: "google-drive", RemoteFolder: "id", Secrets: []string{"a", "b", "c"}}
++	if err := cloud.Validate(); err != nil {
++		t.Fatalf("google-drive must not be affected: %v", err)
++	}
++}

@@ -17,75 +17,87 @@ import (
 
 func TestSubscriptionUserAgentShape(t *testing.T) {
 	cases := []struct {
-		core, app, want string
+		core, citrus, app, want string
 	}{
-		{"v1.19.32", "0.9.4", "clash.meta/v1.19.32 SlothClash/0.9.4"},
-		{"1.19.32", "0.9.4", "clash.meta/v1.19.32 SlothClash/0.9.4"},
-		{"", "0.9.4", "clash.meta/mihomo SlothClash/0.9.4"},
-		{"  ", "0.9.4", "clash.meta/mihomo SlothClash/0.9.4"},
-		{"v1.19.32", "", "clash.meta/v1.19.32 SlothClash/0.0.0"},
+		{"v1.19.33", "v1.0.0-beta.2", "0.10.1", "clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1"},
+		{"1.19.33", " v1.0.0 ", "0.10.1", "clash.meta/v1.19.33 citrus/v1.0.0 SlothClash/0.10.1"},
+		{"v1.19.32", "", "0.9.4", "clash.meta/v1.19.32 SlothClash/0.9.4"},
+		{"1.19.32", "", "0.9.4", "clash.meta/v1.19.32 SlothClash/0.9.4"},
+		{"", "", "0.9.4", "clash.meta/mihomo SlothClash/0.9.4"},
+		{"  ", "", "0.9.4", "clash.meta/mihomo SlothClash/0.9.4"},
+		{"v1.19.32", "", "", "clash.meta/v1.19.32 SlothClash/0.0.0"},
+		{"", "v1.0.0-beta.2", "0.10.1", "clash.meta/mihomo citrus/v1.0.0-beta.2 SlothClash/0.10.1"},
 	}
 	for _, c := range cases {
-		if got := subscriptionUserAgent(c.core, c.app); got != c.want {
-			t.Fatalf("subscriptionUserAgent(%q,%q) = %q, want %q", c.core, c.app, got, c.want)
+		if got := subscriptionUserAgent(c.core, c.citrus, c.app); got != c.want {
+			t.Fatalf("subscriptionUserAgent(%q,%q,%q) = %q, want %q", c.core, c.citrus, c.app, got, c.want)
 		}
 	}
 }
 
-func TestSubscriptionUserAgentFeatureComment(t *testing.T) {
-	all := []string{"xdrive", "chain", "mldsa65", "pin-list", "ech-xray"}
-	cases := []struct {
-		features []string
-		want     string
-	}{
-		{nil, "clash.meta/v1.19.33 SlothClash/0.9.5"},
-		{[]string{}, "clash.meta/v1.19.33 SlothClash/0.9.5"},
-		{all, "clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain; mldsa65; pin-list; ech-xray)"},
-		{[]string{"chain"}, "clash.meta/v1.19.33 SlothClash/0.9.5 (chain)"},
-		// Malformed or duplicated tokens never reach the header; an all-bad list
-		// leaves no empty comment behind.
-		{[]string{"xdrive", "xdrive", " chain ", "a;b", "x)y", "", "UPPER", "new\r\nline"}, "clash.meta/v1.19.33 SlothClash/0.9.5 (xdrive; chain)"},
-		{[]string{"a b", ";"}, "clash.meta/v1.19.33 SlothClash/0.9.5"},
-	}
-	for _, c := range cases {
-		if got := subscriptionUserAgent("v1.19.33", "0.9.5", c.features...); got != c.want {
-			t.Errorf("subscriptionUserAgent(features=%q) = %q, want %q", c.features, got, c.want)
+// A Citrus release that is not a well-formed tag never reaches the header:
+// the token is dropped, never guessed or half-sent.
+func TestSubscriptionUserAgentDropsMalformedCitrusRelease(t *testing.T) {
+	const want = "clash.meta/v1.19.33 SlothClash/0.10.1"
+	for _, bad := range []string{
+		"1.0.0-beta.2", "v1.0", "v1.0.0-", "v1.0.0-beta..2", "v1.0.0 beta", "v1.0.0\r\nX-Evil: 1",
+		"v1.0.0-beta.2;", "latest", "dev", "v1.0.0+build.1",
+	} {
+		if got := subscriptionUserAgent("v1.19.33", bad, "0.10.1"); got != want {
+			t.Errorf("subscriptionUserAgent(citrus=%q) = %q, want %q", bad, got, want)
 		}
-	}
-
-	// The comment never moves the format-selecting prefix or hides the version.
-	ua := subscriptionUserAgent("v1.19.33", "0.9.5", all...)
-	if !panelClashMetaRe.MatchString(ua) {
-		t.Fatalf("prefix regex must still match %q", ua)
-	}
-	if m := mikanCoreVersionRe.FindStringSubmatch(ua); m == nil || m[2] != "1.19.33" {
-		t.Fatalf("core version must still be extracted from %q, got %v", ua, m)
 	}
 }
 
-// The two regexes panels actually use. mikan: core version gate. Marzban /
-// Remnawave: format selection by UA prefix.
+// The regexes panels actually use. mikan: core version gate (exactly as in its
+// internal/sub/apps) and app catalog word. Marzban / Remnawave: format
+// selection by UA prefix. Citrus panels: the citrus product token.
 var (
-	mikanCoreVersionRe = regexp.MustCompile(`(mihomo|clash[.-]?meta)/v?(\d+\.\d+\.\d+)`)
+	mikanCoreVersionRe = regexp.MustCompile(`(?:mihomo|clash[.-]?meta)/v?(\d+)\.(\d+)\.(\d+)`)
 	panelClashMetaRe   = regexp.MustCompile(`^(clash-verge|clash[-.]?meta|flclash|mihomo)`)
+	citrusPanelRe      = regexp.MustCompile(`\bcitrus/(\S+)`)
 )
 
 func TestSubscriptionUserAgentSatisfiesPanelRegexes(t *testing.T) {
-	withCore := subscriptionUserAgent("v1.19.32", "0.9.4")
-	m := mikanCoreVersionRe.FindStringSubmatch(withCore)
-	if m == nil || m[2] != "1.19.32" {
-		t.Fatalf("mikan regex must extract the core version from %q, got %v", withCore, m)
-	}
-	if !panelClashMetaRe.MatchString(withCore) {
-		t.Fatalf("Marzban/Remnawave prefix regex must match %q", withCore)
+	for _, citrus := range []string{"v1.0.0-beta.2", ""} {
+		withCore := subscriptionUserAgent("v1.19.33", citrus, "0.10.1")
+		m := mikanCoreVersionRe.FindStringSubmatch(withCore)
+		if m == nil || m[1]+"."+m[2]+"."+m[3] != "1.19.33" {
+			t.Fatalf("mikan regex must extract the core version from %q, got %v", withCore, m)
+		}
+		if !strings.Contains(strings.ToLower(withCore), "slothclash") {
+			t.Fatalf("mikan catalog word slothclash must match %q", withCore)
+		}
+		if !panelClashMetaRe.MatchString(withCore) {
+			t.Fatalf("Marzban/Remnawave prefix regex must match %q", withCore)
+		}
+		c := citrusPanelRe.FindStringSubmatch(withCore)
+		switch {
+		case citrus != "" && (c == nil || c[1] != citrus):
+			t.Fatalf("Citrus panel regex must extract %q from %q, got %v", citrus, withCore, c)
+		case citrus == "" && c != nil:
+			t.Fatalf("without a known Citrus release the UA must not claim one: %q", withCore)
+		}
 	}
 
-	noCore := subscriptionUserAgent("", "0.9.4")
+	noCore := subscriptionUserAgent("", "", "0.9.4")
 	if mikanCoreVersionRe.MatchString(noCore) {
 		t.Fatalf("without a known core version the UA must not claim one: %q", noCore)
 	}
 	if !panelClashMetaRe.MatchString(noCore) {
 		t.Fatalf("format-selecting prefix must survive the no-version form: %q", noCore)
+	}
+}
+
+// The UA of this build carries no feature comment and only a well-formed
+// citrus token.
+func TestSubscriptionUserAgentCurrentHasNoFeatureComment(t *testing.T) {
+	ua := subscriptionUserAgentCurrent()
+	if strings.ContainsAny(ua, "();") {
+		t.Fatalf("UA must not carry a comment: %q", ua)
+	}
+	if c := citrusPanelRe.FindStringSubmatch(ua); c != nil && validCitrusRelease(c[1]) != c[1] {
+		t.Fatalf("UA carries a malformed citrus token: %q", ua)
 	}
 }
 

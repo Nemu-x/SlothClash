@@ -8,6 +8,7 @@
 **🔧 Fixes**
 - VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
 - A subscription with an XDrive node on a storage service this app does not run (for example `s3` from newer Xray) no longer fails to load as a whole: that node shows as disabled (REJECT) and the rest works.
+- The subscription `User-Agent` now says which Citrus release the client is compatible with, the way Citrus itself does: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Panels that serve Citrus features by the `citrus/` token now recognise SlothClash; the capability list in brackets is gone. The `clash.meta/` prefix and the core version stay first, so format and protocol selection on other panels is unchanged.
 
 **🛰️ Core: stock configs behave like stock mihomo**
 - REALITY's automatic post-quantum key-share choice no longer flips on network trouble. Only a server that actually answered with its cover site's certificate counts as a key-share mismatch; timeouts, resets and dial errors are ignored, so a flaky network can no longer switch an older Xray server to the post-quantum share and break it.
@@ -24,6 +25,7 @@
 **🔧 Исправления**
 - VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
 - Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
+- `User-Agent` подписки теперь сообщает, с каким релизом Citrus совместим клиент, так же как это делает сам Citrus: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Панели, которые выдают возможности Citrus по токену `citrus/`, теперь узнают SlothClash; список возможностей в скобках убран. Префикс `clash.meta/` и версия ядра остаются первыми, так что выбор формата и протоколов на других панелях не меняется.
 
 **🛰️ Ядро: обычные конфиги работают как в обычном mihomo**
 - Автоматический выбор постквантовой доли ключа в REALITY больше не переключается из-за сбоев сети. Несовпадением доли ключа считается только ответ сервера сертификатом сайта-прикрытия; таймауты, сбросы и ошибки подключения игнорируются, поэтому нестабильная сеть больше не переводит старый сервер Xray на постквантовую долю и не ломает его.

@@ -1,27 +1,22 @@
-## Sloth Clash desktop — Unreleased
+## Sloth Clash desktop `0.10.1` — Unreleased
 
 ### English
 
 **🔒 XDrive: templated storage refused**
 - XDrive nodes with `service: template` are now refused, like `service: local` already was, wherever they come from: subscriptions, providers, manual and local profiles. A template lets the config choose the method, address, headers and body of HTTP requests sent from your computer, including to devices on your local network, as soon as a node is tested. Such a node keeps its name but shows as disabled and carries no traffic; Google Drive XDrive nodes are unaffected.
 
+**🔧 Fixes**
+- VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
+- A subscription with an XDrive node on a storage service this app does not run (for example `s3` from newer Xray) no longer fails to load as a whole: that node shows as disabled (REJECT) and the rest works.
+
 ### Русский
 
 **🔒 XDrive: шаблонное хранилище отключено**
 - Узлы XDrive с `service: template` теперь отклоняются, как уже отклонялся `service: local`, откуда бы они ни пришли: подписки, провайдеры, ручные и локальные профили. Шаблон позволяет конфигу задавать метод, адрес, заголовки и тело HTTP-запросов, которые отправляются с вашего компьютера, в том числе на устройства в локальной сети, сразу при проверке узла. Такой узел сохраняет имя, но показывается отключённым и не пропускает трафик; узлы XDrive с Google Drive не затронуты.
-## Sloth Clash desktop `0.10.1` — Unreleased
-
-### English
-
-**🔧 Fixes**
-- VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
-- A subscription with an XDrive node on a storage service this app does not run (for example `s3` from newer Xray) no longer fails to load as a whole: that node shows as disabled (REJECT) and the rest works. A storage template that uses keys this core does not implement (Xray's two-step `hrefPath` / `hrefMethod`) is now refused with an error that says so instead of silently running a different protocol.
-
-### Русский
 
 **🔧 Исправления**
 - VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
-- Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает. Шаблон хранилища с ключами, которые ядро не поддерживает (двухшаговые `hrefPath` / `hrefMethod` из Xray), теперь отклоняется с понятной ошибкой, а не молча работает по другому протоколу.
+- Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

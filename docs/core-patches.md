@@ -520,8 +520,7 @@ Without a core that carries the series the test skips. Outcomes at Citrus `62d1f
   over HTTP/3 (`alpn: [h3]`, three modes; vanilla) and the two Citrus clients of the sing-box suite.
 - **unsupported**: `PROTOCOL` rule, DNSCrypt, BitTorrent sniffer, server log format, and XDrive
   `service: local` / `service: template` (`citrus-xdrive-local`, `citrus-xdrive-template`; owner
-  decision, see 0016). The template case shows its gap only together with the template refusal
-  (the app turns such nodes into `reject`); until that lands it is the one failing case.
+  decision, see 0016). The template case passes because the app turns such nodes into `reject`.
 - **deferred**: TrustTunnel timers.
 - `skip-host-key-check` is ignored and harmless.
 

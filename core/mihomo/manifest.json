@@ -72,7 +72,7 @@
     },
     {
       "file": "0016-xdrive-local-template-tests-only.patch",
-      "sha256": "ffc53b8977e90cd04ebd5548e83f6c75c2b91b73932479b259f2d57ce58c4755"
+      "sha256": "a1f658c0ed20c537837adecfec3c97ec4360d6c9838a025dd0eae6253bb76a73"
     },
     {
       "file": "0017-direct-desync.patch",

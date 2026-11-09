@@ -317,6 +317,20 @@ proxy-providers the core fetches itself. `TestTemplateServiceGate` checks that a
 test server; `xdrive_hardening_test.go` checks the local gate on the built core: the folder of a local
 node must not exist after the config is loaded (a build with the gate open creates it).
 
+A service the build does not implement at all (`s3`, a typo, a different spelling such as `Template`
+or `google_drive`, an empty service) is handled the same way. Vanilla 0004 fails validation for it,
+and mihomo fails a whole http or file proxy-provider (or the whole config, for a top-level proxy)
+when one entry fails to parse; providers the core downloads itself never pass through the app's
+checks. Such a node now loads, sends no request and fails every dial with
+`xdrive service "s3" is not supported by this build` (`xdrive.UnsupportedServiceError`). A refused
+node, unsupported or gated off, is valid whatever its other options, since none of them is used.
+Malformed options of a service the build runs are still load errors: a `google-drive` node without
+three non-empty secrets, without `remote-folder` or with a bad `fronting` fails as before.
+`TestUnsupportedServiceLoadsButNeverDials` checks the no-request dial through a counting HTTP
+transport, `TestSupportedServiceStillValidated` the remaining load errors, and
+`TestProviderLoadsUnsupportedXDriveService` parses a provider document with one unsupported and one
+Google Drive node through the real provider parser: both load, only the first fails when dialed.
+
 Delete together with 0004, or when XDrive drops local and template storage.
 
 ### 0024 REALITY: current Firefox and Safari hellos for the hybrid share

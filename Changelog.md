@@ -10,7 +10,7 @@
 
 **🔧 Fixes**
 - VLESS over XDrive: one slow or cancelled connection no longer breaks every other connection sharing the same XDrive session; a session whose storage stops accepting writes for 30 s is dropped and replaced; idle sessions close after 16 s instead of polling the storage forever. Storage HTTPS now trusts the same certificate roots as the rest of the core.
-- A subscription with an XDrive node on a storage service this app does not run (for example `s3` from newer Xray) no longer fails to load as a whole: that node shows as disabled (REJECT) and the rest works.
+- An XDrive node on a storage service this app does not run (anything but Google Drive, for example `s3` from newer Xray or a misspelled name) no longer makes a whole subscription or provider fail to load; the other nodes work. In profiles the app builds, that node shows as disabled (REJECT); in providers the core downloads itself, it fails when used with `xdrive service "s3" is not supported by this build` and sends nothing over the network.
 - The subscription `User-Agent` now says which Citrus release the client is compatible with, the way Citrus itself does: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Panels that serve Citrus features by the `citrus/` token now recognise SlothClash; the capability list in brackets is gone. The `clash.meta/` prefix and the core version stay first, so format and protocol selection on other panels is unchanged.
 
 **🛰️ Core: stock configs behave like stock mihomo**
@@ -34,7 +34,7 @@
 
 **🔧 Исправления**
 - VLESS через XDrive: одно медленное или отменённое соединение больше не ломает все остальные соединения в той же сессии XDrive; сессия, хранилище которой 30 с не принимает запись, закрывается и заменяется новой; простаивающие сессии закрываются через 16 с, а не опрашивают хранилище бесконечно. HTTPS к хранилищу теперь доверяет тем же корневым сертификатам, что и остальное ядро.
-- Подписка с узлом XDrive на сервисе хранилища, который приложение не запускает (например, `s3` из новых Xray), больше не перестаёт загружаться целиком: этот узел показывается отключённым (REJECT), остальное работает.
+- Узел XDrive на сервисе хранилища, который приложение не запускает (всё, кроме Google Drive, например `s3` из новых Xray или название с опечаткой), больше не ломает загрузку всей подписки или провайдера; остальные узлы работают. В профилях, которые собирает приложение, такой узел показывается отключённым (REJECT); в провайдерах, которые ядро скачивает само, он при использовании выдаёт ошибку `xdrive service "s3" is not supported by this build` и ничего не отправляет в сеть.
 - `User-Agent` подписки теперь сообщает, с каким релизом Citrus совместим клиент, так же как это делает сам Citrus: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Панели, которые выдают возможности Citrus по токену `citrus/`, теперь узнают SlothClash; список возможностей в скобках убран. Префикс `clash.meta/` и версия ядра остаются первыми, так что выбор формата и протоколов на других панелях не меняется.
 
 **🛰️ Ядро: обычные конфиги работают как в обычном mihomo**

@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@62d1f567 site/src/content/docs/en/start/chains.mdx lines 9-27; site/src/content/docs/start/chains.mdx lines 9-27
+# Source: getmikan/Citrus@22da58f1 site/src/content/docs/en/start/chains.mdx lines 9-27; site/src/content/docs/start/chains.mdx lines 9-27
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - the `...` of the three proxies replaced by the fields of a minimal VLESS proxy

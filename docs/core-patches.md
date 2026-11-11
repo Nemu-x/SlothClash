@@ -582,8 +582,24 @@ cd apps/sloth-clash-desktop
 SLOTH_MIHOMO_BIN=<patched core> go test -count=1 -run TestCitrusCompat -v .
 ```
 
-Without a core that carries the series the test skips. Outcomes at Citrus `62d1f567` (dev,
-2026-11-02): 156 cases, 149 accept, 6 unsupported, 1 deferred (at `ecaa9466`: 145, 140 / 4 / 1).
+Without a core that carries the series the test skips. Outcomes at Citrus `22da58f1` (dev, the
+v1.0.0-beta.3 release candidate, 2026-11-11): 161 cases, 153 accept, 6 unsupported, 2 deferred (at
+`62d1f567`: 156, 149 / 6 / 1; at `ecaa9466`: 145, 140 / 4 / 1).
+
+New client surface between `62d1f567` and beta.3, case by case:
+
+- **accept**: TUN `dns-mode` (`citrus-tun-dns-mode`; a mihomo v1.19.33 key Citrus took over, the
+  pipeline keeps it), the names `chrome155`, `chrome133` and `hellochrome_155` in
+  `citrus-xray-fingerprints` (0029). Citrus' `chrome` became Chrome 155; ours stays Chrome 133 as in
+  stock mihomo (0029 explains why). The REALITY client-version and fingerprint comments of the
+  examples follow Citrus (26.11.9, Chrome 155).
+- **deferred**: Snell v6 (`citrus-snell-v6`): `version: 6` and its `mode` are not in mihomo
+  v1.19.33, so the core rejects such a proxy (and with it a provider or a top-level config). It comes
+  with the next mihomo release, from which Citrus took it. That release also accepts `mode:
+  unsafe-raw` (no PSK, no encryption), which Citrus refuses: decide on that core bump.
+- **not a client key**: `mux-option.max-streams` (sing-mux inbound limit), the Snell v6 and mieru
+  `tcp-idle-timeout` listener options, the listener `dns-mode`. Nothing new in `tls.ca-roots`,
+  `tls.ca-denylist`, `geox-sha256` (0026, 0027) or the `type: desync` options since `62d1f567`.
 
 - **accept**: everything before, plus `geox-sha256` in the general example (0027),
   `tls.ca-roots` / `tls.ca-denylist` (`citrus-tls-ca-policy`, 0026), the `type: desync` outbound of

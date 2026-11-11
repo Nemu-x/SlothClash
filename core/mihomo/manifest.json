@@ -157,7 +157,7 @@
     },
     {
       "file": "0037-xhttp-packet-up-pipelining.patch",
-      "sha256": "4711fbeac1b7dc7beec3d7154cef4a19877a0fc5e0fe28f73e01f4ed4942a162"
+      "sha256": "d255abd8f6def09252172c80267fdd5778fbacbd997155f307f4898bc9dec153"
     },
     {
       "file": "0040-listener-close-races.patch",

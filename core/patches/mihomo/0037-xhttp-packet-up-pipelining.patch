@@ -3,47 +3,57 @@ SlothClash core patch 0037: XHTTP packet-up keeps several uploads in flight.
 mihomo waits for the response of every packet-up upload before it sends the
 next one, so upload speed is capped at one sc-max-each-post-bytes per round
 trip plus sc-min-posts-interval-ms. Like Xray's client, the writer now starts
-an upload as soon as the previous request has been written and paces uploads
-(not writes) by sc-min-posts-interval-ms. Uploads wait for their response in a
-window of 8 seqs: seq N starts only once seq N-8 has been answered, so a
-server never holds more than 7 uploads ahead of the one it waits for, within
-the default sc-max-buffered-posts (30) of Xray, mihomo and Citrus. A failed
-upload fails the next Write; Close lets the uploads in flight finish (up to
-1 s) and then cancels them. With `alpn: [http/1.1]` every upload still waits
-for its response (no multiplexing: each would hold a connection). The server
-side is unchanged: mihomo's listener already puts uploads back in order by seq.
+the next upload once the headers of the previous one are written, and paces
+uploads (not writes) by sc-min-posts-interval-ms. Uploads wait for their
+response in a window of 8 seqs: seq N starts only once seq N-8 has been
+answered, so a server never holds more than 7 uploads ahead of the one it waits
+for, within the default sc-max-buffered-posts (30) of Xray, mihomo and Citrus.
+A failed upload fails the next Write and aborts the others; Close waits up to
+1 s for the uploads in flight. With `alpn: [http/1.1]` every upload still waits
+for its response. The server side is unchanged: mihomo's listener already puts
+uploads back in order by seq.
 
-The seq window follows Rerowros/veles (v1.19.33-veles.3, commit f3d6ddaf,
-transport/xhttp/client.go, GPL-3.0); waiting for the request write and the
-HTTP/1.1 exception follow getmikan/Citrus (transport/xhttp/client.go,
-GPL-3.0). Written for this tree; tests in packet_up_pipeline_test.go.
+The code is the same as ClashFest core patch 0038 (Nemu-x/ClashFest#295,
+GPL-3.0), only the patch number in comments differs, so the two clients stay in
+sync. The seq window follows Rerowros/veles (v1.19.33-veles.3, P5/P8,
+transport/xhttp/client.go, GPL-3.0); the HTTP/1.1 exception follows
+getmikan/Citrus (transport/xhttp/client.go, GPL-3.0). Tests in
+packet_up_pipelining_test.go (helpers after Veles' packet_up_veles_test.go).
 
 diff --git a/transport/xhttp/client.go b/transport/xhttp/client.go
-index d34f64c..075a9da 100644
+index d34f64c..73cd40b 100644
 --- a/transport/xhttp/client.go
 +++ b/transport/xhttp/client.go
-@@ -38,9 +38,28 @@ type DialQUICFunc func(ctx context.Context, cfg *quic.Config) (*quic.Conn, error
+@@ -38,9 +38,36 @@ type DialQUICFunc func(ctx context.Context, cfg *quic.Config) (*quic.Conn, error
  
  type TransportMaker func() http.RoundTripper
  
-+// packetUpWindow is how many packet-up uploads of one session may wait for
-+// their response at the same time over HTTP/2 and HTTP/3.
++// packetUpMaxInFlight is how many packet-up upload requests of one session may
++// wait for their response at the same time (SlothClash core patch 0037, the
++// same code as ClashFest patch 0038, after Rerowros/veles P5/P8).
 +//
-+// Waiting for every response before the next upload (as mihomo did) caps the
-+// upload at one sc-max-each-post-bytes per round trip plus the post interval.
-+// Xray's client does not wait for responses at all: it starts an upload every
-+// sc-min-posts-interval-ms (30 ms by default) and lets the server put them
-+// back in order by seq. The server buffers at most sc-max-buffered-posts
-+// (30 by default in Xray, mihomo and Citrus) out-of-order uploads and drops the
-+// session past that, so the window is counted in seqs, not in requests: seq N
-+// may only start once seq N-packetUpWindow has been answered, and the server
-+// never holds more than packetUpWindow-1 uploads ahead of the one it waits for,
-+// however the requests are reordered. 8 keeps the pipeline full at the default
-+// interval up to a 240 ms round trip and leaves a wide margin below 30.
++// Vanilla sent one upload request and waited for its response before the next,
++// so a session uploaded at most sc-max-each-post-bytes per round trip, however
++// fast the link. Xray's client does not wait for the responses: it
++// starts a request every sc-min-posts-interval-ms and the server puts the
++// requests back in order by seq. Here a request starts once the headers of the
++// previous one are written (so the server sees the seqs in order), and the
++// request with seq N starts only after the one with seq N-packetUpMaxInFlight
++// has its response: at most packetUpMaxInFlight are unanswered, all within a
++// window of that many seqs. Their bodies go out side by side, which matters
++// behind a reverse proxy or CDN that gives each request a small flow-control
++// window. A server answers an upload once it has queued it, so it never holds
++// more than packetUpMaxInFlight-1 uploads out of order, below every server's default
++// sc-max-buffered-posts (30 in Xray, mihomo and Citrus; Xray fails a session
++// with more than that many out of order, Citrus answers 503 to more uploads in
++// progress than that before the client has authenticated).
 +//
-+// SlothClash core patch 0037; the seq window follows Rerowros/veles and the
-+// write-then-continue upload follows getmikan/Citrus (both GPL-3.0).
-+const packetUpWindow = 8
++// The interval paces the requests, not the writes, as in Xray: data that comes
++// after a pause goes out at once instead of after sc-min-posts-interval-ms.
++// With `alpn: [http/1.1]` every unanswered request would hold a connection
++// (and a TLS or REALITY handshake) of its own, so packet-up keeps waiting for
++// each response there, as Citrus does.
++var packetUpMaxInFlight = 8
 +
  type PacketUpWriter struct {
  	ctx                  context.Context
@@ -52,27 +62,25 @@ index d34f64c..075a9da 100644
  	cfg                  *Config
  	scMaxEachPostBytes   int
  	scMinPostsIntervalMs Range
-@@ -51,28 +70,79 @@ type PacketUpWriter struct {
- 	seq                  uint64
+@@ -52,6 +79,35 @@ type PacketUpWriter struct {
  	buf                  []byte
  	timer                *time.Timer
--	flushErr             error
-+	lastPost             time.Time
-+	closed               bool // no more uploads: Close waits for the ones in flight
+ 	flushErr             error
++	lastSend             time.Time // when the last request started (0037)
 +
-+	// window has one slot per seq modulo its length; a slot is held from the
-+	// start of an upload until its response has been read.
-+	window  []chan struct{}
-+	uploads sync.WaitGroup
++	// unanswered is the seq window (0037): the request with seq N holds
++	// unanswered[N%len] until its response, so seq N+len waits for it.
++	unanswered []chan struct{}
 +}
 +
-+// newPacketUpWriter returns a writer that keeps up to window (at least 1)
-+// uploads waiting for their response; 1 waits for every response before the
-+// next upload.
 +func newPacketUpWriter(parent context.Context, cfg *Config, scMaxEachPostBytes int, scMinPostsIntervalMs Range,
-+	sessionID string, transport http.RoundTripper, window int) *PacketUpWriter {
++	sessionID string, transport http.RoundTripper) *PacketUpWriter {
 +	ctx, cancel := context.WithCancelCause(parent)
-+	c := &PacketUpWriter{
++	maxInFlight := packetUpMaxInFlight
++	if maxInFlight < 1 || isHTTP1Transport(transport) {
++		maxInFlight = 1
++	}
++	writer := &PacketUpWriter{
 +		ctx:                  ctx,
 +		cancel:               cancel,
 +		cfg:                  cfg,
@@ -80,165 +88,146 @@ index d34f64c..075a9da 100644
 +		scMinPostsIntervalMs: scMinPostsIntervalMs,
 +		sessionID:            sessionID,
 +		transport:            transport,
-+		window:               make([]chan struct{}, window),
++		unanswered:           make([]chan struct{}, maxInFlight),
 +	}
-+	for i := range c.window {
-+		c.window[i] = make(chan struct{}, 1)
++	for i := range writer.unanswered {
++		writer.unanswered[i] = make(chan struct{}, 1)
 +	}
-+	c.writeCond = sync.Cond{L: &c.writeMu}
-+	return c
-+}
-+
-+// err returns why the writer cannot send any more: Close, or the first failed
-+// upload. The caller holds writeMu.
-+func (c *PacketUpWriter) err() error {
-+	if c.closed {
-+		return net.ErrClosed
-+	}
-+	if c.ctx.Err() != nil {
-+		return context.Cause(c.ctx)
-+	}
-+	return nil
++	writer.writeCond = sync.Cond{L: &writer.writeMu}
++	return writer
  }
  
  func (c *PacketUpWriter) Write(b []byte) (int, error) {
- 	c.writeMu.Lock()
- 	defer c.writeMu.Unlock()
- 
--	if err := c.flushErr; err != nil {
-+	if err := c.err(); err != nil {
+@@ -61,16 +117,31 @@ func (c *PacketUpWriter) Write(b []byte) (int, error) {
+ 	if err := c.flushErr; err != nil {
  		return 0, err
  	}
++	if c.ctx.Err() != nil { // an upload request failed or the writer is closed
++		return 0, context.Cause(c.ctx)
++	}
  
  	data := bytes.NewBuffer(b)
  	for data.Len() > 0 {
--		if c.timer == nil { // start a timer to flush the buffer
++		sendNow := false
+ 		if c.timer == nil { // start a timer to flush the buffer
 -			c.timer = time.AfterFunc(time.Duration(c.scMinPostsIntervalMs.Rand())*time.Millisecond, c.flush)
--		}
--
++			// the interval paces the requests: after a pause, send at once
++			wait := time.Duration(c.scMinPostsIntervalMs.Rand())*time.Millisecond - time.Since(c.lastSend)
++			if wait <= 0 {
++				sendNow = true
++			} else {
++				c.timer = time.AfterFunc(wait, c.flush)
++			}
+ 		}
+ 
  		c.buf = append(c.buf, data.Next(c.scMaxEachPostBytes-len(c.buf))...) // let buffer fill up to scMaxEachPostBytes
  
-+		if c.timer == nil {
-+			// Like Xray, the interval paces the uploads, not the writes: data
-+			// that comes after a pause goes out at once.
-+			wait := time.Duration(c.scMinPostsIntervalMs.Rand())*time.Millisecond - time.Since(c.lastPost)
-+			if wait <= 0 {
-+				c.flushLocked()
-+				if err := c.err(); err != nil {
-+					return 0, err
-+				}
-+				continue
+-		if len(c.buf) >= c.scMaxEachPostBytes { // too much data in buffer, wait the flush complete
++		if sendNow {
++			c.flushLocked()
++			if err := c.flushErr; err != nil {
++				return 0, err
 +			}
-+			c.timer = time.AfterFunc(wait, c.flush)
-+		}
-+
- 		if len(c.buf) >= c.scMaxEachPostBytes { // too much data in buffer, wait the flush complete
++		} else if len(c.buf) >= c.scMaxEachPostBytes { // too much data in buffer, wait the flush complete
  			c.writeCond.Wait()
--			if err := c.flushErr; err != nil {
-+			if err := c.err(); err != nil {
+ 			if err := c.flushErr; err != nil {
  				return 0, err
- 			}
- 		}
-@@ -83,7 +153,11 @@ func (c *PacketUpWriter) Write(b []byte) (int, error) {
- func (c *PacketUpWriter) flush() {
- 	c.writeMu.Lock()
- 	defer c.writeMu.Unlock()
-+	c.flushLocked()
-+}
- 
-+// flushLocked sends the buffered data as one upload. The caller holds writeMu.
-+func (c *PacketUpWriter) flushLocked() {
- 	defer c.writeCond.Broadcast() // wake up the waited Write() call
- 
- 	if c.timer != nil {
-@@ -91,66 +165,107 @@ func (c *PacketUpWriter) flush() {
+@@ -91,6 +162,11 @@ func (c *PacketUpWriter) flush() {
  		c.timer = nil
  	}
  
--	if c.flushErr != nil {
--		return
--	}
--
--	if len(c.buf) == 0 {
-+	if c.err() != nil || len(c.buf) == 0 {
++	c.flushLocked()
++}
++
++// flushLocked sends the buffered data. The caller holds writeMu.
++func (c *PacketUpWriter) flushLocked() {
+ 	if c.flushErr != nil {
+ 		return
+ 	}
+@@ -98,15 +174,63 @@ func (c *PacketUpWriter) flush() {
+ 	if len(c.buf) == 0 {
  		return
  	}
 -	_, err := c.write(c.buf)
 -	c.buf = c.buf[:0] // reset buffer
--	if err != nil {
--		c.flushErr = err
--		return
 +	data := c.buf
-+	c.buf = nil // the upload owns data now
-+	c.lastPost = time.Now()
-+	if err := c.send(data); err != nil {
-+		c.cancel(err)
++	c.buf = nil // the upload request owns data now
++	err := c.send(data)
++	// the interval counts from when the request went out, after any wait for
++	// the window, so that the writes during that wait batch up again
++	c.lastSend = time.Now()
+ 	if err != nil {
+ 		c.flushErr = err
+ 		return
  	}
  }
  
 -func (c *PacketUpWriter) write(b []byte) (int, error) {
-+// send starts the upload of b with the next seq. It returns once the request
-+// has been written, without waiting for the response, so the next upload can
-+// follow at once; like Xray's client, waiting for the write keeps the requests
-+// in seq order on the connection. It blocks while the window slot of the seq
-+// is held by the upload packetUpWindow seqs before it. A failed upload cancels
-+// the writer, so the next Write fails as a failed upload did before.
++// send starts the upload request for b and returns once its headers are
++// written, without waiting for the body or the response. It first waits for
++// the response of the request packetUpMaxInFlight seqs back. The caller holds
++// writeMu, so the seqs go out in order.
 +func (c *PacketUpWriter) send(b []byte) error {
-+	seq := c.seq
-+	c.seq++
-+
-+	slot := c.window[seq%uint64(len(c.window))]
++	slot := c.unanswered[c.seq%uint64(len(c.unanswered))]
 +	select {
 +	case slot <- struct{}{}:
 +	case <-c.ctx.Done():
 +		return context.Cause(c.ctx)
 +	}
 +
- 	u := url.URL{
- 		Scheme: "https",
- 		Host:   c.cfg.Host,
- 		Path:   c.cfg.NormalizedPath(),
- 	}
--
- 	req, err := http.NewRequestWithContext(c.ctx, c.cfg.GetNormalizedUplinkHTTPMethod(), u.String(), nil)
-+	if err == nil {
-+		err = c.cfg.FillPacketRequest(req, c.sessionID, strconv.FormatUint(seq, 10), b)
-+	}
- 	if err != nil {
--		return 0, err
++	req, err := c.newRequest(b)
++	if err != nil {
 +		<-slot
 +		return err
- 	}
-+	req.Host = c.cfg.Host
- 
--	seqStr := strconv.FormatUint(c.seq, 10)
--	c.seq++
-+	written := make(chan struct{})
-+	var writtenOnce sync.Once
-+	markWritten := func() { writtenOnce.Do(func() { close(written) }) }
++	}
++
++	started := make(chan struct{})
++	var startedOnce sync.Once
++	markStarted := func() { startedOnce.Do(func() { close(started) }) }
 +	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
-+		WroteRequest: func(httptrace.WroteRequestInfo) { markWritten() },
++		WroteHeaders: markStarted,
++		WroteRequest: func(httptrace.WroteRequestInfo) { markStarted() },
 +	}))
- 
--	if err := c.cfg.FillPacketRequest(req, c.sessionID, seqStr, b); err != nil {
--		return 0, err
-+	c.uploads.Add(1)
++
 +	go func() {
-+		defer c.uploads.Done()
-+		err := c.roundTrip(req)
-+		markWritten() // a request that failed before it was written
-+		<-slot
-+		if err != nil {
++		defer func() { <-slot }()
++		defer markStarted() // a request that failed before it was written
++		if err := c.roundTrip(req); err != nil {
++			// A lost upload breaks the stream: fail the next Write, as the
++			// failed request did before, and abort the other requests.
 +			c.cancel(err)
 +		}
 +	}()
 +
-+	select {
-+	case <-written:
-+	case <-c.ctx.Done():
- 	}
--	req.Host = c.cfg.Host
++	// The next request starts once this one's headers are on the wire, so the
++	// requests reach the server in seq order. A request that never gets that
++	// far ends when the writer's context is canceled (Close, or another
++	// request failing).
++	<-started
 +	return nil
++}
++
++func (c *PacketUpWriter) newRequest(b []byte) (*http.Request, error) {
+ 	u := url.URL{
+ 		Scheme: "https",
+ 		Host:   c.cfg.Host,
+@@ -115,29 +239,32 @@ func (c *PacketUpWriter) write(b []byte) (int, error) {
+ 
+ 	req, err := http.NewRequestWithContext(c.ctx, c.cfg.GetNormalizedUplinkHTTPMethod(), u.String(), nil)
+ 	if err != nil {
+-		return 0, err
++		return nil, err
+ 	}
+ 
+ 	seqStr := strconv.FormatUint(c.seq, 10)
+ 	c.seq++
+ 
+ 	if err := c.cfg.FillPacketRequest(req, c.sessionID, seqStr, b); err != nil {
+-		return 0, err
++		return nil, err
+ 	}
+ 	req.Host = c.cfg.Host
++	return req, nil
 +}
  
 +func (c *PacketUpWriter) roundTrip(req *http.Request) error {
@@ -254,21 +243,25 @@ index d34f64c..075a9da 100644
 -		return 0, fmt.Errorf("xhttp packet-up bad status: %s", resp.Status)
 +		return fmt.Errorf("xhttp packet-up bad status: %s", resp.Status)
  	}
--
+ 
 -	return len(b), nil
 +	return nil
  }
  
  func (c *PacketUpWriter) Close() error {
- 	ch := make(chan struct{})
+@@ -145,16 +272,42 @@ func (c *PacketUpWriter) Close() error {
  	go func() { // flush in the background
  		defer close(ch)
--		c.flush()
-+		c.writeMu.Lock()
-+		c.flushLocked()
-+		c.closed = true // every upload has started: none is added while Wait runs
-+		c.writeMu.Unlock()
-+		c.uploads.Wait() // let the uploads in flight deliver the tail of the stream
+ 		c.flush()
++		// wait for the responses of the requests in flight: taking every
++		// slot of the window means none is left waiting
++		for _, slot := range c.unanswered {
++			select {
++			case slot <- struct{}{}:
++			case <-c.ctx.Done():
++				return
++			}
++		}
  	}()
  	select {
  	case <-ch:
@@ -276,14 +269,31 @@ index d34f64c..075a9da 100644
  	}
 -	c.cancel()
 +	c.cancel(net.ErrClosed)
-+	select { // the uploads end once their context is canceled
-+	case <-ch:
-+	case <-time.After(time.Second):
-+	}
  	httputils.CloseTransport(c.transport)
  	return nil
  }
-@@ -187,12 +302,12 @@ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFun
+ 
++// http1Transport is the transport of the `alpn: [http/1.1]` mode, marked so that
++// packet-up does not pipeline over it (0037).
++type http1Transport struct {
++	*http.Transport
++}
++
++func isHTTP1Transport(rt http.RoundTripper) bool {
++	switch rt := rt.(type) {
++	case *http1Transport:
++		return true
++	case *ReuseTransport:
++		return isHTTP1Transport(rt.entry.transport)
++	default:
++		return false
++	}
++}
++
+ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFunc, alpn []string, keepAlivePeriod time.Duration) http.RoundTripper {
+ 	if len(alpn) == 1 && alpn[0] == "h3" { // `alpn: [h3]` means using h3 mode
+ 		if keepAlivePeriod == 0 {
+@@ -187,12 +340,12 @@ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFun
  			}
  			return wrapped, nil
  		}
@@ -298,35 +308,7 @@ index d34f64c..075a9da 100644
  	}
  	if keepAlivePeriod == 0 {
  		keepAlivePeriod = ChromeH2KeepAlivePeriod
-@@ -228,6 +343,27 @@ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFun
- 	}
- }
- 
-+// http1Transport is the transport of the `alpn: [http/1.1]` mode. HTTP/1.1
-+// cannot multiplex: every packet-up upload waiting for its response would hold
-+// a connection (and a TLS or REALITY handshake) of its own, so packet-up keeps
-+// waiting for each response there, as Citrus does.
-+type http1Transport struct {
-+	*http.Transport
-+}
-+
-+func isHTTP1Transport(rt http.RoundTripper) bool {
-+	switch rt := rt.(type) {
-+	case *http1Transport:
-+		return true
-+	case *ReuseTransport:
-+		return isHTTP1Transport(rt.entry.transport)
-+	case onlyRoundTripper:
-+		return isHTTP1Transport(rt.RoundTripper)
-+	default:
-+		return false
-+	}
-+}
-+
- type Client struct {
- 	ctx                   context.Context
- 	cancel                context.CancelFunc
-@@ -592,18 +728,12 @@ func (c *Client) DialPacketUp(ctx context.Context) (net.Conn, error) {
+@@ -592,18 +745,7 @@ func (c *Client) DialPacketUp(ctx context.Context) (net.Conn, error) {
  		Path:   downloadCfg.NormalizedPath(),
  	}
  
@@ -340,37 +322,40 @@ index d34f64c..075a9da 100644
 -		sessionID:            sessionID,
 -		transport:            uploadTransport,
 -		seq:                  0,
-+	window := packetUpWindow
-+	if isHTTP1Transport(uploadTransport) {
-+		window = 1
- 	}
+-	}
 -	writer.writeCond = sync.Cond{L: &writer.writeMu}
-+	writer := newPacketUpWriter(c.ctx, c.cfg, c.scMaxEachPostBytes.Rand(), c.scMinPostsIntervalMs,
-+		sessionID, uploadTransport, window)
++	writer := newPacketUpWriter(c.ctx, c.cfg, c.scMaxEachPostBytes.Rand(), c.scMinPostsIntervalMs, sessionID, uploadTransport)
  	conn := &Conn{writer: writer}
  
  	// Async download: avoid blocking on CDN response header buffering
-diff --git a/transport/xhttp/packet_up_pipeline_test.go b/transport/xhttp/packet_up_pipeline_test.go
+diff --git a/transport/xhttp/packet_up_pipelining_test.go b/transport/xhttp/packet_up_pipelining_test.go
 new file mode 100644
-index 0000000..a66a1f9
+index 0000000..864b681
 --- /dev/null
-+++ b/transport/xhttp/packet_up_pipeline_test.go
-@@ -0,0 +1,429 @@
++++ b/transport/xhttp/packet_up_pipelining_test.go
+@@ -0,0 +1,606 @@
 +package xhttp
++
++// SlothClash core patch 0037 (ClashFest patch 0038): packet-up keeps up to
++// packetUpMaxInFlight upload requests in flight. The test server and helpers follow Rerowros/veles
++// (GPL-3.0) transport/xhttp/packet_up_veles_test.go.
 +
 +import (
 +	"bytes"
 +	"context"
 +	"crypto/rand"
 +	"crypto/sha256"
-+	"encoding/hex"
++	"encoding/base64"
++	"fmt"
 +	"io"
-+	mathrand "math/rand/v2"
++	"math"
++	mathrand "math/rand"
 +	"net"
 +	"runtime"
 +	"strconv"
 +	"strings"
 +	"sync"
++	"sync/atomic"
 +	"testing"
 +	"time"
 +
@@ -379,409 +364,579 @@ index 0000000..a66a1f9
 +	"github.com/stretchr/testify/require"
 +)
 +
-+// startPipelineServer serves handler over HTTP/1.1 and h2c on loopback.
-+func startPipelineServer(t *testing.T, handler http.Handler) string {
++// pipeUploadServer is a packet-up upload endpoint. It puts the payloads back
++// in order by seq with the server's UploadQueue and counts the requests it is answering.
++type pipeUploadServer struct {
++	cfg    *Config
++	addr   string
++	delay  func(seq uint64) time.Duration // before the payload is pushed; nil: none
++	block  chan struct{}                  // when set, every request waits for it to close
++	status func(seq uint64) int           // nil: 200
++
++	queue    *UploadQueue
++	received chan []byte
++
++	inFlight    atomic.Int32
++	maxInFlight atomic.Int32
++	requests    atomic.Int32
++	aborted     atomic.Int32
++
++	mu   sync.Mutex
++	seqs []uint64 // in the order the requests arrived
++}
++
++func startPipeUploadServer(t *testing.T, cfg *Config) *pipeUploadServer {
 +	t.Helper()
++	return startPipeUploadServerBuffering(t, cfg, 30) // the default sc-max-buffered-posts
++}
++
++func startPipeUploadServerBuffering(t *testing.T, cfg *Config, maxBufferedPosts int) *pipeUploadServer {
++	t.Helper()
++	s := &pipeUploadServer{cfg: cfg, queue: NewUploadQueue(maxBufferedPosts), received: make(chan []byte, 1)}
++	go func() {
++		var got bytes.Buffer
++		_, _ = io.Copy(&got, s.queue)
++		s.received <- got.Bytes()
++	}()
 +	ln, err := net.Listen("tcp", "127.0.0.1:0")
 +	require.NoError(t, err)
 +	protocols := new(http.Protocols)
 +	protocols.SetHTTP1(true)
 +	protocols.SetUnencryptedHTTP2(true)
-+	server := &http.Server{Handler: handler, Protocols: protocols}
++	server := &http.Server{Handler: s, Protocols: protocols}
 +	go func() { _ = server.Serve(ln) }()
-+	t.Cleanup(func() { _ = server.Close() })
-+	return ln.Addr().String()
++	t.Cleanup(func() {
++		_ = server.Close()
++		_ = s.queue.Close()
++	})
++	s.addr = ln.Addr().String()
++	return s
 +}
 +
-+func pipelineTransport(addr string, alpn []string) http.RoundTripper {
-+	return NewTransport(
++func (s *pipeUploadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
++	n := s.inFlight.Add(1)
++	defer s.inFlight.Add(-1)
++	for m := s.maxInFlight.Load(); n > m && !s.maxInFlight.CompareAndSwap(m, n); m = s.maxInFlight.Load() {
++	}
++	s.requests.Add(1)
++
++	_, seqStr := s.cfg.ExtractMetaFromRequest(r, s.cfg.NormalizedPath())
++	seq, err := strconv.ParseUint(seqStr, 10, 64)
++	if err != nil {
++		http.Error(w, "no seq", http.StatusBadRequest)
++		return
++	}
++	s.mu.Lock()
++	s.seqs = append(s.seqs, seq)
++	s.mu.Unlock()
++
++	var payload []byte
++	if s.cfg.GetNormalizedUplinkDataPlacement() == PlacementHeader {
++		var encoded strings.Builder
++		for i := 0; ; i++ {
++			chunk := r.Header.Get(fmt.Sprintf("%s-%d", s.cfg.UplinkDataKey, i))
++			if chunk == "" {
++				break
++			}
++			encoded.WriteString(chunk)
++		}
++		payload, err = base64.RawURLEncoding.DecodeString(encoded.String())
++	} else {
++		payload, err = io.ReadAll(r.Body)
++	}
++	if err != nil {
++		http.Error(w, err.Error(), http.StatusBadRequest)
++		return
++	}
++
++	if s.block != nil {
++		select {
++		case <-s.block:
++		case <-r.Context().Done():
++			s.aborted.Add(1)
++			return
++		}
++	}
++	if s.delay != nil {
++		select {
++		case <-time.After(s.delay(seq)):
++		case <-r.Context().Done():
++			s.aborted.Add(1)
++			return
++		}
++	}
++	if s.status != nil {
++		if status := s.status(seq); status != http.StatusOK {
++			w.WriteHeader(status)
++			return
++		}
++	}
++	if err := s.queue.Push(Packet{Seq: seq, Payload: payload}); err != nil {
++		http.Error(w, err.Error(), http.StatusInternalServerError)
++		return
++	}
++	w.WriteHeader(http.StatusOK)
++}
++
++// stream waits until no request is in progress, closes the queue and returns
++// the reassembled stream.
++func (s *pipeUploadServer) stream(t *testing.T) []byte {
++	t.Helper()
++	require.Eventually(t, func() bool { return s.inFlight.Load() == 0 }, 10*time.Second, 5*time.Millisecond)
++	_ = s.queue.Close()
++	select {
++	case got := <-s.received:
++		return got
++	case <-time.After(5 * time.Second):
++		t.Fatal("upload queue reader did not finish")
++		return nil
++	}
++}
++
++func (s *pipeUploadServer) arrivalOrder() []uint64 {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	return append([]uint64(nil), s.seqs...)
++}
++
++type pipeCase struct {
++	name string
++	cfg  func() *Config
++	alpn []string
++}
++
++// window is how many requests the case keeps unanswered: HTTP/1.1 waits for
++// each response.
++func (tc pipeCase) window() int {
++	if len(tc.alpn) == 1 && tc.alpn[0] == "http/1.1" {
++		return 1
++	}
++	return packetUpMaxInFlight
++}
++
++func pipeCases() []pipeCase {
++	postCfg := func() *Config { return &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up"} }
++	headerCfg := func() *Config {
++		// uplink in X-Data-N headers of GET requests, for a CDN that drops POST bodies
++		return &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up",
++			UplinkHTTPMethod: http.MethodGet, UplinkDataPlacement: PlacementHeader,
++			UplinkDataKey: "X-Data", UplinkChunkSize: "8192"}
++	}
++	return []pipeCase{
++		{name: "post-h2", cfg: postCfg},
++		{name: "get-header-h2", cfg: headerCfg},
++		{name: "post-h1", cfg: postCfg, alpn: []string{"http/1.1"}},
++		{name: "get-header-h1", cfg: headerCfg, alpn: []string{"http/1.1"}},
++	}
++}
++
++// newPipeWriter returns a writer to addr over HTTP/2 without TLS (alpn nil) or
++// HTTP/1.1, with up to maxInFlight requests waiting for a response.
++func newPipeWriter(t *testing.T, cfg *Config, addr string, alpn []string, maxEachPostBytes int, interval Range,
++	maxInFlight int) *PacketUpWriter {
++	t.Helper()
++	prev := packetUpMaxInFlight
++	packetUpMaxInFlight = maxInFlight
++	defer func() { packetUpMaxInFlight = prev }()
++	transport := NewTransport(
 +		func(ctx context.Context) (net.Conn, error) {
 +			var d net.Dialer
 +			return d.DialContext(ctx, "tcp", addr)
 +		},
 +		func(ctx context.Context, conn net.Conn, isH2 bool) (net.Conn, error) { return conn, nil },
 +		nil, alpn, 0)
++	return newPacketUpWriter(context.Background(), cfg, maxEachPostBytes, interval, "test-session", transport)
 +}
 +
-+// uploadSeq is the seq of a packet-up upload with the default seq placement
-+// (the last path segment), or -1 for any other request.
-+func uploadSeq(r *http.Request) int {
-+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-+	if r.Method == http.MethodGet || len(parts) != 3 {
-+		return -1
++// writerGoroutines counts goroutines running PacketUpWriter code.
++func writerGoroutines() int {
++	buf := make([]byte, 1<<20)
++	for {
++		n := runtime.Stack(buf, true)
++		if n < len(buf) {
++			buf = buf[:n]
++			break
++		}
++		buf = make([]byte, 2*len(buf))
 +	}
-+	seq, err := strconv.Atoi(parts[2])
-+	if err != nil {
-+		return -1
-+	}
-+	return seq
-+}
-+
-+// uploadTracker counts the uploads a server is handling at the same time and
-+// the widest seq span among them.
-+type uploadTracker struct {
-+	mu      sync.Mutex
-+	active  map[int]bool
-+	maxOpen int
-+	maxSpan int
-+	highest int
-+}
-+
-+func (u *uploadTracker) begin(seq int) {
-+	u.mu.Lock()
-+	defer u.mu.Unlock()
-+	if u.active == nil {
-+		u.active = map[int]bool{}
-+	}
-+	u.active[seq] = true
-+	if seq > u.highest {
-+		u.highest = seq
-+	}
-+	if len(u.active) > u.maxOpen {
-+		u.maxOpen = len(u.active)
-+	}
-+	lowest := seq
-+	for s := range u.active {
-+		if s < lowest {
-+			lowest = s
++	count := 0
++	for _, g := range strings.Split(string(buf), "\n\n") {
++		if strings.Contains(g, "xhttp.(*PacketUpWriter)") && !strings.Contains(g, "writerGoroutines") {
++			count++
 +		}
 +	}
-+	if seq-lowest+1 > u.maxSpan {
-+		u.maxSpan = seq - lowest + 1
-+	}
++	return count
 +}
 +
-+func (u *uploadTracker) end(seq int) {
-+	u.mu.Lock()
-+	delete(u.active, seq)
-+	u.mu.Unlock()
-+}
-+
-+func (u *uploadTracker) stats() (maxOpen, maxSpan int) {
-+	u.mu.Lock()
-+	defer u.mu.Unlock()
-+	return u.maxOpen, u.maxSpan
-+}
-+
-+// laggingUploads holds every 16th upload back for 30 ms and the others up to
-+// 1 ms, so the uploads after a held one overtake it, as far as the client lets
-+// them.
-+func laggingUploads(seq int) time.Duration {
-+	if seq%16 == 0 {
-+		return 30 * time.Millisecond
-+	}
-+	return time.Duration(mathrand.Int64N(int64(time.Millisecond)))
-+}
-+
-+// hashEchoServer runs the mihomo packet-up server behind a middleware that
-+// delays the uploads, so they reach the reassembly queue out of order. The
-+// inner connection handler reads size bytes and answers their SHA-256.
-+func hashEchoServer(t *testing.T, cfg Config, size int, delay func(seq int) time.Duration) (string, *uploadTracker) {
++func requireNoWriterGoroutines(t *testing.T) {
 +	t.Helper()
-+	handler, err := NewServerHandler(ServerOption{
-+		Config: cfg,
-+		ConnHandler: func(conn net.Conn) {
-+			defer conn.Close()
-+			h := sha256.New()
-+			if _, err := io.CopyN(h, conn, int64(size)); err != nil {
-+				return
-+			}
-+			_, _ = conn.Write([]byte(hex.EncodeToString(h.Sum(nil))))
-+		},
-+	})
-+	require.NoError(t, err)
-+	tracker := &uploadTracker{}
-+	addr := startPipelineServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		if seq := uploadSeq(r); seq >= 0 {
-+			tracker.begin(seq)
-+			defer tracker.end(seq)
-+			time.Sleep(delay(seq))
-+		}
-+		handler.ServeHTTP(w, r)
-+	}))
-+	return addr, tracker
++	require.Eventually(t, func() bool { return writerGoroutines() == 0 }, 5*time.Second, 10*time.Millisecond,
++		"PacketUpWriter goroutines left after Close")
 +}
 +
-+// uploadThroughClient sends data through a packet-up client in random-sized
-+// writes and returns the hash the server answers.
-+func uploadThroughClient(t *testing.T, cfg Config, addr string, alpn []string, data []byte) string {
++func randomBytes(t *testing.T, n int) []byte {
 +	t.Helper()
-+	client, err := NewClient(&cfg, func() http.RoundTripper { return pipelineTransport(addr, alpn) }, nil, false)
++	b := make([]byte, n)
++	_, err := rand.Read(b)
 +	require.NoError(t, err)
-+	defer client.Close()
-+	conn, err := client.Dial(context.Background())
-+	require.NoError(t, err)
-+	defer conn.Close()
-+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
-+	for rest := data; len(rest) > 0; {
-+		n := 1 + mathrand.IntN(64<<10)
-+		if n > len(rest) {
-+			n = len(rest)
-+		}
-+		_, err := conn.Write(rest[:n])
-+		require.NoError(t, err)
-+		rest = rest[n:]
-+	}
-+	got := make([]byte, sha256.Size*2)
-+	_, err = io.ReadFull(conn, got)
-+	require.NoError(t, err)
-+	return string(got)
++	return b
 +}
 +
-+// Uploads that reach the server out of order are put back in order, through
-+// a server whose sc-max-buffered-posts is the smallest the window allows.
-+func TestPacketUpPipelineReordersThroughLimitedServer(t *testing.T) {
-+	for _, placement := range []string{PlacementBody, PlacementHeader} {
-+		t.Run(placement, func(t *testing.T) {
-+			cfg := Config{
-+				Host:                 "example.com",
-+				Path:                 "/xhttp",
-+				Mode:                 "packet-up",
-+				UplinkDataPlacement:  placement,
-+				ScMaxEachPostBytes:   "16384",
-+				ScMinPostsIntervalMs: "1",
-+				// mihomo's queue fails a session once it holds more than this
-+				// many uploads past the one it waits for; Xray's heap too.
-+				ScMaxBufferedPosts: strconv.Itoa(packetUpWindow - 1),
-+			}
-+			size := 4 << 20
-+			if placement == PlacementHeader {
-+				size = 512 << 10 // base64 in headers is slow on both ends
-+			}
-+			data := make([]byte, size)
-+			_, _ = rand.Read(data)
-+			want := sha256.Sum256(data)
++func writeInPieces(w io.Writer, data []byte, piece int) error {
++	for len(data) > 0 {
++		n := piece
++		if n > len(data) {
++			n = len(data)
++		}
++		if _, err := w.Write(data[:n]); err != nil {
++			return err
++		}
++		data = data[n:]
++	}
++	return nil
++}
 +
-+			addr, tracker := hashEchoServer(t, cfg, size, laggingUploads)
-+			got := uploadThroughClient(t, cfg, addr, nil, data)
-+			assert.Equal(t, hex.EncodeToString(want[:]), got)
++// The requests carry consecutive seqs in the order they are sent, the server
++// answers them out of order, and the stream it reassembles is the one written.
++// Over HTTP/2 more than one request is in flight, never more than
++// packetUpMaxInFlight; over HTTP/1.1 one.
++func TestPacketUpPipelinedOrder(t *testing.T) {
++	for _, tc := range pipeCases() {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := tc.cfg()
++			s := startPipeUploadServer(t, cfg)
++			s.delay = func(seq uint64) time.Duration { return time.Duration(mathrand.Intn(40)) * time.Millisecond }
++			postBytes := 64 << 10
++			if cfg.GetNormalizedUplinkDataPlacement() == PlacementHeader {
++				postBytes = 4 << 10 // keep the headers within the server's limit
++			}
++			w := newPipeWriter(t, cfg, s.addr, tc.alpn, postBytes, Range{Min: 1, Max: 1}, packetUpMaxInFlight)
++			data := randomBytes(t, 64*postBytes)
++			require.NoError(t, writeInPieces(w, data, 3000))
++			require.NoError(t, w.Close())
 +
-+			maxOpen, maxSpan := tracker.stats()
-+			assert.Greater(t, maxOpen, 1, "uploads were not pipelined")
-+			assert.Equal(t, packetUpWindow, maxSpan, "a held upload was not overtaken up to the window")
++			got := s.stream(t)
++			assert.Equal(t, sha256.Sum256(data), sha256.Sum256(got))
++			order := s.arrivalOrder()
++			require.NotEmpty(t, order)
++			// every seq once, and never further from its place than the window:
++			// a request starts once the previous one's headers are written, but
++			// the server runs its handlers concurrently
++			seen := make([]bool, len(order))
++			for i, seq := range order {
++				require.Less(t, seq, uint64(len(order)))
++				assert.False(t, seen[seq], "seq %d twice", seq)
++				seen[seq] = true
++				assert.Less(t, int(math.Abs(float64(int(seq)-i))), tc.window(), "seq %d arrived as %d", seq, i)
++			}
++			t.Logf("%d requests, up to %d at the server at once", s.requests.Load(), s.maxInFlight.Load())
++			if tc.window() > 1 {
++				assert.Greater(t, int(s.maxInFlight.Load()), 1)
++			}
++			assert.LessOrEqual(t, int(s.maxInFlight.Load()), tc.window())
++			requireNoWriterGoroutines(t)
 +		})
 +	}
 +}
 +
-+// HTTP/1.1 cannot multiplex: the client keeps waiting for each response.
-+func TestPacketUpHTTP1StaysSequential(t *testing.T) {
-+	cfg := Config{
-+		Host:                 "example.com",
-+		Path:                 "/xhttp",
-+		Mode:                 "packet-up",
-+		ScMaxEachPostBytes:   "16384",
-+		ScMinPostsIntervalMs: "1",
-+	}
-+	size := 1 << 20
-+	data := make([]byte, size)
-+	_, _ = rand.Read(data)
-+	want := sha256.Sum256(data)
++// While the server holds every response, exactly packetUpMaxInFlight requests
++// (one over HTTP/1.1) are sent and Write blocks; once the responses come the stream completes.
++func TestPacketUpInFlightCap(t *testing.T) {
++	for _, tc := range pipeCases()[:3] {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := tc.cfg()
++			s := startPipeUploadServer(t, cfg)
++			s.block = make(chan struct{})
++			postBytes := 4 << 10
++			w := newPipeWriter(t, cfg, s.addr, tc.alpn, postBytes, Range{Min: 1, Max: 1}, packetUpMaxInFlight)
++			data := randomBytes(t, 3*packetUpMaxInFlight*postBytes)
++			writeDone := make(chan error, 1)
++			go func() { writeDone <- writeInPieces(w, data, 1000) }()
 +
-+	addr, tracker := hashEchoServer(t, cfg, size, laggingUploads)
-+	got := uploadThroughClient(t, cfg, addr, []string{"http/1.1"}, data)
-+	assert.Equal(t, hex.EncodeToString(want[:]), got)
-+	maxOpen, _ := tracker.stats()
-+	assert.Equal(t, 1, maxOpen)
-+}
++			require.Eventually(t, func() bool { return int(s.inFlight.Load()) == tc.window() },
++				5*time.Second, 5*time.Millisecond)
++			time.Sleep(200 * time.Millisecond) // nothing more is sent while all wait
++			assert.Equal(t, tc.window(), int(s.requests.Load()))
++			assert.Equal(t, tc.window(), int(s.maxInFlight.Load()))
++			select {
++			case err := <-writeDone:
++				t.Fatalf("Write returned while the window is full: %v", err)
++			default:
++			}
 +
-+func TestIsHTTP1Transport(t *testing.T) {
-+	h1 := pipelineTransport("127.0.0.1:1", []string{"http/1.1"})
-+	h2 := pipelineTransport("127.0.0.1:1", nil)
-+	assert.True(t, isHTTP1Transport(h1))
-+	assert.True(t, isHTTP1Transport(onlyRoundTripper{h1}))
-+	assert.True(t, isHTTP1Transport(&ReuseTransport{entry: &reuseEntry{transport: h1}}))
-+	assert.False(t, isHTTP1Transport(h2))
-+	assert.False(t, isHTTP1Transport(onlyRoundTripper{h2}))
-+}
-+
-+// blockingUploads answers uploads only once released, or fails the ones fail
-+// returns true for.
-+type blockingUploads struct {
-+	uploadTracker
-+	release chan struct{}
-+	fail    func(seq int) bool
-+}
-+
-+func (b *blockingUploads) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-+	seq := uploadSeq(r)
-+	if seq < 0 {
-+		http.Error(w, "not an upload", http.StatusBadRequest)
-+		return
-+	}
-+	_, _ = io.Copy(io.Discard, r.Body)
-+	b.begin(seq)
-+	defer b.end(seq)
-+	if b.fail != nil && b.fail(seq) {
-+		http.Error(w, "failed upload", http.StatusInternalServerError)
-+		return
-+	}
-+	select {
-+	case <-b.release:
-+	case <-r.Context().Done():
++			close(s.block)
++			select {
++			case err := <-writeDone:
++				require.NoError(t, err)
++			case <-time.After(10 * time.Second):
++				t.Fatal("Write did not finish after the responses came")
++			}
++			require.NoError(t, w.Close())
++			got := s.stream(t)
++			assert.Equal(t, sha256.Sum256(data), sha256.Sum256(got))
++			assert.Equal(t, tc.window(), int(s.maxInFlight.Load()))
++			requireNoWriterGoroutines(t)
++		})
 +	}
 +}
 +
-+func newTestWriter(addr string, maxEachPostBytes int, interval Range, window int) *PacketUpWriter {
++// The window is one of seqs, not only of requests: while seq 0 is unanswered,
++// seqs 1-7 are sent and answered but seq 8 is not sent, so the server never
++// holds more than 7 uploads out of order however fast it answers the others.
++// The server's queue is sized like Xray's smallest sc-max-buffered-posts that
++// holds the window.
++func TestPacketUpSeqWindow(t *testing.T) {
++	for _, tc := range pipeCases()[:2] {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := tc.cfg()
++			s := startPipeUploadServerBuffering(t, cfg, packetUpMaxInFlight-1)
++			release := make(chan struct{})
++			s.delay = func(seq uint64) time.Duration {
++				if seq == 0 {
++					<-release
++				}
++				return 0
++			}
++			postBytes := 4 << 10
++			w := newPipeWriter(t, cfg, s.addr, tc.alpn, postBytes, Range{Min: 1, Max: 1}, packetUpMaxInFlight)
++			data := randomBytes(t, 4*packetUpMaxInFlight*postBytes)
++			writeDone := make(chan error, 1)
++			go func() { writeDone <- writeInPieces(w, data, 1000) }()
++
++			require.Eventually(t, func() bool { return int(s.requests.Load()) == packetUpMaxInFlight },
++				5*time.Second, 5*time.Millisecond)
++			time.Sleep(200 * time.Millisecond)
++			assert.Equal(t, packetUpMaxInFlight, int(s.requests.Load()), "a request beyond the seq window was sent")
++			assert.Equal(t, int32(1), s.inFlight.Load(), "only seq 0 should be unanswered")
++
++			close(release)
++			select {
++			case err := <-writeDone:
++				require.NoError(t, err)
++			case <-time.After(10 * time.Second):
++				t.Fatal("Write did not finish after seq 0 was answered")
++			}
++			require.NoError(t, w.Close())
++			assert.Equal(t, sha256.Sum256(data), sha256.Sum256(s.stream(t)))
++			requireNoWriterGoroutines(t)
++		})
++	}
++}
++
++// sc-min-posts-interval-ms paces the requests, not the writes: the first write
++// and a write after a pause go out at once, a write right after a request waits
++// for the rest of the interval.
++func TestPacketUpIntervalPacesRequests(t *testing.T) {
 +	cfg := &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up"}
-+	return newPacketUpWriter(context.Background(), cfg, maxEachPostBytes, interval, "session", pipelineTransport(addr, nil), window)
-+}
-+
-+// writeUntilBlocked writes in the background until Write blocks or fails.
-+func writeUntilBlocked(w *PacketUpWriter) <-chan error {
-+	done := make(chan error, 1)
-+	go func() {
-+		chunk := make([]byte, 1024)
-+		for {
-+			if _, err := w.Write(chunk); err != nil {
-+				done <- err
-+				return
-+			}
-+		}
-+	}()
-+	return done
-+}
-+
-+// No more than the window of uploads waits for a response, whatever the
-+// speed of the writer, and the writer blocks until a response frees a slot.
-+func TestPacketUpWindowLimit(t *testing.T) {
-+	server := &blockingUploads{release: make(chan struct{})}
-+	addr := startPipelineServer(t, server)
-+	w := newTestWriter(addr, 1024, Range{0, 0}, packetUpWindow)
-+
-+	done := writeUntilBlocked(w)
-+	require.Eventually(t, func() bool {
-+		maxOpen, _ := server.stats()
-+		return maxOpen == packetUpWindow
-+	}, 5*time.Second, 5*time.Millisecond)
-+	time.Sleep(100 * time.Millisecond) // give an over-limit upload time to show up
-+	maxOpen, maxSpan := server.stats()
-+	assert.Equal(t, packetUpWindow, maxOpen)
-+	assert.Equal(t, packetUpWindow, maxSpan)
-+	select {
-+	case err := <-done:
-+		t.Fatalf("Write did not block on a full window: %v", err)
-+	default:
-+	}
-+
-+	close(server.release) // the writer goes on once responses come
-+	require.Eventually(t, func() bool {
-+		server.mu.Lock()
-+		defer server.mu.Unlock()
-+		return len(server.active) == 0 && server.highest > 4*packetUpWindow
-+	}, 5*time.Second, 5*time.Millisecond)
-+	_ = w.Close()
-+	assert.ErrorIs(t, <-done, net.ErrClosed)
-+}
-+
-+// A failed upload fails the next Write and cancels the uploads in flight.
-+func TestPacketUpFailedUploadFailsWrite(t *testing.T) {
-+	server := &blockingUploads{release: make(chan struct{}), fail: func(seq int) bool { return seq == 3 }}
-+	addr := startPipelineServer(t, server)
-+	w := newTestWriter(addr, 1024, Range{0, 0}, packetUpWindow)
-+	defer w.Close()
-+
-+	select {
-+	case err := <-writeUntilBlocked(w):
-+		assert.ErrorContains(t, err, "500")
-+	case <-time.After(5 * time.Second):
-+		t.Fatal("Write did not fail after a failed upload")
-+	}
-+	require.Eventually(t, func() bool {
-+		server.mu.Lock()
-+		defer server.mu.Unlock()
-+		return len(server.active) == 0
-+	}, 5*time.Second, 5*time.Millisecond, "uploads in flight were not canceled")
-+}
-+
-+func writerGoroutines() int {
-+	buf := make([]byte, 1<<20)
-+	buf = buf[:runtime.Stack(buf, true)]
-+	return bytes.Count(buf, []byte("xhttp.(*PacketUpWriter)"))
-+}
-+
-+// Close returns while uploads still wait for a response, and leaves no
-+// upload behind.
-+func TestPacketUpCloseCancelsUploads(t *testing.T) {
-+	server := &blockingUploads{release: make(chan struct{})}
-+	addr := startPipelineServer(t, server)
-+	before := writerGoroutines()
-+	w := newTestWriter(addr, 1024, Range{0, 0}, packetUpWindow)
-+
-+	done := writeUntilBlocked(w)
-+	require.Eventually(t, func() bool {
-+		maxOpen, _ := server.stats()
-+		return maxOpen == packetUpWindow
-+	}, 5*time.Second, 5*time.Millisecond)
-+
-+	start := time.Now()
-+	require.NoError(t, w.Close())
-+	assert.Less(t, time.Since(start), 3*time.Second)
-+	assert.ErrorIs(t, <-done, net.ErrClosed)
-+	_, err := w.Write([]byte("late"))
-+	assert.ErrorIs(t, err, net.ErrClosed)
-+	require.Eventually(t, func() bool { return writerGoroutines() == before }, 5*time.Second, 10*time.Millisecond)
-+}
-+
-+// Close lets the uploads in flight finish, so the tail of the stream arrives.
-+func TestPacketUpCloseFlushesTail(t *testing.T) {
++	s := startPipeUploadServer(t, cfg)
 +	var mu sync.Mutex
-+	var got []byte
-+	queue := NewUploadQueue(30)
-+	addr := startPipelineServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		seq := uploadSeq(r)
-+		body, _ := io.ReadAll(r.Body)
-+		time.Sleep(20 * time.Millisecond)
-+		_ = queue.Push(Packet{Seq: uint64(seq), Payload: body})
-+	}))
-+	read := make(chan struct{})
-+	go func() {
-+		defer close(read)
-+		buf := make([]byte, 4096)
-+		for {
-+			n, err := queue.Read(buf)
-+			mu.Lock()
-+			got = append(got, buf[:n]...)
-+			mu.Unlock()
-+			if err != nil {
-+				return
-+			}
-+		}
-+	}()
-+
-+	w := newTestWriter(addr, 1000, Range{5, 5}, packetUpWindow)
-+	data := make([]byte, 20000)
-+	_, _ = rand.Read(data)
-+	_, err := w.Write(data)
-+	require.NoError(t, err)
-+	require.NoError(t, w.Close())
-+	require.Eventually(t, func() bool {
++	var arrivals []time.Time
++	s.delay = func(uint64) time.Duration {
++		mu.Lock()
++		arrivals = append(arrivals, time.Now())
++		mu.Unlock()
++		return 0
++	}
++	arrived := func(n int) time.Time {
++		require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(arrivals) >= n },
++			5*time.Second, time.Millisecond)
 +		mu.Lock()
 +		defer mu.Unlock()
-+		return len(got) == len(data)
-+	}, 5*time.Second, 5*time.Millisecond)
-+	_ = queue.Close()
-+	<-read
-+	assert.Equal(t, data, got)
-+}
-+
-+// Like Xray, the post interval paces the uploads: the first data of a
-+// connection goes out at once instead of after the interval.
-+func TestPacketUpFirstUploadNotDelayed(t *testing.T) {
-+	arrived := make(chan time.Time, 16)
-+	addr := startPipelineServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		_, _ = io.Copy(io.Discard, r.Body)
-+		arrived <- time.Now()
-+	}))
-+	w := newTestWriter(addr, 1<<20, Range{500, 500}, packetUpWindow)
-+	defer w.Close()
++		return arrivals[n-1]
++	}
++	const interval = 300 * time.Millisecond
++	w := newPipeWriter(t, cfg, s.addr, nil, 64<<10, Range{Min: 300, Max: 300}, packetUpMaxInFlight)
 +
 +	start := time.Now()
 +	_, err := w.Write([]byte("first"))
 +	require.NoError(t, err)
++	assert.Less(t, arrived(1).Sub(start), interval/2, "the first write waited for the interval")
++
 +	_, err = w.Write([]byte("second"))
 +	require.NoError(t, err)
-+	first := <-arrived
-+	assert.Less(t, first.Sub(start), 400*time.Millisecond)
-+	second := <-arrived
-+	assert.GreaterOrEqual(t, second.Sub(start), 450*time.Millisecond, "the interval no longer paces the uploads")
++	assert.GreaterOrEqual(t, arrived(2).Sub(arrived(1)), interval-20*time.Millisecond, "a request came within the interval")
++
++	time.Sleep(interval + 100*time.Millisecond)
++	start = time.Now()
++	_, err = w.Write([]byte("after a pause"))
++	require.NoError(t, err)
++	assert.Less(t, arrived(3).Sub(start), interval/2, "a write after a pause waited for the interval")
++
++	require.NoError(t, w.Close())
++	assert.Equal(t, "firstsecondafter a pause", string(s.stream(t)))
++	requireNoWriterGoroutines(t)
++}
++
++// A request the server refuses fails the session: the other requests in flight
++// are aborted and Write returns the error.
++func TestPacketUpFailedUploadFailsSession(t *testing.T) {
++	cfg := &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up"}
++	s := startPipeUploadServer(t, cfg)
++	s.status = func(seq uint64) int {
++		if seq == 3 {
++			return http.StatusInternalServerError
++		}
++		return http.StatusOK
++	}
++	s.delay = func(seq uint64) time.Duration {
++		if seq == 3 {
++			return 50 * time.Millisecond
++		}
++		return 10 * time.Second // still in flight when seq 3 fails
++	}
++	w := newPipeWriter(t, cfg, s.addr, nil, 4<<10, Range{Min: 1, Max: 1}, packetUpMaxInFlight)
++	writeDone := make(chan error, 1)
++	go func() { writeDone <- writeInPieces(w, randomBytes(t, 1<<20), 1000) }()
++	select {
++	case err := <-writeDone:
++		require.Error(t, err)
++		assert.Contains(t, err.Error(), "bad status")
++	case <-time.After(5 * time.Second):
++		t.Fatal("Write did not fail after an upload was refused")
++	}
++	require.Eventually(t, func() bool { return s.inFlight.Load() == 0 }, 5*time.Second, 5*time.Millisecond,
++		"the other requests were not aborted")
++	assert.Greater(t, int(s.aborted.Load()), 0)
++	_, err := w.Write([]byte("more"))
++	assert.Error(t, err)
++	require.NoError(t, w.Close())
++	requireNoWriterGoroutines(t)
++}
++
++// Close returns while requests are stuck and Write is blocked on the full
++// window; the blocked Write and later ones fail, and no goroutine is left.
++func TestPacketUpCloseWhileInFlight(t *testing.T) {
++	for _, tc := range pipeCases()[:3] {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := tc.cfg()
++			s := startPipeUploadServer(t, cfg)
++			s.block = make(chan struct{}) // never closed: the server never answers
++			w := newPipeWriter(t, cfg, s.addr, tc.alpn, 4<<10, Range{Min: 1, Max: 1}, packetUpMaxInFlight)
++			writeDone := make(chan error, 1)
++			go func() { writeDone <- writeInPieces(w, randomBytes(t, 1<<20), 1000) }()
++			require.Eventually(t, func() bool { return int(s.inFlight.Load()) == tc.window() },
++				5*time.Second, 5*time.Millisecond)
++
++			start := time.Now()
++			require.NoError(t, w.Close())
++			assert.Less(t, time.Since(start), 3*time.Second)
++			select {
++			case err := <-writeDone:
++				assert.Error(t, err)
++			case <-time.After(5 * time.Second):
++				t.Fatal("the blocked Write did not return after Close")
++			}
++			_, err := w.Write([]byte("after close"))
++			assert.Error(t, err)
++			requireNoWriterGoroutines(t)
++			require.Eventually(t, func() bool { return s.inFlight.Load() == 0 }, 5*time.Second, 5*time.Millisecond)
++		})
++	}
++}
++
++// Close sends the buffered tail and waits for the requests in flight.
++func TestPacketUpCloseDeliversTail(t *testing.T) {
++	cfg := &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up"}
++	s := startPipeUploadServer(t, cfg)
++	s.delay = func(uint64) time.Duration { return 100 * time.Millisecond }
++	w := newPipeWriter(t, cfg, s.addr, nil, 4<<10, Range{Min: 30, Max: 30}, packetUpMaxInFlight)
++	data := randomBytes(t, 20<<10+123)
++	require.NoError(t, writeInPieces(w, data, 1000))
++	require.NoError(t, w.Close())
++	assert.Equal(t, int32(0), s.inFlight.Load(), "Close returned before the responses")
++	assert.Equal(t, sha256.Sum256(data), sha256.Sum256(s.stream(t)))
++	requireNoWriterGoroutines(t)
++}
++
++// With a 100 ms response time, sending without waiting for the responses is
++// several times faster than one request per round trip.
++func TestPacketUpThroughputWithLatency(t *testing.T) {
++	cfg := &Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up"}
++	run := func(maxInFlight int) time.Duration {
++		s := startPipeUploadServer(t, cfg)
++		s.delay = func(uint64) time.Duration { return 100 * time.Millisecond }
++		w := newPipeWriter(t, cfg, s.addr, nil, 32<<10, Range{Min: 10, Max: 10}, maxInFlight)
++		data := randomBytes(t, 32*32<<10)
++		start := time.Now()
++		require.NoError(t, writeInPieces(w, data, 16<<10))
++		require.NoError(t, w.Close())
++		got := s.stream(t)
++		elapsed := time.Since(start)
++		require.Equal(t, sha256.Sum256(data), sha256.Sum256(got))
++		t.Logf("in flight %d: 1 MiB in %v (%.1f Mbit/s)", maxInFlight, elapsed.Round(time.Millisecond),
++			float64(len(data))*8/elapsed.Seconds()/1e6)
++		return elapsed
++	}
++	sequential := run(1)
++	pipelined := run(packetUpMaxInFlight)
++	assert.Less(t, pipelined*3, sequential, "pipelined %v, sequential %v", pipelined, sequential)
++	requireNoWriterGoroutines(t)
++}
++
++// The whole packet-up client (download GET and pipelined uploads) against the
++// mihomo server handler, which echoes the stream back.
++func TestPacketUpClientEchoWithServerHandler(t *testing.T) {
++	cfg := Config{Host: "example.com", Path: "/xhttp", Mode: "packet-up", ScMaxEachPostBytes: "65536"}
++	handler, err := NewServerHandler(ServerOption{
++		Config: cfg,
++		ConnHandler: func(conn net.Conn) {
++			defer conn.Close()
++			_, _ = io.Copy(conn, conn)
++		},
++	})
++	require.NoError(t, err)
++	var maxInFlight, inFlight atomic.Int32
++	delayed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if strings.Count(strings.Trim(r.URL.Path, "/"), "/") == 2 { // /xhttp/{session}/{seq}
++			n := inFlight.Add(1)
++			defer inFlight.Add(-1)
++			for m := maxInFlight.Load(); n > m && !maxInFlight.CompareAndSwap(m, n); m = maxInFlight.Load() {
++			}
++			time.Sleep(time.Duration(20+mathrand.Intn(60)) * time.Millisecond)
++		}
++		handler.ServeHTTP(w, r)
++	})
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	protocols := new(http.Protocols)
++	protocols.SetHTTP1(true)
++	protocols.SetUnencryptedHTTP2(true)
++	server := &http.Server{Handler: delayed, Protocols: protocols}
++	go func() { _ = server.Serve(ln) }()
++	t.Cleanup(func() { _ = server.Close() })
++
++	addr := ln.Addr().String()
++	client, err := NewClient(&cfg, func() http.RoundTripper {
++		return NewTransport(
++			func(ctx context.Context) (net.Conn, error) {
++				var d net.Dialer
++				return d.DialContext(ctx, "tcp", addr)
++			},
++			func(ctx context.Context, conn net.Conn, isH2 bool) (net.Conn, error) { return conn, nil },
++			nil, nil, 0)
++	}, nil, false)
++	require.NoError(t, err)
++	defer client.Close()
++
++	conn, err := client.Dial(context.Background())
++	require.NoError(t, err)
++	data := randomBytes(t, 4<<20)
++	readDone := make(chan []byte, 1)
++	go func() {
++		got := make([]byte, len(data))
++		_, _ = io.ReadFull(conn, got)
++		readDone <- got
++	}()
++	require.NoError(t, writeInPieces(conn, data, 32<<10))
++	select {
++	case got := <-readDone:
++		assert.Equal(t, sha256.Sum256(data), sha256.Sum256(got))
++	case <-time.After(30 * time.Second):
++		t.Fatal("echo timed out")
++	}
++	require.NoError(t, conn.Close())
++	t.Logf("server saw up to %d upload requests at once", maxInFlight.Load())
++	assert.Greater(t, int(maxInFlight.Load()), 1)
++	assert.LessOrEqual(t, int(maxInFlight.Load()), packetUpMaxInFlight)
++	requireNoWriterGoroutines(t)
 +}

@@ -46,7 +46,7 @@
 - VLESS links the app converts itself (a pasted link, or a subscription that is a list of links) now keep the `fm` fragment setting too, with the same values and checks as the core; before, the app dropped it. An `fm` that does not parse is left out, the node still imports.
 
 **🚀 XHTTP packet-up: faster upload**
-- In `packet-up` mode the core no longer waits for the server's answer to each upload request before sending the next one: like Xray's own client, it keeps up to 8 requests in flight, and the first data after a pause goes out at once instead of after `sc-min-posts-interval-ms`. In our lab upload got up to a third faster with no added delay, 60-80 % faster with a 30 ms round trip and about 30 % faster with 100 ms (Xray 24.12.31 and 26.11.9, Citrus). Works with every Xray server from 24.12.31 on, Citrus and mihomo, including servers with a lowered `sc-max-buffered-posts` (down to 7, 8 for Citrus). Nodes with `alpn: [http/1.1]` keep waiting for each answer.
+- In `packet-up` mode the core no longer waits for the server's answer to each upload request before sending the next one: like Xray's own client, it keeps up to 8 requests in flight, and the first data after a pause goes out at once instead of after `sc-min-posts-interval-ms`. In our lab upload got up to a third faster with no added delay, 60-80 % faster with a 30 ms round trip and about a quarter faster with 100 ms (Xray 24.12.31 and 26.11.9, Citrus); behind an nginx HTTP/2 front with a 50 ms round trip it went from 9 to 56 Mbit/s. Works with every Xray server from 24.12.31 on, Citrus and mihomo, including servers with a lowered `sc-max-buffered-posts` (down to 7, 8 for Citrus). Nodes with `alpn: [http/1.1]` keep waiting for each answer.
 
 ### Русский
 
@@ -94,7 +94,7 @@
 - Ссылки VLESS, которые приложение разбирает само (вставленная ссылка или подписка списком ссылок), теперь тоже сохраняют нарезку из `fm`, с теми же значениями и проверками, что и в ядре; раньше приложение её теряло. Если `fm` не разбирается, он пропускается, а узел всё равно импортируется.
 
 **🚀 XHTTP packet-up: быстрее отправка**
-- В режиме `packet-up` ядро больше не ждёт ответа сервера на каждый запрос с данными, прежде чем отправить следующий: как и клиент Xray, оно держит в пути до 8 запросов, а первые данные после паузы уходят сразу, а не через `sc-min-posts-interval-ms`. В нашей лаборатории отправка стала быстрее до трети без добавленной задержки, на 60-80 % при задержке 30 мс туда и обратно и примерно на 30 % при 100 мс (Xray 24.12.31 и 26.11.9, Citrus). Работает со всеми серверами Xray начиная с 24.12.31, Citrus и mihomo, в том числе с уменьшенным `sc-max-buffered-posts` (до 7, у Citrus до 8). Узлы с `alpn: [http/1.1]` по-прежнему ждут каждого ответа.
+- В режиме `packet-up` ядро больше не ждёт ответа сервера на каждый запрос с данными, прежде чем отправить следующий: как и клиент Xray, оно держит в пути до 8 запросов, а первые данные после паузы уходят сразу, а не через `sc-min-posts-interval-ms`. В нашей лаборатории отправка стала быстрее до трети без добавленной задержки, на 60-80 % при задержке 30 мс туда и обратно и примерно на четверть при 100 мс (Xray 24.12.31 и 26.11.9, Citrus); за фронтом nginx с HTTP/2 и задержкой 50 мс скорость выросла с 9 до 56 Мбит/с. Работает со всеми серверами Xray начиная с 24.12.31, Citrus и mihomo, в том числе с уменьшенным `sc-max-buffered-posts` (до 7, у Citrus до 8). Узлы с `alpn: [http/1.1]` по-прежнему ждут каждого ответа.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

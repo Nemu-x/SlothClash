@@ -160,6 +160,10 @@
       "sha256": "6b04e0872d360011435198dd42b86f493e59fb417e5cc1abda114ea1ae21938f"
     },
     {
+      "file": "0039-vless-mux-cool.patch",
+      "sha256": "7a54567061e5fffdd71ba4b0a844506b771287711773e1e9024f86bf8e2dddc8"
+    },
+    {
       "file": "0040-listener-close-races.patch",
       "sha256": "0525f2d6c077618ce24f225fb25631eba2261afcf0cc5cd084fe2442a1b3ef53"
     },

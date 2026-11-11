@@ -51,7 +51,7 @@ proxies:
     - mode: default
       name: snell
       port: 44046
-      psk: yourpsk
+      psk: yourpsk-v6-0001
       server: server
       type: snell
       version: 6

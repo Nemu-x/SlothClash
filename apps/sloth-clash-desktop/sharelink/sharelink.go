@@ -181,6 +181,11 @@ func parseVless(link string) (Proxy, error) {
 			p["reality-opts"] = ro
 		}
 	}
+	// Xray finalmask TCP "fragment" from the fm parameter, as core patch 0032
+	// maps it (any network and security, like the core)
+	if fragmentOpts := fragmentOptsFromFinalMask(q.Get("fm")); fragmentOpts != nil {
+		p["fragment-opts"] = fragmentOpts
+	}
 	applyTransport(p, network, q)
 	return p, nil
 }

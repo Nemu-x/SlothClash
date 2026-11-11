@@ -1,0 +1,439 @@
+diff --git a/component/tls/reality.go b/component/tls/reality.go
+index 6217b20f..040e2a36 100644
+--- a/component/tls/reality.go
++++ b/component/tls/reality.go
+@@ -85,6 +85,9 @@ type realityMemoEntry struct {
+ 	pinned   bool
+ 	failures int
+ 	flips    int
++	// silent counts handshakes with mlkem in a row that ended without the
++	// server answering (SlothClash 0030); any answer resets it.
++	silent int
+ }
+ 
+ // realityMemoFlipAfter is how many consecutive failures a pinned verdict
+@@ -107,21 +110,35 @@ func realityMemoKey(conn net.Conn, config *RealityConfig) string {
+ // realityChooseMLKEM returns whether this handshake offers X25519MLKEM768 and
+ // whether the choice came from the adaptive memo (and so must be reported back).
+ func realityChooseMLKEM(key string, config *RealityConfig) (mlkem bool, adaptive bool) {
++	mlkem, adaptive, _ = realityChooseMLKEMProbe(key, config)
++	return mlkem, adaptive
++}
++
++// realityChooseMLKEMProbe is realityChooseMLKEM that also says whether this
++// attempt is a probe of the other key share (SlothClash 0030): after
++// realityMemoFlipAfter handshakes in a row that ended before the server
++// answered, one attempt uses the other share. Its success pins it; its failure
++// is a stale report and changes nothing.
++func realityChooseMLKEMProbe(key string, config *RealityConfig) (mlkem bool, adaptive bool, probe bool) {
+ 	if config.SupportX25519MLKEM768 {
+-		return true, false
++		return true, false, false
+ 	}
+ 	switch GetRealityMLKEMPolicy() {
+ 	case RealityMLKEMOn:
+-		return true, false
++		return true, false, false
+ 	case RealityMLKEMOff:
+-		return false, false
++		return false, false, false
+ 	}
+ 	realityMemo.Lock()
+ 	defer realityMemo.Unlock()
+ 	if entry, ok := realityMemo.entries[key]; ok {
+-		return entry.mlkem, true
++		if entry.silent >= realityMemoFlipAfter {
++			entry.silent = 0
++			return !entry.mlkem, true, true
++		}
++		return entry.mlkem, true, false
+ 	}
+-	return realityMLKEMFirst.Load(), true
++	return realityMLKEMFirst.Load(), true, false
+ }
+ 
+ func realityReportMLKEM(key string, mlkem bool, ok bool, remote net.Addr) {
+@@ -136,12 +153,13 @@ func realityReportMLKEM(key string, mlkem bool, ok bool, remote net.Addr) {
+ 		if !entry.pinned || entry.mlkem != mlkem {
+ 			log.Infoln("REALITY %v: X25519MLKEM768=%v confirmed", remote, mlkem)
+ 		}
+-		entry.mlkem, entry.pinned, entry.failures, entry.flips = mlkem, true, 0, 0
++		entry.mlkem, entry.pinned, entry.failures, entry.flips, entry.silent = mlkem, true, 0, 0, 0
+ 		return
+ 	}
+ 	if entry.mlkem != mlkem {
+ 		return // a stale attempt; the memo already moved on
+ 	}
++	entry.silent = 0 // the server answered
+ 	entry.failures++
+ 	if !entry.pinned || entry.failures >= realityMemoFlipAfter {
+ 		entry.mlkem, entry.pinned, entry.failures = !mlkem, false, 0
+@@ -156,6 +174,30 @@ func realityReportMLKEM(key string, mlkem bool, ok bool, remote net.Addr) {
+ 	}
+ }
+ 
++// realityReportSilent records a handshake with mlkem that ended before the
++// server answered: a reset, EOF, timeout, cancelled request, an alert or a
++// non-TLS answer instead of a certificate chain (SlothClash 0030). It never
++// flips or unpins the verdict; it only counts towards the probe in
++// realityChooseMLKEMProbe. A server whose cover site is unreachable closes the
++// connection instead of relaying it, so without the probe Auto would never learn
++// that it wants the other key share.
++func realityReportSilent(key string, mlkem bool, remote net.Addr) {
++	realityMemo.Lock()
++	defer realityMemo.Unlock()
++	entry := realityMemo.entries[key]
++	if entry == nil {
++		entry = &realityMemoEntry{mlkem: mlkem}
++		realityMemo.entries[key] = entry
++	}
++	if entry.mlkem != mlkem {
++		return // a stale attempt or a failed probe
++	}
++	entry.silent++
++	if entry.silent == realityMemoFlipAfter {
++		log.Debugln("REALITY %v: %d handshakes with X25519MLKEM768=%v in a row ended before the server answered, the next one tries %v once", remote, entry.silent, mlkem, !mlkem)
++	}
++}
++
+ func realityHasMLKEMShare(uConn *utls.UConn) bool {
+ 	keys := uConn.HandshakeState.State13.KeyShareKeys
+ 	return keys != nil && keys.MlkemEcdhe != nil
+@@ -180,12 +222,20 @@ func ResetRealityMLKEMMemo() {
+ 
+ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHelloID, serverName string, realityConfig *RealityConfig) (net.Conn, error) {
+ 	memoKey := realityMemoKey(conn, realityConfig)
+-	useMLKEM, adaptive := realityChooseMLKEM(memoKey, realityConfig)
++	useMLKEM, adaptive, probe := realityChooseMLKEMProbe(memoKey, realityConfig)
++	if probe {
++		log.Debugln("REALITY %v: probing X25519MLKEM768=%v", conn.RemoteAddr(), useMLKEM)
++	}
+ 	report := func(ok bool) {
+ 		if adaptive {
+ 			realityReportMLKEM(memoKey, useMLKEM, ok, conn.RemoteAddr())
+ 		}
+ 	}
++	reportSilent := func() {
++		if adaptive {
++			realityReportSilent(memoKey, useMLKEM, conn.RemoteAddr())
++		}
++	}
+ 	var pqHello *realityPQHello // set once the fingerprint is swapped for its post-quantum hello
+ 	for retry := 0; ; retry++ {
+ 		verifier := &realityVerifier{
+@@ -301,6 +351,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 			// the network's doing and leave the memo alone.
+ 			if verifier.answered && !verifier.verified {
+ 				report(false)
++			} else if !verifier.verified {
++				reportSilent() // SlothClash 0030: counts towards one probe, never flips
+ 			}
+ 			return nil, err
+ 		}
+diff --git a/component/tls/reality_mlkem_evidence_test.go b/component/tls/reality_mlkem_evidence_test.go
+index 927c4ee5..532f12e6 100644
+--- a/component/tls/reality_mlkem_evidence_test.go
++++ b/component/tls/reality_mlkem_evidence_test.go
+@@ -178,7 +178,8 @@ func TestRealityMLKEMMemoIgnoresNetworkFailures(t *testing.T) {
+ 			if err == nil {
+ 				t.Fatal("handshake succeeded")
+ 			}
+-			if entry, ok := realityMemoSnapshot(key); ok {
++			// SlothClash 0030: the failure is counted as silent, the verdict stays.
++			if entry, ok := realityMemoSnapshot(key); ok && (entry.mlkem || entry.pinned || entry.failures != 0 || entry.silent != 1) {
+ 				t.Fatalf("%v moved the memo: %+v", err, entry)
+ 			}
+ 			if mlkem, _ := realityChooseMLKEM(key, config); mlkem {
+diff --git a/component/tls/reality_mlkem_probe_test.go b/component/tls/reality_mlkem_probe_test.go
+new file mode 100644
+index 00000000..7f07e0e6
+--- /dev/null
++++ b/component/tls/reality_mlkem_probe_test.go
+@@ -0,0 +1,287 @@
++package tls
++
++import (
++	"bytes"
++	"context"
++	"crypto/ecdh"
++	"crypto/rand"
++	"crypto/tls"
++	"encoding/binary"
++	"io"
++	"net"
++	"sync"
++	"testing"
++	"time"
++
++	utls "github.com/metacubex/utls"
++)
++
++// SlothClash core patch 0030: handshakes that end before the server answers
++// never flip the ML-KEM verdict, but three in a row buy one attempt with the
++// other key share. The idea is the silent probe of Rerowros/veles
++// (component/tls/reality.go, realityClassify, GPL-3.0); the refusal signal stays
++// 0002's (a certificate chain that is not the REALITY one).
++
++func TestRealityMLKEMSilentNeverFlips(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	ResetRealityMLKEMMemo()
++	SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	SetRealityMLKEMFirst(false)
++	config := realityMemoTestConfig(t, false)
++	addr := net.Addr(fakeAddr("203.0.113.2:443"))
++	key := addr.String() + "|" + string(config.PublicKey.Bytes())
++
++	realityReportMLKEM(key, false, true, addr) // pinned classic
++	for i := 0; i < 10; i++ {
++		mlkem, adaptive, probe := realityChooseMLKEMProbe(key, config)
++		if !adaptive {
++			t.Fatal("Auto choice is not adaptive")
++		}
++		if probe {
++			realityReportSilent(key, mlkem, addr) // the probe's own silence is stale
++			continue
++		}
++		if mlkem {
++			t.Fatalf("attempt %d left the pinned classic verdict outside a probe", i)
++		}
++		realityReportSilent(key, false, addr)
++	}
++	if entry, _ := realityMemoSnapshot(key); entry.mlkem || !entry.pinned || entry.failures != 0 {
++		t.Fatalf("silent handshakes moved the verdict: %+v", entry)
++	}
++}
++
++func TestRealityMLKEMSilentProbe(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	ResetRealityMLKEMMemo()
++	SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	SetRealityMLKEMFirst(false)
++	config := realityMemoTestConfig(t, false)
++	addr := net.Addr(fakeAddr("203.0.113.3:443"))
++	key := addr.String() + "|" + string(config.PublicKey.Bytes())
++
++	silentRound := func() {
++		t.Helper()
++		for i := 0; i < realityMemoFlipAfter; i++ {
++			mlkem, _, probe := realityChooseMLKEMProbe(key, config)
++			if mlkem || probe {
++				t.Fatalf("silent attempt %d = (mlkem %v, probe %v), want the classic verdict", i, mlkem, probe)
++			}
++			realityReportSilent(key, false, addr)
++		}
++	}
++
++	// A server never seen that never answers the classic hello.
++	silentRound()
++	mlkem, _, probe := realityChooseMLKEMProbe(key, config)
++	if !mlkem || !probe {
++		t.Fatalf("after %d silent handshakes = (mlkem %v, probe %v), want one probe with the hybrid share", realityMemoFlipAfter, mlkem, probe)
++	}
++	if mlkem, _, probe = realityChooseMLKEMProbe(key, config); mlkem || probe {
++		t.Fatal("more than one probe per round")
++	}
++
++	// The probe fails silently too: stale, nothing changes.
++	realityReportSilent(key, true, addr)
++	if entry, _ := realityMemoSnapshot(key); entry.mlkem || entry.silent != 0 {
++		t.Fatalf("a silent probe moved the memo: %+v", entry)
++	}
++	// The probe is refused by a cover site: stale as well.
++	silentRound()
++	if mlkem, _, probe = realityChooseMLKEMProbe(key, config); !mlkem || !probe {
++		t.Fatal("no second probe after another silent round")
++	}
++	realityReportMLKEM(key, true, false, addr)
++	if entry, _ := realityMemoSnapshot(key); entry.mlkem || entry.pinned {
++		t.Fatalf("a refused probe flipped the memo: %+v", entry)
++	}
++	// The probe succeeds: pinned.
++	silentRound()
++	if mlkem, _, probe = realityChooseMLKEMProbe(key, config); !mlkem || !probe {
++		t.Fatal("no third probe")
++	}
++	realityReportMLKEM(key, true, true, addr)
++	if entry, _ := realityMemoSnapshot(key); !entry.mlkem || !entry.pinned || entry.silent != 0 {
++		t.Fatalf("a successful probe did not pin the hybrid share: %+v", entry)
++	}
++}
++
++func TestRealityMLKEMAnswerResetsSilent(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	ResetRealityMLKEMMemo()
++	SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	SetRealityMLKEMFirst(false)
++	config := realityMemoTestConfig(t, false)
++	addr := net.Addr(fakeAddr("203.0.113.4:443"))
++	key := addr.String() + "|" + string(config.PublicKey.Bytes())
++
++	realityReportMLKEM(key, false, true, addr)
++	for round := 0; round < 3; round++ {
++		for i := 0; i < realityMemoFlipAfter-1; i++ {
++			realityReportSilent(key, false, addr)
++		}
++		realityReportMLKEM(key, false, true, addr) // the server answered in between
++	}
++	if _, _, probe := realityChooseMLKEMProbe(key, config); probe {
++		t.Fatal("silent handshakes that are not in a row triggered a probe")
++	}
++}
++
++func TestRealityMLKEMProbeOnlyInAuto(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	defer SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	ResetRealityMLKEMMemo()
++	SetRealityMLKEMFirst(false)
++	config := realityMemoTestConfig(t, false)
++	key := "203.0.113.5:443|" + string(config.PublicKey.Bytes())
++	for i := 0; i < realityMemoFlipAfter; i++ {
++		realityReportSilent(key, false, nil)
++	}
++	SetRealityMLKEMPolicy(RealityMLKEMOff)
++	if mlkem, adaptive, probe := realityChooseMLKEMProbe(key, config); mlkem || adaptive || probe {
++		t.Fatal("policy off probed the hybrid share")
++	}
++	SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	if mlkem, _, probe := realityChooseMLKEMProbe(key, realityMemoTestConfig(t, true)); !mlkem || probe {
++		t.Fatal("a forced share was probed")
++	}
++}
++
++// prefixConn replays bytes already read from the connection.
++type prefixConn struct {
++	net.Conn
++	r io.Reader
++}
++
++func (c *prefixConn) Read(p []byte) (int, error) { return c.r.Read(p) }
++
++// The case 0002 could not learn: a server that closes the connection on a
++// classic hello (an Xray 26.9.8+ server whose cover site is unreachable)
++// instead of relaying it. Three closed handshakes, then the probe with the
++// hybrid share authenticates and pins it.
++func TestRealityMLKEMProbeLearnsSilentServer(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	defer SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	ResetRealityMLKEMMemo()
++	SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	SetRealityMLKEMFirst(false)
++
++	target, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{chrome155TestCert(t, "www.example.com")}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer target.Close()
++	go func() {
++		for {
++			c, err := target.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer c.Close()
++				_ = c.(*tls.Conn).Handshake()
++				_, _ = io.Copy(io.Discard, c)
++			}()
++		}
++	}()
++	serverKey, err := ecdh.X25519().GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	shortID := [8]byte{0x5e}
++	serverConfig := &utls.RealityConfig{
++		Type:        "tcp",
++		Dest:        target.Addr().String(),
++		ServerNames: map[string]bool{"www.example.com": true},
++		PrivateKey:  serverKey.Bytes(),
++		ShortIds:    map[[8]byte]bool{shortID: true},
++		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
++			return (&net.Dialer{}).DialContext(ctx, network, address)
++		},
++	}
++	serverConfig.SessionTicketsDisabled = true
++
++	l, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	var wg sync.WaitGroup
++	t.Cleanup(func() { l.Close(); wg.Wait() })
++	var mu sync.Mutex
++	var hybridSeen []bool
++	wg.Add(1)
++	go func() {
++		defer wg.Done()
++		for {
++			c, err := l.Accept()
++			if err != nil {
++				return
++			}
++			wg.Add(1)
++			go func() {
++				defer wg.Done()
++				defer c.Close()
++				_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++				header := make([]byte, 5)
++				if _, err := io.ReadFull(c, header); err != nil {
++					return
++				}
++				body := make([]byte, binary.BigEndian.Uint16(header[3:]))
++				if _, err := io.ReadFull(c, body); err != nil {
++					return
++				}
++				record := append(header, body...)
++				hybrid := hasHybridShare(parseHelloKeyShares(record))
++				mu.Lock()
++				hybridSeen = append(hybridSeen, hybrid)
++				mu.Unlock()
++				if !hybrid {
++					return // closes: no answer to a classic hello
++				}
++				conn, err := utls.RealityServer(context.Background(), &prefixConn{Conn: c, r: io.MultiReader(bytes.NewReader(record), c)}, serverConfig)
++				if err != nil {
++					return
++				}
++				defer conn.Close()
++				_, _ = io.Copy(conn, conn)
++			}()
++		}
++	}()
++
++	dial := func() error {
++		conn, err := net.Dial("tcp", l.Addr().String())
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer conn.Close()
++		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++		defer cancel()
++		rconn, err := GetRealityConn(ctx, conn, utls.HelloChrome_Auto, "www.example.com", &RealityConfig{PublicKey: serverKey.PublicKey(), ShortID: shortID})
++		if err != nil {
++			return err
++		}
++		return rconn.Close()
++	}
++	for i := 0; i < realityMemoFlipAfter; i++ {
++		if err := dial(); err == nil {
++			t.Fatalf("classic attempt %d succeeded against a server that closes on it", i)
++		}
++	}
++	if err := dial(); err != nil {
++		t.Fatalf("the probe with the hybrid share failed: %v", err)
++	}
++	if err := dial(); err != nil {
++		t.Fatalf("the pinned hybrid share failed: %v", err)
++	}
++	mu.Lock()
++	defer mu.Unlock()
++	want := []bool{false, false, false, true, true}
++	if len(hybridSeen) != len(want) {
++		t.Fatalf("hellos %v, want %v", hybridSeen, want)
++	}
++	for i := range want {
++		if hybridSeen[i] != want[i] {
++			t.Fatalf("hellos %v, want %v", hybridSeen, want)
++		}
++	}
++}

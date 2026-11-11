@@ -107,8 +107,8 @@ func matrixCases(f *fixtures) []labCase {
 			why:   "reality-opts.client-version 1.9.0 is below min-client-ver 26.0.0",
 			build: reality(obj{"min-client-ver": "26.0.0"}, obj{"client-version": "1.9.0"}, nil)},
 		{name: "reality/min-client-ver/per-proxy-overrides-global", patched: pass, stock: refused,
-			why:   "a per-proxy client-version 26.10.29 wins over a global reality-client-version 1.9.0",
-			build: reality(obj{"min-client-ver": "26.0.0"}, obj{"client-version": "26.10.29"}, obj{"reality-client-version": "1.9.0"})},
+			why:   "a per-proxy client-version 26.11.9 wins over a global reality-client-version 1.9.0",
+			build: reality(obj{"min-client-ver": "26.0.0"}, obj{"client-version": "26.11.9"}, obj{"reality-client-version": "1.9.0"})},
 		{name: "reality/max-client-ver/default", feature: "max-client-ver", patched: refused, stock: pass,
 			why:   "the patched default client version is above max-client-ver 2.0.0; stock's 1.8.2 is below",
 			build: reality(obj{"max-client-ver": "2.0.0"}, nil, nil)},
@@ -129,6 +129,26 @@ func matrixCases(f *fixtures) []labCase {
 		{name: "reality/require-mlkem/forced", patched: pass, stock: pass,
 			why:   "support-x25519mlkem768: true forces the hybrid share in both cores",
 			build: reality(mlkemRequired, obj{"support-x25519mlkem768": true}, nil)},
+
+		// --- Chrome 155 hello and the 26.11.9 client version (core patch 0029) ---
+		{name: "reality/min-client-ver/26.11.9", patched: pass, stock: refused,
+			why:   "the patched default client version is 26.11.9, the release Citrus beta.3 reports; stock sends 1.8.2",
+			build: reality(obj{"min-client-ver": "26.11.9"}, nil, nil)},
+		{name: "reality/chrome155", patched: pass, stock: refused,
+			why: "client-fingerprint chrome155 sends the Chrome 155 hello; the stock core does not know the name and REALITY needs a uTLS fingerprint",
+			build: single(func() obj { return f.realityServer(nil) }, func(int) obj {
+				return merge(f.realityClient(nil), obj{"client-fingerprint": "chrome155"})
+			}, nil)},
+		{name: "reality/chrome155/require-mlkem/auto", patched: pass, stock: refused,
+			why: "Chrome 155 with the adaptive key share against a server that requires X25519MLKEM768",
+			build: single(func() obj { return f.realityServer(mlkemRequired) }, func(int) obj {
+				return merge(f.realityClient(nil), obj{"client-fingerprint": "chrome155"})
+			}, obj{"reality-mlkem": "auto"})},
+		{name: "reality/chrome155/require-mlkem/off", patched: refused, stock: refused,
+			why: "reality-mlkem off strips the hybrid share from the Chrome 155 hello as from chrome's: refused by a server that requires it",
+			build: single(func() obj { return f.realityServer(mlkemRequired) }, func(int) obj {
+				return merge(f.realityClient(nil), obj{"client-fingerprint": "chrome155"})
+			}, obj{"reality-mlkem": "off"})},
 
 		// --- negative controls ---
 		{name: "reality/wrong-uuid", patched: refused, stock: refused,

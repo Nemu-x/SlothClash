@@ -10,9 +10,13 @@
 package realitylab
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -41,18 +45,36 @@ const (
 // a classic one is rejected, in between both are accepted. 26.7.11 and 26.7.28
 // also refuse clients below 26.3.27 when the server sets no minClientVer (the
 // default of XTLS/Xray-core af7eb680, commented out again in 47cfe999, the
-// 26.9.8 change that also requires the hybrid share). 26.9.30, 26.10.21 and
-// 26.10.29 track the current releases.
-var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21", "26.10.29"}
+// 26.9.8 change that also requires the hybrid share). 26.9.30, 26.10.21,
+// 26.10.29 and 26.11.9 track the current releases (26.11.9 sends Chrome 155 as
+// its default fingerprint).
+var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21", "26.10.29", "26.11.9"}
 
-// browserVersions get firefox and safari rows (Auto and forced) next to chrome:
-// one per key-share generation plus every current release, because core patch
-// 0024 gives those two families their own post-quantum hello.
-var browserVersions = map[string]bool{"24.12.31": true, "26.4.13": true, "26.9.9": true, "26.9.30": true, "26.10.21": true, "26.10.29": true}
+// browserVersions get firefox, safari and chrome155 rows (Auto and forced) next
+// to chrome: one per key-share generation plus every current release, because
+// core patch 0024 gives firefox and safari their own post-quantum hello and
+// 0029 adds the Chrome 155 hello.
+var browserVersions = map[string]bool{"24.12.31": true, "26.4.13": true, "26.9.9": true, "26.9.30": true, "26.10.21": true, "26.10.29": true, "26.11.9": true}
+
+// officialXray are releases teddysun/xray has not published (yet): the lab
+// builds their image from the official release zip, pinned by the SHA-256 of
+// Xray-linux-64.zip (the SHA2-256 line of its .dgst), on top of the newest
+// teddysun image so the layout (binary, config path, CA bundle) is the same.
+var officialXray = map[string]string{
+	"26.11.9": "b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82",
+}
+
+const officialXrayBase = "teddysun/xray:26.10.29"
 
 // patchedClientVersion is the REALITY client version the patched core sends
-// by default (core patch 0024).
-const patchedClientVersion = "26.10.29"
+// by default (core patch 0029).
+const patchedClientVersion = "26.11.9"
+
+// hybridParrot reports whether the fingerprint's stock parrot (no 0024 hello)
+// carries the X25519MLKEM768 share: chrome (Chrome 133) and chrome155 do.
+func hybridParrot(fingerprint string) bool {
+	return fingerprint == "chrome" || fingerprint == "chrome155"
+}
 
 // defaultMinClientVer is the minClientVer an Xray server applies when its
 // config sets none: 26.3.27 from 26.7.11 until 26.9.8, none otherwise.
@@ -124,8 +146,9 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 		switch {
 		case r.forced && policy == "off":
 			// reality-mlkem off keeps the stock parrots: of the lab's
-			// fingerprints only chrome's carries the forced hybrid share.
-			return acceptsShare(r.srv.version, r.fingerprint == "chrome")
+			// fingerprints only chrome's and chrome155's carry the forced
+			// hybrid share.
+			return acceptsShare(r.srv.version, hybridParrot(r.fingerprint))
 		case r.forced || policy == "on":
 			return acceptsShare(r.srv.version, true) // firefox/safari use their own hybrid hello (0024)
 		case policy == "off":
@@ -136,9 +159,10 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 }
 
 // expectStock models upstream mihomo: client version 1.8.2, hybrid share only
-// when forced and only from chrome, unknown top-level keys ignored.
+// when forced and only from chrome, unknown top-level keys ignored. It does not
+// know chrome155, and REALITY needs a fingerprint it knows.
 func expectStock(r row) bool {
-	if !versionGate(r, "1.8.2") {
+	if r.fingerprint == "chrome155" || !versionGate(r, "1.8.2") {
 		return false
 	}
 	return acceptsShare(r.srv.version, r.forced && r.fingerprint == "chrome")
@@ -162,7 +186,7 @@ func TestRealityMatrix(t *testing.T) {
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
 		if s.variant == "plain" && browserVersions[s.version] {
-			for _, fp := range []string{"firefox", "safari"} {
+			for _, fp := range []string{"firefox", "safari", "chrome155"} {
 				rows = append(rows, row{srv: s, fingerprint: fp}, row{srv: s, fingerprint: fp, forced: true})
 			}
 		}
@@ -279,7 +303,7 @@ func startServers(t *testing.T) []*server {
 			name := fmt.Sprintf("sloth-xlab-%s-%s-%s", run, version, variant)
 			out, err := exec.Command("docker", "run", "-d", "--name", name,
 				"-p", fmt.Sprintf("127.0.0.1::%d", innerPort),
-				"-v", filepath.ToSlash(cdir)+":/etc/xray:ro", "teddysun/xray:"+version).CombinedOutput()
+				"-v", filepath.ToSlash(cdir)+":/etc/xray:ro", xrayImage(t, version)).CombinedOutput()
 			if err != nil {
 				t.Fatalf("docker run %s: %v\n%s", name, err, out)
 			}
@@ -396,6 +420,76 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row, portBa
 	return ports, logf.Name()
 }
 
+// xrayImage returns the image of an Xray release: teddysun/xray, or for the
+// officialXray releases an image built here from the official zip.
+func xrayImage(t *testing.T, version string) string {
+	t.Helper()
+	sum, ok := officialXray[version]
+	if !ok {
+		return "teddysun/xray:" + version
+	}
+	image := "sloth-xlab/xray:" + version
+	if exec.Command("docker", "image", "inspect", image).Run() == nil {
+		return image
+	}
+	officialImageMu.Lock()
+	defer officialImageMu.Unlock()
+	if exec.Command("docker", "image", "inspect", image).Run() == nil {
+		return image
+	}
+	dir := t.TempDir()
+	zipURL := "https://github.com/XTLS/Xray-core/releases/download/v" + version + "/Xray-linux-64.zip"
+	resp, err := http.Get(zipURL)
+	if err != nil {
+		t.Fatalf("download %s: %v", zipURL, err)
+	}
+	data, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("download %s: HTTP %d, %v", zipURL, resp.StatusCode, err)
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != sum {
+		t.Fatalf("%s: SHA-256 %s, pinned %s", zipURL, got, sum)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bin []byte
+	for _, f := range zr.File {
+		if f.Name == "xray" {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin, err = io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if bin == nil {
+		t.Fatalf("%s has no xray binary", zipURL)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "xray"), bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dockerfile := "FROM " + officialXrayBase + "\nCOPY --chmod=755 xray /usr/bin/xray\n"
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("docker", "build", "-q", "-t", image, dir).CombinedOutput(); err != nil {
+		t.Fatalf("docker build %s: %v\n%s", image, err, out)
+	}
+	if out, err := exec.Command("docker", "run", "--rm", "--entrypoint", "/usr/bin/xray", image, "version").CombinedOutput(); err != nil || !strings.Contains(string(out), "Xray "+version+" ") {
+		t.Fatalf("%s reports %q (%v), want Xray %s", image, out, err, version)
+	}
+	return image
+}
+
+var officialImageMu sync.Mutex
+
 // checkBrowserHellos asserts what core patches 0002 and 0024 promise: a
 // firefox or safari proxy that needs the hybrid share sends its own current
 // hello (the core logs "using Firefox 148" / "using Safari 26.3") and never
@@ -408,6 +502,11 @@ func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
 		t.Fatalf("read core log: %v", err)
 	}
 	logText := string(b)
+	// chrome155 rows: 0029 builds the hello itself; a fallback to Chrome 133
+	// would pass every probe and still be wrong.
+	if bad := grepLines(logText, "chrome155 fingerprint:"); bad != "" {
+		t.Errorf("%s: a chrome155 hello fell back:\n%s", scenario, bad)
+	}
 	for _, fp := range []struct{ client, hello string }{{"Firefox", "Firefox 148"}, {"Safari", "Safari 26.3"}} {
 		if bad := grepLines(logText, fp.client+" fingerprint has no X25519MLKEM768 share, using chrome"); bad != "" {
 			t.Errorf("%s: %s fell back to chrome:\n%s", scenario, fp.client, bad)

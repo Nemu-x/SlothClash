@@ -14,6 +14,7 @@
 - The subscription `User-Agent` now says which Citrus release the client is compatible with, the way Citrus itself does: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Panels that serve Citrus features by the `citrus/` token now recognise SlothClash; the capability list in brackets is gone. The `clash.meta/` prefix and the core version stay first, so format and protocol selection on other panels is unchanged.
 - gRPC proxies: a server that sends a long run of empty gRPC frames can no longer crash the core (the reader used to call itself once per frame); a frame whose payload length is larger than its message is now refused.
 - XHTTP: read and write deadlines are now separate and only end an operation that is still running when they pass. Before, any deadline closed the whole connection even while it was idle, and setting one direction moved the other, which could drop idle multiplexed (smux, yamux) sessions over XHTTP.
+- A broken `vless://` or `vmess://` link in a subscription the core downloads itself no longer writes the whole link, with its UUID and keys, to the log; the warning names only the server and the node.
 
 **🛰️ Core: stock configs behave like stock mihomo**
 - REALITY's automatic post-quantum key-share choice no longer flips on network trouble. Only a server that actually answered with its cover site's certificate counts as a key-share mismatch; timeouts, resets and dial errors are ignored, so a flaky network can no longer switch an older Xray server to the post-quantum share and break it.
@@ -55,6 +56,7 @@
 - `User-Agent` подписки теперь сообщает, с каким релизом Citrus совместим клиент, так же как это делает сам Citrus: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. Панели, которые выдают возможности Citrus по токену `citrus/`, теперь узнают SlothClash; список возможностей в скобках убран. Префикс `clash.meta/` и версия ядра остаются первыми, так что выбор формата и протоколов на других панелях не меняется.
 - Прокси gRPC: сервер, который шлёт длинную серию пустых кадров gRPC, больше не может уронить ядро (раньше чтение вызывало себя на каждый кадр); кадр, длина данных которого больше его сообщения, теперь отклоняется.
 - XHTTP: сроки чтения и записи теперь раздельные и завершают только операцию, которая ещё идёт к моменту срока. Раньше любой срок закрывал всё соединение, даже простаивающее, а установка одного направления сдвигала другое, из-за чего могли рваться простаивающие мультиплексированные сессии (smux, yamux) поверх XHTTP.
+- Сломанная ссылка `vless://` или `vmess://` в подписке, которую ядро скачивает само, больше не пишет в лог всю ссылку с UUID и ключами; в предупреждении только сервер и имя узла.
 
 **🛰️ Ядро: обычные конфиги работают как в обычном mihomo**
 - Автоматический выбор постквантовой доли ключа в REALITY больше не переключается из-за сбоев сети. Несовпадением доли ключа считается только ответ сервера сертификатом сайта-прикрытия; таймауты, сбросы и ошибки подключения игнорируются, поэтому нестабильная сеть больше не переводит старый сервер Xray на постквантовую долю и не ломает его.

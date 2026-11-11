@@ -146,6 +146,10 @@
     {
       "file": "0034-xhttp-conn-deadlines.patch",
       "sha256": "505ffe1d4cd6b8170b24fbe3ca32cde470e6ea01199235eb2292d080e2ec14ee"
+    },
+    {
+      "file": "0035-share-link-log-redaction.patch",
+      "sha256": "2cc56f5066f6eb9f25d96381bdd806758af0904737ff1066c9863b4c15361206"
     }
   ],
   "assets": {

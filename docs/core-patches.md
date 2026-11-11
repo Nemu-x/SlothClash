@@ -958,6 +958,36 @@ it.
 
 mihomo: none claimed. Delete when mihomo picks a default fingerprint for REALITY itself.
 
+### 0042 Snell v6: warning for `mode: unsafe-raw`
+
+mihomo v1.19.34 brought Snell v6 with three modes. `unsafe-raw` drops the crypto as well as the
+traffic shaping: it never uses the PSK, so there is no authentication and no encryption. Traffic to
+such a server is plaintext, and an `unsafe-raw` listener is an open proxy to anyone who reaches its
+port. Citrus refuses the mode for that reason (`transport/snell/v6.go`: "it does not use the psk, use
+default or unshaped").
+
+The core keeps it accepted, as stock mihomo does, so a subscription with such a node still loads, but
+it logs one warning per proxy and per listener when the config loads:
+
+- outbound, in `adapter/outbound` `NewSnell` after the mode is parsed: `snell <name>: mode unsafe-raw
+  does not use the psk: no authentication and no encryption, traffic to this server is plaintext; use
+  mode default or unshaped`;
+- inbound, in `listener` `ParseListener` after the listener is built: `snell inbound <name>: ... this
+  listener is an open proxy and its traffic is plaintext; ...`. The check sits in `ParseListener`
+  rather than in `listener/inbound`, so the series still does not touch that package (its stock
+  tests report races, see 0040).
+
+`default`, `unshaped` (and no `mode`) and Snell before v6 do not warn. The warning is a core log line
+only; the app adds no text of its own.
+
+Own code (SlothClash), the same patch body as [Nemu-x/ClashFest](https://github.com/Nemu-x/ClashFest)
+core patch 0039. Tests in the patch (`adapter/outbound`, `listener`): v6 proxies and listeners with
+no mode, `default`, `unshaped` and `unsafe-raw`, plus a v4 one, are all built; the log, read through
+`log.Subscribe`, has exactly one warning for the `unsafe-raw` one and none for the others. Both fail
+on the series without the patch.
+
+mihomo: none claimed. Delete when mihomo warns about or refuses `unsafe-raw` itself.
+
 ### What else Rerowros/veles changes
 
 [Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,

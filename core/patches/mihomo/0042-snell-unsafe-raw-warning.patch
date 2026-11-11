@@ -1,0 +1,263 @@
+SlothClash core patch 0042: warn about Snell v6 mode unsafe-raw at config load.
+
+Snell v6 mode unsafe-raw drops the crypto as well as the profile layer: it
+never uses the psk, so there is no authentication and no encryption. Traffic
+to such a server is plaintext, and an unsafe-raw listener is an open proxy to
+anyone who reaches its port. Citrus rejects the mode for that reason. Here it
+stays accepted, as in stock mihomo, but the core logs one warning per proxy
+(adapter/outbound NewSnell) and per listener (listener ParseListener) when the
+config loads. default and unshaped, and Snell before v6, do not warn.
+
+Tests: adapter/outbound and listener build unset, default, unshaped and
+unsafe-raw v6 proxies and listeners (and a v4 one), capture the log through
+log.Subscribe and check that each is accepted, that only unsafe-raw warns and
+that it warns exactly once.
+
+diff --git a/adapter/outbound/snell.go b/adapter/outbound/snell.go
+index ce5c58c0..0974f4ce 100644
+--- a/adapter/outbound/snell.go
++++ b/adapter/outbound/snell.go
+@@ -9,6 +9,7 @@ import (
+ 	N "github.com/metacubex/mihomo/common/net"
+ 	"github.com/metacubex/mihomo/common/structure"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
+ 	"github.com/metacubex/mihomo/transport/jls"
+ 	"github.com/metacubex/mihomo/transport/restls"
+ 	"github.com/metacubex/mihomo/transport/shadowtls"
+@@ -277,6 +278,12 @@ func NewSnell(option SnellOption) (*Snell, error) {
+ 		if err != nil {
+ 			return nil, fmt.Errorf("snell %s %w", addr, err)
+ 		}
++		if v6Mode == snell.V6ModeUnsafeRaw {
++			// unsafe-raw never uses the psk: no authentication and no
++			// encryption. It stays accepted, as in stock mihomo, but the
++			// config load says so once per proxy.
++			log.Warnln("snell %s: mode unsafe-raw does not use the psk: no authentication and no encryption, traffic to this server is plaintext; use mode default or unshaped", option.Name)
++		}
+ 	default:
+ 		return nil, fmt.Errorf("snell version error: %d", option.Version)
+ 	}
+diff --git a/adapter/outbound/snell_unsafe_raw_test.go b/adapter/outbound/snell_unsafe_raw_test.go
+new file mode 100644
+index 00000000..d3ab83f7
+--- /dev/null
++++ b/adapter/outbound/snell_unsafe_raw_test.go
+@@ -0,0 +1,108 @@
++package outbound
++
++import (
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/log"
++	"github.com/metacubex/mihomo/transport/snell"
++)
++
++// snellWarnings constructs the proxies in order and returns how many
++// "snell <name>: ..." warnings each name got. The last proxy must warn: the
++// log keeps order, so once its warning arrives every earlier proxy's warning
++// (if any) has arrived too.
++func snellWarnings(t *testing.T, build func(name string), names []string) (map[string]int, map[string]string) {
++	t.Helper()
++	sub := log.Subscribe()
++	defer log.UnSubscribe(sub)
++
++	for _, name := range names {
++		build(name)
++	}
++	last := names[len(names)-1]
++	counts := map[string]int{}
++	payloads := map[string]string{}
++	deadline := time.After(5 * time.Second)
++	for counts[last] == 0 {
++		select {
++		case event := <-sub:
++			if event.LogLevel != log.WARNING || !strings.HasPrefix(event.Payload, "snell ") {
++				continue
++			}
++			rest := strings.TrimPrefix(event.Payload, "snell ")
++			i := strings.Index(rest, ":")
++			if i < 0 {
++				continue
++			}
++			name := rest[:i]
++			counts[name]++
++			payloads[name] = event.Payload
++		case <-deadline:
++			t.Fatalf("no warning for %s", last)
++		}
++	}
++	return counts, payloads
++}
++
++func TestSnellV6UnsafeRawWarnsOnce(t *testing.T) {
++	modes := map[string]string{
++		"snell-warn-test-unset":    "",
++		"snell-warn-test-default":  "default",
++		"snell-warn-test-unshaped": "unshaped",
++		"snell-warn-test-raw":      "unsafe-raw",
++		"snell-warn-test-sentinel": "unsafe-raw",
++	}
++	names := []string{"snell-warn-test-unset", "snell-warn-test-default", "snell-warn-test-unshaped", "snell-warn-test-raw", "snell-warn-test-sentinel"}
++	counts, payloads := snellWarnings(t, func(name string) {
++		p, err := NewSnell(SnellOption{
++			Name:    name,
++			Server:  "127.0.0.1",
++			Port:    443,
++			Psk:     "snell-v6-test-psk",
++			Version: snell.Version6,
++			Mode:    modes[name],
++		})
++		if err != nil {
++			t.Fatalf("%s: mode %q must still be accepted: %v", name, modes[name], err)
++		}
++		want, _ := snell.ParseV6Mode(modes[name])
++		if p.v6Mode != want {
++			t.Fatalf("%s: v6 mode %v, want %v", name, p.v6Mode, want)
++		}
++	}, names)
++
++	for _, name := range []string{"snell-warn-test-unset", "snell-warn-test-default", "snell-warn-test-unshaped"} {
++		if counts[name] != 0 {
++			t.Errorf("%s (mode %q) warned: %s", name, modes[name], payloads[name])
++		}
++	}
++	if counts["snell-warn-test-raw"] != 1 {
++		t.Fatalf("unsafe-raw proxy warned %d times, want once", counts["snell-warn-test-raw"])
++	}
++	payload := payloads["snell-warn-test-raw"]
++	for _, want := range []string{"unsafe-raw", "does not use the psk", "no authentication and no encryption", "plaintext"} {
++		if !strings.Contains(payload, want) {
++			t.Errorf("warning %q lacks %q", payload, want)
++		}
++	}
++}
++
++func TestSnellV4NoUnsafeRawWarning(t *testing.T) {
++	names := []string{"snell-warn-test-v4", "snell-warn-test-v4-sentinel"}
++	counts, payloads := snellWarnings(t, func(name string) {
++		option := SnellOption{Name: name, Server: "127.0.0.1", Port: 443, Psk: "psk"}
++		if name == "snell-warn-test-v4-sentinel" {
++			option.Psk = "snell-v6-test-psk"
++			option.Version = snell.Version6
++			option.Mode = "unsafe-raw"
++		}
++		if _, err := NewSnell(option); err != nil {
++			t.Fatalf("%s: %v", name, err)
++		}
++	}, names)
++	if counts["snell-warn-test-v4"] != 0 {
++		t.Errorf("v4 proxy warned: %s", payloads["snell-warn-test-v4"])
++	}
++}
+diff --git a/listener/parse.go b/listener/parse.go
+index a446c971..fe7cf33d 100644
+--- a/listener/parse.go
++++ b/listener/parse.go
+@@ -6,6 +6,7 @@ import (
+ 	"github.com/metacubex/mihomo/common/structure"
+ 	C "github.com/metacubex/mihomo/constant"
+ 	IN "github.com/metacubex/mihomo/listener/inbound"
++	"github.com/metacubex/mihomo/log"
+ )
+ 
+ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
+@@ -86,6 +87,13 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
+ 			return nil, err
+ 		}
+ 		listener, err = IN.NewSnell(snellOption)
++		if err == nil && snellOption.Version == 6 && snellOption.Mode == "unsafe-raw" {
++			// unsafe-raw never uses the psk: no authentication and no
++			// encryption, so anyone who reaches the port can use the listener.
++			// It stays accepted, as in stock mihomo, but the config load says
++			// so once per listener.
++			log.Warnln("snell inbound %s: mode unsafe-raw does not use the psk: no authentication and no encryption, this listener is an open proxy and its traffic is plaintext; use mode default or unshaped", snellOption.Name())
++		}
+ 	case "vmess":
+ 		vmessOption := &IN.VmessOption{}
+ 		err = decoder.Decode(mapping, vmessOption)
+diff --git a/listener/snell_unsafe_raw_test.go b/listener/snell_unsafe_raw_test.go
+new file mode 100644
+index 00000000..1290018d
+--- /dev/null
++++ b/listener/snell_unsafe_raw_test.go
+@@ -0,0 +1,77 @@
++package listener
++
++import (
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/log"
++)
++
++// An unsafe-raw Snell v6 listener stays accepted but warns once, at config
++// load, that it is an open proxy; other modes and versions do not warn.
++func TestSnellV6UnsafeRawListenerWarnsOnce(t *testing.T) {
++	listeners := []map[string]any{
++		{"name": "snell-in-warn-test-v4"},
++		{"name": "snell-in-warn-test-unset", "version": 6},
++		{"name": "snell-in-warn-test-default", "version": 6, "mode": "default"},
++		{"name": "snell-in-warn-test-unshaped", "version": 6, "mode": "unshaped"},
++		{"name": "snell-in-warn-test-raw", "version": 6, "mode": "unsafe-raw"},
++		// The log keeps order: once this one's warning arrives, every
++		// earlier listener's warning (if any) has arrived too.
++		{"name": "snell-in-warn-test-sentinel", "version": 6, "mode": "unsafe-raw"},
++	}
++
++	sub := log.Subscribe()
++	defer log.UnSubscribe(sub)
++	for _, mapping := range listeners {
++		mapping["type"] = "snell"
++		mapping["listen"] = "127.0.0.1"
++		mapping["port"] = 0
++		mapping["psk"] = "snell-v6-test-psk"
++		l, err := ParseListener(mapping)
++		if err != nil {
++			t.Fatalf("%s: mode %v must still be accepted: %v", mapping["name"], mapping["mode"], err)
++		}
++		if l.Name() != mapping["name"] {
++			t.Fatalf("listener name %q, want %q", l.Name(), mapping["name"])
++		}
++	}
++
++	counts := map[string]int{}
++	payloads := map[string]string{}
++	deadline := time.After(5 * time.Second)
++	for counts["snell-in-warn-test-sentinel"] == 0 {
++		select {
++		case event := <-sub:
++			if event.LogLevel != log.WARNING || !strings.HasPrefix(event.Payload, "snell inbound ") {
++				continue
++			}
++			rest := strings.TrimPrefix(event.Payload, "snell inbound ")
++			i := strings.Index(rest, ":")
++			if i < 0 {
++				continue
++			}
++			counts[rest[:i]]++
++			payloads[rest[:i]] = event.Payload
++		case <-deadline:
++			t.Fatal("no warning for the unsafe-raw sentinel listener")
++		}
++	}
++
++	for _, mapping := range listeners[:4] {
++		name := mapping["name"].(string)
++		if counts[name] != 0 {
++			t.Errorf("%s (version %v, mode %v) warned: %s", name, mapping["version"], mapping["mode"], payloads[name])
++		}
++	}
++	if counts["snell-in-warn-test-raw"] != 1 {
++		t.Fatalf("unsafe-raw listener warned %d times, want once", counts["snell-in-warn-test-raw"])
++	}
++	payload := payloads["snell-in-warn-test-raw"]
++	for _, want := range []string{"unsafe-raw", "does not use the psk", "no authentication and no encryption", "open proxy", "plaintext"} {
++		if !strings.Contains(payload, want) {
++			t.Errorf("warning %q lacks %q", payload, want)
++		}
++	}
++}

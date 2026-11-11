@@ -126,6 +126,14 @@
     {
       "file": "0028-xhttp-uplink-data-key-default.patch",
       "sha256": "b0fe8eace1a3cc7ec8d3bdb840aff76821ec610bcba763c7e5e6ecd5f3302821"
+    },
+    {
+      "file": "0029-tls-chrome155-hello.patch",
+      "sha256": "8b4e2e0ed62559b32bd8e7553026af1fde60270e4b77a26f78e0906f0edcb4e1"
+    },
+    {
+      "file": "0030-reality-mlkem-silent-probe.patch",
+      "sha256": "a84ffdf8500f382a178a357cf4ba08c5eb46caeeff07b8cdfb5f9ad4cb76de5c"
     }
   ],
   "assets": {

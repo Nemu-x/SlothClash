@@ -20,6 +20,11 @@
 - `client-fingerprint` names of stock mihomo are case-sensitive again (as in stock mihomo); only Xray-only names such as `HelloChrome_131` are matched case-insensitively.
 - Quieter logs: the REALITY policy line on every config load and the OpenVPN "no server identity check" note are now debug-level; failed delay tests no longer write warnings.
 
+**🛰️ REALITY: Xray 26.11.9 and the Chrome 155 fingerprint**
+- New `client-fingerprint` names `chrome155` and `hellochrome_155`: the Chrome 155 hello that Xray 26.11.9 and Citrus beta.3 send by default, checked against a real Chrome 155 capture. `chrome` itself stays Chrome 133, as in stock mihomo (`chrome133` names it explicitly); Xray's `hellochrome_auto` now means Chrome 155, as in Xray.
+- REALITY reports client version `26.11.9` by default (was `26.10.29`), the Xray release the core is checked against. It only matters for servers that set `minClientVer` / `maxClientVer`; an explicit `reality-client-version` still wins.
+- Automatic post-quantum key-share choice now also learns servers that drop the connection instead of answering (for example when the server's cover site is unreachable): after three such failures in a row it tries the other key share once and keeps it if it works. Such failures still never switch a server that has already been confirmed.
+
 **🧩 More Citrus configs work**
 - `tls.ca-roots` (`both`, `bundle` or `system`) chooses which root certificates the core trusts: with `bundle` it uses only the built-in Mozilla list and ignores certificates installed on the device. `tls.ca-denylist: true` refuses connections whose certificate chain goes through a state interception CA (Russian Trusted Root / Sub CA, Kazakhstan's Qaznet and ISCA roots). Both are off unless the config sets them; the built-in list adds about 200 KB to the core.
 - `geox-sha256` pins the GeoIP, GeoSite, MMDB and ASN databases by SHA-256: a download with another hash is refused and the previous file is kept. Without a pin nothing changes.
@@ -43,6 +48,11 @@
 - API `/proxies/{name}/delay` снова отвечает как в обычном mihomo (обычный таймаут, `504 {"message":"Timeout"}`, задержка при неожиданном статусе). Подробные ошибки, которые использует само приложение, включаются параметром `detail=1`.
 - Имена `client-fingerprint` из обычного mihomo снова чувствительны к регистру (как в обычном mihomo); без учёта регистра сравниваются только имена Xray, например `HelloChrome_131`.
 - Меньше шума в логах: строка политики REALITY при каждой загрузке конфига и заметка OpenVPN об отсутствии проверки сервера теперь на уровне debug; неудачные проверки задержки больше не пишут предупреждения.
+
+**🛰️ REALITY: Xray 26.11.9 и отпечаток Chrome 155**
+- Новые имена `client-fingerprint` `chrome155` и `hellochrome_155`: hello Chrome 155, который Xray 26.11.9 и Citrus beta.3 отправляют по умолчанию, сверенный с настоящим снимком Chrome 155. Сам `chrome` остаётся Chrome 133, как в обычном mihomo (`chrome133` называет его явно); `hellochrome_auto` из Xray теперь означает Chrome 155, как в Xray.
+- REALITY по умолчанию сообщает версию клиента `26.11.9` (было `26.10.29`) — релиз Xray, с которым проверено ядро. Это важно только для серверов с `minClientVer` / `maxClientVer`; явный `reality-client-version` по-прежнему главнее.
+- Автоматический выбор постквантовой доли ключа теперь узнаёт и серверы, которые обрывают соединение вместо ответа (например, когда сайт-прикрытие сервера недоступен): после трёх таких сбоев подряд он один раз пробует другую долю ключа и оставляет её, если она работает. Уже подтверждённый сервер такие сбои по-прежнему не переключают.
 
 **🧩 Больше конфигов Citrus работают**
 - `tls.ca-roots` (`both`, `bundle` или `system`) задаёт, каким корневым сертификатам доверяет ядро: с `bundle` — только встроенному списку Mozilla, а сертификаты, установленные на устройстве, игнорируются. `tls.ca-denylist: true` отклоняет соединения, цепочка сертификатов которых проходит через государственный CA для перехвата трафика (Russian Trusted Root / Sub CA, казахстанские Qaznet и ISCA). Оба ключа выключены, пока конфиг их не задаст; встроенный список добавляет к ядру около 200 КБ.

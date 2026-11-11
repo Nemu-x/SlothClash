@@ -1,0 +1,873 @@
+diff --git a/component/tls/chrome155.go b/component/tls/chrome155.go
+new file mode 100644
+index 00000000..652cdf57
+--- /dev/null
++++ b/component/tls/chrome155.go
+@@ -0,0 +1,208 @@
++package tls
++
++// SlothClash core patch 0029: the Chrome 155 ClientHello as client-fingerprint
++// "chrome155" (Xray "hellochrome_155").
++//
++// Xray-core 26.11.9 sends Chrome 155 as its default fingerprint and Citrus
++// v1.0.0-beta.3 does the same for "chrome". metacubex/utls v1.8.8 stops at
++// Chrome 133, so the profile is carried here as data and applied through
++// HelloCustom + ApplyPreset; the library stays on the released v1.8.8 (no
++// fork). The profile is refraction-networking/utls 6ebdceb2 (HelloChrome_155,
++// checked there against a capture of Chrome 155.0.8059.40), the same one
++// getmikan/utls a6dee38a ships to Citrus. The wiring (an ID utls does not know,
++// routed through UClient) follows Rerowros/veles component/tls/chrome155.go
++// (GPL-3.0).
++//
++// Compared with Chrome 133 the hello gains a GREASE value and the three ML-DSA
++// schemes (only advertised: nothing in this core verifies them) at the head of
++// signature_algorithms, and the trust_anchors extension (0xca34) with 28 Chrome
++// Root Store IDs.
++//
++// Stock names keep their stock meaning: "chrome" is still utls.HelloChrome_Auto
++// (Chrome 133), as in stock mihomo. Delete this file when mihomo moves to a utls
++// release that ships HelloChrome_155.
++
++import (
++	randv2 "math/rand/v2"
++	"net"
++
++	"github.com/metacubex/mihomo/log"
++
++	utls "github.com/metacubex/utls"
++)
++
++// HelloChrome155 names the profile. utls does not know this version: the ID
++// reaches utls only through UClient in this package, which builds the hello
++// from chrome155Spec. utls.UClient with it fails to build a hello.
++var HelloChrome155 = UClientHelloID{Client: utls.HelloChrome_133.Client, Version: "155"}
++
++const (
++	extensionTrustAnchors uint16 = 0xca34 // draft-ietf-tls-trust-anchor-ids
++
++	sigSchemeMLDSA44 utls.SignatureScheme = 0x0904
++	sigSchemeMLDSA65 utls.SignatureScheme = 0x0905
++	sigSchemeMLDSA87 utls.SignatureScheme = 0x0906
++)
++
++// chrome155TrustAnchorIDs are the Chrome Root Store IDs a fresh Chrome
++// 155.0.8059.40 advertises, in the captured order.
++var chrome155TrustAnchorIDs = [][]byte{
++	{0x82, 0xdf, 0x13, 0x02, 0x01},
++	{0x82, 0xdf, 0x13, 0x02, 0x06},
++	{0x82, 0xdf, 0x13, 0x02, 0x0d},
++	{0x82, 0xdf, 0x13, 0x02, 0x0e},
++	{0x82, 0xdf, 0x13, 0x02, 0x0f},
++	{0x82, 0xdf, 0x13, 0x02, 0x12},
++	{0x82, 0xdf, 0x13, 0x02, 0x13},
++	{0x82, 0xdf, 0x13, 0x02, 0x14},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x07},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x08},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x09},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0a},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0b},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0c},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0d},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x12},
++	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x13},
++	{0xd6, 0x79, 0x09, 0x01},
++	{0xd6, 0x79, 0x09, 0x04},
++	{0xd6, 0x79, 0x09, 0x05},
++	{0xd6, 0x79, 0x09, 0x06},
++	{0xd6, 0x79, 0x09, 0x07},
++	{0xd6, 0x79, 0x09, 0x08},
++	{0xd6, 0x79, 0x09, 0x0a},
++	{0xd6, 0x79, 0x09, 0x0b},
++	{0xd6, 0x79, 0x09, 0x0c},
++	{0xd6, 0x79, 0x09, 0x0d},
++	{0xd6, 0x79, 0x09, 0x0f},
++}
++
++// chrome155TrustAnchorsData is the extension_data of trust_anchors: a two-byte
++// list length, then every ID behind its one-byte length.
++func chrome155TrustAnchorsData() []byte {
++	data := []byte{0, 0}
++	for _, id := range chrome155TrustAnchorIDs {
++		data = append(data, byte(len(id)))
++		data = append(data, id...)
++	}
++	listLen := len(data) - 2
++	data[0], data[1] = byte(listLen>>8), byte(listLen)
++	return data
++}
++
++// chrome155Spec returns a fresh spec: ApplyPreset fills it in per connection.
++func chrome155Spec() *utls.ClientHelloSpec {
++	// utls v1.8.8 replaces GREASE placeholders in cipher suites, groups, key
++	// shares and versions but not in signature_algorithms, so that value is
++	// drawn here. BoringSSL draws every GREASE value independently.
++	greaseSigScheme := utls.SignatureScheme(uint16(randv2.IntN(16))*0x1010 + 0x0a0a)
++
++	return &utls.ClientHelloSpec{
++		CipherSuites: []uint16{
++			utls.GREASE_PLACEHOLDER,
++			utls.TLS_AES_128_GCM_SHA256,
++			utls.TLS_AES_256_GCM_SHA384,
++			utls.TLS_CHACHA20_POLY1305_SHA256,
++			utls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
++			utls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
++			utls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
++			utls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
++			utls.TLS_RSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_RSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_RSA_WITH_AES_128_CBC_SHA,
++			utls.TLS_RSA_WITH_AES_256_CBC_SHA,
++		},
++		CompressionMethods: []byte{0x00},
++		Extensions: utls.ShuffleChromeTLSExtensions([]utls.TLSExtension{
++			&utls.UtlsGREASEExtension{},
++			&utls.SNIExtension{},
++			&utls.ExtendedMasterSecretExtension{},
++			&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
++			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{
++				utls.GREASE_PLACEHOLDER,
++				utls.X25519MLKEM768,
++				utls.X25519,
++				utls.CurveP256,
++				utls.CurveP384,
++			}},
++			&utls.SupportedPointsExtension{SupportedPoints: []byte{0x00}},
++			&utls.SessionTicketExtension{},
++			&utls.ALPNExtension{AlpnProtocols: []string{"h2", "http/1.1"}},
++			&utls.StatusRequestExtension{},
++			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
++				greaseSigScheme,
++				sigSchemeMLDSA44,
++				sigSchemeMLDSA65,
++				sigSchemeMLDSA87,
++				utls.ECDSAWithP256AndSHA256,
++				utls.PSSWithSHA256,
++				utls.PKCS1WithSHA256,
++				utls.ECDSAWithP384AndSHA384,
++				utls.PSSWithSHA384,
++				utls.PKCS1WithSHA384,
++				utls.PSSWithSHA512,
++				utls.PKCS1WithSHA512,
++			}},
++			&utls.SCTExtension{},
++			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
++				{Group: utls.CurveID(utls.GREASE_PLACEHOLDER), Data: []byte{0}},
++				{Group: utls.X25519MLKEM768},
++				{Group: utls.X25519},
++			}},
++			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
++			&utls.SupportedVersionsExtension{Versions: []uint16{
++				utls.GREASE_PLACEHOLDER,
++				utls.VersionTLS13,
++				utls.VersionTLS12,
++			}},
++			&utls.UtlsCompressCertExtension{Algorithms: []utls.CertCompressionAlgo{
++				utls.CertCompressionBrotli,
++			}},
++			&utls.ApplicationSettingsExtensionNew{SupportedProtocols: []string{"h2"}},
++			&utls.GenericExtension{Id: extensionTrustAnchors, Data: chrome155TrustAnchorsData()},
++			utls.BoringGREASEECH(),
++			&utls.UtlsGREASEExtension{},
++		}),
++	}
++}
++
++// fingerprintSpec is utls.UTLSIdToSpec that also knows HelloChrome155.
++func fingerprintSpec(id UClientHelloID) (utls.ClientHelloSpec, error) {
++	if id == HelloChrome155 {
++		return *chrome155Spec(), nil
++	}
++	return utls.UTLSIdToSpec(id)
++}
++
++// uClient is utls.UClient that also knows HelloChrome155. Every utls client of
++// the core is created through it (UClient below, REALITY, JLS).
++func uClient(c net.Conn, config *utls.Config, fingerprint UClientHelloID) *UConn {
++	if fingerprint != HelloChrome155 {
++		return utls.UClient(c, config, fingerprint)
++	}
++	customConfig := config
++	if config != nil && config.ClientSessionCache != nil && !config.SessionTicketsDisabled && !config.PreferSkipResumptionOnNilExtension {
++		// The spec has no pre_shared_key extension (neither has Chrome's first
++		// hello), and utls panics in BuildHandshakeState when a HelloCustom
++		// client finds a cached TLS 1.3 session. The built-in parrots skip
++		// resumption in that case; so does this one. A copy, so the caller's
++		// config is left as it was.
++		customConfig = config.Clone()
++		customConfig.PreferSkipResumptionOnNilExtension = true
++	}
++	uConn := utls.UClient(c, customConfig, utls.HelloCustom)
++	if err := uConn.ApplyPreset(chrome155Spec()); err != nil {
++		// ApplyPreset fails on a config no hello can be built from (no
++		// ServerName and no InsecureSkipVerify, an empty or oversized
++		// NextProtos entry) or a failing random source. Chrome 133 is the
++		// closest hello; the config error then comes back from its
++		// BuildHandshakeState.
++		log.Warnln("chrome155 fingerprint: %v, falling back to chrome133", err)
++		return utls.UClient(c, config, utls.HelloChrome_133)
++	}
++	return uConn
++}
+diff --git a/component/tls/chrome155_test.go b/component/tls/chrome155_test.go
+new file mode 100644
+index 00000000..37ea6b28
+--- /dev/null
++++ b/component/tls/chrome155_test.go
+@@ -0,0 +1,534 @@
++package tls
++
++import (
++	"bytes"
++	"context"
++	"crypto/ecdh"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/sha256"
++	"crypto/tls"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"encoding/binary"
++	"encoding/hex"
++	"go/ast"
++	"go/parser"
++	"go/token"
++	"io"
++	"io/fs"
++	"math/big"
++	"net"
++	"os"
++	"path/filepath"
++	"slices"
++	"strings"
++	"testing"
++	"time"
++
++	utls "github.com/metacubex/utls"
++)
++
++// SlothClash core patch 0029. testdata/chrome155_clienthello.hex is the first
++// TLS record of a fresh connection of Google Chrome 155.0.8059.40 to
++// www.example.com, from refraction-networking/utls 6ebdceb2
++// (testdata/chrome155_clienthello.md there; SHA-256 of the handshake message
++// 235618e3...439a). The comparison follows Rerowros/veles
++// chrome155_veles_test.go: everything must match except what Chrome randomizes
++// (extension order, GREASE values, random, key material, the GREASE ECH body).
++
++const chrome155CaptureSHA256 = "235618e3922e52a71a9f6593a71ec4ca182dab6b3ab4e90a2a1733133e97439a"
++
++type chrome155Hello struct {
++	version      uint16
++	sessionIDLen int
++	cipherSuites []uint16
++	compression  []byte
++	extensionIDs []uint16          // wire order, GREASE as 0x0a0a
++	extensions   map[uint16][]byte // extension_data by type
++}
++
++func isGREASEValue(v uint16) bool { return v>>8 == v&0xff && v&0xf == 0xa }
++
++// parseChrome155Hello reads a ClientHello handshake message (with its header).
++func parseChrome155Hello(t *testing.T, raw []byte) chrome155Hello {
++	t.Helper()
++	if len(raw) < 4 || raw[0] != 1 || int(raw[1])<<16|int(raw[2])<<8|int(raw[3]) != len(raw)-4 {
++		t.Fatalf("not a ClientHello handshake message, %d bytes", len(raw))
++	}
++	b := raw[4:]
++	next := func(n int) []byte {
++		t.Helper()
++		if len(b) < n {
++			t.Fatal("ClientHello truncated")
++		}
++		out := b[:n]
++		b = b[n:]
++		return out
++	}
++	var hello chrome155Hello
++	hello.version = binary.BigEndian.Uint16(next(2))
++	next(32) // random
++	hello.sessionIDLen = len(next(int(next(1)[0])))
++	suites := next(int(binary.BigEndian.Uint16(next(2))))
++	for i := 0; i+1 < len(suites); i += 2 {
++		hello.cipherSuites = append(hello.cipherSuites, binary.BigEndian.Uint16(suites[i:]))
++	}
++	hello.compression = next(int(next(1)[0]))
++	if extLen := int(binary.BigEndian.Uint16(next(2))); extLen != len(b) {
++		t.Fatalf("extensions length %d, %d bytes left", extLen, len(b))
++	}
++	hello.extensions = map[uint16][]byte{}
++	for len(b) > 0 {
++		id := binary.BigEndian.Uint16(next(2))
++		data := next(int(binary.BigEndian.Uint16(next(2))))
++		if isGREASEValue(id) {
++			id = 0x0a0a
++		}
++		hello.extensionIDs = append(hello.extensionIDs, id)
++		hello.extensions[id] = data
++	}
++	return hello
++}
++
++// ungreaseList replaces GREASE values in a uint16 list that starts at offset.
++func ungreaseList(data []byte, offset int) []byte {
++	out := bytes.Clone(data)
++	for i := offset; i+1 < len(out); i += 2 {
++		if isGREASEValue(binary.BigEndian.Uint16(out[i:])) {
++			out[i], out[i+1] = 0x0a, 0x0a
++		}
++	}
++	return out
++}
++
++// keyShareLayout returns "group:length" of every key share, GREASE as 0a0a.
++func keyShareLayout(t *testing.T, data []byte) []string {
++	t.Helper()
++	var out []string
++	for b := data[2:]; len(b) > 0; {
++		if len(b) < 4 {
++			t.Fatal("key_share truncated")
++		}
++		group, n := binary.BigEndian.Uint16(b), int(binary.BigEndian.Uint16(b[2:]))
++		if isGREASEValue(group) {
++			group = 0x0a0a
++		}
++		out = append(out, hex.EncodeToString([]byte{byte(group >> 8), byte(group), byte(n >> 8), byte(n)}))
++		b = b[4+n:]
++	}
++	return out
++}
++
++func chrome155Capture(t *testing.T) (record []byte, hello chrome155Hello) {
++	t.Helper()
++	fixture, err := os.ReadFile(filepath.Join("testdata", "chrome155_clienthello.hex"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	record, err = hex.DecodeString(strings.TrimSpace(string(fixture)))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if sum := sha256.Sum256(record[5:]); hex.EncodeToString(sum[:]) != chrome155CaptureSHA256 {
++		t.Fatalf("capture SHA-256 %x, want %s", sum, chrome155CaptureSHA256)
++	}
++	return record, parseChrome155Hello(t, record[5:])
++}
++
++func buildHelloByName(t *testing.T, name string, config *utls.Config) []byte {
++	t.Helper()
++	id, ok := GetFingerprint(name)
++	if !ok {
++		t.Fatalf("fingerprint %q not found", name)
++	}
++	client, server := net.Pipe()
++	t.Cleanup(func() { client.Close(); server.Close() })
++	uConn := UClient(client, config, id)
++	if err := uConn.BuildHandshakeState(); err != nil {
++		t.Fatalf("BuildHandshakeState(%s): %v", name, err)
++	}
++	return uConn.HandshakeState.Hello.Raw
++}
++
++func TestChrome155MatchesBrowserCapture(t *testing.T) {
++	record, want := chrome155Capture(t)
++	const (
++		extSupportedGroups = 10
++		extSigAlgs         = 13
++		extSupportedVers   = 43
++		extKeyShare        = 51
++		extECH             = 0xfe0d
++	)
++	for _, name := range []string{"chrome155", "hellochrome_155", "HelloChrome_155", "hellochrome_auto"} {
++		t.Run(name, func(t *testing.T) {
++			for i := 0; i < 20; i++ { // extension order and GREASE values are random
++				raw := buildHelloByName(t, name, &utls.Config{ServerName: "www.example.com"})
++				got := parseChrome155Hello(t, raw)
++
++				if got.version != want.version || got.sessionIDLen != want.sessionIDLen {
++					t.Fatalf("version %04x, session ID %d bytes; Chrome sends %04x and %d", got.version, got.sessionIDLen, want.version, want.sessionIDLen)
++				}
++				gs, ws := slices.Clone(got.cipherSuites), slices.Clone(want.cipherSuites)
++				for _, s := range [][]uint16{gs, ws} {
++					for j := range s {
++						if isGREASEValue(s[j]) {
++							s[j] = 0x0a0a
++						}
++					}
++				}
++				if !slices.Equal(gs, ws) || !isGREASEValue(got.cipherSuites[0]) {
++					t.Fatalf("cipher suites %04x, Chrome sends %04x", got.cipherSuites, want.cipherSuites)
++				}
++				if !bytes.Equal(got.compression, want.compression) {
++					t.Fatalf("compression %x, Chrome sends %x", got.compression, want.compression)
++				}
++
++				// Chrome shuffles everything between the two GREASE extensions.
++				n := len(got.extensionIDs)
++				if n != len(want.extensionIDs) || got.extensionIDs[0] != 0x0a0a || got.extensionIDs[n-1] != 0x0a0a {
++					t.Fatalf("extensions %04x, Chrome sends %04x", got.extensionIDs, want.extensionIDs)
++				}
++				gotIDs, wantIDs := slices.Sorted(slices.Values(got.extensionIDs)), slices.Sorted(slices.Values(want.extensionIDs))
++				if !slices.Equal(gotIDs, wantIDs) {
++					t.Fatalf("extension set %04x, Chrome sends %04x", gotIDs, wantIDs)
++				}
++				for _, id := range wantIDs {
++					g, w := got.extensions[id], want.extensions[id]
++					switch id {
++					case 0x0a0a: // the two GREASE extensions differ in body; covered by the length check below
++						continue
++					case extSupportedGroups, extSigAlgs:
++						g, w = ungreaseList(g, 2), ungreaseList(w, 2)
++					case extSupportedVers:
++						g, w = ungreaseList(g, 1), ungreaseList(w, 1)
++					case extKeyShare:
++						if gl, wl := keyShareLayout(t, g), keyShareLayout(t, w); !slices.Equal(gl, wl) {
++							t.Fatalf("key shares %v, Chrome sends %v", gl, wl)
++						}
++						continue
++					case extECH:
++						// GREASE ECH: random config id, key and payload; BoringSSL
++						// picks the payload from 144/176/208/240 bytes.
++						if d := len(g) - len(w); d != -32 && d != 0 && d != 32 && d != 64 {
++							t.Fatalf("GREASE ECH is %d bytes, Chrome sends %d (+-32n)", len(g), len(w))
++						}
++						if !bytes.Equal(g[:5], w[:5]) {
++							t.Fatalf("GREASE ECH header %x, Chrome sends %x", g[:5], w[:5])
++						}
++						continue
++					}
++					if !bytes.Equal(g, w) {
++						t.Fatalf("extension %04x = %x, Chrome sends %x", id, g, w)
++					}
++				}
++				if sig := got.extensions[extSigAlgs]; !isGREASEValue(binary.BigEndian.Uint16(sig[2:])) {
++					t.Fatalf("signature_algorithms starts with %x, want GREASE", sig[2:4])
++				}
++				if d := len(raw) - (len(record) - 5); d != -32 && d != 0 && d != 32 && d != 64 {
++					t.Fatalf("ClientHello is %d bytes, Chrome sends %d (+-32n)", len(raw), len(record)-5)
++				}
++			}
++		})
++	}
++}
++
++// Stock names keep their stock meaning: "chrome" is Chrome 133 as in stock
++// mihomo, and so is "chrome133"; neither sends trust_anchors.
++func TestChromeStaysStock(t *testing.T) {
++	for name, want := range map[string]UClientHelloID{
++		"chrome":          utls.HelloChrome_Auto,
++		"chrome133":       utls.HelloChrome_133,
++		"hellochrome_133": utls.HelloChrome_133,
++		"chrome155":       HelloChrome155,
++		"hellochrome_155": HelloChrome155,
++	} {
++		if got, ok := GetFingerprint(name); !ok || got != want {
++			t.Errorf("GetFingerprint(%q) = %v, %v; want %v", name, got, ok, want)
++		}
++	}
++	if utls.HelloChrome_Auto != utls.HelloChrome_133 {
++		t.Fatalf("utls HelloChrome_Auto is %v: revisit 0029", utls.HelloChrome_Auto)
++	}
++	for _, name := range []string{"chrome", "chrome133"} {
++		if _, ok := parseChrome155Hello(t, buildHelloByName(t, name, &utls.Config{ServerName: "www.example.com"})).extensions[extensionTrustAnchors]; ok {
++			t.Errorf("%s sends trust_anchors: it must stay the Chrome 133 hello", name)
++		}
++	}
++	if _, ok := GetFingerprint("Chrome155"); ok {
++		t.Error("stock-style names match exactly: Chrome155 must stay unknown")
++	}
++}
++
++// Every spec is fresh: utls fills extensions in per connection, and the GREASE
++// signature scheme is drawn per hello.
++func TestChrome155SpecIsFresh(t *testing.T) {
++	a, b := chrome155Spec(), chrome155Spec()
++	if a == b || &a.Extensions[0] == &b.Extensions[0] {
++		t.Fatal("chrome155Spec returned shared state")
++	}
++	seen := map[uint16]bool{}
++	for i := 0; i < 64; i++ {
++		sig := parseChrome155Hello(t, buildHelloByName(t, "chrome155", &utls.Config{ServerName: "www.example.com"})).extensions[13]
++		seen[binary.BigEndian.Uint16(sig[2:])] = true
++	}
++	if len(seen) < 2 {
++		t.Fatalf("GREASE signature scheme never changed over 64 hellos: %v", seen)
++	}
++}
++
++// A config with a session cache that holds a TLS 1.3 session: utls panics when
++// a HelloCustom spec without pre_shared_key meets it, unless resumption may be
++// skipped (as the built-in parrots do). The caller's config is left alone.
++func TestChrome155WithSessionCache(t *testing.T) {
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer ln.Close()
++	cert := chrome155TestCert(t, "example.com")
++	go func() {
++		conn, err := ln.Accept()
++		if err != nil {
++			return
++		}
++		defer conn.Close()
++		server := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{cert}})
++		if server.Handshake() == nil {
++			_, _ = server.Write([]byte{1})
++			_, _ = io.Copy(io.Discard, server)
++		}
++	}()
++
++	cache := utls.NewLRUClientSessionCache(1)
++	config := &utls.Config{ServerName: "example.com", InsecureSkipVerify: true, ClientSessionCache: cache}
++	conn, err := net.Dial("tcp", ln.Addr().String())
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
++	first := UClient(conn, config, HelloChrome155)
++	if err := first.Handshake(); err != nil {
++		t.Fatalf("first handshake: %v", err)
++	}
++	if _, err := io.ReadFull(first, make([]byte, 1)); err != nil { // processes the session ticket
++		t.Fatalf("read: %v", err)
++	}
++	_ = first.Close()
++	if _, ok := cache.Get("example.com"); !ok {
++		t.Fatal("no TLS 1.3 session in the cache after the first connection")
++	}
++
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	func() {
++		defer func() {
++			if r := recover(); r != nil {
++				t.Fatalf("BuildHandshakeState with a cached session panicked: %v", r)
++			}
++		}()
++		uConn := UClient(client, config, HelloChrome155)
++		if err := uConn.BuildHandshakeState(); err != nil {
++			t.Fatalf("BuildHandshakeState with a cached session: %v", err)
++		}
++		if _, ok := parseChrome155Hello(t, uConn.HandshakeState.Hello.Raw).extensions[extensionTrustAnchors]; !ok {
++			t.Fatal("hello with a session cache is not Chrome 155")
++		}
++	}()
++	if config.PreferSkipResumptionOnNilExtension {
++		t.Fatal("UClient changed the caller's config")
++	}
++}
++
++func chrome155TestCert(t *testing.T, name string) tls.Certificate {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	tmpl := &x509.Certificate{
++		SerialNumber: big.NewInt(1),
++		Subject:      pkix.Name{CommonName: name},
++		DNSNames:     []string{name},
++		NotBefore:    time.Now().Add(-time.Hour),
++		NotAfter:     time.Now().Add(time.Hour),
++	}
++	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
++}
++
++// A REALITY server (utls' own, as mihomo's inbound uses it) with a local cover
++// target authenticates a chrome155 client, with the classic and with the
++// hybrid key share, and the hello on the wire is Chrome 155's.
++func TestChrome155RealityHandshake(t *testing.T) {
++	defer ResetRealityMLKEMMemo()
++	defer SetRealityMLKEMPolicy(RealityMLKEMAuto)
++
++	target, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{chrome155TestCert(t, "www.example.com")}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer target.Close()
++	go func() {
++		for {
++			c, err := target.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer c.Close()
++				_ = c.(*tls.Conn).Handshake()
++				_, _ = io.Copy(io.Discard, c)
++			}()
++		}
++	}()
++
++	serverKey, err := ecdh.X25519().GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	shortID := [8]byte{0x0a, 0x1b}
++	serverConfig := &utls.RealityConfig{
++		Type:        "tcp",
++		Dest:        target.Addr().String(),
++		ServerNames: map[string]bool{"www.example.com": true},
++		PrivateKey:  serverKey.Bytes(),
++		ShortIds:    map[[8]byte]bool{shortID: true},
++		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
++			return (&net.Dialer{}).DialContext(ctx, network, address)
++		},
++	}
++	serverConfig.SessionTicketsDisabled = true
++
++	for _, tc := range []struct {
++		name   string
++		policy RealityMLKEMPolicy
++		hybrid bool
++	}{
++		{"classic", RealityMLKEMOff, false},
++		{"X25519MLKEM768", RealityMLKEMOn, true},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			SetRealityMLKEMPolicy(tc.policy)
++			hello := make(chan []byte, 1)
++			addr := realityTestServer(t, func(c net.Conn) {
++				rc := &recordingConn{Conn: c}
++				_ = c.SetDeadline(time.Now().Add(5 * time.Second))
++				conn, err := utls.RealityServer(context.Background(), rc, serverConfig)
++				hello <- rc.buf
++				if err != nil {
++					return
++				}
++				defer conn.Close()
++				_, _ = io.Copy(conn, conn) // echo
++			})
++			conn, err := net.Dial("tcp", addr)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
++			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++			defer cancel()
++			config := &RealityConfig{PublicKey: serverKey.PublicKey(), ShortID: shortID}
++			rconn, err := GetRealityConn(ctx, conn, HelloChrome155, "www.example.com", config)
++			if err != nil {
++				t.Fatalf("REALITY handshake: %v", err)
++			}
++			if _, err := rconn.Write([]byte("ping")); err != nil {
++				t.Fatal(err)
++			}
++			buf := make([]byte, 4)
++			if _, err := io.ReadFull(rconn, buf); err != nil || string(buf) != "ping" {
++				t.Fatalf("echo %q, %v", buf, err)
++			}
++			_ = rconn.Close()
++
++			record := <-hello
++			if len(record) < 5 || record[0] != 0x16 {
++				t.Fatal("no TLS record from the client")
++			}
++			n := int(binary.BigEndian.Uint16(record[3:5]))
++			got := parseChrome155Hello(t, record[5:5+n])
++			if _, ok := got.extensions[extensionTrustAnchors]; !ok {
++				t.Fatal("the REALITY hello is not Chrome 155")
++			}
++			if hasHybridShare(parseHelloKeyShares(record)) != tc.hybrid {
++				t.Fatalf("hello offered X25519MLKEM768 = %v, want %v", !tc.hybrid, tc.hybrid)
++			}
++		})
++	}
++}
++
++func TestRealityClientVersionDefaultIsXray26_11_9(t *testing.T) {
++	if DefaultRealityClientVersion() != [3]byte{26, 11, 9} {
++		t.Fatalf("default REALITY client version %v, want 26.11.9 (the Xray release 0029 was checked against)", DefaultRealityClientVersion())
++	}
++}
++
++// Every utls client outside component/tls goes through tlsC.UClient: a direct
++// utls.UClient does not know the Chrome 155 profile.
++func TestNoDirectUClientOutsideTLSPackage(t *testing.T) {
++	const utlsPath = "github.com/metacubex/utls"
++	root, err := filepath.Abs(filepath.Join("..", ".."))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
++		t.Fatalf("module root not found: %v", err)
++	}
++	checked := 0
++	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
++		if err != nil {
++			return err
++		}
++		rel, _ := filepath.Rel(root, path)
++		rel = filepath.ToSlash(rel)
++		if d.IsDir() {
++			if rel != "." && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata" || d.Name() == "vendor" || rel == "component/tls") {
++				return filepath.SkipDir
++			}
++			return nil
++		}
++		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
++			return nil
++		}
++		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
++		if err != nil {
++			return err
++		}
++		checked++
++		name := ""
++		for _, imp := range file.Imports {
++			if strings.Trim(imp.Path.Value, `"`) == utlsPath {
++				name = "tls" // the package name of metacubex/utls
++				if imp.Name != nil {
++					name = imp.Name.Name
++				}
++			}
++		}
++		if name == "" {
++			return nil
++		}
++		ast.Inspect(file, func(n ast.Node) bool {
++			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "UClient" {
++				if x, ok := sel.X.(*ast.Ident); ok && x.Name == name {
++					t.Errorf("%s calls %s.UClient directly; use tlsC.UClient", rel, name)
++				}
++			}
++			return true
++		})
++		return nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if checked < 100 {
++		t.Fatalf("only %d files checked: wrong module root?", checked)
++	}
++}
+diff --git a/component/tls/reality.go b/component/tls/reality.go
+index 8c00ab55..6217b20f 100644
+--- a/component/tls/reality.go
++++ b/component/tls/reality.go
+@@ -30,8 +30,9 @@ const RealityMaxShortIDLen = 8
+ // RealityClientVersion is the Xray-style client version carried in the first
+ // three bytes of the REALITY ClientHello session id. Xray servers compare it
+ // against their optional minClientVer / maxClientVer; nothing else depends on it.
+-// Defaults to the Xray release this core was last validated against.
+-var RealityClientVersion = [3]byte{26, 10, 29}
++// Defaults to the Xray release this core was last validated against (26.11.9
++// since SlothClash 0029).
++var RealityClientVersion = [3]byte{26, 11, 9}
+ 
+ type RealityConfig struct {
+ 	PublicKey *ecdh.PublicKey
+@@ -204,7 +205,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 		if pqHello != nil {
+ 			uConn, err = realityPQConn(conn, uConfig, *pqHello)
+ 		} else {
+-			uConn = utls.UClient(conn, uConfig, fingerprint)
++			uConn = UClient(conn, uConfig, fingerprint) // knows HelloChrome155 (0029)
+ 			err = uConn.BuildHandshakeState()
+ 		}
+ 		if err != nil {
+diff --git a/component/tls/testdata/chrome155_clienthello.hex b/component/tls/testdata/chrome155_clienthello.hex
+new file mode 100644
+index 00000000..1d31499a
+--- /dev/null
++++ b/component/tls/testdata/chrome155_clienthello.hex
+@@ -0,0 +1 @@
++160301079e0100079a030397ba84e6911f26dc308204a2e65a2264ea769abc71617e9832e8a05327e2c03f20130452c827a0b862598e1f621324a0887d19f386284186f43e136844ed39fbb200201a1a130113021303c02bc02fc02cc030cca9cca8c013c014009c009d002f003501000731fafa000000120000ca3400ba00b80582df1302010582df1302060582df13020d0582df13020e0582df13020f0582df1302120582df1302130582df13021408839a648c9b2d010708839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c9b2d011208839a648c9b2d011304d679090104d679090404d679090504d679090604d679090704d679090804d679090a04d679090b04d679090c04d679090d04d679090ffe0d00da00000100014200200b81d7a0c9bb3d4482028d5f90d7ed4f702aa257f7621d379be6d154251e745b00b0573e4731d509ac8e562a21f30236277f71fef7f0bd518c2c9916022a74afcb7d4d6145d72ee33f2f3720f85df5d6840bf3ce4dde5bc3efdacda6d4116add75ced6fa8c993692791f9437400ea835ff5f57776025cc7ff2828a93fff832dc24a1e394cf503813d67c4f45b0580f68d16fcaf5d774ac28a4bedac83733318c7cca132bebd041bba4077e53f51a2e30018559b2ed802ecf7398d369ab3090b8c4eb257b197631fad183682d83c8b40f82be001b0003020002000a000c000a7a7a11ec001d00170018ff0100010000230000002b0007065a5a030403030010000e000c02683208687474702f312e31000b00020100003304ef04ed7a7a00010011ec04c049c251fae6095e3992e4517d82ba97a8c7a789c66f450b0d9c3579870445f17856d8e0c53dfb643fe54032044236154d1fd722e7f6c3bf3606e84a68775638e765a7fdb85672dc3768941eaf232a55b229fe58cb41e35683b0532ff873249acd08ac19f79091c1acb54c53459d9ca31ac998ca6a67f172a1ef9b839151797e78589ca4aee75056be454adb070f6622577abc664b353fbc2272bf4c8cea7724dad8bfa0617d21555e3d0b69de388505b01d00ec263334c535c99699b20d8cd741f48646aea8c519334623ab33ea990701d7c400e48415da30a468953d5bbdc684aa78f1aca5c591a1805b69a786257099f5a02a833339bb9794dccc40b9188dd189596039623d76534ac1481e695b38974c5738a8107a16f5d4c19cd51d52c70bde8566b8500c73bba0e55ba09e067c6d3c76ddb99ae7da0fb7950d344bc86b1ac36827ae483a0ded32be2f897f66b96100440f6e148be9c19a3c1c7504e01eef443d4a674043e41f4f3c70029801a756227e5c95041053138472b19a103d95807ec57c02316499e72362642fe0c418c2306cdfb44dee570bc2783596a1464d5a16e4d59cb1bcb967e4459ce0430787141b547abeda15c418acd2f095addac18866cd99b2c70b3087c1b070f95320853a33b3d4bf9edca3cdf2b4a96c74154b57aab782d3e97d1801b95c2b586b7a0ca38bafc4d987ee600585ac8c359bc9c89997ed1231d87b28c0e32f90e16778a29cc2d3c4dbea79db389df497cf2210bd4dd46d7d21a6b3b683eb040bfca87019ec921b3a3ae7f20eb90a95449b70c2740fe4ea2c16e1c01ba5367676b48f58a6d7d657a52c61737b1671214b1210252107b441cc5c968a998616a77047a3d7516f28ac92438287b6bb178024566ce4a1b6f11efe9abb73894605b313567c60693c13f156a6fb55304134007c69128249a381281099a50cd18b0873a1697045bc8224bec2f87e4b09002703766e87b2c8845f56a7b77385562f41644710a36f9388fb4ab1311482b61c056b171919b3ac3b8cbf38e1971686ceead326e4654ded168b8ed8064b3032f23a7793c51700b9ba0cfbbc39390f3c82256898bb1933c1fec6cae242772e7b4076a6cf0d996c7cb6960930bea5a384083a18c00883ced91206c6401fb45b75fb44d073726d5bcaeffabd077705816c7ec7b03b0468a1f7238c660ac5f34b86b12968338c2817f45197cb04c5db396c4a13dc6a104663b57f43bad5063591c63d9cac2a199885a048809246bbd20191f211080d7286c7b61525382dada5ab9c175913cc0c9a011c4217575d1756d1e4b6b1da94b8cc1321a269d0310eb0374fe4bb39e41673d7742f335191290aaf3ec846a0d209546a97707938b3a307fe191599b59b26e1cfc92b6c69818a8de06c6e6215ce20c1057a8f7ed6912a5a89d64447aaa5b3b5a27cd41b8715fb44a502697e3185ca005077a194cfd2ce4b44cc3d5c7538e60718e90247ac1912329bf8e7c7e03078601b93a11163d5b0c1b34b1358608dfc282ebc18bd20f5a35c610e59c09f200875f05c10de1c7f27dc050296a49d4a03469c365f16a9b9a6c5def522832718e8022440019ad0d662237bb3535b912fab358c9a89fc944c201afe4a3c4d65837b31e2eb034759da63d960226e2669b646b549d3161427956172e60d876d0353ab787ac5cad550790a65ef062efbbf97f65f1cf62d001d0020d6b7a093831d73daf8e2aa6d7106321215cce52e6d14c408a0dafe217a207654000d001a0018aaaa0904090509060403080404010503080505010806060100170000002d0002010100050005010000000000000014001200000f7777772e6578616d706c652e636f6d44cd00050003026832caca000100
+diff --git a/component/tls/utls.go b/component/tls/utls.go
+index 948bee1d..222ab3bb 100644
+--- a/component/tls/utls.go
++++ b/component/tls/utls.go
+@@ -29,7 +29,7 @@ func Client(c net.Conn, config *utls.Config) *Conn {
+ }
+ 
+ func UClient(c net.Conn, config *utls.Config, fingerprint UClientHelloID) *UConn {
+-	return utls.UClient(c, config, fingerprint)
++	return uClient(c, config, fingerprint) // SlothClash 0029: knows HelloChrome155
+ }
+ 
+ func Server(c net.Conn, config *utls.Config) *Conn {
+@@ -100,6 +100,8 @@ var fingerprints = map[string]UClientHelloID{
+ 
+ 	// classical fingerprints without X25519MLKEM768
+ 	"chrome120":  utls.HelloChrome_120,
++	"chrome133":  utls.HelloChrome_133, // SlothClash 0029: what "chrome" is, by its version (as Citrus names it)
++	"chrome155":  HelloChrome155,       // SlothClash 0029: Chrome 155, Xray 26.11.9's and Citrus' "chrome"
+ 	"firefox120": utls.HelloFirefox_120,
+ 	"safari16":   utls.HelloSafari_16_0,
+ 
+diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
+index 91782d3e..f5bba1ea 100644
+--- a/component/tls/utls_xray_names.go
++++ b/component/tls/utls_xray_names.go
+@@ -21,6 +21,7 @@ var xrayFingerprints = map[string]UClientHelloID{
+ 	"hellochrome_120":                  utls.HelloChrome_120,
+ 	"hellochrome_131":                  utls.HelloChrome_131,
+ 	"hellochrome_133":                  utls.HelloChrome_133,
++	"hellochrome_155":                  HelloChrome155, // SlothClash 0029
+ 	"helloios_13":                      utls.HelloIOS_13,
+ 	"helloios_14":                      utls.HelloIOS_14,
+ 	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 does not work with utls
+@@ -38,7 +39,7 @@ var xrayFingerprints = map[string]UClientHelloID{
+ 	"hellofirefox_99":                  utls.HelloFirefox_99,
+ 	"hellofirefox_102":                 utls.HelloFirefox_102,
+ 	"hellofirefox_105":                 utls.HelloFirefox_105,
+-	"hellochrome_auto":                 utls.HelloChrome_Auto,
++	"hellochrome_auto":                 HelloChrome155, // SlothClash 0029: Xray 26.11.9's HelloChrome_Auto
+ 	"hellochrome_58":                   utls.HelloChrome_58,
+ 	"hellochrome_62":                   utls.HelloChrome_62,
+ 	"hellochrome_70":                   utls.HelloChrome_70,
+diff --git a/component/tls/utls_xray_names_test.go b/component/tls/utls_xray_names_test.go
+index 5ce834ee..5e5c96fb 100644
+--- a/component/tls/utls_xray_names_test.go
++++ b/component/tls/utls_xray_names_test.go
+@@ -26,7 +26,7 @@ func TestXrayFingerprintNames(t *testing.T) {
+ 			continue
+ 		}
+ 		// a name must map to a parrot utls can build, not to a dead id
+-		if _, err := utls.UTLSIdToSpec(want); err != nil {
++		if _, err := fingerprintSpec(want); err != nil { // fingerprintSpec: also HelloChrome155 (0029)
+ 			t.Fatalf("%s -> %s/%s: %v", name, want.Client, want.Version, err)
+ 		}
+ 	}
+diff --git a/transport/jls/jls_test.go b/transport/jls/jls_test.go
+index c6dab56d..487120b8 100644
+--- a/transport/jls/jls_test.go
++++ b/transport/jls/jls_test.go
+@@ -32,10 +32,11 @@ func TestJLSForbiddenRandomSuffix(t *testing.T) {
+ }
+ 
+ func TestJLSClientServer(t *testing.T) {
+-	for _, clientFingerprint := range []string{"", "chrome"} {
++	// chrome155 is built by tlsC.UClient, not by utls itself (SlothClash 0029).
++	for _, clientFingerprint := range []string{"", "chrome", "chrome155"} {
+ 		name := "Go"
+ 		if clientFingerprint != "" {
+-			name = "uTLS"
++			name = "uTLS-" + clientFingerprint
+ 		}
+ 		t.Run(name, func(t *testing.T) {
+ 			testJLSClientServer(t, clientFingerprint)
+diff --git a/transport/jls/utls.go b/transport/jls/utls.go
+index 44b2b7b7..a9c8536c 100644
+--- a/transport/jls/utls.go
++++ b/transport/jls/utls.go
+@@ -52,7 +52,7 @@ func newUTLSClient(ctx context.Context, conn net.Conn, config *ClientConfig) (ne
+ 	// Resumption would require recalculating PSK binders after replacing the
+ 	// ClientHello random. uTLS does not expose a hook for that operation, so this
+ 	// client deliberately disables session tickets and 0-RTT.
+-	uConn := utls.UClient(conn, &utls.Config{
++	uConn := tlsC.UClient(conn, &utls.Config{ // knows HelloChrome155 (SlothClash 0029)
+ 		ServerName: config.ServerName,
+ 		NextProtos: append([]string(nil), alpn...),
+ 		// JLS authenticates the server in VerifyConnection. TLS still verifies

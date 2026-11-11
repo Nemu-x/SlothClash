@@ -99,10 +99,12 @@ previous tag until the patch is redone.
 ## Verifying behaviour
 
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
-26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, each plain, with `minClientVer: 25.1.1`
-and with `maxClientVer: 2.0.0`) and
-probes every combination of key share, fingerprint, policy and client version through the core
-under test. The expected result of each cell comes from a model of the server generations, so a
+26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, 26.11.9, each plain, with
+`minClientVer: 25.1.1` and with `maxClientVer: 2.0.0`) and
+probes every combination of key share, fingerprint (chrome, plus firefox, safari and chrome155 on
+one server per generation and every current release), policy and client version through the core
+under test. Images are `teddysun/xray`; a release not published there yet (26.11.9 today) is built
+from the official `Xray-linux-64.zip`, pinned by its SHA-256 in the test. The expected result of each cell comes from a model of the server generations, so a
 regression in either direction fails the test. "Core build" runs it against the freshly built
 core and the stock core of the same tag, on every core PR and on every release.
 
@@ -168,8 +170,8 @@ Citrus, change `citrus.json` (the sha256 is the asset's line in the release's `c
 mihomo sends the constant `1.8.2` as the client version in the REALITY session id. Xray servers
 configured with `minClientVer` compare it with their threshold and, when it is lower, silently
 hand the connection to the cover site: the client sees a timeout. The patch turns the constant
-into `tlsC.RealityClientVersion`, default `26.10.29` since 0024 (was `26.9.9`; the Xray release
-the core was validated against). Only `minClientVer` / `maxClientVer` depend on this value.
+into `tlsC.RealityClientVersion`, default `26.11.9` since 0029 (`26.10.29` from 0024, `26.9.9`
+before; the Xray release the core was validated against). Only `minClientVer` / `maxClientVer` depend on this value.
 
 Xray 26.7.11 and 26.7.28 apply `minClientVer: 26.3.27` when the server config sets none
 (XTLS/Xray-core af7eb680; commented out again in 47cfe999, the 26.9.8 change that also requires
@@ -203,8 +205,8 @@ Only that signal moves the memo: a handshake counts as failed when the server se
 chain and it was not the REALITY one. Dial and DNS errors (they happen before the handshake),
 resets, EOFs, timeouts, non-TLS answers and cancelled requests leave it alone, so a flaky network
 cannot flip a classic-only server to the hybrid share and kill it. The cost: a server whose cover
-site is unreachable closes the connection instead of relaying it, and Auto then never learns its
-key share; `reality-mlkem: on` (or the per-proxy key) covers that case.
+site is unreachable closes the connection instead of relaying it, and Auto alone never learns its
+key share; 0030 lets such failures buy one attempt with the other share.
 
 Only the chrome specs in `metacubex/utls` 1.8.8 carry the hybrid share; firefox, safari, ios and
 edge cannot offer it. The fingerprint is the user's choice and is never swapped: when a hybrid
@@ -235,11 +237,11 @@ of the generated `config.yaml`, applied on every config load (a reload undoes ea
 
 ```yaml
 reality-mlkem: auto                # auto | on | off; absent = auto
-reality-client-version: "26.10.29" # x.y.z, each part 0..255; absent = core default
+reality-client-version: "26.11.9"  # x.y.z, each part 0..255; absent = core default
 ```
 
 Invalid values fail the config with a message naming the key. On load the core logs
-`REALITY policy: client version 26.10.29, X25519MLKEM768 auto` at debug level. An unpatched mihomo ignores
+`REALITY policy: client version 26.11.9, X25519MLKEM768 auto` at debug level. An unpatched mihomo ignores
 unknown top-level keys, so the same config still starts on a stock core.
 
 The app writes them from Settings → REALITY ("ML-KEM key share": Auto / Always / Never, "Client
@@ -458,6 +460,73 @@ key for both placements. The Citrus lab cell `xhttp/reality-packet-up-GET-header
 passes on the patched core (the stock core still sends `-0`).
 
 No upstream issue is claimed. Delete when mihomo defaults the key itself.
+
+### 0029 TLS: Chrome 155 hello (`chrome155`)
+
+Xray-core 26.11.9 sends Chrome 155 as its default fingerprint, and Citrus v1.0.0-beta.3 makes its
+`chrome` Chrome 155 too (through its utls fork). `metacubex/utls` 1.8.8 stops at Chrome 133. The
+patch carries the profile as data in `component/tls/chrome155.go` and builds the hello through
+`HelloCustom` + `ApplyPreset`; the library stays on the released 1.8.8. The profile is
+refraction-networking/utls `6ebdceb2` (`HelloChrome_155`, checked there against a capture of Chrome
+155.0.8059.40), the same one Citrus ships (getmikan/utls `a6dee38a`); the wiring follows
+[Rerowros/veles](https://github.com/Rerowros/veles) (`component/tls/chrome155.go`, GPL-3.0). Against
+Chrome 133 the hello gains a GREASE value and the ML-DSA-44/65/87 schemes at the head of
+`signature_algorithms` (advertised only, as in the browser: nothing here verifies them) and the
+`trust_anchors` extension (`0xca34`) with 28 Chrome Root Store IDs.
+
+| Name | Hello |
+|---|---|
+| `chrome155`, `hellochrome_155` (any case), `hellochrome_auto` (Xray's name, any case) | Chrome 155 |
+| `chrome` (stock), `chrome133`, `hellochrome_133` | Chrome 133, as in stock mihomo |
+
+`chrome` keeps its stock meaning: a stock config sends the same hello as on a stock core, and a
+Citrus subscription that writes `client-fingerprint: chrome` gets Chrome 133 here. A config that
+wants Chrome 155 names it. `hellochrome_auto` is not a stock name (stock mihomo sends Go's own hello
+for it), so it follows Xray. The ID is unknown to utls: every client goes through `tlsC.UClient`
+(REALITY, JLS and `transport/jls` now included), and a test fails when code outside
+`component/tls` calls `utls.UClient` directly. A config with a TLS session cache is handled as utls
+handles its own parrots (resumption skipped instead of the HelloCustom panic). REALITY needs no
+special case: the hello carries the hybrid share, and `reality-mlkem: off` or a classic Auto
+verdict removes it exactly as for chrome.
+
+The default REALITY client version moves from `26.10.29` to `26.11.9`, the Xray release the
+series was checked against (an explicit `reality-client-version` still wins).
+
+Tests in the patch: twenty generated hellos per name match the capture
+(`testdata/chrome155_clienthello.hex`, from refraction-networking/utls) modulo extension order,
+GREASE values, random, key material and the GREASE ECH body; `chrome` and `chrome133` stay Chrome 133
+without `trust_anchors`; specs are fresh and the GREASE signature scheme is drawn per hello; a
+session cache does not panic and leaves the caller's config alone; a REALITY handshake against
+utls' own REALITY server authenticates with the classic and the hybrid share and puts Chrome 155 on
+the wire; JLS client and server complete with `chrome155`. The REALITY lab probes `chrome155` against
+24.12.31 to 26.11.9, forced and Auto.
+
+mihomo: none claimed. Delete when mihomo moves to a utls release that ships `HelloChrome_155`.
+
+### 0030 REALITY: one probe after silent handshakes
+
+0002 learns a server's key share only from an answer: a cover-site certificate means the hello was
+relayed. A server that closes the connection instead (an Xray 26.9.8+ server whose cover site is
+unreachable, so it cannot relay a classic hello) never answers the wrong share, and Auto would stay
+on it forever. The patch counts handshakes that ended before the server answered (a reset, EOF,
+timeout, cancelled request, an alert or a non-TLS answer instead of a certificate chain) per
+server and public key. They still never flip or unpin a verdict. After three in a row the next
+attempt uses the other share once: success pins it, failure is a stale report and changes nothing,
+and the count starts over. Any answer resets the count. Only Auto probes; `on`, `off` and a per-proxy
+`support-x25519mlkem768` do not.
+
+The idea is the silent probe of [Rerowros/veles](https://github.com/Rerowros/veles)
+(`realityClassify`, GPL-3.0). Not taken from there: counting any failure after a ServerHello as a
+refusal (here only a certificate chain that is not the REALITY one counts, the signal measured for
+0002) and swapping in Chrome's hello for a fingerprint without the hybrid share (the fingerprint is
+the user's choice, see 0002 and 0024).
+
+Tests in the patch: silent handshakes never move a pinned verdict; a probe after three, at most one
+per round, a silent or refused probe is stale and a successful one pins; an answer in between
+resets the count; no probe outside Auto; and end to end, a server that closes on a classic hello and
+authenticates a hybrid one is learned on the fourth dial and stays learned.
+
+mihomo: none claimed. Delete together with 0002.
 
 ## What the app does with the Citrus surface
 

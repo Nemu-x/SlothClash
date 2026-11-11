@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@22da58f1 docs/config.yaml (proxies 588-1880)
+# Source: getmikan/Citrus@b0f91a16 docs/config.yaml (proxies 588-1880)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - placeholders `[YOUR_SERVER_IP]` / `[YOUR_SS_PASSWORD]` / `[YOUR_RESTLS_PASSWORD]` (YAML lists) replaced by strings

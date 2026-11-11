@@ -696,10 +696,11 @@ second `Close` neither panics nor hangs.
 **Race job.** `node scripts/core-build.mjs --test-only --race` runs the tests of every patched
 package under the race detector (cgo on, no vet), and the `patches (race)` job of
 `core-build.yml` runs it on ubuntu. With this patch every patched package passes: 4 runs in a
-golang:1.26 container capped at 4 CPUs, warm build cache, took 83–97 s for the tests (median 84 s), no race and
-no failure. Packages the series does not touch are not run: `listener/inbound` (mihomo's own
-inbound tests) still reports races in `transport/vless/vision` and `transport/anytls/session`, which are
-out of scope here.
+golang:1.26 container capped at 4 CPUs, warm build cache, took 83–97 s for the tests (median
+84 s), no race and no failure; the CI job, clone and cold race build included, took 3 min 21 s on
+its first run. Packages the series does not touch are not run: `listener/inbound` (mihomo's own
+inbound tests) still reports races in `transport/vless/vision` and `transport/anytls/session`,
+which are out of scope here.
 
 mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrClosed`) for this.
 

@@ -522,6 +522,38 @@ authenticates a hybrid one is learned on the fourth dial and stays learned.
 
 mihomo: none claimed. Delete together with 0002.
 
+### 0031 REALITY: a fingerprint for the hybrid handshakes (`mlkem-client-fingerprint`)
+
+0002 never swaps the configured fingerprint: when a server needs the X25519MLKEM768 share and the
+proxy's parrot has none (`ios`, `edge`, `chrome120`, `firefox120`, `safari16`, ...), its classic
+hello goes out unchanged and cannot reach an Xray 26.9.8+ server. The patch adds an opt-in key that
+names the hello for exactly those handshakes:
+
+```yaml
+reality-opts:
+  public-key: ...
+  mlkem-client-fingerprint: firefox   # any name client-fingerprint takes whose hello has the share
+```
+
+The hello is used for every handshake that offers the hybrid share (`support-x25519mlkem768`, policy
+`on`, or Auto after the server relayed a classic hello); classic handshakes keep
+`client-fingerprint`. A name without the share (`ios`, `chrome120`, ...) or an unknown name fails
+the proxy at load time. `random` is one pick per process and may land on `ios`; chrome, one of its
+picks, is used then, so the config does not fail on some starts only. Without the key nothing
+changes. The choice stays with the config: the core never picks a hello on its own.
+
+The key and its checks are [Rerowros/veles](https://github.com/Rerowros/veles) P7 (GPL-3.0); Veles
+also swaps in chrome on its own for a parrot without the share, which is not taken (see 0002).
+
+Tests in the patch: which parrots carry the share (chrome, chrome155, firefox, safari, hellochrome_131
+yes; ios, edge, chrome120, firefox120, safari16, hellochrome_120 no); name checks and the `random`
+fallback; on loopback, the hello is Firefox only on hybrid handshakes (Auto after a relay, `on`,
+forced) and the configured iOS hello otherwise. Old parrots that share the client name of a current
+one (`chrome120` is "Chrome" like `chrome`) send their classic hello under a hybrid verdict and never
+reach the memo, because 0002 looks at the key shares the hello really carries, not at the client name.
+
+mihomo: none claimed. Delete together with 0002.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a

@@ -156,6 +156,10 @@
       "sha256": "ca2566ade3b80aafd1264f3647298f229c7d19279c6d10a4b3e5a3db0da733ef"
     },
     {
+      "file": "0038-relay-batched-small-buffer-copy.patch",
+      "sha256": "6b04e0872d360011435198dd42b86f493e59fb417e5cc1abda114ea1ae21938f"
+    },
+    {
       "file": "0040-listener-close-races.patch",
       "sha256": "0525f2d6c077618ce24f225fb25631eba2261afcf0cc5cd084fe2442a1b3ef53"
     }

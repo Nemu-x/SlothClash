@@ -45,6 +45,10 @@
 - New per-proxy `fragment-opts` (`packets`, `length`, `delay`, `max-split`, as in Xray's `fragment`): splits the TLS hello of a proxy's connections into small pieces, so networks that block by reading the server name from the first packet cannot read it. VLESS and VMess share links with Xray's `fm` parameter get the same setting. Off unless a proxy sets it.
 - VLESS links the app converts itself (a pasted link, or a subscription that is a list of links) now keep the `fm` fragment setting too, with the same values and checks as the core; before, the app dropped it. An `fm` that does not parse is left out, the node still imports.
 
+**⚡ Faster downloads, less memory per connection**
+- Downloads through TLS-based proxies (Trojan, VLESS and VMess over TLS, REALITY) are faster and use less CPU: the core now decrypts ahead while it writes and sends what it has decrypted in one write instead of one per TLS record. In a local benchmark 16 parallel Trojan downloads went from 2.1 to 2.9 GB/s with about a quarter less CPU per GB; a single download was about 18 % faster.
+- An idle connection through such a proxy holds about 22 KB less memory (2000 idle Trojan connections: 140 MB → 96 MB). Shadowsocks, uploads and `DIRECT` connections behave as before.
+
 ### Русский
 
 **🧩 XHTTP: ссылки с данными в заголовках работают**
@@ -89,6 +93,10 @@
 **✂️ Нарезка TLS hello (`fragment-opts`)**
 - Новый `fragment-opts` у прокси (`packets`, `length`, `delay`, `max-split`, как `fragment` в Xray): режет TLS hello соединений прокси на мелкие части, чтобы сети, которые блокируют по имени сервера из первого пакета, не могли его прочитать. Ссылки VLESS и VMess с параметром `fm` из Xray получают ту же настройку. Выключено, пока прокси его не задаст.
 - Ссылки VLESS, которые приложение разбирает само (вставленная ссылка или подписка списком ссылок), теперь тоже сохраняют нарезку из `fm`, с теми же значениями и проверками, что и в ядре; раньше приложение её теряло. Если `fm` не разбирается, он пропускается, а узел всё равно импортируется.
+
+**⚡ Быстрее загрузка, меньше памяти на соединение**
+- Загрузка через прокси на TLS (Trojan, VLESS и VMess поверх TLS, REALITY) стала быстрее и тратит меньше процессора: ядро расшифровывает данные наперёд, пока пишет, и отправляет всё расшифрованное одной записью, а не отдельной записью на каждую TLS-запись. В локальном замере 16 параллельных загрузок через Trojan ускорились с 2,1 до 2,9 ГБ/с, а процессора на гигабайт уходит примерно на четверть меньше; одиночная загрузка стала быстрее примерно на 18 %.
+- Простаивающее соединение через такой прокси занимает примерно на 22 КБ меньше памяти (2000 простаивающих соединений Trojan: 140 МБ → 96 МБ). Shadowsocks, отправка и соединения `DIRECT` работают как раньше.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

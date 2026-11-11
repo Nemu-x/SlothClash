@@ -667,6 +667,74 @@ a config with `external-ui: .`, `./` or the home directory loads with the UI off
 
 mihomo: none claimed. Delete when mihomo refuses such a directory itself.
 
+### 0038 Relay: small buffer while idle, batched writes while busy, lazy `BufferedConn` reader
+
+`N.Relay` copies both directions with sing's `bufio.Copy`. For a source that is neither a socket nor
+a read waiter, which is every TLS-based outbound (Trojan, VLESS/VMess over TLS, REALITY), that copy
+takes a 32 KiB pool buffer before each read: an idle proxied connection holds one on its download
+side for as long as it stays open, and during a download every decrypted TLS record goes to the
+inbound socket with a `write(2)` of its own. Every inbound connection is also wrapped in a
+`BufferedConn` whose 4 KiB reader was made at once and, once the connection had been peeked
+(sniffing, the mixed port), kept for the whole relay.
+
+The patch has three parts, each in `common/net`:
+
+- **Small buffer while idle** (`relay_copy.go`): `copyConn` is `bufio.Copy` with another fallback for
+  such sources. It reads into a 2 KiB buffer while the connection looks idle and into full pool
+  buffers while data keeps coming; a read that fills the small buffer switches up, two short reads
+  in a row switch back. Cached data, Vision's replaceable reader and writer, splice and read waiters
+  (sockets, Shadowsocks) keep `bufio.Copy`'s own code.
+- **Batched writes** (`relay_batch.go`): while a transfer runs on full buffers and the destination
+  unwraps to a socket, a reader goroutine decrypts up to 8 buffers ahead and the copy writes
+  everything read meanwhile with one `writev(2)`. The reader never waits for data: when the burst
+  ends it hands the source back, so an idle connection has no extra goroutine or buffer. Order is
+  kept (one reader, a FIFO channel); a read error or EOF is returned only after every buffer read
+  before it was written, so half-close works as before; after a write error the reader exits when
+  the relay closes the connection. Uploads (socket to proxy) and socket-to-socket copies (splice,
+  `DIRECT`) do not go through it.
+- **Lazy `BufferedConn` reader** (`bufconn.go`): the reader is made on first use, a read without one
+  goes straight to the connection, and `ReaderReplaceable` drops a drained reader when the relay
+  unwraps the connection. Buffered data is never dropped.
+
+From getmikan/Citrus (GPL-3.0) `common/net` (commits 6c1d881e, d23b8008, 415e7791, 316b3af7,
+8c11680f, b00599ab), in the form [Rerowros/veles](https://github.com/Rerowros/veles) carries it as
+its P12. Not taken, measured or judged not worth the risk here: Citrus' wait on a TLS connection
+without a buffer and its AnyTLS queue (both need Citrus' own forks), the 64 KiB socket reads of the
+upload side (no gain in the measurement below, and they change the write size every outbound
+protocol sees), and the scheduler yields of the copy loops.
+
+Measured in Docker (golang:1.26 image, Linux): load generator → SOCKS on the client core (limited to
+2 CPUs) → Trojan (TLS) or Shadowsocks 2022 → stock v1.19.34 + series server (4 CPUs) → target, all
+on one Docker network; stock series vs series + 0038, interleaved runs, medians. The host ran other
+Docker labs at the same time, so single runs vary by up to ±30 %.
+
+| Trojan download, 8 s, 7 runs each | stock series | + 0038 | paired median | wins |
+| --- | --- | --- | --- | --- |
+| 1 stream | 991 MB/s, 1.07 CPU s/GB | 1251 MB/s, 1.18 CPU s/GB | +18 % MB/s | 6/7 |
+| 4 streams | 2276 MB/s, 0.88 CPU s/GB | 2663 MB/s, 0.75 CPU s/GB | +25 % MB/s, −20 % CPU/GB | 6/7 |
+| 16 streams | 2100 MB/s, 0.97 CPU s/GB | 2897 MB/s, 0.70 CPU s/GB | +34 % MB/s, −26 % CPU/GB | 7/7 |
+
+The batched writes give all of the throughput gain; the small buffer alone is neutral (paired median
+0.91-1.05 of stock). A single stream uses the second core for decryption while the first writes, so
+it is faster at slightly more CPU per GB.
+
+Client RSS growth for 2000 idle connections (3 runs each, first round): Trojan 153 MB stock, 134 MB
+with the lazy reader alone, 93 MB with the small buffer as well (a second round, stock against the
+whole patch: 140 MB → 96 MB, about 22 KB less per idle connection). Shadowsocks 2022 is a read waiter
+and holds no idle buffer already: 70 MB → 71 MB. Uploads, Shadowsocks 2022 and `DIRECT` throughput
+were unchanged within the noise (5 builds × 3 rounds × 9 tests).
+
+Tests (from Citrus, cut to what is ported): copies of up to 8 MiB through the adaptive and the
+batched copy with reads of every size; the exact buffer size of every read through a burst and back
+(with and without Vision's replaceable reader); batches gathered while a write is blocked are
+bounded by the read-ahead and keep their order; a write error ends the batched copy with that error
+and the reader goroutine exits; a relayed TLS connection with a 6 MiB upload, a half-close and a
+5 MiB answer; the `BufferedConn` reader made only by a peek, dropped once drained, and dropped while
+a relay waits on a peeked connection. `common/net` passes with `-race`.
+
+mihomo: none claimed. Delete when sing's `bufio.Copy` stops holding a pool buffer while it waits on
+a TLS source and writes a burst with one call, and `BufferedConn` makes its reader lazily.
+
 ### 0040 Listeners: closed flag without a data race
 
 The accept and read loops of 20 inbound listeners in mihomo (socks TCP/UDP, http, mixed, redir,
@@ -706,8 +774,8 @@ mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrC
 
 ### What else Rerowros/veles changes
 
-[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030 and
-0031-0036 take parts of it. The rest is not taken:
+[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,
+0031-0036 and 0038 take parts of it. The rest is not taken:
 
 - **Already here:** client version 26.11.9 (0001/0029), per-proxy client version (0005), Chrome 155
   (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004).
@@ -716,7 +784,6 @@ mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrC
   - the automatic swap to chrome for a parrot without the hybrid share;
   - a REALITY proxy without `client-fingerprint` defaulting to chrome;
   - XHTTP packet-up uploads with several requests in flight (P5/P8);
-  - the relay's batched writev copy, small-buffer copy and lazy `BufferedConn` reader (P12);
   - the controller refusing a non-loopback address without a secret (P17);
   - redacted `GET /configs`.
 - **Server only:**

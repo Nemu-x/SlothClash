@@ -554,6 +554,47 @@ reach the memo, because 0002 looks at the key shares the hello really carries, n
 
 mihomo: none claimed. Delete together with 0002.
 
+### 0032 TLS: ClientHello fragmentation per proxy (`fragment-opts`)
+
+Some networks reset a TCP connection as soon as they can read a whole TLS ClientHello with a
+blocked SNI in one record or one segment. Xray's finalmask `fragment` splits the hello so they
+cannot; mihomo has nothing comparable for proxies. The patch adds an opt-in block on any proxy:
+
+```yaml
+fragment-opts:
+  packets: tlshello   # "tlshello" (default) or a range of writes, "1-3"
+  length: 10-20       # bytes per piece (default 10-20)
+  delay: 0            # ms between pieces (default 0)
+  max-split: 0        # at most this many pieces, 0 = no limit
+```
+
+The names and values follow Xray finalmask `fragment` (Xray-core v26.10.21, MPL-2.0):
+
+- `tlshello`: a first write that is a whole ClientHello record is re-framed into several TLS records
+  of `length` bytes each. With delay 0 they go out in one write (the kernel segments as usual);
+  with a delay each record is its own write followed by the pause.
+- `N-M`: writes N to M of the connection are cut into raw TCP pieces of `length` bytes, no
+  re-framing.
+
+Everything after that passes untouched. Only TCP connections of the proxy's own dialer are wrapped
+(UDP and QUIC are not), so the outer TLS or REALITY hello of `vless`, `trojan`, `vmess`, `anytls`,
+... is what gets split. An invalid block fails that proxy at load time. A VLESS or VMess share link
+with Xray's `fm` parameter (`{"tcp":[{"type":"fragment","settings":{...}}]}`) gets the same block
+when the core parses it; other masks are ignored, and a mask that does not parse is dropped, not
+the link. Without the block nothing changes: the dialer is the stock one.
+
+Ported from [Rerowros/veles](https://github.com/Rerowros/veles) P19 (`component/fragment`, GPL-3.0).
+
+Tests in the patch: parsing and defaults; `tlshello` merged and delayed (the records below TLS are
+valid, re-assemble to the original hello, a TLS server still completes the handshake and echoes up
+to 256 KiB, and later writes pass one to one); raw TCP pieces; off by default; a first write that is not a ClientHello passes untouched;
+and a model of the middlebox (`dpifilter`, test-only) that resets a connection whose first record,
+or first segment, holds a whole ClientHello with SNI: without the block it resets, with the right
+mode it passes. The dialer of vless and trojan proxies is wrapped only when the block is set;
+`ParseProxy` takes YAML numbers and refuses bad ranges; the `fm` mapping.
+
+mihomo: none claimed. Delete when mihomo has its own ClientHello fragmentation for proxies.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a

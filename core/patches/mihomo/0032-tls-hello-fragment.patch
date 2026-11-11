@@ -1,0 +1,1071 @@
+diff --git a/adapter/outbound/base.go b/adapter/outbound/base.go
+index aa7e0cdc..037a129d 100644
+--- a/adapter/outbound/base.go
++++ b/adapter/outbound/base.go
+@@ -12,6 +12,7 @@ import (
+ 	N "github.com/metacubex/mihomo/common/net"
+ 	"github.com/metacubex/mihomo/common/utils"
+ 	"github.com/metacubex/mihomo/component/dialer"
++	"github.com/metacubex/mihomo/component/fragment"
+ 	"github.com/metacubex/mihomo/component/proxydialer"
+ 	"github.com/metacubex/mihomo/component/resolver"
+ 	C "github.com/metacubex/mihomo/constant"
+@@ -198,6 +199,10 @@ type BasicOption struct {
+ 	IPVersion   C.DNSPrefer `proxy:"ip-version,omitempty"`
+ 	DialerProxy string      `proxy:"dialer-proxy,omitempty"` // don't apply this option into groups, but can set a group name in a proxy
+ 
++	// FragmentOpts splits the first TLS ClientHello (or the first writes) of
++	// every TCP connection of this proxy; off when empty (SlothClash 0032).
++	FragmentOpts fragment.Options `proxy:"fragment-opts,omitempty"`
++
+ 	//
+ 	// The following parameters are used internally, assign value by the structure decoder are disallowed
+ 	//
+@@ -215,6 +220,10 @@ func (b *BasicOption) NewDialer(opts []dialer.Option) C.Dialer {
+ 			cDialer = dialer.NewDialer(opts...)
+ 		}
+ 	}
++	// ParseProxy has already refused an invalid block (SlothClash 0032)
++	if fragmentConfig, err := b.FragmentOpts.Parse(); err == nil {
++		cDialer = fragment.NewDialer(cDialer, fragmentConfig)
++	}
+ 	return cDialer
+ }
+ 
+diff --git a/adapter/outbound/fragment_test.go b/adapter/outbound/fragment_test.go
+new file mode 100644
+index 00000000..a4d51920
+--- /dev/null
++++ b/adapter/outbound/fragment_test.go
+@@ -0,0 +1,34 @@
++package outbound
++
++import (
++	"testing"
++
++	"github.com/metacubex/mihomo/component/fragment"
++
++	"github.com/stretchr/testify/require"
++)
++
++// fragment-opts wraps the dialer of every proxy type built on BasicOption.NewDialer
++func TestFragmentOptsWrapsDialer(t *testing.T) {
++	newVless := func(opts fragment.Options) *Vless {
++		v, err := NewVless(VlessOption{
++			BasicOption: BasicOption{FragmentOpts: opts},
++			Name:        "n", Server: "127.0.0.1", Port: 443,
++			UUID: "11111111-2222-3333-4444-555555555555", TLS: true, ServerName: "example.com",
++		})
++		require.NoError(t, err)
++		return v
++	}
++	_, wrapped := newVless(fragment.Options{}).dialer.(fragment.Dialer)
++	require.False(t, wrapped, "off by default")
++	_, wrapped = newVless(fragment.Options{Packets: "tlshello", Length: "10-20", Delay: "0"}).dialer.(fragment.Dialer)
++	require.True(t, wrapped)
++
++	tr, err := NewTrojan(TrojanOption{
++		BasicOption: BasicOption{FragmentOpts: fragment.Options{Packets: "tlshello"}},
++		Name:        "t", Server: "127.0.0.1", Port: 443, Password: "p", SNI: "example.com",
++	})
++	require.NoError(t, err)
++	_, wrapped = tr.dialer.(fragment.Dialer)
++	require.True(t, wrapped)
++}
+diff --git a/adapter/parser.go b/adapter/parser.go
+index 4eca551e..66079e88 100644
+--- a/adapter/parser.go
++++ b/adapter/parser.go
+@@ -5,6 +5,7 @@ import (
+ 
+ 	"github.com/metacubex/mihomo/adapter/outbound"
+ 	"github.com/metacubex/mihomo/common/structure"
++	"github.com/metacubex/mihomo/component/fragment"
+ 	C "github.com/metacubex/mihomo/constant"
+ )
+ 
+@@ -15,6 +16,18 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 		return nil, fmt.Errorf("missing type")
+ 	}
+ 
++	// SlothClash 0032: an invalid fragment-opts block fails the proxy at load
++	// time, not on every dial
++	var fragmentOption struct {
++		FragmentOpts fragment.Options `proxy:"fragment-opts,omitempty"`
++	}
++	if err := decoder.Decode(mapping, &fragmentOption); err != nil {
++		return nil, err
++	}
++	if _, err := fragmentOption.FragmentOpts.Parse(); err != nil {
++		return nil, err
++	}
++
+ 	opt := applyProxyOptions(options...)
+ 	basicOption := outbound.BasicOption{
+ 		DialerForAPI: opt.DialerForAPI,
+diff --git a/adapter/parser_fragment_test.go b/adapter/parser_fragment_test.go
+new file mode 100644
+index 00000000..93dc0ea9
+--- /dev/null
++++ b/adapter/parser_fragment_test.go
+@@ -0,0 +1,33 @@
++package adapter
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func fragmentVlessMapping(fragmentOpts map[string]any) map[string]any {
++	m := map[string]any{
++		"name": "n", "type": "vless", "server": "127.0.0.1", "port": 443,
++		"uuid": "11111111-2222-3333-4444-555555555555", "tls": true, "servername": "example.com",
++	}
++	if fragmentOpts != nil {
++		m["fragment-opts"] = fragmentOpts
++	}
++	return m
++}
++
++func TestParseProxyFragmentOpts(t *testing.T) {
++	_, err := ParseProxy(fragmentVlessMapping(nil))
++	require.NoError(t, err)
++	// YAML numbers are accepted where Xray accepts them
++	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "tlshello", "length": "10-20", "delay": 0}))
++	require.NoError(t, err)
++	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "1-3", "length": 50, "delay": "5-10", "max-split": 4}))
++	require.NoError(t, err)
++
++	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "tlshello", "length": "0-5"}))
++	require.ErrorContains(t, err, "fragment-opts.length")
++	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "first"}))
++	require.ErrorContains(t, err, "fragment-opts.packets")
++}
+diff --git a/common/convert/fragment_test.go b/common/convert/fragment_test.go
+new file mode 100644
+index 00000000..4b637b73
+--- /dev/null
++++ b/common/convert/fragment_test.go
+@@ -0,0 +1,32 @@
++package convert
++
++import (
++	"net/url"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestConvertsVlessFinalMaskFragment(t *testing.T) {
++	fm := `{"tcp":[{"type":"header-custom","settings":{}},{"type":"fragment","settings":{"packets":"tlshello","length":"10-20","delay":0,"maxSplit":"5-9"}}]}`
++	link := "vless://11111111-2222-3333-4444-555555555555@example.com:2053?security=reality&pbk=key&sid=ab&sni=example.com&fp=chrome&type=tcp&fm=" + url.QueryEscape(fm) + "#n"
++	proxies, err := ConvertsV2Ray([]byte(link))
++	require.NoError(t, err)
++	require.Len(t, proxies, 1)
++	require.Equal(t, map[string]any{"packets": "tlshello", "length": "10-20", "delay": "0", "max-split": "5-9"}, proxies[0]["fragment-opts"])
++
++	for _, fm := range []string{"", "not json", `{"tcp":[{"type":"header-custom"}]}`, `{"udp":[{"type":"fragment"}]}`,
++		`{"tcp":[{"type":"fragment","settings":{"packets":"abc"}}]}`, `{"tcp":[{"type":"fragment","settings":{"delay":-1}}]}`,
++		`{"tcp":[{"type":"fragment","settings":{"delay":"0-9223372036854775807"}}]}`} {
++		link := "vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&fm=" + url.QueryEscape(fm) + "#n"
++		proxies, err := ConvertsV2Ray([]byte(link))
++		require.NoError(t, err)
++		require.NotContains(t, proxies[0], "fragment-opts", "fm=%q", fm)
++	}
++
++	fm = `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","lengths":["10-20","30"],"delays":[0]}}]}`
++	link = "vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls&fm=" + url.QueryEscape(fm) + "#n"
++	proxies, err = ConvertsV2Ray([]byte(link))
++	require.NoError(t, err)
++	require.Equal(t, map[string]any{"packets": "tlshello", "length": "10-20", "delay": "0"}, proxies[0]["fragment-opts"])
++}
+diff --git a/common/convert/v.go b/common/convert/v.go
+index 20243834..dcfc9973 100644
+--- a/common/convert/v.go
++++ b/common/convert/v.go
+@@ -7,6 +7,8 @@ import (
+ 	"net/url"
+ 	"strconv"
+ 	"strings"
++
++	"github.com/metacubex/mihomo/component/fragment"
+ )
+ 
+ func handleVShareLink(names map[string]int, url *url.URL, scheme string, proxy map[string]any) error {
+@@ -55,6 +57,10 @@ func handleVShareLink(names map[string]int, url *url.URL, scheme string, proxy m
+ 		}
+ 		proxy["reality-opts"] = realityOpts
+ 	}
++	// SlothClash 0032: Xray finalmask TCP "fragment" from the fm parameter
++	if fragmentOpts := fragmentOptsFromFinalMask(query.Get("fm")); fragmentOpts != nil {
++		proxy["fragment-opts"] = fragmentOpts
++	}
+ 
+ 	switch query.Get("packetEncoding") {
+ 	case "none":
+@@ -426,3 +432,73 @@ func splitHysteria2Ports(line string) (string, string) {
+ 	}
+ 	return head + userinfo + host + ":" + first + tail, ports
+ }
++
++// fragmentOptsFromFinalMask maps the first TCP "fragment" mask of an Xray fm
++// parameter, {"tcp":[{"type":"fragment","settings":{"packets":"tlshello",
++// "length":"10-20","delay":"0"}}]}, to fragment-opts. Other masks are ignored.
++func fragmentOptsFromFinalMask(fm string) map[string]any {
++	if fm == "" {
++		return nil
++	}
++	var finalMask struct {
++		TCP []struct {
++			Type     string                     `json:"type"`
++			Settings map[string]json.RawMessage `json:"settings"`
++		} `json:"tcp"`
++	}
++	if err := json.Unmarshal([]byte(fm), &finalMask); err != nil {
++		return nil
++	}
++	for _, mask := range finalMask.TCP {
++		if !strings.EqualFold(mask.Type, "fragment") {
++			continue
++		}
++		opts := map[string]any{}
++		for key, name := range map[string]string{"packets": "packets", "length": "length", "delay": "delay", "maxSplit": "max-split"} {
++			raw, ok := mask.Settings[key]
++			if !ok {
++				continue
++			}
++			var value any
++			if err := json.Unmarshal(raw, &value); err != nil {
++				continue
++			}
++			switch v := value.(type) {
++			case string:
++				opts[name] = v
++			case float64:
++				opts[name] = strconv.FormatInt(int64(v), 10)
++			}
++		}
++		// per-piece lists are not supported: take their first entry
++		for key, name := range map[string]string{"lengths": "length", "delays": "delay"} {
++			var list []json.RawMessage
++			if _, ok := opts[name]; ok || json.Unmarshal(mask.Settings[key], &list) != nil || len(list) == 0 {
++				continue
++			}
++			var value any
++			if json.Unmarshal(list[0], &value) == nil {
++				switch v := value.(type) {
++				case string:
++					opts[name] = v
++				case float64:
++					opts[name] = strconv.FormatInt(int64(v), 10)
++				}
++			}
++		}
++		if len(opts) == 0 {
++			opts["packets"] = "tlshello"
++		}
++		// one bad link must not fail the whole subscription
++		check := fragment.Options{}
++		check.Packets, _ = opts["packets"].(string)
++		check.Length, _ = opts["length"].(string)
++		check.Delay, _ = opts["delay"].(string)
++		check.MaxSplit, _ = opts["max-split"].(string)
++		if _, err := check.Parse(); err != nil {
++			return nil
++		}
++		return opts
++	}
++	return nil
++}
+diff --git a/component/fragment/dpifilter/dpifilter.go b/component/fragment/dpifilter/dpifilter.go
+new file mode 100644
+index 00000000..e4718087
+--- /dev/null
++++ b/component/fragment/dpifilter/dpifilter.go
+@@ -0,0 +1,181 @@
++// Package dpifilter is a test-only model of a middlebox that resets a TCP
++// connection when it can read a whole TLS ClientHello with SNI.
++// SlothClash core patch 0032, from Rerowros/veles P19 (GPL-3.0).
++// It sits between a client and an upstream address on loopback.
++package dpifilter
++
++import (
++	"encoding/binary"
++	"io"
++	"net"
++	"sync/atomic"
++)
++
++type Mode int
++
++const (
++	// Record reassembles the TCP stream up to the end of the first TLS record
++	// and blocks when that single record holds a whole ClientHello with SNI.
++	Record Mode = iota
++	// Segment looks only at the first chunk the kernel hands over (one read on
++	// loopback ≈ one write of the client) and blocks when the TLS records in
++	// it, joined together, hold a whole ClientHello with SNI.
++	Segment
++)
++
++func (m Mode) String() string {
++	if m == Segment {
++		return "segment"
++	}
++	return "record"
++}
++
++type Filter struct {
++	listener net.Listener
++	upstream string
++	mode     Mode
++	blocked  atomic.Int32
++	passed   atomic.Int32
++}
++
++// Start listens on 127.0.0.1 and forwards accepted connections to upstream.
++func Start(upstream string, mode Mode) (*Filter, error) {
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		return nil, err
++	}
++	f := &Filter{listener: listener, upstream: upstream, mode: mode}
++	go f.serve()
++	return f, nil
++}
++
++func (f *Filter) Addr() string { return f.listener.Addr().String() }
++
++func (f *Filter) Blocked() int { return int(f.blocked.Load()) }
++
++func (f *Filter) Passed() int { return int(f.passed.Load()) }
++
++func (f *Filter) Close() error { return f.listener.Close() }
++
++func (f *Filter) serve() {
++	for {
++		conn, err := f.listener.Accept()
++		if err != nil {
++			return
++		}
++		go f.handle(conn)
++	}
++}
++
++func (f *Filter) handle(client net.Conn) {
++	defer client.Close()
++	var head []byte
++	var block bool
++	switch f.mode {
++	case Segment:
++		buf := make([]byte, 64*1024)
++		n, err := client.Read(buf)
++		if err != nil {
++			return
++		}
++		head = buf[:n]
++		block = hasClientHelloWithSNI(joinHandshake(head))
++	default:
++		header := make([]byte, 5)
++		if _, err := io.ReadFull(client, header); err != nil {
++			return
++		}
++		payload := make([]byte, binary.BigEndian.Uint16(header[3:]))
++		if _, err := io.ReadFull(client, payload); err != nil {
++			return
++		}
++		head = append(header, payload...)
++		block = header[0] == 22 && hasClientHelloWithSNI(payload)
++	}
++	if block {
++		f.blocked.Add(1)
++		if tcp, ok := client.(*net.TCPConn); ok {
++			_ = tcp.SetLinger(0) // RST, like a real middlebox
++		}
++		return
++	}
++	f.passed.Add(1)
++	server, err := net.Dial("tcp", f.upstream)
++	if err != nil {
++		return
++	}
++	defer server.Close()
++	if _, err := server.Write(head); err != nil {
++		return
++	}
++	done := make(chan struct{}, 2)
++	go func() { _, _ = io.Copy(server, client); done <- struct{}{} }()
++	go func() { _, _ = io.Copy(client, server); done <- struct{}{} }()
++	<-done
++}
++
++// joinHandshake concatenates the payloads of the whole handshake records at
++// the start of b.
++func joinHandshake(b []byte) []byte {
++	var out []byte
++	for len(b) >= 5 && b[0] == 22 {
++		n := int(binary.BigEndian.Uint16(b[3:]))
++		if len(b) < 5+n {
++			break
++		}
++		out = append(out, b[5:5+n]...)
++		b = b[5+n:]
++	}
++	return out
++}
++
++// hasClientHelloWithSNI reports whether hs starts with a complete ClientHello
++// handshake message that carries a server_name extension.
++func hasClientHelloWithSNI(hs []byte) bool {
++	if len(hs) < 4 || hs[0] != 1 {
++		return false
++	}
++	n := int(hs[1])<<16 | int(hs[2])<<8 | int(hs[3])
++	if len(hs) < 4+n {
++		return false
++	}
++	body := hs[4 : 4+n]
++	skip := func(k, lenBytes int) bool {
++		if len(body) < k {
++			return false
++		}
++		body = body[k:]
++		if lenBytes == 0 {
++			return true
++		}
++		if len(body) < lenBytes {
++			return false
++		}
++		l := 0
++		for i := 0; i < lenBytes; i++ {
++			l = l<<8 | int(body[i])
++		}
++		if len(body) < lenBytes+l {
++			return false
++		}
++		body = body[lenBytes+l:]
++		return true
++	}
++	// version + random, session id, cipher suites, compression methods
++	if !skip(34, 0) || !skip(0, 1) || !skip(0, 2) || !skip(0, 1) || len(body) < 2 {
++		return false
++	}
++	ext := body[2:]
++	for len(ext) >= 4 {
++		typ := binary.BigEndian.Uint16(ext)
++		l := int(binary.BigEndian.Uint16(ext[2:]))
++		if len(ext) < 4+l {
++			return false
++		}
++		if typ == 0 {
++			return true
++		}
++		ext = ext[4+l:]
++	}
++	return false
++}
+diff --git a/component/fragment/fragment.go b/component/fragment/fragment.go
+new file mode 100644
+index 00000000..2f25f205
+--- /dev/null
++++ b/component/fragment/fragment.go
+@@ -0,0 +1,285 @@
++// Package fragment splits the first TLS ClientHello (or the first raw writes)
++// of an outgoing TCP connection, so that a middlebox that parses a whole
++// ClientHello from one record or one segment cannot read it.
++//
++// SlothClash core patch 0032: proxy-level fragment-opts, off unless a proxy
++// sets it. Ported from Rerowros/veles P19 (component/fragment, GPL-3.0).
++//
++// The behaviour follows Xray-core finalmask "fragment"
++// (transport/internet/finalmask/fragment/conn.go, Xray-core v26.10.21, MPL-2.0):
++//
++//   - packets "tlshello": the first write, if it is a whole TLS handshake
++//     record, is re-framed into several TLS records with `length` bytes of
++//     payload each. With delay "0" all records go out in one write (the
++//     kernel then segments by MSS as usual); with a non-zero delay every record
++//     is a separate write followed by a pause.
++//   - packets "N-M": writes number N..M of the connection are cut into raw
++//     pieces of `length` bytes (TCP segments, no re-framing), with a pause
++//     between pieces.
++//
++// Everything after that is passed through untouched.
++package fragment
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"math"
++	"net"
++	"strconv"
++	"strings"
++	"time"
++
++	N "github.com/metacubex/mihomo/common/net"
++	C "github.com/metacubex/mihomo/constant"
++
++	"github.com/metacubex/randv2"
++)
++
++const (
++	recordHeaderLen       = 5
++	recordTypeHandshake   = 22
++	handshakeClientHello  = 1
++	maxTLSPlaintextLength = 16384
++)
++
++// Options is the proxy-level `fragment-opts` block. Names and values mirror
++// the Xray finalmask fragment settings (`packets`, `length`, `delay`,
++// `maxSplit`), so a subscription can carry the same values as an Xray `fm`
++// parameter.
++type Options struct {
++	Packets  string `proxy:"packets,omitempty"`
++	Length   string `proxy:"length,omitempty"`
++	Delay    string `proxy:"delay,omitempty"`
++	MaxSplit string `proxy:"max-split,omitempty"`
++}
++
++type rng struct{ min, max int }
++
++func (r rng) rand() int {
++	if r.max <= r.min {
++		return r.min
++	}
++	return r.min + randv2.IntN(r.max-r.min+1)
++}
++
++func parseRange(name, s, fallback string) (rng, error) {
++	s = strings.TrimSpace(s)
++	if s == "" {
++		s = fallback
++	}
++	lo, hi, found := strings.Cut(s, "-")
++	minVal, err := strconv.Atoi(strings.TrimSpace(lo))
++	if err != nil {
++		return rng{}, fmt.Errorf("fragment-opts.%s: invalid range %q", name, s)
++	}
++	maxVal := minVal
++	if found {
++		if maxVal, err = strconv.Atoi(strings.TrimSpace(hi)); err != nil {
++			return rng{}, fmt.Errorf("fragment-opts.%s: invalid range %q", name, s)
++		}
++	}
++	if maxVal < minVal { // Xray swaps a reversed range too
++		minVal, maxVal = maxVal, minVal
++	}
++	if minVal < 0 || maxVal > math.MaxInt32 {
++		return rng{}, fmt.Errorf("fragment-opts.%s: invalid range %q", name, s)
++	}
++	return rng{minVal, maxVal}, nil
++}
++
++// Config is the parsed form of Options. A nil *Config means "off".
++type Config struct {
++	tlsHello  bool
++	packetsLo int
++	packetsHi int
++	length    rng
++	delay     rng
++	maxSplit  rng
++}
++
++// Parse returns nil, nil when the block is empty (fragmentation off).
++func (o Options) Parse() (*Config, error) {
++	if o == (Options{}) {
++		return nil, nil
++	}
++	c := &Config{}
++	switch p := strings.ToLower(strings.TrimSpace(o.Packets)); p {
++	case "", "tlshello":
++		c.tlsHello = true
++	default:
++		r, err := parseRange("packets", p, "")
++		if err != nil {
++			return nil, err
++		}
++		if r.min == 0 {
++			return nil, errors.New(`fragment-opts.packets: must be "tlshello" or a range starting from 1`)
++		}
++		c.packetsLo, c.packetsHi = r.min, r.max
++	}
++	var err error
++	if c.length, err = parseRange("length", o.Length, "10-20"); err != nil {
++		return nil, err
++	}
++	if c.length.min == 0 {
++		return nil, errors.New("fragment-opts.length: minimum can't be 0")
++	}
++	if c.delay, err = parseRange("delay", o.Delay, "0"); err != nil {
++		return nil, err
++	}
++	if c.maxSplit, err = parseRange("max-split", o.MaxSplit, "0"); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++func (c *Config) sleep() {
++	if c.delay.max > 0 {
++		time.Sleep(time.Duration(c.delay.rand()) * time.Millisecond)
++	}
++}
++
++// NewConn wraps an outgoing TCP connection. A nil config returns conn as is.
++func NewConn(conn net.Conn, c *Config) net.Conn {
++	if c == nil {
++		return conn
++	}
++	return &Conn{Conn: conn, config: c}
++}
++
++type Conn struct {
++	net.Conn
++	config *Config
++	count  int
++	done   bool
++}
++
++func (c *Conn) Write(p []byte) (int, error) {
++	if c.done {
++		return c.Conn.Write(p)
++	}
++	c.count++
++	cfg := c.config
++	if cfg.tlsHello {
++		c.done = true
++		if c.count == 1 {
++			if recordLen, ok := clientHelloRecordLen(p); ok {
++				return c.writeHello(p, recordLen)
++			}
++		}
++		return c.Conn.Write(p)
++	}
++	if c.count >= cfg.packetsHi {
++		c.done = true
++	}
++	if c.count < cfg.packetsLo {
++		return c.Conn.Write(p)
++	}
++	return c.writeSplit(p)
++}
++
++// clientHelloRecordLen reports the full length of the first TLS record in p
++// when p starts with a whole handshake record that carries a ClientHello.
++func clientHelloRecordLen(p []byte) (int, bool) {
++	if len(p) <= recordHeaderLen || p[0] != recordTypeHandshake || p[1] != 3 || p[5] != handshakeClientHello {
++		return 0, false
++	}
++	n := int(p[3])<<8 | int(p[4])
++	if n > maxTLSPlaintextLength || len(p) < recordHeaderLen+n {
++		return 0, false
++	}
++	return recordHeaderLen + n, true
++}
++
++func (c *Conn) writeHello(p []byte, recordLen int) (int, error) {
++	cfg := c.config
++	data := p[recordHeaderLen:recordLen]
++	merge := cfg.delay.max == 0
++	maxSplit := cfg.maxSplit.rand()
++	var out []byte
++	if merge {
++		out = make([]byte, 0, len(data)+(len(data)/cfg.length.min+1)*recordHeaderLen)
++	}
++	for from, split := 0, 1; from < len(data); split++ {
++		to := from + cfg.length.rand()
++		if to > len(data) || (maxSplit > 0 && split >= maxSplit) {
++			to = len(data)
++		}
++		l := to - from
++		record := make([]byte, 0, recordHeaderLen+l)
++		record = append(record, p[0], p[1], p[2], byte(l>>8), byte(l))
++		record = append(record, data[from:to]...)
++		from = to
++		if merge {
++			out = append(out, record...)
++			continue
++		}
++		if _, err := c.Conn.Write(record); err != nil {
++			return 0, err
++		}
++		if from < len(data) {
++			cfg.sleep()
++		}
++	}
++	if merge {
++		if _, err := c.Conn.Write(out); err != nil {
++			return 0, err
++		}
++	}
++	if len(p) > recordLen {
++		n, err := c.Conn.Write(p[recordLen:])
++		return recordLen + n, err
++	}
++	return len(p), nil
++}
++
++func (c *Conn) writeSplit(p []byte) (int, error) {
++	cfg := c.config
++	maxSplit := cfg.maxSplit.rand()
++	from := 0
++	for split := 1; from < len(p); split++ {
++		to := from + cfg.length.rand()
++		if to > len(p) || (maxSplit > 0 && split >= maxSplit) {
++			to = len(p)
++		}
++		n, err := c.Conn.Write(p[from:to])
++		from += n
++		if err != nil {
++			return from, err
++		}
++		if from < len(p) {
++			cfg.sleep()
++		}
++	}
++	return from, nil
++}
++
++func (c *Conn) Upstream() any { return c.Conn }
++
++func (c *Conn) ReaderReplaceable() bool { return true }
++
++func (c *Conn) WriterReplaceable() bool { return c.done }
++
++var _ N.ReaderWithUpstream = (*Conn)(nil)
++
++// Dialer wraps the TCP connections of a proxy dialer. UDP is untouched.
++type Dialer struct {
++	C.Dialer
++	Config *Config
++}
++
++// NewDialer returns d as is when the config is nil (fragmentation off).
++func NewDialer(d C.Dialer, c *Config) C.Dialer {
++	if c == nil {
++		return d
++	}
++	return Dialer{Dialer: d, Config: c}
++}
++
++func (d Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
++	conn, err := d.Dialer.DialContext(ctx, network, address)
++	if err != nil || !strings.HasPrefix(network, "tcp") {
++		return conn, err
++	}
++	return NewConn(conn, d.Config), nil
++}
+diff --git a/component/fragment/fragment_test.go b/component/fragment/fragment_test.go
+new file mode 100644
+index 00000000..48188b6c
+--- /dev/null
++++ b/component/fragment/fragment_test.go
+@@ -0,0 +1,307 @@
++package fragment
++
++import (
++	"bytes"
++	"crypto/rand"
++	"crypto/sha256"
++	"crypto/tls"
++	"encoding/binary"
++	"fmt"
++	"io"
++	"net"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/component/ca"
++	"github.com/metacubex/mihomo/component/fragment/dpifilter"
++
++	"github.com/stretchr/testify/require"
++)
++
++// writeLog records every Write that reaches the layer below it.
++type writeLog struct {
++	net.Conn
++	mu     sync.Mutex
++	writes [][]byte
++}
++
++func (w *writeLog) Write(p []byte) (int, error) {
++	w.mu.Lock()
++	w.writes = append(w.writes, append([]byte(nil), p...))
++	w.mu.Unlock()
++	return w.Conn.Write(p)
++}
++
++func (w *writeLog) all() [][]byte {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	return append([][]byte(nil), w.writes...)
++}
++
++func mustParse(t *testing.T, o Options) *Config {
++	t.Helper()
++	c, err := o.Parse()
++	require.NoError(t, err)
++	require.NotNil(t, c)
++	return c
++}
++
++// startTLSEcho runs a crypto/tls server that echoes everything back.
++func startTLSEcho(t *testing.T) string {
++	t.Helper()
++	certPEM, keyPEM, _, err := ca.NewRandomTLSKeyPair(ca.KeyPairTypeP256)
++	require.NoError(t, err)
++	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
++	require.NoError(t, err)
++	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = listener.Close() })
++	go func() {
++		for {
++			conn, err := listener.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer conn.Close()
++				_, _ = io.Copy(conn, conn)
++			}()
++		}
++	}()
++	return listener.Addr().String()
++}
++
++// handshake dials addr, puts the fragment layer (cfg may be nil) between TLS
++// and TCP, and returns what TLS wrote (above) and what went to TCP (below).
++func handshake(t *testing.T, addr string, cfg *Config) (*tls.Conn, *writeLog, *writeLog) {
++	t.Helper()
++	raw, err := net.DialTimeout("tcp", addr, 5*time.Second)
++	require.NoError(t, err)
++	below := &writeLog{Conn: raw}
++	above := &writeLog{Conn: NewConn(below, cfg)}
++	conn := tls.Client(above, &tls.Config{ServerName: "blocked.example.com", InsecureSkipVerify: true})
++	t.Cleanup(func() { _ = conn.Close() })
++	require.NoError(t, conn.SetDeadline(time.Now().Add(10*time.Second)))
++	return conn, above, below
++}
++
++// records splits a byte stream into TLS records.
++func records(t *testing.T, b []byte) [][]byte {
++	t.Helper()
++	var out [][]byte
++	for len(b) > 0 {
++		require.GreaterOrEqual(t, len(b), 5, "truncated record header")
++		n := int(binary.BigEndian.Uint16(b[3:]))
++		require.GreaterOrEqual(t, len(b), 5+n, "truncated record")
++		out = append(out, b[:5+n])
++		b = b[5+n:]
++	}
++	return out
++}
++
++func echoSHA256(t *testing.T, conn net.Conn, size int) {
++	t.Helper()
++	payload := make([]byte, size)
++	_, _ = rand.Read(payload)
++	go func() { _, _ = conn.Write(payload) }()
++	got := make([]byte, size)
++	_, err := io.ReadFull(conn, got)
++	require.NoError(t, err)
++	require.Equal(t, sha256.Sum256(payload), sha256.Sum256(got))
++}
++
++func TestFragmentParse(t *testing.T) {
++	c, err := Options{}.Parse()
++	require.NoError(t, err)
++	require.Nil(t, c, "empty block must mean off")
++
++	c = mustParse(t, Options{Packets: "tlshello", Length: "10-20", Delay: "0"})
++	require.True(t, c.tlsHello)
++	require.Equal(t, rng{10, 20}, c.length)
++	require.Equal(t, rng{0, 0}, c.delay)
++
++	c = mustParse(t, Options{Packets: "1-3", Length: "5", Delay: "2-4", MaxSplit: "8"})
++	require.False(t, c.tlsHello)
++	require.Equal(t, 1, c.packetsLo)
++	require.Equal(t, 3, c.packetsHi)
++	require.Equal(t, rng{5, 5}, c.length)
++	require.Equal(t, rng{2, 4}, c.delay)
++	require.Equal(t, rng{8, 8}, c.maxSplit)
++
++	c = mustParse(t, Options{Length: "20-10"}) // reversed, swapped like Xray
++	require.Equal(t, rng{10, 20}, c.length)
++
++	c = mustParse(t, Options{Delay: "5"}) // packets and length default to tlshello / 10-20
++	require.True(t, c.tlsHello)
++	require.Equal(t, rng{10, 20}, c.length)
++
++	for _, bad := range []Options{
++		{Packets: "0-1"},
++		{Packets: "abc"},
++		{Length: "0-5"},
++		{Delay: "0-9223372036854775807"},
++		{MaxSplit: "0-2147483648"},
++		{Delay: "-1"},
++		{MaxSplit: "x"},
++	} {
++		_, err := bad.Parse()
++		require.Error(t, err, "%+v", bad)
++	}
++	require.Nil(t, NewConn(nil, nil))
++}
++
++// tlshello, delay 0: one write, many TLS records of 10..20 bytes of payload;
++// the server still completes the handshake; application data is not touched.
++func TestFragmentTLSHelloMerged(t *testing.T) {
++	addr := startTLSEcho(t)
++	conn, above, below := handshake(t, addr, mustParse(t, Options{Packets: "tlshello", Length: "10-20", Delay: "0"}))
++	require.NoError(t, conn.Handshake())
++
++	original := above.all()[0]
++	wire := below.all()
++	require.Greater(t, len(original), 200)
++	require.Equal(t, byte(22), original[0])
++	require.Len(t, records(t, original), 1, "TLS wrote the ClientHello as one record")
++
++	hello := wire[0]
++	parts := records(t, hello)
++	require.Greater(t, len(parts), (len(original)-5)/20, "ClientHello must be cut into many records")
++	var joined []byte
++	for i, part := range parts {
++		require.Equal(t, original[:3], part[:3], "record %d keeps type and version", i)
++		l := len(part) - 5
++		if i < len(parts)-1 {
++			require.GreaterOrEqual(t, l, 10, "record %d", i)
++		}
++		require.LessOrEqual(t, l, 20, "record %d", i)
++		joined = append(joined, part[5:]...)
++	}
++	require.Equal(t, original[5:], joined, "payloads join back into the same ClientHello")
++	t.Logf("ClientHello %d bytes -> %d records, %d bytes on the wire in 1 write", len(original), len(parts), len(hello))
++
++	echoSHA256(t, conn, 256*1024)
++	aboveWrites, belowWrites := above.all(), below.all()
++	require.Equal(t, len(aboveWrites), len(belowWrites), "writes after the ClientHello pass one to one")
++	for i := 1; i < len(aboveWrites); i++ {
++		require.Equal(t, aboveWrites[i], belowWrites[i], "write %d is not changed", i)
++	}
++}
++
++// tlshello with a delay: every record is its own write (its own TCP segment).
++func TestFragmentTLSHelloDelayed(t *testing.T) {
++	addr := startTLSEcho(t)
++	conn, above, below := handshake(t, addr, mustParse(t, Options{Packets: "tlshello", Length: "40-60", Delay: "1"}))
++	start := time.Now()
++	require.NoError(t, conn.Handshake())
++	original := above.all()[0]
++	wire := below.all()
++	pieces := 0
++	var joined []byte
++	for len(joined) < len(original)-5 {
++		parts := records(t, wire[pieces])
++		require.Len(t, parts, 1, "one record per write")
++		require.LessOrEqual(t, len(parts[0])-5, 60)
++		joined = append(joined, parts[0][5:]...)
++		pieces++
++	}
++	require.Equal(t, original[5:], joined)
++	require.Greater(t, pieces, 3)
++	require.GreaterOrEqual(t, time.Since(start), time.Duration(pieces-1)*time.Millisecond, "pauses between records")
++	echoSHA256(t, conn, 64*1024)
++}
++
++// packets "1-1": the first write is cut into raw pieces, no new records.
++func TestFragmentTCPSegments(t *testing.T) {
++	addr := startTLSEcho(t)
++	conn, above, below := handshake(t, addr, mustParse(t, Options{Packets: "1-1", Length: "30-50", Delay: "1"}))
++	require.NoError(t, conn.Handshake())
++	original := above.all()[0]
++	wire := below.all()
++	var joined []byte
++	n := 0
++	for len(joined) < len(original) {
++		require.LessOrEqual(t, len(wire[n]), 50)
++		joined = append(joined, wire[n]...)
++		n++
++	}
++	require.Equal(t, original, joined, "same bytes, only cut")
++	require.Len(t, records(t, joined), 1, "record framing is not changed")
++	require.Greater(t, n, 3)
++	echoSHA256(t, conn, 64*1024)
++	require.Equal(t, len(above.all())-1, len(below.all())-n, "later writes pass one to one")
++}
++
++func TestFragmentOff(t *testing.T) {
++	addr := startTLSEcho(t)
++	conn, above, below := handshake(t, addr, nil)
++	require.NoError(t, conn.Handshake())
++	require.Equal(t, above.all()[0], below.all()[0], "ClientHello goes out in one piece")
++	echoSHA256(t, conn, 64*1024)
++	require.Equal(t, above.all(), below.all())
++}
++
++// A first write that is not a ClientHello is never changed in tlshello mode.
++func TestFragmentTLSHelloIgnoresOtherData(t *testing.T) {
++	cfg := mustParse(t, Options{Packets: "tlshello", Length: "1-2"})
++	for _, first := range [][]byte{
++		[]byte("GET / HTTP/1.1\r\n\r\n"),
++		{22, 3, 1, 0, 10, 2, 0, 0, 6, 0, 0, 0, 0, 0, 0}, // handshake, but ServerHello
++		{22, 3, 1, 0, 200, 1, 0, 0, 1},                  // truncated record
++		{0, 1, 2, 3, 4, 5, 6},
++	} {
++		client, server := net.Pipe()
++		below := &writeLog{Conn: client}
++		conn := NewConn(below, cfg)
++		go func() { _, _ = io.Copy(io.Discard, server) }()
++		_, err := conn.Write(first)
++		require.NoError(t, err)
++		_, err = conn.Write(bytes.Repeat([]byte{1}, 100))
++		require.NoError(t, err)
++		require.Equal(t, [][]byte{first, bytes.Repeat([]byte{1}, 100)}, below.all())
++		_ = client.Close()
++		_ = server.Close()
++	}
++}
++
++// The filter model: without fragmentation the middlebox resets the connection,
++// with the right mode the handshake and the echo pass through it.
++func TestFragmentFilterModel(t *testing.T) {
++	addr := startTLSEcho(t)
++	cases := []struct {
++		filter dpifilter.Mode
++		name   string
++		opts   *Options
++		pass   bool
++	}{
++		{dpifilter.Record, "off", nil, false},
++		{dpifilter.Record, "tlshello-merged", &Options{Packets: "tlshello", Length: "10-20", Delay: "0"}, true},
++		{dpifilter.Record, "tlshello-delayed", &Options{Packets: "tlshello", Length: "10-20", Delay: "1"}, true},
++		{dpifilter.Record, "tcp-segments", &Options{Packets: "1-1", Length: "10-20", Delay: "5"}, false},
++		{dpifilter.Segment, "off", nil, false},
++		{dpifilter.Segment, "tlshello-merged", &Options{Packets: "tlshello", Length: "10-20", Delay: "0"}, false},
++		{dpifilter.Segment, "tlshello-delayed", &Options{Packets: "tlshello", Length: "100-200", Delay: "5"}, true},
++		{dpifilter.Segment, "tcp-segments", &Options{Packets: "1-1", Length: "100-200", Delay: "5"}, true},
++	}
++	for _, tc := range cases {
++		t.Run(fmt.Sprintf("%s/%s", tc.filter, tc.name), func(t *testing.T) {
++			filter, err := dpifilter.Start(addr, tc.filter)
++			require.NoError(t, err)
++			t.Cleanup(func() { _ = filter.Close() })
++			var cfg *Config
++			if tc.opts != nil {
++				cfg = mustParse(t, *tc.opts)
++			}
++			conn, _, _ := handshake(t, filter.Addr(), cfg)
++			err = conn.Handshake()
++			if !tc.pass {
++				require.Error(t, err)
++				require.Equal(t, 1, filter.Blocked())
++				return
++			}
++			require.NoError(t, err)
++			require.Equal(t, 0, filter.Blocked())
++			echoSHA256(t, conn, 256*1024)
++		})
++	}
++}

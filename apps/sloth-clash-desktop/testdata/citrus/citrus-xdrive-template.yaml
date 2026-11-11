@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@22da58f1 docs/config.yaml lines 1077-1089 (the vless-xdrive proxy) and 1090, 1105-1119 (service template, commented out there)
+# Source: getmikan/Citrus@b0f91a16 docs/config.yaml lines 1077-1089 (the vless-xdrive proxy) and 1090, 1105-1119 (service template, commented out there)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - `service: template` with the commented-out template object uncommented; two dummy secrets for {secret0} / {secret1}

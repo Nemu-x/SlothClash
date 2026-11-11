@@ -3,7 +3,7 @@
   "upstream": "https://github.com/MetaCubeX/mihomo",
   "tag": "v1.19.34",
   "commit": "0455d0d28c4526937380505153e65a843d8612e8",
-  "citrusCompat": "v1.0.0-beta.2",
+  "citrusCompat": "v1.0.0-beta.3",
   "patches": [
     {
       "file": "0001-reality-configurable-client-version.patch",

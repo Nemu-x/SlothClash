@@ -144,7 +144,8 @@ internet past the downloads and no Docker. Which Citrus is pinned in `tests/citr
    a wrong config, `type: chain` across two Citrus inbounds (the entry hop's log must show the exit
    hop, not the echo), ShadowQUIC, and XDrive `local` / `template`, which the shipped core must refuse
    without writing to the storage. A case the Citrus version does not serve is skipped by name
-   (read from its source: `max-client-ver`, XHTTP/3 and XDrive are dev-only today).
+   (read from its source: `max-client-ver`, XHTTP/3 and XDrive were dev-only before v1.0.0-beta.3; since beta.3 both versions
+   serve every case).
 3. **UDP block** (`TestCitrusUDP`), on vless-reality-vision, vless-xhttp, hysteria2, tuic-v5,
    mieru-udp and anytls, one protocol at a time: echoes of 74, 1200 and 1400 bytes, 12 calls in a
    row (a fresh UDP ASSOCIATE each, closed after), 8 at once, 200 voice-sized packets 1 ms apart with
@@ -986,7 +987,7 @@ mihomo: none claimed. Delete when mihomo picks a default fingerprint for REALITY
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a
-  Citrus core writes its own: `clash.meta/v1.19.34 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. The
+  Citrus core writes its own: `clash.meta/v1.19.34 citrus/v1.0.0-beta.3 SlothClash/0.10.1`. The
   `clash.meta/` prefix and the core version stay first, so panels keep selecting the format and the
   core version as before; panels tell a Citrus client from a stock mihomo by `\bcitrus/(\S+)`. The
   citrus tag is the manifest's `citrusCompat`: the latest Citrus release whose client surface the
@@ -1048,9 +1049,12 @@ cd apps/sloth-clash-desktop
 SLOTH_MIHOMO_BIN=<patched core> go test -count=1 -run TestCitrusCompat -v .
 ```
 
-Without a core that carries the series the test skips. Outcomes at Citrus `22da58f1` (dev, the
-v1.0.0-beta.3 release candidate, 2026-11-11): 161 cases, 153 accept, 6 unsupported, 2 deferred (at
-`62d1f567`: 156, 149 / 6 / 1; at `ecaa9466`: 145, 140 / 4 / 1).
+Without a core that carries the series the test skips. Outcomes at Citrus `b0f91a16`
+(v1.0.0-beta.3, released 2026-11-11): 161 cases, 153 accept, 6 unsupported, 2 deferred, the same as
+at its release candidate `22da58f1` (the tag adds only the mihomo v1.19.34 dependency bumps,
+`metacubex/utls` v1.9.0-alpha.1 among them, Go toolchain pins, an age key fix and the changelog;
+none of it is in the examples) (at `62d1f567`: 156, 149 / 6 / 1; at `ecaa9466`:
+145, 140 / 4 / 1).
 
 New client surface between `62d1f567` and beta.3, case by case:
 

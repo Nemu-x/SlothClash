@@ -52,8 +52,9 @@ var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.2
 
 // browserVersions get firefox, safari and chrome155 rows (Auto and forced) next
 // to chrome: one per key-share generation plus every current release, because
-// core patch 0024 gives firefox and safari their own post-quantum hello and
-// 0029 adds the Chrome 155 hello.
+// the firefox (Firefox 148) and safari (Safari 26.3) parrots of metacubex/utls
+// v1.9.0-alpha.1 (mihomo v1.19.34) carry the hybrid share and 0029 adds the
+// Chrome 155 hello.
 var browserVersions = map[string]bool{"24.12.31": true, "26.4.13": true, "26.9.9": true, "26.9.30": true, "26.10.21": true, "26.10.29": true, "26.11.9": true}
 
 // officialXray are releases teddysun/xray has not published (yet): the lab
@@ -70,10 +71,16 @@ const officialXrayBase = "teddysun/xray:26.10.29"
 // by default (core patch 0029).
 const patchedClientVersion = "26.11.9"
 
-// hybridParrot reports whether the fingerprint's stock parrot (no 0024 hello)
-// carries the X25519MLKEM768 share: chrome (Chrome 133) and chrome155 do.
+// hybridParrot reports whether the fingerprint's hello carries the
+// X25519MLKEM768 share: chrome (Chrome 133), chrome155 (0029), and from
+// mihomo v1.19.34 (metacubex/utls v1.9.0-alpha.1) firefox (Firefox 148) and
+// safari (Safari 26.3) too.
 func hybridParrot(fingerprint string) bool {
-	return fingerprint == "chrome" || fingerprint == "chrome155"
+	switch fingerprint {
+	case "chrome", "chrome155", "firefox", "safari":
+		return true
+	}
+	return false
 }
 
 // defaultMinClientVer is the minClientVer an Xray server applies when its
@@ -145,12 +152,11 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 		}
 		switch {
 		case r.forced && policy == "off":
-			// reality-mlkem off keeps the stock parrots: of the lab's
-			// fingerprints only chrome's and chrome155's carry the forced
-			// hybrid share.
+			// reality-mlkem off keeps the stock behaviour: the forced share
+			// goes out from every parrot that has it.
 			return acceptsShare(r.srv.version, hybridParrot(r.fingerprint))
 		case r.forced || policy == "on":
-			return acceptsShare(r.srv.version, true) // firefox/safari use their own hybrid hello (0024)
+			return acceptsShare(r.srv.version, hybridParrot(r.fingerprint))
 		case policy == "off":
 			return acceptsShare(r.srv.version, false)
 		}
@@ -158,14 +164,15 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 	}
 }
 
-// expectStock models upstream mihomo: client version 1.8.2, hybrid share only
-// when forced and only from chrome, unknown top-level keys ignored. It does not
-// know chrome155, and REALITY needs a fingerprint it knows.
+// expectStock models stock mihomo: client version 1.8.2, hybrid share only
+// when forced and only from a parrot that has it (chrome, and from v1.19.34
+// firefox and safari), unknown top-level keys ignored. It does not know
+// chrome155, and REALITY needs a fingerprint it knows.
 func expectStock(r row) bool {
 	if r.fingerprint == "chrome155" || !versionGate(r, "1.8.2") {
 		return false
 	}
-	return acceptsShare(r.srv.version, r.forced && r.fingerprint == "chrome")
+	return acceptsShare(r.srv.version, r.forced && hybridParrot(r.fingerprint))
 }
 
 func TestRealityMatrix(t *testing.T) {
@@ -267,7 +274,7 @@ func TestRealityMatrix(t *testing.T) {
 			}
 			t.Logf("%s: %d/%d OK", sc.name, ok, len(rows))
 			if strings.HasPrefix(sc.name, "patched/") {
-				checkBrowserHellos(t, coreLog, sc.name, rows)
+				checkBrowserHellos(t, coreLog, sc.name)
 			}
 		})
 	}
@@ -490,12 +497,12 @@ func xrayImage(t *testing.T, version string) string {
 
 var officialImageMu sync.Mutex
 
-// checkBrowserHellos asserts what core patches 0002 and 0024 promise: a
-// firefox or safari proxy that needs the hybrid share sends its own current
-// hello (the core logs "using Firefox 148" / "using Safari 26.3") and never
-// borrows chrome's; with reality-mlkem off it keeps the stock parrot. Needs the
-// core at log-level debug.
-func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
+// checkBrowserHellos asserts what core patches 0002 and 0029 promise: the
+// chrome155 hello is built by 0029 and never falls back to Chrome 133, and the
+// browser parrots that carry the hybrid share (from mihomo v1.19.34 firefox and
+// safari too) are never reported as unable to offer it. Needs the core at
+// log-level debug.
+func checkBrowserHellos(t *testing.T, coreLog, scenario string) {
 	t.Helper()
 	b, err := os.ReadFile(coreLog)
 	if err != nil {
@@ -507,23 +514,9 @@ func checkBrowserHellos(t *testing.T, coreLog, scenario string, rows []row) {
 	if bad := grepLines(logText, "chrome155 fingerprint:"); bad != "" {
 		t.Errorf("%s: a chrome155 hello fell back:\n%s", scenario, bad)
 	}
-	for _, fp := range []struct{ client, hello string }{{"Firefox", "Firefox 148"}, {"Safari", "Safari 26.3"}} {
-		if bad := grepLines(logText, fp.client+" fingerprint has no X25519MLKEM768 share, using chrome"); bad != "" {
-			t.Errorf("%s: %s fell back to chrome:\n%s", scenario, fp.client, bad)
-		}
-		// Forced rows always take the hybrid path, unless the policy key or a
-		// stale verdict says otherwise; one forced row is enough to expect it.
-		forced := false
-		for _, r := range rows {
-			if scenario == "patched/off" {
-				break // stock parrots: no post-quantum browser hello expected
-			}
-			if r.forced && strings.EqualFold(r.fingerprint, fp.client) {
-				forced = true
-			}
-		}
-		if forced && !strings.Contains(logText, "using "+fp.hello) {
-			t.Errorf("%s: no forced %s handshake used %s", scenario, fp.client, fp.hello)
+	for _, client := range []string{"Firefox", "Safari", "Chrome"} {
+		if bad := grepLines(logText, "the "+client+" fingerprint cannot offer X25519MLKEM768"); bad != "" {
+			t.Errorf("%s: the %s parrot was sent without the hybrid share:\n%s", scenario, client, bad)
 		}
 	}
 }

@@ -6,7 +6,7 @@ MetaCubeX release tag plus a short series of patches kept in
 there must not be one: a patch that is no longer small enough to rebase in minutes is a sign to
 get it into mihomo or drop it.
 
-Settings → Info shows which core a build carries (`mihomo v1.19.33 + 23 SlothClash patches`)
+Settings → Info shows which core a build carries (`mihomo v1.19.34 + 29 SlothClash patches`)
 with links to the patches and to this page.
 
 ## Where the core comes from
@@ -54,7 +54,7 @@ The same as MetaCubeX release builds: `CGO_ENABLED=0`, `-tags with_gvisor`, `-tr
   itself needs Windows 10 / macOS 12 or later, so those builds buy nothing here.
 - **BuildTime:** the tag's commit time instead of the wall clock, so the build is reproducible.
 
-`constant.Version` stays the plain tag (`v1.19.33`). The core's `/version`, the User-Agent it
+`constant.Version` stays the plain tag (`v1.19.34`). The core's `/version`, the User-Agent it
 uses for providers and everything panels match on are identical to an unpatched core.
 
 ### Reproducing a release core
@@ -170,8 +170,8 @@ Citrus, change `citrus.json` (the sha256 is the asset's line in the release's `c
 mihomo sends the constant `1.8.2` as the client version in the REALITY session id. Xray servers
 configured with `minClientVer` compare it with their threshold and, when it is lower, silently
 hand the connection to the cover site: the client sees a timeout. The patch turns the constant
-into `tlsC.RealityClientVersion`, default `26.11.9` since 0029 (`26.10.29` from 0024, `26.9.9`
-before; the Xray release the core was validated against). Only `minClientVer` / `maxClientVer` depend on this value.
+into `tlsC.RealityClientVersion`, default `26.11.9` since 0029 (`26.9.9` before, `26.10.29`
+while the former 0024 was in the series; the Xray release the core was validated against). Only `minClientVer` / `maxClientVer` depend on this value.
 
 Xray 26.7.11 and 26.7.28 apply `minClientVer: 26.3.27` when the server config sets none
 (XTLS/Xray-core af7eb680; commented out again in 47cfe999, the 26.9.8 change that also requires
@@ -208,17 +208,21 @@ cannot flip a classic-only server to the hybrid share and kill it. The cost: a s
 site is unreachable closes the connection instead of relaying it, and Auto alone never learns its
 key share; 0030 lets such failures buy one attempt with the other share.
 
-Only the chrome specs in `metacubex/utls` 1.8.8 carry the hybrid share; firefox, safari, ios and
-edge cannot offer it. The fingerprint is the user's choice and is never swapped: when a hybrid
+Since mihomo v1.19.34 (`metacubex/utls` v1.9.0-alpha.1) the chrome (Chrome 133), firefox
+(Firefox 148) and safari (Safari 26.3) parrots carry the hybrid share; ios, edge and the randomized
+families cannot offer it. The fingerprint is the user's choice and is never swapped: when a hybrid
 handshake is wanted and the configured fingerprint cannot produce one, its classic hello goes out
 unchanged (logged once per fingerprint at debug level) and that handshake is not reported to the
-memo, since it says nothing about the server. 0024 gives firefox and safari their own current
-browser hello for that case. With `reality-mlkem: off` and the stock `support-x25519mlkem768` key
-the handshake is the stock one.
+memo, since it says nothing about the server. With `reality-mlkem: off` and the stock
+`support-x25519mlkem768` key the handshake is the stock one.
 
 Tests in the patch run real handshakes on loopback: servers that close, reset, stay silent past the
 deadline, answer with plain HTTP, or meet a cancelled request leave the memo untouched; a cover-site
-answer flips it; ios and edge keep their classic hello under a hybrid verdict and never report it.
+answer flips it; ios and edge keep their classic hello under a hybrid verdict and never report it;
+firefox and safari offer the share from their own parrots and strip it for a classic attempt, and
+chrome, firefox and safari hybrid hellos pass the XTLS/REALITY 26.9.8+ key-share gate with the
+X25519 key the server uses equal to the client's auth key (Firefox one key in both shares, Safari
+two).
 
 The core logs each verdict, which is the main diagnostic signal in the Logs screen:
 
@@ -335,34 +339,18 @@ Google Drive node through the real provider parser: both load, only the first fa
 
 Delete together with 0004, or when XDrive drops local and template storage.
 
-### 0024 REALITY: current Firefox and Safari hellos for the hybrid share
+### 0024 (removed with mihomo v1.19.34)
 
-Xray 26.9.8+ forwards a REALITY ClientHello without X25519MLKEM768 to the cover site, and in
-`metacubex/utls` 1.8.8 only chrome (Chrome 133) has that share: `firefox` is Firefox 120 and
-`safari` is Safari 16.0. 0002 keeps the configured fingerprint, so without this patch a proxy set
-to firefox or safari could only send its classic hello to such a server (swapping in chrome's hello
-would silently change the fingerprint, and Chrome 133-149 hellos are reported to be rate-limited on
-some networks). The patch carries `HelloFirefox_148` and `HelloSafari_26_3` from
-`metacubex/utls` branch `v1.9.0-mod-meta` (`a6a364a`), the parrots Xray 26.10.x itself sends as
-`firefox` / `safari`, as data in `component/tls/reality_pq_specs.go`, applied through
-`HelloCustom` + `ApplyPreset`; the library stays on the released 1.8.8. Firefox sends one X25519
-key in both the hybrid and the standalone share, so after `ApplyPreset` the standalone share is
-rewritten to the hybrid's key (1.8.8 would generate two). Safari keeps two keys, as in the spec.
-
-Only the handshakes that need the hybrid share use these hellos (forced, policy `on`, or Auto
-after the classic hello was relayed); the classic attempt is unchanged. With `reality-mlkem: off` a
-forced share keeps the stock parrot, as in stock mihomo. ios, edge and the randomized families have
-no post-quantum parrot and send their classic hello. The default client version moves
-from `26.9.9` to `26.10.29`, the Xray release the series was checked against (an explicit
-`reality-client-version` still wins).
-
-Tests in the patch: both hellos pass the XTLS/REALITY key-share gate (one hybrid share, X25519
-only after it) and the X25519 key the server will use is the client's auth key; Firefox reuses
-the key, Safari does not; specs are fresh per handshake; chrome / ios / edge / randomized get no
-spec. The REALITY lab checks firefox and safari, forced and Auto, against 24.12.31 to 26.10.29.
-
-mihomo: issue MetaCubeX/mihomo#3319 (closed: no unreleased utls). Delete when mihomo moves to a
-utls release whose `firefox` / `safari` parrots carry the hybrid share.
+0024 carried the Firefox 148 and Safari 26.3 hellos as data so that firefox and safari proxies could
+offer X25519MLKEM768 to Xray 26.9.8+ servers while `metacubex/utls` 1.8.8 had no such parrots.
+mihomo v1.19.34 moved to `metacubex/utls` v1.9.0-alpha.1, whose `HelloFirefox_Auto` and
+`HelloSafari_Auto` are those same parrots (same extensions, groups, key shares, signature schemes
+and cipher suites; Firefox reuses one X25519 key in both shares there too), so the patch was
+deleted as its own condition said. Behaviour difference for users: with `reality-mlkem: off` and a
+forced `support-x25519mlkem768`, firefox and safari now send the hybrid share, exactly as stock
+mihomo v1.19.34 does. Its tests moved to 0002 (`TestRealityFirefoxSafariParrotsOfferMLKEM`,
+`TestRealityHybridParrotsPassXrayGate`), and the REALITY lab models firefox and safari as hybrid
+parrots for both the patched and the stock core.
 
 ### 0026 Citrus: root CA policy (`tls.ca-roots`, `tls.ca-denylist`)
 
@@ -464,9 +452,10 @@ No upstream issue is claimed. Delete when mihomo defaults the key itself.
 ### 0029 TLS: Chrome 155 hello (`chrome155`)
 
 Xray-core 26.11.9 sends Chrome 155 as its default fingerprint, and Citrus v1.0.0-beta.3 makes its
-`chrome` Chrome 155 too (through its utls fork). `metacubex/utls` 1.8.8 stops at Chrome 133. The
-patch carries the profile as data in `component/tls/chrome155.go` and builds the hello through
-`HelloCustom` + `ApplyPreset`; the library stays on the released 1.8.8. The profile is
+`chrome` Chrome 155 too (through its utls fork). `metacubex/utls` v1.9.0-alpha.1 (pinned by mihomo
+v1.19.34) still stops at Chrome 133. The patch carries the profile as data in
+`component/tls/chrome155.go` and builds the hello through `HelloCustom` + `ApplyPreset`; the
+library stays the one mihomo pins. The profile is
 refraction-networking/utls `6ebdceb2` (`HelloChrome_155`, checked there against a capture of Chrome
 155.0.8059.40), the same one Citrus ships (getmikan/utls `a6dee38a`); the wiring follows
 [Rerowros/veles](https://github.com/Rerowros/veles) (`component/tls/chrome155.go`, GPL-3.0). Against
@@ -489,7 +478,7 @@ handles its own parrots (resumption skipped instead of the HelloCustom panic). R
 special case: the hello carries the hybrid share, and `reality-mlkem: off` or a classic Auto
 verdict removes it exactly as for chrome.
 
-The default REALITY client version moves from `26.10.29` to `26.11.9`, the Xray release the
+The default REALITY client version moves from `26.9.9` to `26.11.9`, the Xray release the
 series was checked against (an explicit `reality-client-version` still wins).
 
 Tests in the patch: twenty generated hellos per name match the capture
@@ -519,7 +508,7 @@ The idea is the silent probe of [Rerowros/veles](https://github.com/Rerowros/vel
 (`realityClassify`, GPL-3.0). Not taken from there: counting any failure after a ServerHello as a
 refusal (here only a certificate chain that is not the REALITY one counts, the signal measured for
 0002) and swapping in Chrome's hello for a fingerprint without the hybrid share (the fingerprint is
-the user's choice, see 0002 and 0024).
+the user's choice, see 0002).
 
 Tests in the patch: silent handshakes never move a pinned verdict; a probe after three, at most one
 per round, a silent or refused probe is stale and a successful one pins; an answer in between
@@ -531,7 +520,7 @@ mihomo: none claimed. Delete together with 0002.
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a
-  Citrus core writes its own: `clash.meta/v1.19.33 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. The
+  Citrus core writes its own: `clash.meta/v1.19.34 citrus/v1.0.0-beta.2 SlothClash/0.10.1`. The
   `clash.meta/` prefix and the core version stay first, so panels keep selecting the format and the
   core version as before; panels tell a Citrus client from a stock mihomo by `\bcitrus/(\S+)`. The
   citrus tag is the manifest's `citrusCompat`: the latest Citrus release whose client surface the

@@ -215,10 +215,10 @@ index aad35f7c..fed7aea4 100644
  	if pub, ok := certs[0].PublicKey.(ed25519.PublicKey); ok {
 diff --git a/component/tls/reality_mlkem_evidence_test.go b/component/tls/reality_mlkem_evidence_test.go
 new file mode 100644
-index 00000000..927c4ee5
+index 00000000..3b48bee9
 --- /dev/null
 +++ b/component/tls/reality_mlkem_evidence_test.go
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,347 @@
 +package tls
 +
 +import (
@@ -483,6 +483,88 @@ index 00000000..927c4ee5
 +		{"off, forced, chrome", RealityMLKEMOff, true, utls.HelloChrome_Auto, true},
 +		{"off, chrome", RealityMLKEMOff, false, utls.HelloChrome_Auto, false},
 +	})
++}
++
++// From mihomo v1.19.34 (metacubex/utls v1.9.0-alpha.1) the stock firefox
++// (Firefox 148) and safari (Safari 26.3) parrots carry the hybrid share
++// themselves, so they reach a server that needs it without any swap, and a
++// classic attempt still strips it.
++func TestRealityFirefoxSafariParrotsOfferMLKEM(t *testing.T) {
++	runRealityFingerprintCases(t, []realityFingerprintCase{
++		{"auto learned hybrid, firefox", RealityMLKEMAuto, false, utls.HelloFirefox_Auto, true},
++		{"auto learned hybrid, safari", RealityMLKEMAuto, false, utls.HelloSafari_Auto, true},
++		{"on, firefox", RealityMLKEMOn, false, utls.HelloFirefox_Auto, true},
++		{"off, forced, safari", RealityMLKEMOff, true, utls.HelloSafari_Auto, true},
++		{"off, firefox", RealityMLKEMOff, false, utls.HelloFirefox_Auto, false},
++		{"off, safari", RealityMLKEMOff, false, utls.HelloSafari_Auto, false},
++	})
++}
++
++// xrayAcceptsKeyShares mirrors the key-share gate of XTLS/REALITY 8cdf7bf
++// (Xray 26.9.8+): exactly one X25519MLKEM768 share, an optional X25519 share
++// only after it, and the X25519 key the server will use for the auth key.
++func xrayAcceptsKeyShares(shares []utls.KeyShare) (x25519 []byte, ok bool) {
++	var peerPub, peerPub2 []byte
++	for _, ks := range shares {
++		if ks.Group == utls.X25519MLKEM768 && len(ks.Data) == 1184+32 {
++			if peerPub2 != nil {
++				return nil, false
++			}
++			peerPub2 = ks.Data[1184:]
++			continue
++		}
++		if ks.Group == utls.X25519 && len(ks.Data) == 32 {
++			if peerPub != nil {
++				return nil, false
++			}
++			peerPub = ks.Data
++			break
++		}
++	}
++	if peerPub2 == nil {
++		return nil, false
++	}
++	if peerPub == nil {
++		peerPub = peerPub2
++	}
++	return peerPub, true
++}
++
++// The hybrid hellos must pass the Xray 26.9.8+ gate, and the X25519 key the
++// server derives the REALITY auth key from must be the one GetRealityConn
++// uses (State13 Ecdhe, else the hybrid's X25519 half). Firefox sends one
++// X25519 key in both shares, Safari two.
++func TestRealityHybridParrotsPassXrayGate(t *testing.T) {
++	for _, tc := range []struct {
++		fp     UClientHelloID
++		shared bool
++	}{{utls.HelloChrome_Auto, false}, {utls.HelloFirefox_Auto, true}, {utls.HelloSafari_Auto, false}} {
++		c1, c2 := net.Pipe()
++		uConn := utls.UClient(c1, &utls.Config{ServerName: "www.example.com", InsecureSkipVerify: true}, tc.fp)
++		if err := uConn.BuildHandshakeState(); err != nil {
++			t.Fatalf("%s: %v", tc.fp.Client, err)
++		}
++		c1.Close()
++		c2.Close()
++		keys := uConn.HandshakeState.State13.KeyShareKeys
++		if !realityHasMLKEMShare(uConn) {
++			t.Fatalf("%s: no X25519MLKEM768 share", tc.fp.Client)
++		}
++		x25519, ok := xrayAcceptsKeyShares(uConn.HandshakeState.Hello.KeyShares)
++		if !ok {
++			t.Fatalf("%s: hello would be forwarded to the cover site by Xray 26.9.8+", tc.fp.Client)
++		}
++		auth := keys.Ecdhe
++		if auth == nil {
++			auth = keys.MlkemEcdhe
++		}
++		if string(x25519) != string(auth.PublicKey().Bytes()) {
++			t.Fatalf("%s: server-side X25519 share does not match the client's auth key", tc.fp.Client)
++		}
++		if shared := keys.Ecdhe == keys.MlkemEcdhe; shared != tc.shared {
++			t.Fatalf("%s: one X25519 key in both shares = %v, want %v", tc.fp.Client, shared, tc.shared)
++		}
++	}
 +}
 diff --git a/component/tls/reality_mlkem_memo_test.go b/component/tls/reality_mlkem_memo_test.go
 new file mode 100644

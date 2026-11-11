@@ -1,5 +1,5 @@
 diff --git a/component/tls/reality.go b/component/tls/reality.go
-index 6217b20f..040e2a36 100644
+index 6ccc5c11..3b67a02a 100644
 --- a/component/tls/reality.go
 +++ b/component/tls/reality.go
 @@ -85,6 +85,9 @@ type realityMemoEntry struct {
@@ -118,10 +118,10 @@ index 6217b20f..040e2a36 100644
 +			realityReportSilent(memoKey, useMLKEM, conn.RemoteAddr())
 +		}
 +	}
- 	var pqHello *realityPQHello // set once the fingerprint is swapped for its post-quantum hello
  	for retry := 0; ; retry++ {
  		verifier := &realityVerifier{
-@@ -301,6 +351,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 			serverName:    serverName,
+@@ -286,6 +336,8 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
  			// the network's doing and leave the memo alone.
  			if verifier.answered && !verifier.verified {
  				report(false)
@@ -131,7 +131,7 @@ index 6217b20f..040e2a36 100644
  			return nil, err
  		}
 diff --git a/component/tls/reality_mlkem_evidence_test.go b/component/tls/reality_mlkem_evidence_test.go
-index 927c4ee5..532f12e6 100644
+index 3b48bee9..3ebecce1 100644
 --- a/component/tls/reality_mlkem_evidence_test.go
 +++ b/component/tls/reality_mlkem_evidence_test.go
 @@ -178,7 +178,8 @@ func TestRealityMLKEMMemoIgnoresNetworkFailures(t *testing.T) {

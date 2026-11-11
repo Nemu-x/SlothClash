@@ -1,0 +1,966 @@
+SlothClash core patch 0040: listener close data races.
+
+The accept and read loops of 20 inbound listeners (socks tcp/udp, http, mixed,
+redir, tproxy tcp/udp, tunnel tcp/udp, shadowsocks tcp/udp, sing_shadowsocks,
+sing_vmess, sing_vless, trojan, snell, anytls, sudoku, tuic, shadowquic) read a
+plain `closed bool` after Accept/ReadFrom fails, while Close writes it from
+another goroutine. `go test -race` reports it whenever a listener is closed
+twice (the chain-group tests of patch 0006 do that). The flag becomes an
+atomic.Bool; nothing else changes. Listeners that only write the flag
+(sing_hysteria2, hysteria2_realm, sing_tun, trusttunnel) are left alone.
+
+Own code (SlothClash), GPL-3.0 like mihomo. Test:
+listener/close_race_test.go (fails under -race without the change).
+
+diff --git a/listener/anytls/server.go b/listener/anytls/server.go
+index c5c6060..1999f60 100644
+--- a/listener/anytls/server.go
++++ b/listener/anytls/server.go
+@@ -30,7 +30,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed    bool
++	closed    atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config    LC.AnyTLSServer
+ 	listeners []net.Listener
+ 	tlsConfig *tls.Config
+@@ -167,7 +167,7 @@ func New(config LC.AnyTLSServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -181,7 +181,7 @@ func New(config LC.AnyTLSServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/close_race_test.go b/listener/close_race_test.go
+new file mode 100644
+index 0000000..df6fb4b
+--- /dev/null
++++ b/listener/close_race_test.go
+@@ -0,0 +1,129 @@
++package listener_test
++
++import (
++	"net"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/common/utils"
++	"github.com/metacubex/mihomo/component/ca"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/listener/inbound"
++
++	"github.com/stretchr/testify/require"
++)
++
++// closeRaceTunnel drops whatever reaches it: the test only opens and closes
++// listeners.
++type closeRaceTunnel struct{}
++
++func (closeRaceTunnel) HandleTCPConn(conn net.Conn, _ *C.Metadata) { _ = conn.Close() }
++func (closeRaceTunnel) HandleUDPPacket(C.UDPPacket, *C.Metadata)   {}
++func (closeRaceTunnel) NatTable() C.NatTable                       { return nil }
++
++// SlothClash core patch 0040.
++// TestInboundCloseRace closes every inbound whose accept or read loop checks a
++// closed flag twice, with a pause between the calls. After the first Close the
++// loops wake up with an error and read the flag; the second Close writes it
++// again. time.Sleep orders nothing for the race detector, so with a plain bool
++// field `go test -race` reports the write in Close against the read in the
++// loop. The flag is an atomic.Bool, so the test passes under -race; without
++// -race it still checks that a second Close neither panics nor hangs.
++func TestInboundCloseRace(t *testing.T) {
++	userUUID := utils.NewUUIDV4().String()
++	tlsCertificate, tlsPrivateKey, _, err := ca.NewRandomTLSKeyPair(ca.KeyPairTypeP256)
++	require.NoError(t, err)
++	base := func(name string) inbound.BaseOption {
++		return inbound.BaseOption{NameStr: name, Listen: "127.0.0.1", Port: "0"}
++	}
++	tests := []struct {
++		name string
++		new  func(name string) (C.InboundListener, error)
++		// listening may need privileges the test has no right to ask for
++		// (tproxy: IP_TRANSPARENT needs CAP_NET_ADMIN on Linux, other
++		// systems have no tproxy); such a case is skipped, not failed
++		mayNotListen bool
++	}{
++		{name: "socks", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewSocks(&inbound.SocksOption{BaseOption: base(n), UDP: true})
++		}},
++		{name: "http", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewHTTP(&inbound.HTTPOption{BaseOption: base(n)})
++		}},
++		{name: "mixed", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewMixed(&inbound.MixedOption{BaseOption: base(n), UDP: true})
++		}},
++		{name: "shadowsocks", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewShadowSocks(&inbound.ShadowSocksOption{BaseOption: base(n),
++				Cipher: "aes-128-gcm", Password: userUUID, UDP: true})
++		}},
++		{name: "shadowsocks-stream", new: func(n string) (C.InboundListener, error) {
++			// a stream cipher is served by listener/shadowsocks, not sing
++			return inbound.NewShadowSocks(&inbound.ShadowSocksOption{BaseOption: base(n),
++				Cipher: "aes-128-ctr", Password: userUUID, UDP: true})
++		}},
++		{name: "vmess", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewVmess(&inbound.VmessOption{BaseOption: base(n),
++				Users: []inbound.VmessUser{{UUID: userUUID}}})
++		}},
++		{name: "vless", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewVless(&inbound.VlessOption{BaseOption: base(n),
++				Users: []inbound.VlessUser{{UUID: userUUID}}, AllowInsecure: true})
++		}},
++		{name: "trojan", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewTrojan(&inbound.TrojanOption{BaseOption: base(n),
++				Users:       []inbound.TrojanUser{{Password: userUUID}},
++				Certificate: tlsCertificate, PrivateKey: tlsPrivateKey})
++		}},
++		{name: "snell", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewSnell(&inbound.SnellOption{BaseOption: base(n), Psk: userUUID})
++		}},
++		{name: "anytls", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewAnyTLS(&inbound.AnyTLSOption{BaseOption: base(n),
++				Users:       map[string]string{"test": userUUID},
++				Certificate: tlsCertificate, PrivateKey: tlsPrivateKey})
++		}},
++		{name: "sudoku", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewSudoku(&inbound.SudokuOption{BaseOption: base(n), Key: "test_key"})
++		}},
++		{name: "tuic", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewTuic(&inbound.TuicOption{BaseOption: base(n),
++				Users:       map[string]string{userUUID: userUUID},
++				Certificate: tlsCertificate, PrivateKey: tlsPrivateKey})
++		}},
++		{name: "shadowquic", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewShadowQuic(&inbound.ShadowQuicOption{BaseOption: base(n),
++				ALPN:        []string{"h3"},
++				Users:       []inbound.ShadowQuicUser{{Username: "u", Password: userUUID}},
++				JLSUpstream: inbound.ShadowQuicJLSUpstream{Addr: "127.0.0.1:1"}})
++		}},
++		{name: "tunnel", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewTunnel(&inbound.TunnelOption{BaseOption: base(n),
++				Network: []string{"tcp", "udp"}, Target: "127.0.0.1:1"})
++		}},
++		{name: "redir", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewRedir(&inbound.RedirOption{BaseOption: base(n)})
++		}},
++		{name: "tproxy", new: func(n string) (C.InboundListener, error) {
++			return inbound.NewTProxy(&inbound.TProxyOption{BaseOption: base(n), UDP: true})
++		}, mayNotListen: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			in, err := tt.new(tt.name + "_close_race")
++			require.NoError(t, err)
++
++			if err := in.Listen(closeRaceTunnel{}); err != nil {
++				if tt.mayNotListen {
++					t.Skipf("cannot listen here: %v", err)
++				}
++				require.NoError(t, err)
++			}
++
++			_ = in.Close()
++			// let the loops see the closed socket and read the flag
++			time.Sleep(100 * time.Millisecond)
++			_ = in.Close()
++		})
++	}
++}
+diff --git a/listener/http/server.go b/listener/http/server.go
+index 5a7a469..ad0b33a 100644
+--- a/listener/http/server.go
++++ b/listener/http/server.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/component/ca"
+@@ -20,7 +21,7 @@ import (
+ type Listener struct {
+ 	listener net.Listener
+ 	addr     string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -35,7 +36,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -128,7 +129,7 @@ func NewWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.Tunn
+ 		for {
+ 			conn, err := hl.listener.Accept()
+ 			if err != nil {
+-				if hl.closed {
++				if hl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/mixed/mixed.go b/listener/mixed/mixed.go
+index 18a260e..6e465b9 100644
+--- a/listener/mixed/mixed.go
++++ b/listener/mixed/mixed.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -26,7 +27,7 @@ import (
+ type Listener struct {
+ 	listener net.Listener
+ 	addr     string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -41,7 +42,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -123,7 +124,7 @@ func NewWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.Tunn
+ 		for {
+ 			c, err := ml.listener.Accept()
+ 			if err != nil {
+-				if ml.closed {
++				if ml.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/redir/tcp.go b/listener/redir/tcp.go
+index 4736318..a05fb03 100644
+--- a/listener/redir/tcp.go
++++ b/listener/redir/tcp.go
+@@ -2,6 +2,7 @@ package redir
+ 
+ import (
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/component/keepalive"
+@@ -11,7 +12,7 @@ import (
+ type Listener struct {
+ 	listener net.Listener
+ 	addr     string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -26,7 +27,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -52,7 +53,7 @@ func New(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*Listener
+ 		for {
+ 			c, err := l.Accept()
+ 			if err != nil {
+-				if rl.closed {
++				if rl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/shadowquic/server.go b/listener/shadowquic/server.go
+index 36b84f5..3ef87dd 100644
+--- a/listener/shadowquic/server.go
++++ b/listener/shadowquic/server.go
+@@ -6,6 +6,7 @@ import (
+ 	"net"
+ 	"net/netip"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -29,7 +30,7 @@ import (
+ const ServerMaxIncomingStreams = (1 << 32) - 1
+ 
+ type Listener struct {
+-	closed       bool
++	closed       atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config       LC.ShadowQuicServer
+ 	udpListeners []net.PacketConn
+ 	servers      []*shadowquic.Server
+@@ -187,7 +188,7 @@ func New(config LC.ShadowQuicServer, lc C.InboundListenConfig, tunnel C.Tunnel,
+ 
+ 		go func() {
+ 			err := server.Serve()
+-			if err != nil && !sl.closed {
++			if err != nil && !sl.closed.Load() {
+ 				log.Warnln("ShadowQuic server closed: %s", err)
+ 			}
+ 		}()
+@@ -210,7 +211,7 @@ func defaultJLSServerName(upstreamAddr string) string {
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, server := range l.servers {
+ 		if err := server.Close(); err != nil {
+diff --git a/listener/shadowsocks/tcp.go b/listener/shadowsocks/tcp.go
+index cf902c1..d7c73cb 100644
+--- a/listener/shadowsocks/tcp.go
++++ b/listener/shadowsocks/tcp.go
+@@ -5,6 +5,7 @@ import (
+ 	"fmt"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -20,7 +21,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed       bool
++	closed       atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config       LC.ShadowsocksServer
+ 	listeners    []net.Listener
+ 	udpListeners []*UDPListener
+@@ -126,7 +127,7 @@ func New(config LC.ShadowsocksServer, lc C.InboundListenConfig, tunnel C.Tunnel,
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -140,7 +141,7 @@ func New(config LC.ShadowsocksServer, lc C.InboundListenConfig, tunnel C.Tunnel,
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/shadowsocks/udp.go b/listener/shadowsocks/udp.go
+index 387cec8..5c30c4b 100644
+--- a/listener/shadowsocks/udp.go
++++ b/listener/shadowsocks/udp.go
+@@ -3,6 +3,7 @@ package shadowsocks
+ import (
+ 	"context"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -15,7 +16,7 @@ import (
+ 
+ type UDPListener struct {
+ 	packetConn net.PacketConn
+-	closed     bool
++	closed     atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ func NewUDP(addr string, lc C.InboundListenConfig, pickCipher core.Cipher, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPListener, error) {
+@@ -28,7 +29,7 @@ func NewUDP(addr string, lc C.InboundListenConfig, pickCipher core.Cipher, tunne
+ 		log.Warnln("Failed to Reuse UDP Address: %s", err)
+ 	}
+ 
+-	sl := &UDPListener{l, false}
++	sl := &UDPListener{l, atomic.Bool{}}
+ 	conn := pickCipher.PacketConn(N.NewEnhancePacketConn(l))
+ 	go func() {
+ 		for {
+@@ -37,7 +38,7 @@ func NewUDP(addr string, lc C.InboundListenConfig, pickCipher core.Cipher, tunne
+ 				if put != nil {
+ 					put()
+ 				}
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+@@ -50,7 +51,7 @@ func NewUDP(addr string, lc C.InboundListenConfig, pickCipher core.Cipher, tunne
+ }
+ 
+ func (l *UDPListener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.packetConn.Close()
+ }
+ 
+diff --git a/listener/sing_shadowsocks/server.go b/listener/sing_shadowsocks/server.go
+index d9aeee1..812e0ff 100644
+--- a/listener/sing_shadowsocks/server.go
++++ b/listener/sing_shadowsocks/server.go
+@@ -7,6 +7,7 @@ import (
+ 	"net"
+ 	"os"
+ 	"strings"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/common/sockopt"
+@@ -34,7 +35,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed       bool
++	closed       atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config       LC.ShadowsocksServer
+ 	listeners    []net.Listener
+ 	udpListeners []net.PacketConn
+@@ -196,7 +197,7 @@ func New(config LC.ShadowsocksServer, lc C.InboundListenConfig, tunnel C.Tunnel,
+ 					}
+ 					if err != nil {
+ 						buff.Release()
+-						if sl.closed {
++						if sl.closed.Load() {
+ 							break
+ 						}
+ 						continue
+@@ -229,7 +230,7 @@ func New(config LC.ShadowsocksServer, lc C.InboundListenConfig, tunnel C.Tunnel,
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -286,7 +287,7 @@ func newMultiService(config LC.ShadowsocksServer, udpTimeout int64, handler shad
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/sing_vless/server.go b/listener/sing_vless/server.go
+index f9d6a0b..2e7a4a7 100644
+--- a/listener/sing_vless/server.go
++++ b/listener/sing_vless/server.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -31,7 +32,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed     bool
++	closed     atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config     LC.VlessServer
+ 	listeners  []net.Listener
+ 	service    *Service[string]
+@@ -285,7 +286,7 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -300,7 +301,7 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/sing_vmess/server.go b/listener/sing_vmess/server.go
+index 156432b..10b86fc 100644
+--- a/listener/sing_vmess/server.go
++++ b/listener/sing_vmess/server.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -34,7 +35,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed    bool
++	closed    atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config    LC.VmessServer
+ 	listeners []net.Listener
+ 	service   *vmess.Service[string]
+@@ -90,7 +91,7 @@ func New(config LC.VmessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ 		return nil, err
+ 	}
+ 
+-	sl = &Listener{false, config, nil, service}
++	sl = &Listener{atomic.Bool{}, config, nil, service}
+ 
+ 	httpServer := http.Server{
+ 		IdleTimeout: 30 * time.Second,
+@@ -290,7 +291,7 @@ func New(config LC.VmessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -305,7 +306,7 @@ func New(config LC.VmessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/snell/server.go b/listener/snell/server.go
+index 0c68e14..a61c867 100644
+--- a/listener/snell/server.go
++++ b/listener/snell/server.go
+@@ -11,6 +11,7 @@ import (
+ 	"net/netip"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -28,7 +29,7 @@ import (
+ const maxPacketLength = 0x3fff
+ 
+ type Listener struct {
+-	closed    bool
++	closed    atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config    LC.SnellServer
+ 	listeners []net.Listener
+ 	v6Mode    snell.V6Mode // only used for version 6
+@@ -128,7 +129,7 @@ func New(config LC.SnellServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ 			for {
+ 				conn, err := ln.Accept()
+ 				if err != nil {
+-					if l.closed {
++					if l.closed.Load() {
+ 						return
+ 					}
+ 					continue
+@@ -141,7 +142,7 @@ func New(config LC.SnellServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, ln := range l.listeners {
+ 		if err := ln.Close(); err != nil {
+diff --git a/listener/socks/tcp.go b/listener/socks/tcp.go
+index 9323919..41bbb6a 100644
+--- a/listener/socks/tcp.go
++++ b/listener/socks/tcp.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"io"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -25,7 +26,7 @@ import (
+ type Listener struct {
+ 	listener net.Listener
+ 	addr     string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -40,7 +41,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -126,7 +127,7 @@ func NewWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.Tunn
+ 		for {
+ 			c, err := l.Accept()
+ 			if err != nil {
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/socks/udp.go b/listener/socks/udp.go
+index 1963163..2acbf8b 100644
+--- a/listener/socks/udp.go
++++ b/listener/socks/udp.go
+@@ -3,6 +3,7 @@ package socks
+ import (
+ 	"context"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	N "github.com/metacubex/mihomo/common/net"
+@@ -16,7 +17,7 @@ import (
+ type UDPListener struct {
+ 	packetConn net.PacketConn
+ 	addr       string
+-	closed     bool
++	closed     atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -31,7 +32,7 @@ func (l *UDPListener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *UDPListener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.packetConn.Close()
+ }
+ 
+@@ -67,7 +68,7 @@ func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.T
+ 				if put != nil {
+ 					put()
+ 				}
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/sudoku/server.go b/listener/sudoku/server.go
+index 0e9371a..68ae359 100644
+--- a/listener/sudoku/server.go
++++ b/listener/sudoku/server.go
+@@ -7,6 +7,7 @@ import (
+ 	"io"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -25,7 +26,7 @@ import (
+ type Listener struct {
+ 	listener  net.Listener
+ 	addr      string
+-	closed    bool
++	closed    atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	protoConf sudoku.ProtocolConfig
+ 	tunnelSrv *sudoku.HTTPMaskTunnelServer
+ 	fallback  string
+@@ -47,7 +48,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	if l.listener != nil {
+ 		return l.listener.Close()
+ 	}
+@@ -313,7 +314,7 @@ func New(config LC.SudokuServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ 		for {
+ 			c, err := l.Accept()
+ 			if err != nil {
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/tproxy/tproxy.go b/listener/tproxy/tproxy.go
+index 25c8adf..d37616d 100644
+--- a/listener/tproxy/tproxy.go
++++ b/listener/tproxy/tproxy.go
+@@ -3,6 +3,7 @@ package tproxy
+ import (
+ 	"context"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/component/keepalive"
+@@ -14,7 +15,7 @@ import (
+ type Listener struct {
+ 	listener net.Listener
+ 	addr     string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -29,7 +30,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -77,7 +78,7 @@ func New(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*Listener
+ 		for {
+ 			c, err := l.Accept()
+ 			if err != nil {
+-				if rl.closed {
++				if rl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/tproxy/udp.go b/listener/tproxy/udp.go
+index fbc98f6..ab18e37 100644
+--- a/listener/tproxy/udp.go
++++ b/listener/tproxy/udp.go
+@@ -3,6 +3,7 @@ package tproxy
+ import (
+ 	"net"
+ 	"net/netip"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/common/pool"
+@@ -15,7 +16,7 @@ import (
+ type UDPListener struct {
+ 	packetConn net.PacketConn
+ 	addr       string
+-	closed     bool
++	closed     atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -30,7 +31,7 @@ func (l *UDPListener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *UDPListener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.packetConn.Close()
+ }
+ 
+@@ -70,7 +71,7 @@ func NewUDP(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPLi
+ 			n, oobn, _, lAddr, err := c.ReadMsgUDPAddrPort(buf, oob)
+ 			if err != nil {
+ 				pool.Put(buf)
+-				if rl.closed {
++				if rl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/trojan/server.go b/listener/trojan/server.go
+index ff2fbd7..3a9a0bc 100644
+--- a/listener/trojan/server.go
++++ b/listener/trojan/server.go
+@@ -6,6 +6,7 @@ import (
+ 	"io"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -33,7 +34,7 @@ import (
+ )
+ 
+ type Listener struct {
+-	closed     bool
++	closed     atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config     LC.TrojanServer
+ 	listeners  []net.Listener
+ 	keys       map[[trojan.KeyLength]byte]string
+@@ -76,7 +77,7 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ 			return nil, err
+ 		}
+ 	}
+-	sl = &Listener{false, config, nil, keys, pickCipher, h}
++	sl = &Listener{atomic.Bool{}, config, nil, keys, pickCipher, h}
+ 
+ 	httpServer := http.Server{
+ 		IdleTimeout: 30 * time.Second,
+@@ -225,7 +226,7 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ 			for {
+ 				c, err := l.Accept()
+ 				if err != nil {
+-					if sl.closed {
++					if sl.closed.Load() {
+ 						break
+ 					}
+ 					continue
+@@ -240,7 +241,7 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.listeners {
+ 		err := lis.Close()
+diff --git a/listener/tuic/server.go b/listener/tuic/server.go
+index eb9469a..ad6447d 100644
+--- a/listener/tuic/server.go
++++ b/listener/tuic/server.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"net"
+ 	"strings"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+@@ -27,7 +28,7 @@ import (
+ const ServerMaxIncomingStreams = (1 << 32) - 1
+ 
+ type Listener struct {
+-	closed       bool
++	closed       atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ 	config       LC.TuicServer
+ 	udpListeners []net.PacketConn
+ 	servers      []*tuic.Server
+@@ -173,7 +174,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
+ 		option.Users = users
+ 	}
+ 
+-	sl := &Listener{false, config, nil, nil}
++	sl := &Listener{atomic.Bool{}, config, nil, nil}
+ 
+ 	for _, addr := range strings.Split(config.Listen, ",") {
+ 		addr := addr
+@@ -200,7 +201,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
+ 		go func() {
+ 			err := server.Serve()
+ 			if err != nil {
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					return
+ 				}
+ 			}
+@@ -211,7 +212,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
+ }
+ 
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	var retErr error
+ 	for _, lis := range l.servers {
+ 		err := lis.Close()
+diff --git a/listener/tunnel/tcp.go b/listener/tunnel/tcp.go
+index 1f1c65b..9f9b18e 100644
+--- a/listener/tunnel/tcp.go
++++ b/listener/tunnel/tcp.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	C "github.com/metacubex/mihomo/constant"
+@@ -15,7 +16,7 @@ type Listener struct {
+ 	addr     string
+ 	target   socks5.Addr
+ 	proxy    string
+-	closed   bool
++	closed   atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -30,7 +31,7 @@ func (l *Listener) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *Listener) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.listener.Close()
+ }
+ 
+@@ -64,7 +65,7 @@ func New(addr, target, proxy string, lc C.InboundListenConfig, tunnel C.Tunnel,
+ 		for {
+ 			c, err := l.Accept()
+ 			if err != nil {
+-				if rl.closed {
++				if rl.closed.Load() {
+ 					break
+ 				}
+ 				continue
+diff --git a/listener/tunnel/udp.go b/listener/tunnel/udp.go
+index 1f14a1e..b6b1321 100644
+--- a/listener/tunnel/udp.go
++++ b/listener/tunnel/udp.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"net"
++	"sync/atomic"
+ 
+ 	"github.com/metacubex/mihomo/adapter/inbound"
+ 	"github.com/metacubex/mihomo/common/pool"
+@@ -16,7 +17,7 @@ type PacketConn struct {
+ 	addr   string
+ 	target socks5.Addr
+ 	proxy  string
+-	closed bool
++	closed atomic.Bool // SlothClash core patch 0040: the accept loop reads it while Close sets it
+ }
+ 
+ // RawAddress implements C.Listener
+@@ -31,7 +32,7 @@ func (l *PacketConn) Address() string {
+ 
+ // Close implements C.Listener
+ func (l *PacketConn) Close() error {
+-	l.closed = true
++	l.closed.Store(true)
+ 	return l.conn.Close()
+ }
+ 
+@@ -63,7 +64,7 @@ func NewUDP(addr, target, proxy string, lc C.InboundListenConfig, tunnel C.Tunne
+ 			n, remoteAddr, err := l.ReadFrom(buf)
+ 			if err != nil {
+ 				pool.Put(buf)
+-				if sl.closed {
++				if sl.closed.Load() {
+ 					break
+ 				}
+ 				continue

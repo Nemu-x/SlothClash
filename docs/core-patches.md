@@ -72,7 +72,8 @@ run, and the binary embedded in the app.
 - One concern per patch, numbered, with a comment in the code explaining why it exists.
 - Behaviour that users may need to change is read from the config, not baked in (see 0003).
 - Logic ships with a Go test inside the patch; the core build vets and tests every package the
-  series touches, on every PR that touches the core and on every release.
+  series touches, on every PR that touches the core and on every release, once plainly and once
+  under the race detector on Linux (`--test-only --race`, see 0040).
 - Record the related mihomo issue or PR below, and the condition under which the patch goes away.
 - Never edit a patch without updating its hash in the manifest; the build refuses the mismatch.
 
@@ -665,6 +666,43 @@ a config with `external-ui: .`, `./` or the home directory loads with the UI off
 `ui` + `zashboard` is kept.
 
 mihomo: none claimed. Delete when mihomo refuses such a directory itself.
+
+### 0040 Listeners: closed flag without a data race
+
+The accept and read loops of 20 inbound listeners in mihomo (socks TCP/UDP, http, mixed, redir,
+tproxy TCP/UDP, tunnel TCP/UDP, shadowsocks TCP/UDP, sing_shadowsocks, sing_vmess, sing_vless,
+trojan, snell, anytls, sudoku, tuic, shadowquic) check a plain `closed bool` after `Accept` or
+`ReadFrom` fails, to tell a closed listener from a transient error, while `Close` sets it from
+another goroutine. That is a data race. After a single `Close` the race detector does not see it
+(closing the socket happens to order the two accesses), but a second `Close` writes the flag again
+with nothing ordering it against the loop's read. The chain-group tests of 0006 close their
+listeners twice (once in the test, once in cleanup), so `go test -race ./config` failed on vanilla
+v1.19.34 with races in `listener/socks` and `listener/sing_shadowsocks`. The patch makes the flag
+an `atomic.Bool` (`Store` in `Close`, `Load` in the loops); nothing else changes. Listeners that
+only ever write the flag (sing_hysteria2, hysteria2_realm, sing_tun, trusttunnel) are left alone.
+
+User impact: none observed. A racing `bool` read on amd64/arm64 gives a stale value at worst, and
+the loop sees the error again on the next turn; the fix is about correctness under the Go memory
+model and a clean `-race` run.
+
+Own code (SlothClash). Test: `listener/close_race_test.go` opens each of the 16 inbound types above
+(socks, http and mixed with UDP, shadowsocks with an AEAD and a stream cipher, which take the sing
+and the embedded server; tproxy is skipped where it cannot listen: without CAP_NET_ADMIN on Linux,
+and on other systems), closes it, waits 100 ms for the loops to read the flag and closes it again.
+Without the fix `go test -race` reports 20 races there (every changed file; the shadowquic one only
+when `Serve` returns an error, so not on every run); with it, none. Without `-race` it checks that a
+second `Close` neither panics nor hangs.
+
+**Race job.** `node scripts/core-build.mjs --test-only --race` runs the tests of every patched
+package under the race detector (cgo on, no vet), and the `patches (race)` job of
+`core-build.yml` runs it on ubuntu. With this patch every patched package passes: 4 runs in a
+golang:1.26 container capped at 4 CPUs, warm build cache, took 83–97 s for the tests (median
+84 s), no race and no failure; the CI job, clone and cold race build included, took 3 min 21 s on
+its first run. Packages the series does not touch are not run: `listener/inbound` (mihomo's own
+inbound tests) still reports races in `transport/vless/vision` and `transport/anytls/session`,
+which are out of scope here.
+
+mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrClosed`) for this.
 
 ### What else Rerowros/veles changes
 

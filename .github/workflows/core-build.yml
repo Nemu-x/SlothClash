@@ -58,6 +58,27 @@ jobs:
       - name: Apply the series and test it
         run: node scripts/core-build.mjs --test-only
 
+  # The same tests under the race detector (Linux only: it needs cgo, which the
+  # runner's gcc provides). Every patched package passes -race today, so a new
+  # data race in a patch, or one a patch's test exposes, fails here.
+  patches-race:
+    name: patches (race)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Core Go version
+        id: go
+        run: echo "version=$(awk '$1 == "golang" { print $2 }' core/mihomo/.tool-versions)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+
+      - name: Apply the series and test it with -race
+        run: node scripts/core-build.mjs --test-only --race
+
   build:
     name: build (${{ matrix.target }})
     runs-on: ubuntu-24.04

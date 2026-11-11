@@ -7,6 +7,7 @@
  * usage: node scripts/core-build.mjs <out-dir> [goos-goarch ...]   (default: every manifest target)
  *        node scripts/core-build.mjs --test-only                   (apply the series, vet + test, no binaries)
  * flags: --skip-tests   skip go vet + the patched packages' tests
+ *        --race         with --test-only: run those tests under the race detector (needs cgo)
  * env:   MIHOMO_UPSTREAM  clone source override (e.g. a local mirror); the commit check still applies
  *
  * Output: one raw binary per target, SHA256SUMS, BUILDINFO.txt. Fails — naming
@@ -255,12 +256,13 @@ function buildTimeOf(unixSeconds) {
 /**
  * Clone the pinned tag, check its commit, apply the series, optionally vet +
  * test, then build `targets` into `outDir`. With no outDir only the checks and
- * tests run.
+ * tests run; `race` runs those tests under the race detector instead (no vet).
  */
 export function buildCore({
   outDir = '',
   targets = [],
   skipTests = false,
+  race = false,
   log = console.log,
 } = {}) {
   const m = readManifest()
@@ -335,7 +337,16 @@ export function buildCore({
     const goVer = goVersion()
     log(`==> ${goVer}`)
 
-    if (!skipTests) {
+    if (race) {
+      // The race detector needs cgo (a C compiler) on Linux; the plain
+      // --test-only run already vets, so this is the tests only.
+      const pkgs = patchedGoPackages(patches)
+      log(`==> go test -race of the patched packages: ${pkgs.join(' ')}`)
+      run('go', ['test', '-race', '-count=1', ...pkgs], {
+        cwd: src,
+        env: { ...env, CGO_ENABLED: '1' },
+      })
+    } else if (!skipTests) {
       const pkgs = patchedGoPackages(patches)
       log(`==> go vet + tests of the patched packages: ${pkgs.join(' ')}`)
       run('go', ['vet', ...pkgs], { cwd: src, env })
@@ -456,11 +467,16 @@ if (process.argv[1] && path.resolve(process.argv[1]) === SELF) {
   const args = process.argv.slice(2)
   const testOnly = args.includes('--test-only')
   const skipTests = args.includes('--skip-tests')
+  const race = args.includes('--race')
   const positional = args.filter((a) => !a.startsWith('--'))
   try {
     if (testOnly) {
-      buildCore({})
+      buildCore({ race })
     } else {
+      if (race) {
+        console.error('--race goes with --test-only')
+        process.exit(2)
+      }
       if (positional.length === 0) {
         console.error(
           'usage: node scripts/core-build.mjs <out-dir> [goos-goarch ...] | --test-only',

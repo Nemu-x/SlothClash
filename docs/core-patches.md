@@ -101,7 +101,7 @@ previous tag until the patch is redone.
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
 26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, 26.11.9, each plain, with
 `minClientVer: 25.1.1` and with `maxClientVer: 2.0.0`) and
-probes every combination of key share, fingerprint (chrome, plus firefox, safari and chrome155 on
+probes every combination of key share, fingerprint (chrome, plus firefox, safari, chrome155 and Xray's hellofirefox_148 and hellosafari_26_3 on
 one server per generation and every current release), policy and client version through the core
 under test. Images are `teddysun/xray`; a release not published there yet (26.11.9 today) is built
 from the official `Xray-linux-64.zip`, pinned by its SHA-256 in the test. The expected result of each cell comes from a model of the server generations, so a
@@ -257,12 +257,17 @@ the running core's config.
 [Citrus](https://github.com/getmikan/Citrus) is a mihomo fork some panels build configs for. These
 twelve patches make the client side of its config surface work on this core without a fork: they are
 the series [ClashFest](https://github.com/Nemu-x/ClashFest) ships as its 0003-0014, applied in the same
-order after our 0003 (so ClashFest's number is ours minus one). Ten files are byte-identical to
+order after our 0003 (so ClashFest's number is ours minus one). Nine files are byte-identical to
 ClashFest's, and their code comments keep ClashFest's numbering; syncing a later fix is a copy. The
-three that differ:
+four that differ:
 
 - **0005** drops ClashFest's own `ParseRealityClientVersion` and uses the one from our 0003, which
   also takes a leading `v` (both reject anything that is not `x.y.z` with parts 0..255).
+- **0008** keeps the stock fingerprint names case-sensitive, as in stock mihomo (ClashFest lowercases
+  every name). The Xray table is ClashFest's: since mihomo v1.19.34 (metacubex/utls v1.9.0-alpha.1)
+  both map `hellofirefox_148` and `hellosafari_26_3` to the real Firefox 148 and Safari 26.3
+  parrots instead of Firefox 120 and Safari 16.0. Our test also checks that both carry the
+  X25519MLKEM768 share.
 - **0007** adds `github.com/metacubex/mldsa v0.1.1` to mihomo's own `go.mod` / `go.sum`: the core is
   built from mihomo's module here, while ClashFest pins the dependency in its outer module.
 - **0004** carries later Citrus `dev` fixes of the XDrive client (its header lists them):
@@ -284,7 +289,7 @@ three that differ:
 | 0005 REALITY per-proxy client version | `reality-opts.client-version` overrides the global one from 0001/0003 | |
 | 0006 chain groups | `type: chain`: hops in `proxies`, each dialed through the one before (`dialer-proxy` wiring at load), health check names the first broken hop | `chain` |
 | 0007 REALITY mldsa65-verify | `reality-opts.mldsa65-verify` (Xray `mldsa65Verify`, share link `pqv`); without the patch the key is ignored and the client only believes it pins the server | `mldsa65` |
-| 0008 Xray fingerprint names | `client-fingerprint: hellochrome_131`, `randomizednoalpn`, ... map to the nearest utls parrot instead of falling back to Go's own hello. Only these Xray names are case-insensitive; stock names match exactly, as in stock mihomo (`Chrome` stays an unknown name) | |
+| 0008 Xray fingerprint names | `client-fingerprint: hellochrome_131`, `randomizednoalpn`, ... map to the nearest utls parrot instead of falling back to Go's own hello (`hellofirefox_148` and `hellosafari_26_3` to the real Firefox 148 and Safari 26.3). Only these Xray names are case-insensitive; stock names match exactly, as in stock mihomo (`Chrome` stays an unknown name) | |
 | 0009 pin and name lists | `fingerprint` and `name-cert-verify` take comma-separated lists | `pin-list` |
 | 0010 ECH Xray forms | `ech-opts.config` takes the `ECH CONFIGS` PEM; `ech-opts.query-server` | `ech-xray` |
 | 0011 OpenVPN server identity | `verify-x509-name` / `-type`, `verify-server-name`, `tls-version-min` are enforced (vanilla ignores them: any certificate of the CA is trusted); a proxy without them is noted at debug level | |

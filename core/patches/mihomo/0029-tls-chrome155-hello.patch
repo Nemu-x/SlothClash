@@ -809,18 +809,18 @@ index 948bee1d..222ab3bb 100644
  	"safari16":   utls.HelloSafari_16_0,
  
 diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
-index 91782d3e..f5bba1ea 100644
+index e6657c2c..4bdcc000 100644
 --- a/component/tls/utls_xray_names.go
 +++ b/component/tls/utls_xray_names.go
-@@ -21,6 +21,7 @@ var xrayFingerprints = map[string]UClientHelloID{
+@@ -22,6 +22,7 @@ var xrayFingerprints = map[string]UClientHelloID{
  	"hellochrome_120":                  utls.HelloChrome_120,
  	"hellochrome_131":                  utls.HelloChrome_131,
  	"hellochrome_133":                  utls.HelloChrome_133,
 +	"hellochrome_155":                  HelloChrome155, // SlothClash 0029
  	"helloios_13":                      utls.HelloIOS_13,
  	"helloios_14":                      utls.HelloIOS_14,
- 	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 does not work with utls
-@@ -38,7 +39,7 @@ var xrayFingerprints = map[string]UClientHelloID{
+ 	"helloedge_106":                    utls.HelloEdge_Auto, // HelloEdge_106 does not work with utls
+@@ -39,7 +40,7 @@ var xrayFingerprints = map[string]UClientHelloID{
  	"hellofirefox_99":                  utls.HelloFirefox_99,
  	"hellofirefox_102":                 utls.HelloFirefox_102,
  	"hellofirefox_105":                 utls.HelloFirefox_105,
@@ -830,7 +830,7 @@ index 91782d3e..f5bba1ea 100644
  	"hellochrome_62":                   utls.HelloChrome_62,
  	"hellochrome_70":                   utls.HelloChrome_70,
 diff --git a/component/tls/utls_xray_names_test.go b/component/tls/utls_xray_names_test.go
-index 5ce834ee..5e5c96fb 100644
+index b4ef73b8..331fae7c 100644
 --- a/component/tls/utls_xray_names_test.go
 +++ b/component/tls/utls_xray_names_test.go
 @@ -26,7 +26,7 @@ func TestXrayFingerprintNames(t *testing.T) {

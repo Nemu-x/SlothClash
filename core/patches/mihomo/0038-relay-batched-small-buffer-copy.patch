@@ -1,0 +1,1325 @@
+Relay: small read buffer while idle, batched writes while busy, lazy BufferedConn reader
+
+N.Relay copies with sing's bufio.Copy. For a source that is neither a socket
+nor a read waiter (TLS, REALITY and other TLS-based outbounds: the download
+side of a proxied connection) that copy takes a 32 KiB pool buffer before
+every read, so an idle connection holds one for as long as it stays open, and
+during a transfer every decrypted TLS record goes to the inbound socket with a
+write(2) of its own. Every inbound connection is also wrapped in a
+BufferedConn whose 4 KiB bufio.Reader was made at once and kept for the whole
+relay once the connection had been peeked.
+
+- copyConn (relay_copy.go) is bufio.Copy with another fallback for such
+  sources: it reads into a 2 KiB buffer while the connection looks idle and
+  into full pool buffers while data keeps coming (a read that fills the small
+  buffer switches up, two short reads in a row switch back). Cached data,
+  Vision's replaceable reader/writer, splice and read waiters (sockets,
+  Shadowsocks) keep bufio.Copy's code paths.
+- While a transfer runs on full buffers and the destination unwraps to a
+  socket, a reader goroutine reads up to 8 buffers ahead and the copy writes
+  everything read meanwhile with one writev(2) (relay_batch.go). It never waits
+  for data: when the burst ends the source goes back to the copy loop, so an
+  idle connection has no extra goroutine and holds no extra buffer.
+- BufferedConn makes its reader on first use, reads without one go straight
+  to the conn, and ReaderReplaceable drops a drained reader when the relay
+  unwraps the conn.
+
+Ported from getmikan/Citrus (GPL-3.0, author Nemu-x) common/net/relay_copy.go,
+relay_batch.go and bufconn.go, commits 6c1d881e, d23b8008, 415e7791 (small
+buffer), 316b3af7 (batching), 8c11680f and b00599ab (lazy reader), in the form
+Rerowros/veles (GPL-3.0, commit f3d6ddaf, its P12) carries them. Not taken:
+the parts that need Citrus' TLS fork (waiting on a TLS conn without a buffer)
+or its AnyTLS queue, the 64 KiB socket reads and the scheduler yields of the
+copy loops. Tests from Citrus (bufconn_test.go, relay_copy_test.go,
+relay_batch_test.go), cut to what is ported.
+
+diff --git a/common/net/bufconn.go b/common/net/bufconn.go
+index b7e98e04..4af2468d 100644
+--- a/common/net/bufconn.go
++++ b/common/net/bufconn.go
+@@ -9,6 +9,13 @@ import (
+ 
+ var _ ExtendedConn = (*BufferedConn)(nil)
+ 
++// BufferedConn is a connection with a bufio.Reader in front of its reads.
++//
++// The reader (and its 4 KiB buffer) is made on the first call that needs it:
++// the core wraps every inbound connection in a BufferedConn, and most of them
++// are only ever relayed with ReadBuffer/ReadCached, which work without one.
++//
++// Ported from getmikan/Citrus common/net/bufconn.go (GPL-3.0).
+ type BufferedConn struct {
+ 	r *bufio.Reader
+ 	ExtendedConn
+@@ -19,7 +26,15 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
+ 	if bc, ok := c.(*BufferedConn); ok {
+ 		return bc
+ 	}
+-	return &BufferedConn{bufio.NewReader(c), NewExtendedConn(c), false}
++	return &BufferedConn{nil, NewExtendedConn(c), false}
++}
++
++// reader returns the bufio.Reader, made on first use.
++func (c *BufferedConn) reader() *bufio.Reader {
++	if c.r == nil {
++		c.r = bufio.NewReader(c.ExtendedConn)
++	}
++	return c.r
+ }
+ 
+ func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
+@@ -34,7 +49,7 @@ func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
+ 
+ // Reader returns the internal bufio.Reader.
+ func (c *BufferedConn) Reader() *bufio.Reader {
+-	return c.r
++	return c.reader()
+ }
+ 
+ func (c *BufferedConn) ResetPeeked() {
+@@ -48,26 +63,33 @@ func (c *BufferedConn) Peeked() bool {
+ // Peek returns the next n bytes without advancing the reader.
+ func (c *BufferedConn) Peek(n int) ([]byte, error) {
+ 	c.peeked = true
+-	return c.r.Peek(n)
++	return c.reader().Peek(n)
+ }
+ 
+ func (c *BufferedConn) Discard(n int) (discarded int, err error) {
+-	return c.r.Discard(n)
++	return c.reader().Discard(n)
+ }
+ 
+ func (c *BufferedConn) Read(p []byte) (int, error) {
++	if c.r == nil {
++		// nothing is buffered without a reader: no need to make one
++		return c.ExtendedConn.Read(p)
++	}
+ 	return c.r.Read(p)
+ }
+ 
+ func (c *BufferedConn) ReadByte() (byte, error) {
+-	return c.r.ReadByte()
++	return c.reader().ReadByte()
+ }
+ 
+ func (c *BufferedConn) UnreadByte() error {
+-	return c.r.UnreadByte()
++	return c.reader().UnreadByte()
+ }
+ 
+ func (c *BufferedConn) Buffered() int {
++	if c.r == nil {
++		return 0
++	}
+ 	return c.r.Buffered()
+ }
+ 
+@@ -94,10 +116,16 @@ func (c *BufferedConn) Upstream() any {
+ 	return c.ExtendedConn
+ }
+ 
++// ReaderReplaceable lets the copy read the upstream conn directly once the
++// reader is drained, and drops the reader then. The copy asks this before it
++// looks for cached data (ReadCached), so without the drop a conn that was
++// peeked (sniffing, an outbound with a lazy handshake) kept its 4 KiB reader
++// for as long as it was relayed.
+ func (c *BufferedConn) ReaderReplaceable() bool {
+ 	if c.r != nil && c.r.Buffered() > 0 {
+ 		return false
+ 	}
++	c.r = nil
+ 	return true
+ }
+ 
+diff --git a/common/net/bufconn_test.go b/common/net/bufconn_test.go
+new file mode 100644
+index 00000000..b8404fa2
+--- /dev/null
++++ b/common/net/bufconn_test.go
+@@ -0,0 +1,100 @@
++package net
++
++import (
++	"io"
++	stdnet "net"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// TestBufferedConnLazyBuffer: no read buffer until a peek, and reads without
++// one go straight to the conn.
++func TestBufferedConnLazyBuffer(t *testing.T) {
++	left, right := stdnet.Pipe()
++	defer left.Close()
++	defer right.Close()
++	conn := NewBufferedConn(left)
++	assert.Nil(t, conn.r)
++	assert.Equal(t, 0, conn.Buffered())
++
++	go right.Write([]byte("hello"))
++	p := make([]byte, 5)
++	_, err := io.ReadFull(conn, p)
++	require.NoError(t, err)
++	assert.Equal(t, "hello", string(p))
++	assert.Nil(t, conn.r, "a plain read allocates no buffer")
++
++	go right.Write([]byte("world"))
++	b, err := conn.Peek(5)
++	require.NoError(t, err)
++	assert.Equal(t, "world", string(b))
++	assert.NotNil(t, conn.r)
++	assert.True(t, conn.Peeked())
++}
++
++// TestBufferedConnDropsDrainedBuffer: the relay unwraps the conn once the
++// buffer is drained (ReaderReplaceable), and the buffer goes with it; peeked
++// data is never lost.
++func TestBufferedConnDropsDrainedBuffer(t *testing.T) {
++	left, right := stdnet.Pipe()
++	defer left.Close()
++	defer right.Close()
++	conn := NewBufferedConn(left)
++
++	go right.Write([]byte("abc"))
++	_, err := conn.Peek(3)
++	require.NoError(t, err)
++	assert.False(t, conn.ReaderReplaceable(), "buffered data must be read first")
++	assert.NotNil(t, conn.r)
++
++	p := make([]byte, 3)
++	_, err = io.ReadFull(conn, p)
++	require.NoError(t, err)
++	assert.Equal(t, "abc", string(p))
++	assert.True(t, conn.ReaderReplaceable())
++	assert.Nil(t, conn.r, "a drained buffer is dropped once the conn is unwrapped")
++
++	// still usable: reads go to the conn, a peek takes a new buffer
++	go right.Write([]byte("de"))
++	b, err := conn.Peek(2)
++	require.NoError(t, err)
++	assert.Equal(t, "de", string(b))
++	_, err = io.ReadFull(conn, p[:2])
++	require.NoError(t, err)
++	assert.Equal(t, "de", string(p[:2]))
++}
++
++// TestRelayDropsBufferedConnBuffer: a relayed BufferedConn that was peeked
++// lets go of its buffer while the relay waits on it.
++func TestRelayDropsBufferedConnBuffer(t *testing.T) {
++	client, server := stdnet.Pipe()
++	remote, remotePeer := stdnet.Pipe()
++	defer client.Close()
++	defer remotePeer.Close()
++	conn := NewBufferedConn(server)
++
++	go client.Write([]byte("first"))
++	_, err := conn.Peek(1)
++	require.NoError(t, err)
++
++	done := make(chan struct{})
++	go func() {
++		Relay(conn, remote)
++		close(done)
++	}()
++	p := make([]byte, 5)
++	_, err = io.ReadFull(remotePeer, p)
++	require.NoError(t, err)
++	assert.Equal(t, "first", string(p))
++
++	go client.Write([]byte("again"))
++	_, err = io.ReadFull(remotePeer, p)
++	require.NoError(t, err)
++	assert.Equal(t, "again", string(p))
++
++	client.Close()
++	<-done
++	assert.Nil(t, conn.r)
++}
+diff --git a/common/net/bufconn_unsafe.go b/common/net/bufconn_unsafe.go
+index e9f14fff..5d9564a5 100644
+--- a/common/net/bufconn_unsafe.go
++++ b/common/net/bufconn_unsafe.go
+@@ -28,7 +28,7 @@ func newReadBuffer(size int) []byte {
+ // Grow increases the read buffer to at least size while preserving buffered data.
+ // The capacity grows geometrically to avoid repeated allocations for small increments.
+ func (c *BufferedConn) Grow(size int) {
+-	b := (*bufioReader)(unsafe.Pointer(c.r))
++	b := (*bufioReader)(unsafe.Pointer(c.reader()))
+ 	if size <= len(b.buf) {
+ 		return
+ 	}
+@@ -41,7 +41,7 @@ func (c *BufferedConn) Grow(size int) {
+ }
+ 
+ func (c *BufferedConn) AppendData(buf []byte) (ok bool) {
+-	b := (*bufioReader)(unsafe.Pointer(c.r))
++	b := (*bufioReader)(unsafe.Pointer(c.reader()))
+ 	needed := b.w - b.r + len(buf)
+ 	if needed > len(b.buf) {
+ 		c.Grow(needed)
+@@ -67,7 +67,7 @@ func (c *BufferedConn) PrependData(buf []byte) {
+ 		return
+ 	}
+ 
+-	b := (*bufioReader)(unsafe.Pointer(c.r))
++	b := (*bufioReader)(unsafe.Pointer(c.reader()))
+ 	if len(buf) <= b.r {
+ 		// Reuse the consumed space before the unread data without moving it.
+ 		b.r -= len(buf)
+diff --git a/common/net/relay_batch.go b/common/net/relay_batch.go
+new file mode 100644
+index 00000000..a0990770
+--- /dev/null
++++ b/common/net/relay_batch.go
+@@ -0,0 +1,187 @@
++package net
++
++import (
++	"errors"
++	"io"
++	"net"
++	"syscall"
++
++	"github.com/metacubex/sing/common"
++	"github.com/metacubex/sing/common/buf"
++	"github.com/metacubex/sing/common/bufio"
++	"github.com/metacubex/sing/common/network"
++)
++
++// The batched copy is ported from getmikan/Citrus common/net/relay_batch.go
++// (GPL-3.0). A reader goroutine keeps decrypting/reading the source while the
++// writer sends everything already read in one writev(2) call; the reader never
++// waits for data and hands the source back to the copy loop when a burst ends.
++
++// readAheadBuffers is how many buffers the reader of a batched copy may hold
++// ahead of the writer. Together with the write batch (readAheadBuffers+1) it
++// bounds the extra pool buffers per direction while a transfer runs; an idle
++// connection holds none.
++const readAheadBuffers = 8
++
++// errHandBack ends a read-ahead: the reader saw the burst end and leaves the
++// source to the copy loop again.
++var errHandBack = errors.New("read-ahead handed back")
++
++// batchWriter returns a vectorised writer for destination when the batched
++// copy can be used: destination unwraps to a socket (writev), the read side is
++// not a socket (it goes through copyAdaptive, a decrypting or decoding
++// connection), and buffers may be held ahead.
++func batchWriter(destination io.Writer) network.VectorisedWriter {
++	if common.LowMemory {
++		return nil
++	}
++	switch upstream := network.UnwrapWriter(destination).(type) {
++	case *net.TCPConn:
++		return &tcpVectorisedWriter{upstream}
++	case syscall.Conn:
++		if writer, ok := bufio.CreateVectorisedWriter(upstream); ok {
++			return writer
++		}
++	}
++	return nil
++}
++
++// tcpVectorisedWriter is bufio.NetVectorisedWriterWrapper: one writev(2) for
++// all buffers through the runtime's poller.
++type tcpVectorisedWriter struct{ conn *net.TCPConn }
++
++func (w *tcpVectorisedWriter) WriteVectorised(buffers []*buf.Buffer) error {
++	defer buf.ReleaseMulti(buffers)
++	data := net.Buffers(buf.ToSliceMulti(buffers))
++	_, err := data.WriteTo(w.conn)
++	return err
++}
++
++// readAhead is the reader half of a batched copy (copyBatched).
++type readAhead struct {
++	ch   chan *buf.Buffer // read buffers, in order; closed when the reader exits
++	stop chan struct{}    // closed by the writer when it gives up
++	err  error            // why the reader exited; read after ch is closed
++}
++
++// run reads source into ch until a read fails, the writer stops, or a burst
++// ends (errHandBack, sizing back on the small buffer).
++func (r *readAhead) run(source network.ExtendedReader, options network.ReadWaitOptions, sizing *readSizing, small int) {
++	defer func() {
++		select {
++		case <-r.stop:
++			r.drain()
++		default:
++		}
++		close(r.ch)
++	}()
++	for {
++		buffer := sizing.newBuffer(options, small)
++		err := source.ReadBuffer(buffer)
++		if err != nil {
++			buffer.Release()
++			r.err = err
++			return
++		}
++		options.PostReturn(buffer)
++		dataLen := buffer.Len()
++		sizing.update(dataLen, small)
++		select {
++		case <-r.stop: // checked first: both cases below may be ready
++			buffer.Release()
++			return
++		default:
++		}
++		select {
++		case r.ch <- buffer:
++		case <-r.stop:
++			buffer.Release()
++			return
++		}
++		if !sizing.full {
++			r.err = errHandBack
++			return
++		}
++	}
++}
++
++// drain releases the buffers left in ch after the writer stopped. Both halves
++// call it: the writer when it stops, the reader when it exits after that, so
++// what the reader sent in between is released too.
++func (r *readAhead) drain() {
++	for {
++		select {
++		case buffer, ok := <-r.ch:
++			if !ok {
++				return
++			}
++			buffer.Release()
++		default:
++			return
++		}
++	}
++}
++
++// copyBatched is the copyAdaptive loop for a transfer in progress: a reader
++// goroutine keeps reading (decrypting) the source while the copy writes, and
++// every write takes all the buffers read meanwhile in one writev(2).
++//
++// handedBack reports that the source is the caller's again (no error); any
++// other return ends the copy. After a write error the reader is still blocked
++// on the source until the relay closes it; it then releases its buffers.
++func copyBatched(destination network.ExtendedWriter, writer network.VectorisedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing, small int) (n int64, handedBack bool, err error) {
++	r := &readAhead{
++		ch:   make(chan *buf.Buffer, readAheadBuffers),
++		stop: make(chan struct{}),
++	}
++	readerSizing := *sizing
++	go r.run(source, options, &readerSizing, small)
++	batch := make([]*buf.Buffer, 0, readAheadBuffers+1)
++	for {
++		buffer, ok := <-r.ch
++		if !ok {
++			// The reader exited (closing ch publishes r.err and its sizing).
++			*sizing = readerSizing
++			if r.err == errHandBack {
++				return n, true, nil
++			}
++			err = r.err
++			if errors.Is(err, io.EOF) {
++				err = nil
++			}
++			return
++		}
++		batch = append(batch[:0], buffer)
++	gather:
++		for len(batch) < cap(batch) {
++			select {
++			case buffer, ok = <-r.ch:
++				if !ok {
++					break gather // written below, then the closed ch ends the loop
++				}
++				batch = append(batch, buffer)
++			default:
++				break gather
++			}
++		}
++		dataLen := buf.LenMulti(batch)
++		if len(batch) == 1 {
++			err = destination.WriteBuffer(batch[0])
++			if err != nil {
++				batch[0].Leak()
++			}
++		} else {
++			err = writer.WriteVectorised(batch) // releases the buffers
++		}
++		for i := range batch {
++			batch[i] = nil
++		}
++		if err != nil {
++			close(r.stop)
++			r.drain()
++			return
++		}
++		n += int64(dataLen)
++		countAll(readCounters, writeCounters, dataLen)
++	}
++}
+diff --git a/common/net/relay_batch_test.go b/common/net/relay_batch_test.go
+new file mode 100644
+index 00000000..38515164
+--- /dev/null
++++ b/common/net/relay_batch_test.go
+@@ -0,0 +1,256 @@
++package net
++
++import (
++	"bytes"
++	"errors"
++	"io"
++	mrand "math/rand"
++	"net"
++	"runtime"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/metacubex/sing/common/buf"
++	"github.com/metacubex/sing/common/bufio"
++	"github.com/metacubex/sing/common/network"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// tcpPair returns the two ends of a loopback TCP connection.
++func tcpPair(t *testing.T) (*net.TCPConn, *net.TCPConn) {
++	t.Helper()
++	l, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer l.Close()
++	accepted := make(chan net.Conn, 1)
++	go func() {
++		c, _ := l.Accept()
++		accepted <- c
++	}()
++	a, err := net.Dial("tcp", l.Addr().String())
++	require.NoError(t, err)
++	b := <-accepted
++	require.NotNil(t, b)
++	t.Cleanup(func() {
++		_ = a.Close()
++		_ = b.Close()
++	})
++	return a.(*net.TCPConn), b.(*net.TCPConn)
++}
++
++// readAllAsync reads c until EOF.
++func readAllAsync(c net.Conn) <-chan []byte {
++	ch := make(chan []byte, 1)
++	go func() {
++		got, _ := io.ReadAll(c)
++		ch <- got
++	}()
++	return ch
++}
++
++// TestCopyConnBatchedLargeTransfer copies a non-socket source to a socket,
++// which goes through the batched copy, with reads of every size.
++func TestCopyConnBatchedLargeTransfer(t *testing.T) {
++	for _, max := range []int{700, 2048, 16 << 10, 64 << 10} {
++		data := randomBytes(t, 8<<20+123)
++		src := &chunkReader{data: data, max: max, rng: mrand.New(mrand.NewSource(int64(max)))}
++		dst, peer := tcpPair(t)
++		got := readAllAsync(peer)
++		n, err := copyConn(dst, src)
++		require.NoError(t, err)
++		require.NoError(t, dst.CloseWrite())
++		assert.Equal(t, int64(len(data)), n, "chunks up to %d", max)
++		assert.True(t, bytes.Equal(data, <-got), "chunks up to %d: data differs", max)
++	}
++}
++
++// TestCopyConnBatchedBufferSizes checks that the batched copy keeps the
++// buffer choice of the copy loop, and hands the source back to it when a
++// burst ends.
++func TestCopyConnBatchedBufferSizes(t *testing.T) {
++	reads := []int{100}
++	for left := 100 << 10; left > 0; left -= 16 << 10 {
++		reads = append(reads, minInt(16<<10, left))
++	}
++	reads = append(reads, 300, 1000, 200, 5000, 100, 100, 50)
++	total := 0
++	for _, r := range reads {
++		total += r
++	}
++	src := &scriptReader{reads: append([]int(nil), reads...)}
++	dst, peer := tcpPair(t)
++	got := readAllAsync(peer)
++	n, err := copyConn(dst, src)
++	require.NoError(t, err)
++	require.NoError(t, dst.CloseWrite())
++	assert.Equal(t, int64(total), n)
++	assert.Len(t, <-got, total)
++
++	small, full := smallReadSize, buf.BufferSize
++	want := []int{
++		small,                        // 100 B
++		small,                        // the first 2 KiB of the burst: batched from here
++		full,                         // the rest of that record
++		full, full, full, full, full, // the other 16 KiB records
++		full,  // the 4 KiB tail of the burst
++		full,  // 300 B
++		full,  // 1000 B: two short reads, handed back
++		small, // 200 B
++		small, // 2 KiB of 5000: batched again
++		full,  // the other 2952 B
++		full,  // 100 B
++		full,  // 100 B: handed back
++		small, // 50 B
++		small, // the EOF
++	}
++	assert.Equal(t, want, src.caps)
++}
++
++// recordingWriter is a vectorised writer that records the size of every
++// batch and waits for release before its first write.
++type recordingWriter struct {
++	w       io.Writer
++	release chan struct{}
++	once    sync.Once
++	batches []int
++}
++
++func (w *recordingWriter) wait() { w.once.Do(func() { <-w.release }) }
++
++func (w *recordingWriter) Write(b []byte) (int, error) {
++	w.wait()
++	w.batches = append(w.batches, 1)
++	return w.w.Write(b)
++}
++
++func (w *recordingWriter) WriteBuffer(buffer *buf.Buffer) error {
++	defer buffer.Release()
++	_, err := w.Write(buffer.Bytes())
++	return err
++}
++
++func (w *recordingWriter) WriteVectorised(buffers []*buf.Buffer) error {
++	defer buf.ReleaseMulti(buffers)
++	w.wait()
++	w.batches = append(w.batches, len(buffers))
++	for _, b := range buffers {
++		if _, err := w.w.Write(b.Bytes()); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++// signalReader is a chunkReader that reports every read.
++type signalReader struct {
++	*chunkReader
++	reads chan struct{}
++}
++
++func (r *signalReader) Read(b []byte) (int, error) {
++	n, err := r.chunkReader.Read(b)
++	if err == nil {
++		r.reads <- struct{}{}
++	}
++	return n, err
++}
++
++// TestCopyBatchedGathers checks that the buffers read while a write is in
++// progress go out together, bounded by the read-ahead, and in order.
++func TestCopyBatchedGathers(t *testing.T) {
++	data := randomBytes(t, 1<<20)
++	src := &signalReader{
++		chunkReader: &chunkReader{data: data, max: 1 << 30, rng: mrand.New(mrand.NewSource(1))},
++		reads:       make(chan struct{}, 1024),
++	}
++	var out bytes.Buffer
++	dst := &recordingWriter{w: &out, release: make(chan struct{})}
++	reader := bufio.NewExtendedReader(&scriptLimit{src, 16 << 10})
++	options := network.NewReadWaitOptions(reader, dst)
++	sizing := readSizing{full: true}
++	go func() {
++		// let the reader fill the read-ahead before the first write returns
++		for i := 0; i < readAheadBuffers+1; i++ {
++			<-src.reads
++		}
++		time.Sleep(50 * time.Millisecond)
++		close(dst.release)
++		for range src.reads {
++		}
++	}()
++	n, handedBack, err := copyBatched(dst, dst, reader, options, nil, nil, &sizing, smallReadLen(options))
++	close(src.reads)
++	require.NoError(t, err)
++	assert.False(t, handedBack)
++	assert.Equal(t, int64(len(data)), n)
++	assert.True(t, bytes.Equal(data, out.Bytes()), "data differs")
++	maxBatch := 0
++	for _, b := range dst.batches {
++		if b > maxBatch {
++			maxBatch = b
++		}
++	}
++	assert.Greater(t, maxBatch, 1, "batches %v", dst.batches)
++	assert.LessOrEqual(t, maxBatch, readAheadBuffers+1)
++}
++
++// scriptLimit hands out at most limit bytes per read, as a TLS record does.
++type scriptLimit struct {
++	r     io.Reader
++	limit int
++}
++
++func (r *scriptLimit) Read(b []byte) (int, error) {
++	if len(b) > r.limit {
++		b = b[:r.limit]
++	}
++	return r.r.Read(b)
++}
++
++// endlessSource returns full reads until it is closed.
++type endlessSource struct {
++	closed chan struct{}
++}
++
++func (s *endlessSource) Read(b []byte) (int, error) {
++	select {
++	case <-s.closed:
++		return 0, net.ErrClosed
++	default:
++		return len(b), nil
++	}
++}
++
++// TestCopyBatchedWriteError checks that a failed write ends the copy with the
++// write error, and that the reader goroutine exits.
++func TestCopyBatchedWriteError(t *testing.T) {
++	dst, peer := tcpPair(t)
++	require.NoError(t, peer.SetLinger(0))
++	require.NoError(t, peer.Close()) // writes fail (reset) soon
++	src := &endlessSource{closed: make(chan struct{})}
++	before := runtime.NumGoroutine()
++	var err error
++	done := make(chan struct{})
++	go func() {
++		defer close(done)
++		_, err = copyConn(dst, src)
++	}()
++	select {
++	case <-done:
++	case <-time.After(10 * time.Second):
++		close(src.closed)
++		t.Fatal("the copy did not end on the write error")
++	}
++	require.Error(t, err)
++	assert.False(t, errors.Is(err, net.ErrClosed), "the write error, not the source's: %v", err)
++	close(src.closed)
++	// not assert.Eventually: it runs the condition on a goroutine of its own
++	deadline := time.Now().Add(5 * time.Second)
++	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
++		time.Sleep(10 * time.Millisecond)
++	}
++	assert.LessOrEqual(t, runtime.NumGoroutine(), before, "the reader goroutine did not exit")
++}
+diff --git a/common/net/relay_copy.go b/common/net/relay_copy.go
+new file mode 100644
+index 00000000..959a5fd2
+--- /dev/null
++++ b/common/net/relay_copy.go
+@@ -0,0 +1,305 @@
++package net
++
++import (
++	"errors"
++	"io"
++	"syscall"
++
++	"github.com/metacubex/sing/common"
++	"github.com/metacubex/sing/common/buf"
++	"github.com/metacubex/sing/common/bufio"
++	"github.com/metacubex/sing/common/network"
++)
++
++// The relay copy (copyConn) is ported from getmikan/Citrus
++// common/net/relay_copy.go (GPL-3.0), as Rerowros/veles carries it, without
++// the parts that need Citrus' TLS fork (waiting on a TLS conn without a
++// buffer), its AnyTLS queue, the 64 KiB socket reads and the yields.
++
++// smallReadSize is the buffer, headroom included, that the relay reads into
++// while a connection looks idle: a connection that waits for its peer holds
++// this much instead of a full pool buffer (buf.BufferSize, 32 KiB).
++const smallReadSize = 2048
++
++// minSmallRead keeps the small buffer usable when the destination asks for a
++// large headroom.
++const minSmallRead = 512
++
++// shortReadsToShrink is how many reads in a row that the small buffer would
++// have held switch a copy on full buffers back to the small one. One is not
++// enough: a bulk stream of a protocol that splits its frames (Shadowsocks
++// chunks, for one) alternates full and short reads, and would pay an extra
++// read and write per frame.
++const shortReadsToShrink = 2
++
++// copyConn is bufio.Copy with another fallback for sources that cannot wait
++// for data without a buffer.
++//
++// bufio.Copy ends in bufio.CopyExtendedWithPool for a source that is neither a
++// socket (splice, or a read waiter that takes a buffer only once the socket is
++// readable) nor a read waiter of its own, such as a TLS, REALITY or
++// Shadowsocks connection: the download side of every proxied connection. That
++// loop takes a 32 KiB pool buffer before every read, so a connection whose
++// remote is silent keeps one for as long as it stays open.
++//
++// copyConn reads such a source into a small buffer while the connection looks
++// idle and into full pool buffers while data keeps coming: a read that fills
++// the small buffer switches to full buffers, and shortReadsToShrink reads in a
++// row that return no more than the small buffer would have held switch back.
++// While a transfer runs on full buffers and the destination is a socket, the
++// copy reads ahead and writes in batches (copyBatched).
++//
++// Everything else (cached data, splice, read waiters) is bufio.Copy's own
++// code. The copy of single buffers while Vision may still replace the reader
++// or the writer chooses its buffer the same way.
++func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
++	if source == nil {
++		return 0, errors.New("nil reader")
++	} else if destination == nil {
++		return 0, errors.New("nil writer")
++	}
++	originSource := source
++	var readCounters, writeCounters []network.CountFunc
++	var _n int64
++	var sizing readSizing
++	possibly := bufio.MaxCopyExtendedOnceTimes
++	for {
++		source, readCounters = network.UnwrapCountReader(source, readCounters)
++		destination, writeCounters = network.UnwrapCountWriter(destination, writeCounters)
++		if cachedSrc, isCached := source.(network.CachedReader); isCached {
++			cachedBuffer := cachedSrc.ReadCached()
++			if cachedBuffer != nil {
++				dataLen := cachedBuffer.Len()
++				_, err = destination.Write(cachedBuffer.Bytes())
++				cachedBuffer.Release()
++				if err != nil {
++					return
++				}
++				countAll(readCounters, writeCounters, dataLen)
++				continue
++			}
++		}
++		replaceableReader, isReaderPossiblyReplaceable := source.(network.ReaderPossiblyReplaceable)
++		replaceableWriter, isWriterPossiblyReplaceable := destination.(network.WriterPossiblyReplaceable)
++		// Same condition (and operator precedence) as bufio.Copy.
++		if possibly != 0 &&
++			(isReaderPossiblyReplaceable && replaceableReader.ReaderPossiblyReplaceable()) ||
++			(isWriterPossiblyReplaceable && replaceableWriter.WriterPossiblyReplaceable()) {
++			possibly--
++			_n, err = copyOnce(destination, source, readCounters, writeCounters, &sizing)
++			n += _n
++			if err != nil {
++				if n == _n { // first time
++					err = network.ReportHandshakeFailure(originSource, err)
++				}
++				if errors.Is(err, io.EOF) {
++					err = nil
++				}
++				return
++			}
++			continue
++		}
++		break
++	}
++	_, srcIsSyscall := source.(syscall.Conn)
++	_, dstIsSyscall := destination.(syscall.Conn)
++	if srcIsSyscall && dstIsSyscall {
++		// Splice, or a socket read waiter when it cannot: no buffer while idle.
++		_n, err = bufio.CopyWithCounters(destination, source, originSource, readCounters, writeCounters)
++		n += _n
++		return
++	}
++	_n, err = copyExtended(originSource, bufio.NewExtendedWriter(destination), bufio.NewExtendedReader(source), readCounters, writeCounters, &sizing)
++	n += _n
++	return
++}
++
++// copyExtended is bufio.CopyExtended with copyAdaptive in place of
++// bufio.CopyExtendedWithPool.
++func copyExtended(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
++	options := network.NewReadWaitOptions(source, destination)
++	if readWaiter, isReadWaiter := bufio.CreateReadWaiter(source); isReadWaiter {
++		needCopy := readWaiter.InitializeReadWaiter(options)
++		if !needCopy || common.LowMemory {
++			return copyWait(originSource, destination, readWaiter, readCounters, writeCounters)
++		}
++	}
++	return copyAdaptive(originSource, destination, source, options, readCounters, writeCounters, sizing)
++}
++
++// copyWait is the read waiter loop of bufio.CopyExtended (copyWaitWithPool,
++// which sing does not export).
++func copyWait(originSource io.Reader, destination network.ExtendedWriter, source network.ReadWaiter, readCounters []network.CountFunc, writeCounters []network.CountFunc) (n int64, err error) {
++	var notFirstTime bool
++	for {
++		var buffer *buf.Buffer
++		buffer, err = source.WaitReadBuffer()
++		if err != nil {
++			if errors.Is(err, io.EOF) {
++				err = nil
++			}
++			return
++		}
++		dataLen := buffer.Len()
++		err = destination.WriteBuffer(buffer)
++		if err != nil {
++			buffer.Leak()
++			if !notFirstTime {
++				err = network.ReportHandshakeFailure(originSource, err)
++			}
++			return
++		}
++		n += int64(dataLen)
++		countAll(readCounters, writeCounters, dataLen)
++		notFirstTime = true
++	}
++}
++
++// copyAdaptive is bufio.CopyExtendedWithPool that waits on a small buffer
++// while the source is idle (see copyConn), and reads ahead while a transfer
++// to a socket runs (copyBatched).
++func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
++	small := smallReadLen(options)
++	if small == 0 {
++		return bufio.CopyExtendedWithPool(originSource, destination, source, readCounters, writeCounters)
++	}
++	var notFirstTime bool
++	writer := batchWriter(destination)
++	for {
++		if writer != nil && sizing.full {
++			// A transfer is running: read ahead and write in batches.
++			batched, handedBack, batchErr := copyBatched(destination, writer, source, options, readCounters, writeCounters, sizing, small)
++			n += batched
++			if !handedBack {
++				return n, batchErr
++			}
++			notFirstTime = notFirstTime || batched > 0
++		}
++		buffer := sizing.newBuffer(options, small)
++		err = source.ReadBuffer(buffer)
++		if err != nil {
++			buffer.Release()
++			if errors.Is(err, io.EOF) {
++				err = nil
++			}
++			return
++		}
++		dataLen := buffer.Len()
++		options.PostReturn(buffer)
++		err = destination.WriteBuffer(buffer)
++		if err != nil {
++			buffer.Leak()
++			if !notFirstTime {
++				err = network.ReportHandshakeFailure(originSource, err)
++			}
++			return
++		}
++		n += int64(dataLen)
++		countAll(readCounters, writeCounters, dataLen)
++		notFirstTime = true
++		sizing.update(dataLen, small)
++	}
++}
++
++// copyOnce is bufio.CopyExtendedOnce, which copies one buffer while Vision may
++// still replace the reader or the writer, with the buffer choice of
++// copyAdaptive: Vision pads the first packets of every connection, and a
++// connection that goes quiet in that phase waits here.
++func copyOnce(destination io.Writer, source io.Reader, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
++	options := network.NewReadWaitOptions(source, destination)
++	var buffer *buf.Buffer
++	calledWaitRead := false
++	if readWaiter, isReadWaiter := bufio.CreateReadWaiter(source); isReadWaiter {
++		if needCopy := readWaiter.InitializeReadWaiter(options); !needCopy || common.LowMemory {
++			calledWaitRead = true
++			buffer, err = readWaiter.WaitReadBuffer()
++		}
++	}
++	small := smallReadLen(options)
++	if !calledWaitRead {
++		buffer = sizing.newBuffer(options, small)
++		err = bufio.NewExtendedReader(source).ReadBuffer(buffer)
++		options.PostReturn(buffer)
++	}
++	if err != nil {
++		if buffer != nil {
++			buffer.Release()
++		}
++		return
++	}
++	dataLen := buffer.Len()
++	err = bufio.NewExtendedWriter(destination).WriteBuffer(buffer)
++	if err != nil {
++		buffer.Release()
++		return
++	}
++	countAll(readCounters, writeCounters, dataLen)
++	n = int64(dataLen)
++	sizing.update(dataLen, small)
++	return
++}
++
++// smallReadLen is the data size of the small buffer for these options, or 0
++// when a full buffer is no larger.
++func smallReadLen(options network.ReadWaitOptions) int {
++	small := smallReadSize - options.FrontHeadroom - options.RearHeadroom
++	if small < minSmallRead {
++		small = minSmallRead
++	}
++	if options.MTU > 0 && options.MTU <= small {
++		return 0
++	}
++	return small
++}
++
++// readSizing chooses the buffer of the next read of a copy.
++type readSizing struct {
++	full  bool // the next read goes into a full buffer
++	short int  // short reads in a row on full buffers
++}
++
++// newBuffer returns a full buffer, or a small one with room for small bytes of
++// data (0: no small buffer).
++func (s *readSizing) newBuffer(options network.ReadWaitOptions, small int) *buf.Buffer {
++	if s.full || small == 0 {
++		return options.NewBuffer()
++	}
++	return newSmallBuffer(options, small)
++}
++
++// update records a read of n bytes.
++func (s *readSizing) update(n, small int) {
++	switch {
++	case n >= small:
++		// a small read that filled its buffer: more is probably waiting
++		s.full, s.short = true, 0
++	case s.full:
++		// short reads in a row on a full buffer: the burst is over
++		s.short++
++		if s.short >= shortReadsToShrink {
++			s.full, s.short = false, 0
++		}
++	}
++}
++
++// newSmallBuffer is ReadWaitOptions.NewBuffer with room for size bytes of
++// data.
++func newSmallBuffer(options network.ReadWaitOptions, size int) *buf.Buffer {
++	buffer := buf.NewSize(options.FrontHeadroom + size + options.RearHeadroom)
++	if options.FrontHeadroom > 0 {
++		buffer.Resize(options.FrontHeadroom, 0)
++	}
++	if options.RearHeadroom > 0 {
++		buffer.Reserve(options.RearHeadroom)
++	}
++	return buffer
++}
++
++func countAll(readCounters, writeCounters []network.CountFunc, n int) {
++	for _, counter := range readCounters {
++		counter(int64(n))
++	}
++	for _, counter := range writeCounters {
++		counter(int64(n))
++	}
++}
+diff --git a/common/net/relay_copy_test.go b/common/net/relay_copy_test.go
+new file mode 100644
+index 00000000..8b008a25
+--- /dev/null
++++ b/common/net/relay_copy_test.go
+@@ -0,0 +1,260 @@
++package net
++
++import (
++	"bytes"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/sha256"
++	"crypto/tls"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"io"
++	"math/big"
++	mrand "math/rand"
++	"net"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/metacubex/sing/common/buf"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// chunkReader hands out data in chunks of random size (up to max) and records
++// the free space of every buffer it is given.
++type chunkReader struct {
++	data []byte
++	max  int
++	rng  *mrand.Rand
++	caps []int
++}
++
++func (r *chunkReader) Read(b []byte) (int, error) {
++	r.caps = append(r.caps, len(b))
++	if len(r.data) == 0 {
++		return 0, io.EOF
++	}
++	n := 1 + r.rng.Intn(r.max)
++	n = minInt(minInt(n, len(b)), len(r.data))
++	copy(b, r.data[:n])
++	r.data = r.data[n:]
++	return n, nil
++}
++
++// onlyWriter hides everything but Write (not a socket, no WriteBuffer).
++type onlyWriter struct{ w io.Writer }
++
++func (w onlyWriter) Write(b []byte) (int, error) { return w.w.Write(b) }
++
++func randomBytes(t *testing.T, n int) []byte {
++	b := make([]byte, n)
++	_, err := rand.Read(b)
++	require.NoError(t, err)
++	return b
++}
++
++func TestCopyConnLargeTransfer(t *testing.T) {
++	for _, max := range []int{1, 700, 2048, 16 << 10, 64 << 10} {
++		data := randomBytes(t, 8<<20+123)
++		if max == 1 {
++			data = data[:200<<10]
++		}
++		src := &chunkReader{data: data, max: max, rng: mrand.New(mrand.NewSource(int64(max)))}
++		var dst bytes.Buffer
++		n, err := copyConn(onlyWriter{&dst}, src)
++		require.NoError(t, err)
++		assert.Equal(t, int64(len(data)), n, "chunks up to %d", max)
++		assert.True(t, bytes.Equal(data, dst.Bytes()), "chunks up to %d: data differs", max)
++	}
++}
++
++// scriptReader returns the given reads one by one and records the free space
++// of every buffer it is given.
++type scriptReader struct {
++	reads []int
++	caps  []int
++}
++
++func (r *scriptReader) Read(b []byte) (int, error) {
++	r.caps = append(r.caps, len(b))
++	if len(r.reads) == 0 {
++		return 0, io.EOF
++	}
++	n := minInt(r.reads[0], len(b))
++	r.reads[0] -= n
++	if r.reads[0] == 0 {
++		r.reads = r.reads[1:]
++	}
++	return n, nil
++}
++
++// TestCopyConnBufferSizes checks the buffer a read waits on: small after a
++// short message or at the start, full while a burst fills its buffers.
++func TestCopyConnBufferSizes(t *testing.T) {
++	// a 100 B message, a 100 KiB burst in 16 KiB records, a 300 B, a 1000 B
++	// and a 200 B message
++	reads := []int{100}
++	for left := 100 << 10; left > 0; left -= 16 << 10 {
++		reads = append(reads, minInt(16<<10, left))
++	}
++	reads = append(reads, 300, 1000, 200)
++	src := &scriptReader{reads: append([]int(nil), reads...)}
++	n, err := copyConn(io.Discard, src)
++	require.NoError(t, err)
++	assert.Equal(t, int64(100+100<<10+300+1000+200), n)
++
++	small, full := smallReadSize, buf.BufferSize
++	want := []int{
++		small,                        // the first read: 100 B
++		small,                        // the first 2 KiB of the burst fill it
++		full,                         // the rest of that record
++		full, full, full, full, full, // the other 16 KiB records
++		full,  // the 4 KiB tail of the burst
++		full,  // 300 B: one short read keeps the full buffer
++		full,  // 1000 B: two short reads in a row
++		small, // 200 B
++		small, // the EOF
++	}
++	assert.Equal(t, want, src.caps)
++}
++
++func selfSignedTLS(t *testing.T) *tls.Config {
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	require.NoError(t, err)
++	tmpl := &x509.Certificate{
++		SerialNumber: big.NewInt(1),
++		Subject:      pkix.Name{CommonName: "relay.test"},
++		DNSNames:     []string{"relay.test"},
++		NotBefore:    time.Now().Add(-time.Hour),
++		NotAfter:     time.Now().Add(time.Hour),
++	}
++	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
++	require.NoError(t, err)
++	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
++}
++
++// TestRelayTLSHalfClose relays a TLS client (the source the adaptive copy is
++// for) to a TCP server: a large upload, a half-close that reaches the
++// server, and a large answer after it.
++func TestRelayTLSHalfClose(t *testing.T) {
++	upload := randomBytes(t, 6<<20+17)
++	download := randomBytes(t, 5<<20+3)
++
++	upstream, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer upstream.Close()
++	var upstreamGot []byte
++	var upstreamErr error
++	var wg sync.WaitGroup
++	wg.Add(1)
++	go func() {
++		defer wg.Done()
++		c, err := upstream.Accept()
++		if err != nil {
++			upstreamErr = err
++			return
++		}
++		defer c.Close()
++		upstreamGot, upstreamErr = io.ReadAll(c) // until the client's half-close
++		if upstreamErr == nil {
++			_, upstreamErr = c.Write(download)
++		}
++	}()
++
++	front, err := net.Listen("tcp", "127.0.0.1:0")
++	require.NoError(t, err)
++	defer front.Close()
++	serverConfig := selfSignedTLS(t)
++	relayDone := make(chan struct{})
++	go func() {
++		defer close(relayDone)
++		c, err := front.Accept()
++		if err != nil {
++			return
++		}
++		left := tls.Server(c, serverConfig)
++		if err := left.Handshake(); err != nil {
++			_ = left.Close()
++			return
++		}
++		right, err := net.Dial("tcp", upstream.Addr().String())
++		if err != nil {
++			_ = left.Close()
++			return
++		}
++		Relay(left, right)
++	}()
++
++	client, err := tls.Dial("tcp", front.Addr().String(), &tls.Config{InsecureSkipVerify: true})
++	require.NoError(t, err)
++	defer client.Close()
++	go func() {
++		// writes of various sizes, then a half-close
++		rest := upload
++		rng := mrand.New(mrand.NewSource(int64(3)))
++		for len(rest) > 0 {
++			n := minInt(1+rng.Intn(40<<10), len(rest))
++			if _, err := client.Write(rest[:n]); err != nil {
++				return
++			}
++			rest = rest[n:]
++		}
++		_ = client.CloseWrite()
++	}()
++	got, err := io.ReadAll(client)
++	require.NoError(t, err)
++	wg.Wait()
++	require.NoError(t, upstreamErr)
++	assert.Equal(t, sha256.Sum256(upload), sha256.Sum256(upstreamGot), "upload differs (%d of %d bytes)", len(upstreamGot), len(upload))
++	assert.Equal(t, sha256.Sum256(download), sha256.Sum256(got), "download differs (%d of %d bytes)", len(got), len(download))
++	select {
++	case <-relayDone:
++	case <-time.After(5 * time.Second):
++		t.Fatal("the relay did not finish")
++	}
++}
++
++func minInt(a, b int) int {
++	if a < b {
++		return a
++	}
++	return b
++}
++
++// possiblyReader is a reader that Vision may still replace for its first
++// reads, so that the copy goes through copyOnce.
++type possiblyReader struct {
++	*scriptReader
++	left int
++}
++
++func (r *possiblyReader) Read(b []byte) (int, error) {
++	r.left--
++	return r.scriptReader.Read(b)
++}
++
++func (r *possiblyReader) ReaderPossiblyReplaceable() bool { return r.left > 0 }
++
++// TestCopyConnBufferSizesVision checks the buffer choice while Vision may
++// replace the reader, and that it carries over to the copy after it.
++func TestCopyConnBufferSizesVision(t *testing.T) {
++	src := &possiblyReader{scriptReader: &scriptReader{reads: []int{100, 5000, 100, 5000, 300, 200}}, left: 3}
++	n, err := copyConn(io.Discard, src)
++	require.NoError(t, err)
++	assert.Equal(t, int64(100+5000+100+5000+300+200), n)
++	small, full := smallReadSize, buf.BufferSize
++	want := []int{
++		small, // 100 B, copyOnce
++		small, // 2 KiB of 5000, copyOnce
++		full,  // the other 2952 B, copyOnce; Vision is done after this read
++		full,  // 100 B: the choice carries over
++		full,  // 5000 B
++		full,  // 300 B
++		full,  // 200 B: two short reads in a row
++		small, // the EOF
++	}
++	assert.Equal(t, want, src.caps)
++}
+diff --git a/common/net/sing.go b/common/net/sing.go
+index df07bf98..fd870632 100644
+--- a/common/net/sing.go
++++ b/common/net/sing.go
+@@ -74,7 +74,7 @@ func Relay(leftConn, rightConn net.Conn) {
+ 
+ 	ch := make(chan struct{})
+ 	go func() {
+-		_, err := bufio.Copy(leftConn, rightConn)
++		_, err := copyConn(leftConn, rightConn)
+ 		if err == nil {
+ 			_ = closeWrite(leftConn)
+ 		} else {
+@@ -83,7 +83,7 @@ func Relay(leftConn, rightConn net.Conn) {
+ 		close(ch)
+ 	}()
+ 
+-	_, err := bufio.Copy(rightConn, leftConn)
++	_, err := copyConn(rightConn, leftConn)
+ 	if err == nil {
+ 		_ = closeWrite(rightConn)
+ 	} else {

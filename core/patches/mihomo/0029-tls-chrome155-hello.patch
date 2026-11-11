@@ -1,20 +1,21 @@
 diff --git a/component/tls/chrome155.go b/component/tls/chrome155.go
 new file mode 100644
-index 00000000..652cdf57
+index 00000000..aeeb375b
 --- /dev/null
 +++ b/component/tls/chrome155.go
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,210 @@
 +package tls
 +
 +// SlothClash core patch 0029: the Chrome 155 ClientHello as client-fingerprint
 +// "chrome155" (Xray "hellochrome_155").
 +//
 +// Xray-core 26.11.9 sends Chrome 155 as its default fingerprint and Citrus
-+// v1.0.0-beta.3 does the same for "chrome". metacubex/utls v1.8.8 stops at
-+// Chrome 133, so the profile is carried here as data and applied through
-+// HelloCustom + ApplyPreset; the library stays on the released v1.8.8 (no
-+// fork). The profile is refraction-networking/utls 6ebdceb2 (HelloChrome_155,
-+// checked there against a capture of Chrome 155.0.8059.40), the same one
++// v1.0.0-beta.3 does the same for "chrome". metacubex/utls v1.9.0-alpha.1
++// (the version mihomo v1.19.34 pins) still stops at Chrome 133, so the profile
++// is carried here as data and applied through HelloCustom + ApplyPreset; the
++// library stays the one mihomo pins (no fork). The profile is
++// refraction-networking/utls 6ebdceb2 (HelloChrome_155, checked there against
++// a capture of Chrome 155.0.8059.40), the same one
 +// getmikan/utls a6dee38a ships to Citrus. The wiring (an ID utls does not know,
 +// routed through UClient) follows Rerowros/veles component/tls/chrome155.go
 +// (GPL-3.0).
@@ -98,9 +99,10 @@ index 00000000..652cdf57
 +
 +// chrome155Spec returns a fresh spec: ApplyPreset fills it in per connection.
 +func chrome155Spec() *utls.ClientHelloSpec {
-+	// utls v1.8.8 replaces GREASE placeholders in cipher suites, groups, key
-+	// shares and versions but not in signature_algorithms, so that value is
-+	// drawn here. BoringSSL draws every GREASE value independently.
++	// utls (v1.8.8 and v1.9.0-alpha.1 alike) replaces GREASE placeholders in
++	// cipher suites, groups, key shares and versions but not in
++	// signature_algorithms, so that value is drawn here. BoringSSL draws every
++	// GREASE value independently.
 +	greaseSigScheme := utls.SignatureScheme(uint16(randv2.IntN(16))*0x1010 + 0x0a0a)
 +
 +	return &utls.ClientHelloSpec{
@@ -753,7 +755,7 @@ index 00000000..37ea6b28
 +	}
 +}
 diff --git a/component/tls/reality.go b/component/tls/reality.go
-index 8c00ab55..6217b20f 100644
+index d2790384..6ccc5c11 100644
 --- a/component/tls/reality.go
 +++ b/component/tls/reality.go
 @@ -30,8 +30,9 @@ const RealityMaxShortIDLen = 8
@@ -761,21 +763,21 @@ index 8c00ab55..6217b20f 100644
  // three bytes of the REALITY ClientHello session id. Xray servers compare it
  // against their optional minClientVer / maxClientVer; nothing else depends on it.
 -// Defaults to the Xray release this core was last validated against.
--var RealityClientVersion = [3]byte{26, 10, 29}
+-var RealityClientVersion = [3]byte{26, 9, 9}
 +// Defaults to the Xray release this core was last validated against (26.11.9
 +// since SlothClash 0029).
 +var RealityClientVersion = [3]byte{26, 11, 9}
  
  type RealityConfig struct {
  	PublicKey *ecdh.PublicKey
-@@ -204,7 +205,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
- 		if pqHello != nil {
- 			uConn, err = realityPQConn(conn, uConfig, *pqHello)
- 		} else {
--			uConn = utls.UClient(conn, uConfig, fingerprint)
-+			uConn = UClient(conn, uConfig, fingerprint) // knows HelloChrome155 (0029)
- 			err = uConn.BuildHandshakeState()
+@@ -198,7 +199,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
+ 			VerifyConnection:       verifier.VerifyConnection,
  		}
+ 
+-		uConn := utls.UClient(conn, uConfig, fingerprint)
++		uConn := UClient(conn, uConfig, fingerprint) // knows HelloChrome155 (0029)
+ 		verifier.UConn = uConn
+ 		err := uConn.BuildHandshakeState()
  		if err != nil {
 diff --git a/component/tls/testdata/chrome155_clienthello.hex b/component/tls/testdata/chrome155_clienthello.hex
 new file mode 100644

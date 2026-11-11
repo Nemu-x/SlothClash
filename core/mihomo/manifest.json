@@ -138,6 +138,14 @@
     {
       "file": "0032-tls-hello-fragment.patch",
       "sha256": "72a38959f813ed02606494fed681d1264b14a6d2994bfd10e6e3de1e8c91f0d0"
+    },
+    {
+      "file": "0033-grpc-frame-reader.patch",
+      "sha256": "c4a5f995ff3e94a6f70b52224cf95e428531df012bc221dd832d74da9c227391"
+    },
+    {
+      "file": "0034-xhttp-conn-deadlines.patch",
+      "sha256": "505ffe1d4cd6b8170b24fbe3ca32cde470e6ea01199235eb2292d080e2ec14ee"
     }
   ],
   "assets": {

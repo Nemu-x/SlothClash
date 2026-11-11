@@ -42,6 +42,7 @@
 
 **✂️ Splitting the TLS hello (`fragment-opts`)**
 - New per-proxy `fragment-opts` (`packets`, `length`, `delay`, `max-split`, as in Xray's `fragment`): splits the TLS hello of a proxy's connections into small pieces, so networks that block by reading the server name from the first packet cannot read it. VLESS and VMess share links with Xray's `fm` parameter get the same setting. Off unless a proxy sets it.
+- VLESS links the app converts itself (a pasted link, or a subscription that is a list of links) now keep the `fm` fragment setting too, with the same values and checks as the core; before, the app dropped it. An `fm` that does not parse is left out, the node still imports.
 
 ### Русский
 
@@ -85,6 +86,7 @@
 
 **✂️ Нарезка TLS hello (`fragment-opts`)**
 - Новый `fragment-opts` у прокси (`packets`, `length`, `delay`, `max-split`, как `fragment` в Xray): режет TLS hello соединений прокси на мелкие части, чтобы сети, которые блокируют по имени сервера из первого пакета, не могли его прочитать. Ссылки VLESS и VMess с параметром `fm` из Xray получают ту же настройку. Выключено, пока прокси его не задаст.
+- Ссылки VLESS, которые приложение разбирает само (вставленная ссылка или подписка списком ссылок), теперь тоже сохраняют нарезку из `fm`, с теми же значениями и проверками, что и в ядре; раньше приложение её теряло. Если `fm` не разбирается, он пропускается, а узел всё равно импортируется.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

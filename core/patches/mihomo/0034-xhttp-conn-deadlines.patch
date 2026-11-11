@@ -1,0 +1,271 @@
+diff --git a/transport/xhttp/conn.go b/transport/xhttp/conn.go
+index f7f2acc2..5bb62056 100644
+--- a/transport/xhttp/conn.go
++++ b/transport/xhttp/conn.go
+@@ -3,6 +3,8 @@ package xhttp
+ import (
+ 	"errors"
+ 	"io"
++	"os"
++	"sync"
+ 	"time"
+ 
+ 	"github.com/metacubex/mihomo/common/httputils"
+@@ -14,45 +16,145 @@ type Conn struct {
+ 	onClose func()
+ 	httputils.NetAddr
+ 
++	closeOnce sync.Once
++	closeErr  error
++
+ 	// deadlines
+-	deadline *time.Timer
++	readDeadline  opDeadline
++	writeDeadline opDeadline
+ }
+ 
+ func (c *Conn) Write(b []byte) (int, error) {
+-	return c.writer.Write(b)
++	if !c.writeDeadline.begin() {
++		return 0, os.ErrDeadlineExceeded
++	}
++	n, err := c.writer.Write(b)
++	return n, c.writeDeadline.end(err)
+ }
+ 
+ func (c *Conn) Read(b []byte) (int, error) {
+-	return c.reader.Read(b)
++	if !c.readDeadline.begin() {
++		return 0, os.ErrDeadlineExceeded
++	}
++	n, err := c.reader.Read(b)
++	return n, c.readDeadline.end(err)
+ }
+ 
+ func (c *Conn) Close() error {
+-	err := c.writer.Close()
+-	err2 := c.reader.Close()
+-	if c.onClose != nil {
+-		c.onClose()
+-	}
+-	return errors.Join(err, err2)
++	c.closeOnce.Do(func() {
++		c.readDeadline.stop()
++		c.writeDeadline.stop()
++		err := c.writer.Close()
++		err2 := c.reader.Close()
++		if c.onClose != nil {
++			c.onClose()
++		}
++		c.closeErr = errors.Join(err, err2)
++	})
++	return c.closeErr
++}
++
++func (c *Conn) SetReadDeadline(t time.Time) error {
++	c.readDeadline.set(t, c.abort)
++	return nil
+ }
+ 
+-func (c *Conn) SetReadDeadline(t time.Time) error  { return c.SetDeadline(t) }
+-func (c *Conn) SetWriteDeadline(t time.Time) error { return c.SetDeadline(t) }
++func (c *Conn) SetWriteDeadline(t time.Time) error {
++	c.writeDeadline.set(t, c.abort)
++	return nil
++}
+ 
+ func (c *Conn) SetDeadline(t time.Time) error {
++	c.readDeadline.set(t, c.abort)
++	c.writeDeadline.set(t, c.abort)
++	return nil
++}
++
++func (c *Conn) abort() { _ = c.Close() }
++
++// opDeadline is one direction's deadline over a reader or writer that cannot be
++// interrupted. An operation that starts after the deadline fails at once with
++// os.ErrDeadlineExceeded, and one still blocked when the deadline passes is
++// ended by closing the conn, the only way to unblock it. A conn with no
++// operation in progress is left open: a write deadline that yamux keeps
++// extending ahead of its writes must not tear down an idle session.
++//
++// SlothClash core patch 0034. Vanilla arms one timer for both directions that
++// closes the conn when it fires, busy or idle, and SetWriteDeadline(zero) clears
++// a pending read deadline. Ported from Rerowros/veles, which took it from
++// getmikan/Citrus transport/xhttp/conn.go (GPL-3.0).
++type opDeadline struct {
++	mu      sync.Mutex
++	timer   *time.Timer
++	expired bool
++	pending int
++}
++
++func (d *opDeadline) set(t time.Time, abort func()) {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if d.timer != nil {
++		d.timer.Stop()
++		d.timer = nil
++	}
++	d.expired = false
+ 	if t.IsZero() {
+-		if c.deadline != nil {
+-			c.deadline.Stop()
+-			c.deadline = nil
+-		}
+-		return nil
++		return
+ 	}
+-	d := time.Until(t)
+-	if c.deadline != nil {
+-		c.deadline.Reset(d)
+-		return nil
++	dur := time.Until(t)
++	if dur <= 0 {
++		d.expired = true
++		if d.pending > 0 {
++			go abort()
++		}
++		return
+ 	}
+-	c.deadline = time.AfterFunc(d, func() {
+-		c.Close()
++	var timer *time.Timer
++	timer = time.AfterFunc(dur, func() {
++		d.mu.Lock()
++		if d.timer != timer { // reset or stopped meanwhile
++			d.mu.Unlock()
++			return
++		}
++		d.timer = nil
++		d.expired = true
++		blocked := d.pending > 0
++		d.mu.Unlock()
++		if blocked {
++			abort()
++		}
+ 	})
+-	return nil
++	d.timer = timer
++}
++
++func (d *opDeadline) stop() {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if d.timer != nil {
++		d.timer.Stop()
++		d.timer = nil
++	}
++}
++
++// begin reports whether an operation may start, and counts it as in progress if so.
++func (d *opDeadline) begin() bool {
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	if d.expired {
++		return false
++	}
++	d.pending++
++	return true
++}
++
++// end finishes an operation started by begin, reporting a failure past the deadline as a timeout.
++func (d *opDeadline) end(err error) error {
++	d.mu.Lock()
++	d.pending--
++	expired := d.expired
++	d.mu.Unlock()
++	if err != nil && expired {
++		return os.ErrDeadlineExceeded
++	}
++	return err
+ }
+diff --git a/transport/xhttp/conn_test.go b/transport/xhttp/conn_test.go
+new file mode 100644
+index 00000000..5374fbad
+--- /dev/null
++++ b/transport/xhttp/conn_test.go
+@@ -0,0 +1,83 @@
++package xhttp
++
++import (
++	"errors"
++	"io"
++	"os"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func newPipeTestConn() (*Conn, *io.PipeReader, *io.PipeWriter, *atomic.Int32) {
++	upR, upW := io.Pipe()     // conn writes go to upR
++	downR, downW := io.Pipe() // downW feeds conn reads
++	var closes atomic.Int32
++	conn := &Conn{writer: upW, reader: downR, onClose: func() { closes.Add(1) }}
++	return conn, upR, downW, &closes
++}
++
++// A write deadline that passes while the conn is idle must not close it: yamux
++// sets one ahead of its writes and leaves it in place between them.
++func TestConnIdleDeadlineKeepsConnOpen(t *testing.T) {
++	conn, upR, downW, closes := newPipeTestConn()
++	defer conn.Close()
++
++	require.NoError(t, conn.SetWriteDeadline(time.Now().Add(20*time.Millisecond)))
++	time.Sleep(60 * time.Millisecond)
++	assert.Equal(t, int32(0), closes.Load(), "an idle conn was closed by its deadline")
++
++	_, err := conn.Write([]byte("x"))
++	assert.ErrorIs(t, err, os.ErrDeadlineExceeded)
++
++	require.NoError(t, conn.SetWriteDeadline(time.Now().Add(time.Minute)))
++	go func() { _, _ = io.ReadFull(upR, make([]byte, 2)) }()
++	_, err = conn.Write([]byte("ok"))
++	assert.NoError(t, err)
++
++	go func() { _, _ = downW.Write([]byte("hi")) }()
++	buf := make([]byte, 2)
++	_, err = io.ReadFull(conn, buf)
++	assert.NoError(t, err)
++	assert.Equal(t, "hi", string(buf))
++}
++
++// A read still blocked when its deadline passes is ended with a timeout.
++func TestConnBlockedReadDeadline(t *testing.T) {
++	conn, _, _, closes := newPipeTestConn()
++	require.NoError(t, conn.SetReadDeadline(time.Now().Add(20*time.Millisecond)))
++	start := time.Now()
++	_, err := conn.Read(make([]byte, 1))
++	assert.ErrorIs(t, err, os.ErrDeadlineExceeded)
++	var ne interface{ Timeout() bool }
++	assert.True(t, errors.As(err, &ne) && ne.Timeout())
++	assert.Less(t, time.Since(start), 5*time.Second)
++	assert.Equal(t, int32(1), closes.Load())
++}
++
++// A deadline cleared or moved before it passes has no effect.
++func TestConnDeadlineReset(t *testing.T) {
++	conn, _, downW, closes := newPipeTestConn()
++	defer conn.Close()
++	require.NoError(t, conn.SetDeadline(time.Now().Add(20*time.Millisecond)))
++	require.NoError(t, conn.SetDeadline(time.Time{}))
++	go func() {
++		time.Sleep(60 * time.Millisecond)
++		_, _ = downW.Write([]byte("z"))
++	}()
++	buf := make([]byte, 1)
++	_, err := conn.Read(buf)
++	assert.NoError(t, err)
++	assert.Equal(t, int32(0), closes.Load())
++}
++
++func TestConnCloseOnce(t *testing.T) {
++	conn, _, _, closes := newPipeTestConn()
++	require.NoError(t, conn.SetReadDeadline(time.Now()))
++	_ = conn.Close()
++	_ = conn.Close()
++	assert.Equal(t, int32(1), closes.Load())
++}

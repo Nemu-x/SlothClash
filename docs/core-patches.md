@@ -595,6 +595,38 @@ mode it passes. The dialer of vless and trojan proxies is wrapped only when the 
 
 mihomo: none claimed. Delete when mihomo has its own ClientHello fragmentation for proxies.
 
+### 0033 gRPC: frame reader without recursion
+
+mihomo's gun (gRPC transport) reader called itself once per frame header, so a peer that sends a
+stream of empty frames grows the stack until the process dies (a fatal stack overflow, not an
+error), and a protobuf length larger than its gRPC message was taken as is. The patch reads frame
+headers in a loop and refuses a payload length beyond its gRPC message (or beyond `math.MaxInt32`)
+with `ErrInvalidLength`. Well-formed streams read exactly as before. The reader is shared by the
+client and the server side of `grpc` transports.
+
+From [Rerowros/veles](https://github.com/Rerowros/veles) `transport/gun/gun.go` (GPL-3.0). Tests:
+200 000 empty frames under a 1 MiB stack limit (the old reader dies), oversized lengths, and a
+payload split across reads.
+
+mihomo: none claimed. Delete when mihomo's reader loops.
+
+### 0034 XHTTP: per-direction deadlines that only end blocked operations
+
+mihomo's XHTTP connection keeps one timer for both directions and closes the whole connection when
+it fires, busy or idle; `SetReadDeadline` and `SetWriteDeadline` both reset that one timer, so
+setting one direction moves (or with a zero time clears) the other. A multiplexer that keeps a
+write deadline ahead of its writes (yamux, smux) tears down an idle session that way. The patch
+gives each direction its own deadline: an operation that starts after it fails at once with
+`os.ErrDeadlineExceeded`, one still blocked when it passes is ended by closing the connection (the
+only way to unblock the HTTP body), and an idle connection stays open. `Close` runs once.
+
+From [Rerowros/veles](https://github.com/Rerowros/veles) `transport/xhttp/conn.go`, which took it
+from getmikan/Citrus (GPL-3.0). Tests: an idle deadline keeps the connection open and later
+operations time out until it is moved, a blocked read ends with a timeout, a cleared deadline has no
+effect, and `Close` runs its hooks once.
+
+mihomo: none claimed. Delete when mihomo's XHTTP conn keeps separate deadlines.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a

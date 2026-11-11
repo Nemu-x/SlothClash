@@ -3,13 +3,15 @@
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source:
 #   - the commented-out options uncommented with version 6 and wrapped into a minimal profile
+#   - psk yourpsk replaced by a 15-byte placeholder: v6 needs 12 to 255 bytes, and Citrus and
+#     mihomo v1.19.34 both refuse the 7-byte example
 
 proxies:
   - name: "snell"
     type: snell
     server: server
     port: 44046
-    psk: yourpsk
+    psk: yourpsk-v6-0001
     version: 6
     mode: default
 proxy-groups:

@@ -36,6 +36,9 @@
 - `tls.ca-roots` (`both`, `bundle` or `system`) chooses which root certificates the core trusts: with `bundle` it uses only the built-in Mozilla list and ignores certificates installed on the device. `tls.ca-denylist: true` refuses connections whose certificate chain goes through a state interception CA (Russian Trusted Root / Sub CA, Kazakhstan's Qaznet and ISCA roots). Both are off unless the config sets them; the built-in list adds about 200 KB to the core.
 - `geox-sha256` pins the GeoIP, GeoSite, MMDB and ASN databases by SHA-256: a download with another hash is refused and the previous file is kept. Without a pin nothing changes.
 
+**✂️ Splitting the TLS hello (`fragment-opts`)**
+- New per-proxy `fragment-opts` (`packets`, `length`, `delay`, `max-split`, as in Xray's `fragment`): splits the TLS hello of a proxy's connections into small pieces, so networks that block by reading the server name from the first packet cannot read it. VLESS and VMess share links with Xray's `fm` parameter get the same setting. Off unless a proxy sets it.
+
 ### Русский
 
 **🧩 XHTTP: ссылки с данными в заголовках работают**
@@ -71,6 +74,9 @@
 **🧩 Больше конфигов Citrus работают**
 - `tls.ca-roots` (`both`, `bundle` или `system`) задаёт, каким корневым сертификатам доверяет ядро: с `bundle` — только встроенному списку Mozilla, а сертификаты, установленные на устройстве, игнорируются. `tls.ca-denylist: true` отклоняет соединения, цепочка сертификатов которых проходит через государственный CA для перехвата трафика (Russian Trusted Root / Sub CA, казахстанские Qaznet и ISCA). Оба ключа выключены, пока конфиг их не задаст; встроенный список добавляет к ядру около 200 КБ.
 - `geox-sha256` закрепляет базы GeoIP, GeoSite, MMDB и ASN по SHA-256: загрузка с другим хешем отклоняется, прежний файл остаётся. Без пина ничего не меняется.
+
+**✂️ Нарезка TLS hello (`fragment-opts`)**
+- Новый `fragment-opts` у прокси (`packets`, `length`, `delay`, `max-split`, как `fragment` в Xray): режет TLS hello соединений прокси на мелкие части, чтобы сети, которые блокируют по имени сервера из первого пакета, не могли его прочитать. Ссылки VLESS и VMess с параметром `fm` из Xray получают ту же настройку. Выключено, пока прокси его не задаст.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

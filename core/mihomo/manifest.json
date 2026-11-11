@@ -134,6 +134,10 @@
     {
       "file": "0031-reality-mlkem-client-fingerprint.patch",
       "sha256": "2ac7e1b867526364a400c7d234268e09317a9572f4dbbc0840b26663f6ffd687"
+    },
+    {
+      "file": "0032-tls-hello-fragment.patch",
+      "sha256": "72a38959f813ed02606494fed681d1264b14a6d2994bfd10e6e3de1e8c91f0d0"
     }
   ],
   "assets": {

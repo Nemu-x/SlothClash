@@ -1,5 +1,5 @@
 {
-  "citrus": "62d1f567",
+  "citrus": "22da58f1",
   "fixtures": [
     {
       "file": "config-general.yaml",
@@ -446,6 +446,14 @@
       "file": "citrus-xray-fingerprints.yaml",
       "split": "proxies",
       "cases": {
+        "chrome155": {
+          "outcome": "accept",
+          "note": "core patch 0029 (Chrome 155); Citrus' chrome is Chrome 155, ours stays Chrome 133 as in stock mihomo"
+        },
+        "chrome133": {
+          "outcome": "accept",
+          "note": "core patch 0029 (the name of what chrome is)"
+        },
         "randomizedalpn": {
           "outcome": "accept",
           "note": "core patch 0007"
@@ -473,6 +481,10 @@
         "hellochrome_133": {
           "outcome": "accept",
           "note": "core patch 0007"
+        },
+        "hellochrome_155": {
+          "outcome": "accept",
+          "note": "core patch 0029 (Chrome 155)"
         },
         "helloios_13": {
           "outcome": "accept",
@@ -770,10 +782,7 @@
       "cases": {
         "": {
           "outcome": "accept",
-          "citrus-only": [
-            "tls.ca-roots",
-            "tls.ca-denylist"
-          ],
+          "citrus-only": ["tls.ca-roots", "tls.ca-denylist"],
           "note": "core patch 0026; opt-in: without the keys the core keeps its own roots and no denylist"
         }
       }
@@ -796,6 +805,25 @@
         "": {
           "outcome": "unsupported:XDrive template storage, storage requests (method, URL, headers, body) chosen by the config; refused (owner): the app turns such nodes into reject, the core never sends them (patch 0016)",
           "citrus-only": ["proxies[0].xdrive-opts.template"]
+        }
+      }
+    },
+    {
+      "file": "citrus-snell-v6.yaml",
+      "cases": {
+        "": {
+          "outcome": "deferred:Snell v6 is not in mihomo v1.19.33 (the core rejects version 6); it comes with the next mihomo release, Citrus took it from mihomo Alpha. Citrus refuses mode unsafe-raw (no PSK, no encryption) while that release accepts it: decide on the core bump",
+          "citrus-only": ["proxies[0].version", "proxies[0].mode"]
+        }
+      }
+    },
+    {
+      "file": "citrus-tun-dns-mode.yaml",
+      "cases": {
+        "": {
+          "outcome": "accept",
+          "citrus-only": ["tun.dns-mode"],
+          "note": "mihomo v1.19.33 reads it (Citrus took it from mihomo); the app keeps a subscription's tun.dns-mode"
         }
       }
     }

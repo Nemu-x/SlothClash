@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@62d1f567 docs/config.yaml lines 1515-1584 (the openvpn proxy) and 1569-1574 (identity keys, commented out there)
+# Source: getmikan/Citrus@22da58f1 docs/config.yaml lines 1522-1591 (the openvpn proxy) and 1576-1581 (identity keys, commented out there)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - comments of the proxy dropped, the four identity keys uncommented, wrapped into a minimal profile

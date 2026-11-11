@@ -1,10 +1,12 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@62d1f567 component/tls/utls.go lines 111-163 (the Xray-core fingerprint names Citrus accepts)
+# Source: getmikan/Citrus@22da58f1 component/tls/utls.go lines 98-99 (the pinned Chrome versions) and 116-169 (the Xray-core fingerprint names Citrus accepts)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - one VLESS+TLS proxy per name, the name as both the proxy name and its client-fingerprint
 
 proxies:
+  - {name: chrome155, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: chrome155}
+  - {name: chrome133, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: chrome133}
   - {name: randomizedalpn, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: randomizedalpn}
   - {name: randomizednoalpn, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: randomizednoalpn}
   - {name: hellofirefox_120, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: hellofirefox_120}
@@ -12,6 +14,7 @@ proxies:
   - {name: hellochrome_120, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: hellochrome_120}
   - {name: hellochrome_131, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: hellochrome_131}
   - {name: hellochrome_133, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: hellochrome_133}
+  - {name: hellochrome_155, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: hellochrome_155}
   - {name: helloios_13, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: helloios_13}
   - {name: helloios_14, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: helloios_14}
   - {name: helloedge_106, type: vless, server: 192.0.2.1, port: 443, uuid: 27848739-7e62-4138-9fd3-098a63964b6b, tls: true, servername: www.example.com, client-fingerprint: helloedge_106}

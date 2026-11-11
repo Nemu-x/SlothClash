@@ -162,6 +162,10 @@
     {
       "file": "0040-listener-close-races.patch",
       "sha256": "0525f2d6c077618ce24f225fb25631eba2261afcf0cc5cd084fe2442a1b3ef53"
+    },
+    {
+      "file": "0041-reality-default-fingerprint.patch",
+      "sha256": "66d551a341c90dbba41680b6cdc21db65b542cc1223d702668f515bbaaad12bb"
     }
   ],
   "assets": {

@@ -1,0 +1,201 @@
+SlothClash core patch 0041: a REALITY proxy without client-fingerprint dials as chrome.
+
+REALITY only works over uTLS. Stock mihomo fails every dial of a REALITY proxy
+that sets no client-fingerprint with "REALITY is based on uTLS, please set a
+client-fingerprint", while Xray clients send chrome when the share link has no
+fp=. Such links and hand-written configs now dial with the chrome hello
+(Chrome 133 here, as in stock mihomo; 0029 leaves "chrome" stock). An explicit
+"none" (or Xray's "unsafe" / "hellogolang") still means no uTLS and still fails;
+an explicit fingerprint and plain TLS proxies are unchanged. The change sits in
+StreamTLSConn, which every REALITY dial goes through (VLESS, VMess, Trojan, any
+transport, proxy-providers included).
+
+Ported from Nemu-x/ClashFest core patch 0032 (PR #291, merge 3f11dd86,
+GPL-3.0), itself from Rerowros/veles P7 (transport/vmess/tls.go, GPL-3.0).
+The tests here add the explicit-fingerprint and plain-TLS cases and check that
+the default is Chrome 133, not Chrome 155.
+
+diff --git a/transport/vmess/tls.go b/transport/vmess/tls.go
+index 6bede7f1..f9ab3f12 100644
+--- a/transport/vmess/tls.go
++++ b/transport/vmess/tls.go
+@@ -111,7 +111,17 @@ func StreamTLSConn(ctx context.Context, conn net.Conn, cfg *TLSConfig) (net.Conn
+ 		return nil, err
+ 	}
+ 
+-	if clientFingerprint, ok := tlsC.GetFingerprint(cfg.ClientFingerprint); ok {
++	clientFingerprintName := cfg.ClientFingerprint
++	if cfg.Reality != nil && clientFingerprintName == "" {
++		// SlothClash core patch 0041: REALITY only works over uTLS, and Xray
++		// clients send chrome when no fingerprint is set. Without this an unset
++		// client-fingerprint failed every dial below, which share links without
++		// fp= and hand-written configs hit. An explicit "none" (or Xray's
++		// "unsafe") still means no uTLS and still fails. "chrome" is Chrome 133
++		// here, as in stock mihomo (see 0029).
++		clientFingerprintName = "chrome"
++	}
++	if clientFingerprint, ok := tlsC.GetFingerprint(clientFingerprintName); ok {
+ 		if cfg.Reality != nil {
+ 			return tlsC.GetRealityConn(ctx, conn, clientFingerprint, tlsConfig.ServerName, cfg.Reality)
+ 		}
+diff --git a/transport/vmess/tls_reality_fingerprint_test.go b/transport/vmess/tls_reality_fingerprint_test.go
+new file mode 100644
+index 00000000..75a2fe7f
+--- /dev/null
++++ b/transport/vmess/tls_reality_fingerprint_test.go
+@@ -0,0 +1,155 @@
++package vmess
++
++// SlothClash core patch 0041: REALITY without client-fingerprint dials as chrome.
++
++import (
++	"context"
++	"crypto/ecdh"
++	"crypto/rand"
++	"encoding/binary"
++	"io"
++	"net"
++	"slices"
++	"testing"
++	"time"
++
++	tlsC "github.com/metacubex/mihomo/component/tls"
++
++	utls "github.com/metacubex/utls"
++)
++
++// helloFrom runs StreamTLSConn over a pipe, with REALITY or plain TLS, and
++// returns the ClientHello it sent, or the dial error when it sent none.
++func helloFrom(t *testing.T, fingerprint string, reality bool) (*utls.PubClientHelloMsg, error) {
++	t.Helper()
++	cfg := &TLSConfig{
++		Host:              "www.example.com",
++		ClientFingerprint: fingerprint,
++		SkipCertVerify:    true,
++	}
++	if reality {
++		key, err := ecdh.X25519().GenerateKey(rand.Reader)
++		if err != nil {
++			t.Fatal(err)
++		}
++		cfg.Reality = &tlsC.RealityConfig{PublicKey: key.PublicKey()}
++	}
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	deadline := time.Now().Add(5 * time.Second)
++	_ = client.SetDeadline(deadline)
++	_ = server.SetDeadline(deadline)
++
++	dialErr := make(chan error, 1)
++	go func() {
++		_, err := StreamTLSConn(context.Background(), client, cfg)
++		_ = client.Close()
++		dialErr <- err
++	}()
++
++	header := make([]byte, 5)
++	if _, err := io.ReadFull(server, header); err != nil {
++		return nil, <-dialErr
++	}
++	body := make([]byte, int(binary.BigEndian.Uint16(header[3:5])))
++	if _, err := io.ReadFull(server, body); err != nil {
++		t.Fatalf("read ClientHello: %v", err)
++	}
++	_ = server.Close()
++	<-dialErr
++	hello := utls.UnmarshalClientHello(body)
++	if hello == nil {
++		t.Fatal("captured record is not a ClientHello")
++	}
++	return hello, nil
++}
++
++func isGREASE(v uint16) bool { return v>>8 == v&0xff && v&0xf == 0xa }
++
++func ungrease[T ~uint16](values []T) []T {
++	out := make([]T, len(values))
++	for i, v := range values {
++		if isGREASE(uint16(v)) {
++			v = 0x0a0a
++		}
++		out[i] = v
++	}
++	return out
++}
++
++// sameHello compares the parts of two hellos that identify the parrot (GREASE
++// values normalised; random, session id and key shares differ per dial).
++func sameHello(a, b *utls.PubClientHelloMsg) bool {
++	return slices.Equal(ungrease(a.CipherSuites), ungrease(b.CipherSuites)) &&
++		slices.Equal(ungrease(a.SupportedCurves), ungrease(b.SupportedCurves)) &&
++		slices.Equal(ungrease(a.SupportedSignatureAlgorithms), ungrease(b.SupportedSignatureAlgorithms)) &&
++		slices.Equal(ungrease(a.SupportedVersions), ungrease(b.SupportedVersions))
++}
++
++func mustHello(t *testing.T, fingerprint string, reality bool) *utls.PubClientHelloMsg {
++	t.Helper()
++	hello, err := helloFrom(t, fingerprint, reality)
++	if err != nil {
++		t.Fatalf("fingerprint %q (reality %v): %v", fingerprint, reality, err)
++	}
++	return hello
++}
++
++func TestRealityWithoutFingerprintUsesChrome(t *testing.T) {
++	hello := mustHello(t, "", true)
++	chrome := mustHello(t, "chrome", true)
++	if len(hello.SessionId) != 32 {
++		t.Fatalf("session id %d bytes, want a REALITY session id", len(hello.SessionId))
++	}
++	if !isGREASE(hello.CipherSuites[0]) || !sameHello(hello, chrome) {
++		t.Fatalf("hello without client-fingerprint is not chrome's:\n got  %x %x\n want %x %x",
++			hello.CipherSuites, hello.SupportedSignatureAlgorithms, chrome.CipherSuites, chrome.SupportedSignatureAlgorithms)
++	}
++	// chrome is Chrome 133 here (0029), not Chrome 155: no GREASE or ML-DSA
++	// schemes in signature_algorithms.
++	for _, scheme := range hello.SupportedSignatureAlgorithms {
++		if isGREASE(uint16(scheme)) || (scheme >= 0x0904 && scheme <= 0x0906) {
++			t.Fatalf("hello without client-fingerprint advertises %#04x: that is Chrome 155, not chrome (133)", uint16(scheme))
++		}
++	}
++}
++
++// An explicit name that means "no uTLS" still fails: REALITY cannot use it.
++func TestRealityFingerprintNoneStillFails(t *testing.T) {
++	for _, name := range []string{"none", "unsafe", "HelloGolang"} {
++		if _, err := helloFrom(t, name, true); err == nil {
++			t.Errorf("REALITY with client-fingerprint %q dialed", name)
++		}
++	}
++}
++
++// An explicit fingerprint is used as configured, not replaced by chrome.
++func TestRealityExplicitFingerprintUnchanged(t *testing.T) {
++	chrome := mustHello(t, "chrome", true)
++	for _, name := range []string{"firefox", "safari", "ios", "chrome155"} {
++		hello := mustHello(t, name, true)
++		if len(hello.SessionId) != 32 {
++			t.Fatalf("%s: session id %d bytes, want a REALITY session id", name, len(hello.SessionId))
++		}
++		if sameHello(hello, chrome) {
++			t.Errorf("REALITY with client-fingerprint %s sent chrome's hello", name)
++		}
++		if again := mustHello(t, name, true); !sameHello(hello, again) {
++			t.Errorf("REALITY with client-fingerprint %s sent two different hellos", name)
++		}
++	}
++}
++
++// Plain TLS without client-fingerprint keeps Go's own hello, as before.
++func TestTLSWithoutFingerprintUnaffected(t *testing.T) {
++	hello := mustHello(t, "", false)
++	goHello := mustHello(t, "none", false)
++	chrome := mustHello(t, "chrome", false)
++	if !sameHello(hello, goHello) {
++		t.Fatalf("TLS without client-fingerprint changed its hello:\n got  %x\n want %x", hello.CipherSuites, goHello.CipherSuites)
++	}
++	if isGREASE(hello.CipherSuites[0]) || sameHello(hello, chrome) {
++		t.Fatalf("TLS without client-fingerprint sent chrome's hello: %x", hello.CipherSuites)
++	}
++}

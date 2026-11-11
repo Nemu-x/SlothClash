@@ -102,7 +102,7 @@ previous tag until the patch is redone.
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
 26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, 26.11.9, each plain, with
 `minClientVer: 25.1.1` and with `maxClientVer: 2.0.0`) and
-probes every combination of key share, fingerprint (chrome, plus firefox, safari, chrome155 and Xray's hellofirefox_148 and hellosafari_26_3 on
+probes every combination of key share, fingerprint (chrome, plus firefox, safari, chrome155, Xray's hellofirefox_148 and hellosafari_26_3 and no fingerprint on
 one server per generation and every current release), policy and client version through the core
 under test. Images are `teddysun/xray`; a release not published there yet (26.11.9 today) is built
 from the official `Xray-linux-64.zip`, pinned by its SHA-256 in the test. The expected result of each cell comes from a model of the server generations, so a
@@ -772,17 +772,46 @@ which are out of scope here.
 
 mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrClosed`) for this.
 
+### 0041 REALITY: chrome when no `client-fingerprint` is set
+
+REALITY only works over uTLS, and stock mihomo fails every dial of a REALITY proxy without
+`client-fingerprint` with `REALITY is based on uTLS, please set a client-fingerprint`. Xray clients
+send chrome when a share link has no `fp=`, so such links (and hand-written configs that leave the
+key out) worked everywhere but here. The patch dials them with the `chrome` hello. That is Chrome 133,
+the stock meaning of `chrome` (0029 leaves it alone); a config that wants Chrome 155 names
+`chrome155`.
+
+Only the empty value changes. `client-fingerprint: none` (and Xray's `unsafe` / `hellogolang`, see
+0008) still means no uTLS and still fails the dial; an explicit fingerprint is used as written; a
+plain TLS proxy without the key keeps Go's own hello. The default is applied in `StreamTLSConn`,
+which every REALITY dial goes through (VLESS, VMess and Trojan, every transport, proxy-providers
+included), after config parsing, so 0031's `mlkem-client-fingerprint` and 0002's key-share choice
+see chrome like an explicit `chrome`.
+
+Ported from [Nemu-x/ClashFest](https://github.com/Nemu-x/ClashFest) core patch 0032 (PR #291,
+GPL-3.0), which takes it from [Rerowros/veles](https://github.com/Rerowros/veles) P7 (GPL-3.0).
+
+Tests in the patch (`transport/vmess`, over a pipe, reading the ClientHello the dial sends): without
+the key the REALITY hello is chrome's (cipher suites, groups, signature schemes and versions, GREASE
+normalised, 32-byte REALITY session id) and carries no ML-DSA scheme, so it is Chrome 133 and not
+Chrome 155; `none`, `unsafe` and `HelloGolang` still fail; `firefox`, `safari`, `ios` and `chrome155`
+keep their own hellos; plain TLS without the key sends the same hello as with `none`, not chrome's.
+The first test fails on the series without this patch. The REALITY lab has a no-fingerprint row (Auto
+and forced) on every browser server: the patched core passes it like `chrome`, the stock core fails
+it.
+
+mihomo: none claimed. Delete when mihomo picks a default fingerprint for REALITY itself.
+
 ### What else Rerowros/veles changes
 
 [Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,
-0031-0036 and 0038 take parts of it. The rest is not taken:
+0031-0036, 0038 and 0041 take parts of it. The rest is not taken:
 
 - **Already here:** client version 26.11.9 (0001/0029), per-proxy client version (0005), Chrome 155
   (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004).
 - **Changes stock behaviour:**
   - `chrome` meaning Chrome 155;
   - the automatic swap to chrome for a parrot without the hybrid share;
-  - a REALITY proxy without `client-fingerprint` defaulting to chrome;
   - XHTTP packet-up uploads with several requests in flight (P5/P8);
   - the controller refusing a non-loopback address without a secret (P17);
   - redacted `GET /configs`.

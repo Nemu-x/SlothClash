@@ -15,6 +15,7 @@
 - gRPC proxies: a server that sends a long run of empty gRPC frames can no longer crash the core (the reader used to call itself once per frame); a frame whose payload length is larger than its message is now refused.
 - XHTTP: read and write deadlines are now separate and only end an operation that is still running when they pass. Before, any deadline closed the whole connection even while it was idle, and setting one direction moved the other, which could drop idle multiplexed (smux, yamux) sessions over XHTTP.
 - A broken `vless://` or `vmess://` link in a subscription the core downloads itself no longer writes the whole link, with its UUID and keys, to the log; the warning names only the server and the node.
+- A config or subscription with `external-ui: ./` (or any directory that holds the core's own files) no longer makes the core serve its working directory, the running config with its secret and node credentials included, at `/ui` without the controller password. The dashboard is turned off for such a config with a warning in the log; dashboards in a subdirectory such as `ui` work as before.
 
 **🛰️ Core: stock configs behave like stock mihomo**
 - REALITY's automatic post-quantum key-share choice no longer flips on network trouble. Only a server that actually answered with its cover site's certificate counts as a key-share mismatch; timeouts, resets and dial errors are ignored, so a flaky network can no longer switch an older Xray server to the post-quantum share and break it.
@@ -57,6 +58,7 @@
 - Прокси gRPC: сервер, который шлёт длинную серию пустых кадров gRPC, больше не может уронить ядро (раньше чтение вызывало себя на каждый кадр); кадр, длина данных которого больше его сообщения, теперь отклоняется.
 - XHTTP: сроки чтения и записи теперь раздельные и завершают только операцию, которая ещё идёт к моменту срока. Раньше любой срок закрывал всё соединение, даже простаивающее, а установка одного направления сдвигала другое, из-за чего могли рваться простаивающие мультиплексированные сессии (smux, yamux) поверх XHTTP.
 - Сломанная ссылка `vless://` или `vmess://` в подписке, которую ядро скачивает само, больше не пишет в лог всю ссылку с UUID и ключами; в предупреждении только сервер и имя узла.
+- Конфиг или подписка с `external-ui: ./` (или любым каталогом, где лежат файлы самого ядра) больше не заставляют ядро отдавать по `/ui` без пароля контроллера свой рабочий каталог, включая текущий конфиг с секретом и данными узлов. Для такого конфига дашборд выключается с предупреждением в логе; дашборды в подкаталоге, например `ui`, работают как раньше.
 
 **🛰️ Ядро: обычные конфиги работают как в обычном mihomo**
 - Автоматический выбор постквантовой доли ключа в REALITY больше не переключается из-за сбоев сети. Несовпадением доли ключа считается только ответ сервера сертификатом сайта-прикрытия; таймауты, сбросы и ошибки подключения игнорируются, поэтому нестабильная сеть больше не переводит старый сервер Xray на постквантовую долю и не ломает его.

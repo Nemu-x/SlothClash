@@ -74,10 +74,11 @@ const patchedClientVersion = "26.11.9"
 // hybridParrot reports whether the fingerprint's hello carries the
 // X25519MLKEM768 share: chrome (Chrome 133), chrome155 (0029), and from
 // mihomo v1.19.34 (metacubex/utls v1.9.0-alpha.1) firefox (Firefox 148) and
-// safari (Safari 26.3) too.
+// safari (Safari 26.3) too, and Xray's hellofirefox_148 / hellosafari_26_3,
+// which 0008 maps to those parrots.
 func hybridParrot(fingerprint string) bool {
 	switch fingerprint {
-	case "chrome", "chrome155", "firefox", "safari":
+	case "chrome", "chrome155", "firefox", "safari", "hellofirefox_148", "hellosafari_26_3":
 		return true
 	}
 	return false
@@ -167,9 +168,9 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 // expectStock models stock mihomo: client version 1.8.2, hybrid share only
 // when forced and only from a parrot that has it (chrome, and from v1.19.34
 // firefox and safari), unknown top-level keys ignored. It does not know
-// chrome155, and REALITY needs a fingerprint it knows.
+// chrome155 or Xray's names (0008), and REALITY needs a fingerprint it knows.
 func expectStock(r row) bool {
-	if r.fingerprint == "chrome155" || !versionGate(r, "1.8.2") {
+	if r.fingerprint == "chrome155" || r.fingerprint == "hellofirefox_148" || r.fingerprint == "hellosafari_26_3" || !versionGate(r, "1.8.2") {
 		return false
 	}
 	return acceptsShare(r.srv.version, r.forced && hybridParrot(r.fingerprint))
@@ -193,7 +194,7 @@ func TestRealityMatrix(t *testing.T) {
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
 		if s.variant == "plain" && browserVersions[s.version] {
-			for _, fp := range []string{"firefox", "safari", "chrome155"} {
+			for _, fp := range []string{"firefox", "safari", "chrome155", "hellofirefox_148", "hellosafari_26_3"} {
 				rows = append(rows, row{srv: s, fingerprint: fp}, row{srv: s, fingerprint: fp, forced: true})
 			}
 		}

@@ -30,10 +30,10 @@ index d48a1ba6..948bee1d 100644
  	}
 diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
 new file mode 100644
-index 00000000..91782d3e
+index 00000000..e6657c2c
 --- /dev/null
 +++ b/component/tls/utls_xray_names.go
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,87 @@
 +package tls
 +
 +// ClashFest core patch 0007: client-fingerprint accepts the names Xray-core uses
@@ -41,7 +41,8 @@ index 00000000..91782d3e
 +// this core ships. Vanilla mihomo logs an unknown name and dials with Go's own
 +// TLS hello instead, which is the one fingerprint a censor can single out.
 +// The table follows Xray's transport/internet/tls/tls.go and Citrus commit
-+// 9c9b0856 (written for metacubex/utls v1.8.8); no utls fork is involved.
++// 9c9b0856 (written for metacubex/utls v1.8.8; Firefox 148 and Safari 26.3 map
++// to their own parrots since metacubex/utls v1.9.0-alpha.1); no utls fork is involved.
 +
 +import utls "github.com/metacubex/utls"
 +
@@ -53,15 +54,15 @@ index 00000000..91782d3e
 +	"randomizednoalpn": utls.HelloRandomizedNoALPN,
 +
 +	"hellofirefox_120":                 utls.HelloFirefox_120,
-+	"hellofirefox_148":                 utls.HelloFirefox_120, // nearest, utls v1.8.8 has no Firefox 148 parrot
++	"hellofirefox_148":                 utls.HelloFirefox_148,
 +	"hellochrome_120":                  utls.HelloChrome_120,
 +	"hellochrome_131":                  utls.HelloChrome_131,
 +	"hellochrome_133":                  utls.HelloChrome_133,
 +	"helloios_13":                      utls.HelloIOS_13,
 +	"helloios_14":                      utls.HelloIOS_14,
-+	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 does not work with utls
-+	"hellosafari_26_3":                 utls.HelloSafari_16_0, // nearest, utls v1.8.8 has no Safari 26.3 parrot
-+	"hello360_11_0":                    utls.Hello360_Auto,    // Hello360_11_0 does not work with utls
++	"helloedge_106":                    utls.HelloEdge_Auto, // HelloEdge_106 does not work with utls
++	"hellosafari_26_3":                 utls.HelloSafari_26_3,
++	"hello360_11_0":                    utls.Hello360_Auto, // Hello360_11_0 does not work with utls
 +	"helloqq_11_1":                     utls.HelloQQ_11_1,
 +	"hellorandomized":                  utls.HelloRandomized,
 +	"hellorandomizedalpn":              utls.HelloRandomizedALPN,
@@ -122,10 +123,10 @@ index 00000000..91782d3e
 +}
 diff --git a/component/tls/utls_xray_names_test.go b/component/tls/utls_xray_names_test.go
 new file mode 100644
-index 00000000..5ce834ee
+index 00000000..b4ef73b8
 --- /dev/null
 +++ b/component/tls/utls_xray_names_test.go
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,76 @@
 +package tls
 +
 +import (
@@ -171,6 +172,34 @@ index 00000000..5ce834ee
 +	for _, name := range []string{"Chrome", "FIREFOX", "Safari", "iOS", "None", "Random", "Randomized"} {
 +		if got, ok := GetFingerprint(name); ok {
 +			t.Fatalf("GetFingerprint(%q) = %s, want the stock unknown-name result", name, got.Client)
++		}
++	}
++}
++
++func TestXrayFingerprintCurrentBrowsers(t *testing.T) {
++	// metacubex/utls v1.9.0-alpha.1 (mihomo v1.19.34) ships these parrots; before
++	// that the names fell back to Firefox 120 and Safari 16.0.
++	for name, version := range map[string]string{"hellofirefox_148": "148", "hellosafari_26_3": "26.3"} {
++		got, ok := GetFingerprint(name)
++		if !ok || got.Version != version {
++			t.Fatalf("GetFingerprint(%q) = %s/%s, want version %s", name, got.Client, got.Version, version)
++		}
++		// the point of the real parrots: they carry the hybrid key share that
++		// Xray 26.9.8+ REALITY servers require
++		spec, err := utls.UTLSIdToSpec(got)
++		if err != nil {
++			t.Fatalf("%s: %v", name, err)
++		}
++		hybrid := false
++		for _, ext := range spec.Extensions {
++			if ks, ok := ext.(*utls.KeyShareExtension); ok {
++				for _, share := range ks.KeyShares {
++					hybrid = hybrid || share.Group == utls.X25519MLKEM768
++				}
++			}
++		}
++		if !hybrid {
++			t.Fatalf("%s has no X25519MLKEM768 key share", name)
 +		}
 +	}
 +}

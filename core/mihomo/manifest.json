@@ -38,7 +38,7 @@
     },
     {
       "file": "0008-tls-xray-fingerprint-names.patch",
-      "sha256": "cd756cad18be06a4ae3ebd6a396af12a946a141816c993ade0739f3e9b1f8d3a"
+      "sha256": "a2f760124f7dbebeece4b35d245ea87d52c86e698c253362398b5d8fcf8bb528"
     },
     {
       "file": "0009-tls-pin-and-name-lists.patch",
@@ -125,7 +125,7 @@
     },
     {
       "file": "0029-tls-chrome155-hello.patch",
-      "sha256": "44f13ac27594679d7e91dc8ba1a57fbf49044748b8b78e114008b87213aee866"
+      "sha256": "1e0b641cd6b4bba7e75f2abdd4006aa6e8b2cd98aaa4034ad5dc6b0eddf49205"
     },
     {
       "file": "0030-reality-mlkem-silent-probe.patch",

@@ -641,6 +641,59 @@ the key or the query, and with the server and the name.
 
 mihomo: none claimed. Delete when mihomo stops logging the link.
 
+### 0036 external-ui: never a directory that holds the core's files
+
+`external-ui` (with `external-ui-name`) is served at `/ui` without the controller secret, and a UI
+update (`POST /upgrade/ui`) first empties that directory. mihomo only checks that the path is inside
+the home directory or a `SAFE_PATHS` root, so a config, a subscription included, can set
+`external-ui: ./`: `/ui/config.yaml` then serves the running config (the controller secret, every
+node's credentials) to anything that can reach the controller, a web page through DNS rebinding
+included, and a UI update would delete the core's files.
+
+The patch adds `C.Path.HoldsCoreState` (the home directory, the directory of the config file, a
+`SAFE_PATHS` root, or an ancestor of one of them) and `config.CheckExternalUI`. Such an
+`external-ui` does not fail the config, since one bad key from a subscription should not stop the
+core: the UI is turned off with the warning `External UI disabled: external-ui ... would hold the
+files of the core`, so `/ui` serves nothing and the updater keeps its default path. The `-ext-ui`
+command-line flag with such a directory is a fatal error. A UI in a subdirectory (`ui`,
+`ui/zashboard`, the default) is unchanged.
+
+From [Rerowros/veles](https://github.com/Rerowros/veles) `constant/path.go`, `config/config.go` and
+`main.go` (GPL-3.0). Tests: `HoldsCoreState` for the home, its parents, a `SAFE_PATHS` root, a
+config directory outside the home and their subdirectories; `CheckExternalUI` for the cases above;
+a config with `external-ui: .`, `./` or the home directory loads with the UI off and the warning, and
+`ui` + `zashboard` is kept.
+
+mihomo: none claimed. Delete when mihomo refuses such a directory itself.
+
+### What else Rerowros/veles changes
+
+[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030 and
+0031-0036 take parts of it. The rest is not taken:
+
+- **Already here:** client version 26.11.9 (0001/0029), per-proxy client version (0005), Chrome 155
+  (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004).
+- **Changes stock behaviour:**
+  - `chrome` meaning Chrome 155;
+  - the automatic swap to chrome for a parrot without the hybrid share;
+  - a REALITY proxy without `client-fingerprint` defaulting to chrome;
+  - XHTTP packet-up uploads with several requests in flight (P5/P8);
+  - the relay's batched writev copy, small-buffer copy and lazy `BufferedConn` reader (P12);
+  - the controller refusing a non-loopback address without a secret (P17);
+  - redacted `GET /configs`.
+- **Server only:**
+  - per-user traffic, limits and IP limits (P10/P18);
+  - the Xray gRPC API (P11);
+  - pre-auth checks of inbounds (P13);
+  - fallback pages (P14);
+  - `/metrics`, `/healthz`, `/events` (P16);
+  - the PROXY protocol;
+  - the AnyTLS stream cap;
+  - the VLESS addons and XHTTP upload-queue bounds;
+  - the Linux GC ballast;
+  - `age` CLI key files.
+- **Too large for a patch here:** the VLESS `mux.cool` client and server (P15).
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a

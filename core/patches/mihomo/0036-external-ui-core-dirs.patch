@@ -1,0 +1,227 @@
+diff --git a/config/config.go b/config/config.go
+index d4696015..a68a8ea4 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -906,6 +906,24 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+ 	}, nil
+ }
+ 
++// CheckExternalUI refuses an external-ui directory (with external-ui-name)
++// that is the home directory, the config directory, a SAFE_PATHS root or an
++// ancestor of one of them: the UI update empties the directory before it
++// installs the new files, and /ui serves it without the secret.
++// SlothClash core patch 0036, from Rerowros/veles (GPL-3.0).
++func CheckExternalUI(externalUI, externalUIName string) error {
++	dir := externalUI
++	if dir == "" {
++		dir = "ui" // the updater's default, below the home directory
++	}
++	for _, d := range []string{externalUI, filepath.Join(C.Path.Resolve(dir), externalUIName)} {
++		if d != "" && C.Path.HoldsCoreState(d) {
++			return fmt.Errorf("external-ui %s would hold the files of the core (home directory, config directory, a SAFE_PATHS root or their parent): use a subdirectory such as ui", C.Path.Resolve(d))
++		}
++	}
++	return nil
++}
++
+ func parseController(cfg *RawConfig) (*Controller, error) {
+ 	if path := cfg.ExternalUI; path != "" && !C.Path.IsSafePath(path) {
+ 		return nil, C.Path.ErrNotSafePath(path)
+@@ -913,11 +931,19 @@ func parseController(cfg *RawConfig) (*Controller, error) {
+ 	if uiName := cfg.ExternalUIName; uiName != "" && !filepath.IsLocal(uiName) {
+ 		return nil, fmt.Errorf("external UI name is not local: %s", uiName)
+ 	}
++	// A directory that holds the core files does not fail the config (a
++	// subscription may carry external-ui: ./, the client keeps it): the UI is
++	// turned off, so /ui does not serve it and the UI update does not empty it.
++	externalUI, externalUIName := cfg.ExternalUI, cfg.ExternalUIName
++	if err := CheckExternalUI(externalUI, externalUIName); err != nil {
++		log.Warnln("External UI disabled: %s", err)
++		externalUI, externalUIName = "", ""
++	}
+ 	return &Controller{
+ 		ExternalController:            cfg.ExternalController,
+-		ExternalUI:                    cfg.ExternalUI,
++		ExternalUI:                    externalUI,
+ 		ExternalUIURL:                 cfg.ExternalUIURL,
+-		ExternalUIName:                cfg.ExternalUIName,
++		ExternalUIName:                externalUIName,
+ 		Secret:                        cfg.Secret,
+ 		ExternalControllerRoutingMark: cfg.ExternalControllerRoutingMark,
+ 		ExternalControllerPipe:        cfg.ExternalControllerPipe,
+diff --git a/config/external_ui_test.go b/config/external_ui_test.go
+new file mode 100644
+index 00000000..18a33810
+--- /dev/null
++++ b/config/external_ui_test.go
+@@ -0,0 +1,79 @@
++package config
++
++import (
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/common/observable"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
++)
++
++func TestExternalUIRefusesCoreDirectories(t *testing.T) {
++	home := C.Path.HomeDir()
++	for _, tc := range []struct {
++		ui, name string
++		ok       bool
++	}{
++		{"", "", true},
++		{"ui", "", true},
++		{"ui", "zashboard", true},
++		{"", "metacubexd", true},
++		{".", "", false},
++		{"./", "", false},
++		{home, "", false},
++		{filepath.Dir(home), "", false},
++		{".", "ui", false}, // external-ui itself is served by /ui
++	} {
++		err := CheckExternalUI(tc.ui, tc.name)
++		if (err == nil) != tc.ok {
++			t.Errorf("CheckExternalUI(%q, %q) = %v, want ok=%v", tc.ui, tc.name, err, tc.ok)
++		}
++	}
++}
++
++// A config with an external-ui that holds the core files still loads (a
++// subscription may carry external-ui: ./): the UI is turned off with a warning.
++func TestExternalUICoreDirectoryDisablesUI(t *testing.T) {
++	home := C.Path.HomeDir()
++	for _, ui := range []string{".", "./", home} {
++		sub := log.Subscribe()
++		ctrl, err := parseController(&RawConfig{ExternalUI: ui})
++		warned := waitWarning(sub, "External UI disabled")
++		log.UnSubscribe(sub)
++		if err != nil {
++			t.Errorf("external-ui %q: config refused: %v", ui, err)
++			continue
++		}
++		if ctrl.ExternalUI != "" || ctrl.ExternalUIName != "" {
++			t.Errorf("external-ui %q: kept as %q/%q, want the UI off", ui, ctrl.ExternalUI, ctrl.ExternalUIName)
++		}
++		if !warned {
++			t.Errorf("external-ui %q: no warning in the log", ui)
++		}
++	}
++
++	ctrl, err := parseController(&RawConfig{ExternalUI: "ui", ExternalUIName: "zashboard"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if ctrl.ExternalUI != "ui" || ctrl.ExternalUIName != "zashboard" {
++		t.Errorf("safe external-ui = %q/%q, want it kept", ctrl.ExternalUI, ctrl.ExternalUIName)
++	}
++}
++
++func waitWarning(sub observable.Subscription[log.Event], text string) bool {
++	timeout := time.After(time.Second)
++	for {
++		select {
++		case event := <-sub:
++			if event.LogLevel == log.WARNING && strings.Contains(event.Payload, text) {
++				return true
++			}
++		case <-timeout:
++			return false
++		}
++	}
++}
+diff --git a/constant/path.go b/constant/path.go
+index f2463a4a..34491896 100644
+--- a/constant/path.go
++++ b/constant/path.go
+@@ -104,6 +104,24 @@ func (p *path) SafePaths() []string {
+ 	return append([]string{p.homeDir}, p.safePaths...) // add homedir to safePaths
+ }
+ 
++// HoldsCoreState reports whether dir is the home directory, the directory of
++// the config file or a SAFE_PATHS root, or an ancestor of one of them: a
++// directory the core keeps its own files in. Such a directory must never be
++// emptied or served as a whole, whatever SKIP_SAFE_PATH_CHECK says.
++func (p *path) HoldsCoreState(dir string) bool {
++	dir = filepath.Clean(p.Resolve(dir))
++	roots := append([]string{filepath.Dir(p.Resolve(p.configFile))}, p.SafePaths()...)
++	for _, root := range roots {
++		if root == "" {
++			continue
++		}
++		if rel, err := filepath.Rel(dir, filepath.Clean(root)); err == nil && filepath.IsLocal(rel) {
++			return true
++		}
++	}
++	return false
++}
++
+ func (p *path) ErrNotSafePath(path string) error {
+ 	return ErrNotSafePath{Path: path, SafePaths: p.SafePaths()}
+ }
+diff --git a/constant/path_state_test.go b/constant/path_state_test.go
+new file mode 100644
+index 00000000..0be65723
+--- /dev/null
++++ b/constant/path_state_test.go
+@@ -0,0 +1,42 @@
++package constant
++
++import (
++	"path/filepath"
++	"testing"
++)
++
++func TestHoldsCoreState(t *testing.T) {
++	base := t.TempDir()
++	home := filepath.Join(base, "home", "citrus")
++	extra := filepath.Join(base, "share", "ui-root")
++	p := &path{homeDir: home, configFile: "config.yaml", safePaths: []string{extra}}
++
++	for dir, want := range map[string]bool{
++		".":                                   true, // the home itself
++		home:                                  true,
++		home + string(filepath.Separator):     true,
++		filepath.Join(home, ".."):             true, // an ancestor of the home
++		base:                                  true,
++		extra:                                 true, // a SAFE_PATHS root
++		filepath.Join(base, "share"):          true,
++		"ui":                                  false,
++		filepath.Join(home, "ui"):             false,
++		filepath.Join(home, "ui", "zash"):     false,
++		filepath.Join(extra, "metacubexd"):    false,
++		filepath.Join(base, "elsewhere", "x"): false,
++	} {
++		if got := p.HoldsCoreState(dir); got != want {
++			t.Errorf("HoldsCoreState(%q) = %v, want %v", dir, got, want)
++		}
++	}
++
++	// The directory of a config file outside the home counts too.
++	etc := filepath.Join(base, "etc", "citrus")
++	p.configFile = filepath.Join(etc, "config.yaml")
++	if !p.HoldsCoreState(etc) || !p.HoldsCoreState(filepath.Join(base, "etc")) {
++		t.Error("the config directory or its parent is not protected")
++	}
++	if p.HoldsCoreState(filepath.Join(etc, "ui")) {
++		t.Error("a subdirectory of the config directory is protected")
++	}
++}
+diff --git a/main.go b/main.go
+index 972caf8b..0136b8f2 100644
+--- a/main.go
++++ b/main.go
+@@ -192,6 +192,9 @@ func main() {
+ 
+ 	var options []hub.Option
+ 	if externalUI != "" {
++		if err := config.CheckExternalUI(externalUI, ""); err != nil {
++			log.Fatalln("ext-ui error: %s", err.Error())
++		}
+ 		options = append(options, hub.WithExternalUI(externalUI))
+ 	}
+ 	if externalController != "" {

@@ -102,7 +102,7 @@ previous tag until the patch is redone.
 `tests/reality-lab` runs real Xray servers of every generation in Docker (24.12.31, 25.7.25,
 26.4.13, 26.7.11, 26.7.28, 26.9.9, 26.9.30, 26.10.21, 26.10.29, 26.11.9, each plain, with
 `minClientVer: 25.1.1` and with `maxClientVer: 2.0.0`) and
-probes every combination of key share, fingerprint (chrome, plus firefox, safari, chrome155 and Xray's hellofirefox_148 and hellosafari_26_3 on
+probes every combination of key share, fingerprint (chrome, plus firefox, safari, chrome155, Xray's hellofirefox_148 and hellosafari_26_3 and no fingerprint on
 one server per generation and every current release), policy and client version through the core
 under test. Images are `teddysun/xray`; a release not published there yet (26.11.9 today) is built
 from the official `Xray-linux-64.zip`, pinned by its SHA-256 in the test. The expected result of each cell comes from a model of the server generations, so a
@@ -116,6 +116,9 @@ core and the stock core of the same tag, on every core PR and on every release.
 cd tests/reality-lab
 XRAY_LAB=1 SLOTH_MIHOMO_BIN=<patched core> SLOTH_MIHOMO_STOCK_BIN=<stock core> go test -v -count=1 .
 ```
+
+The same package holds the `mux.cool` lab of 0039 (`TestMuxCool`: Xray 26.11.9, no internet), see
+below.
 
 ### Citrus lab
 
@@ -823,6 +826,70 @@ a relay waits on a peeked connection. `common/net` passes with `-race`.
 mihomo: none claimed. Delete when sing's `bufio.Copy` stops holding a pool buffer while it waits on
 a TLS source and writes a burst with one call, and `BufferedConn` makes its reader lazily.
 
+### 0039 VLESS: Mux.Cool client (`mux.cool`)
+
+Xray clients can multiplex a node's connections (outbound `mux`): TCP streams and UDP share a few
+VLESS connections ("carriers"), each one VLESS request with the Mux command, and UDP rides them as
+XUDP. mihomo has only sing-mux (`smux`), which an Xray server does not speak. The patch adds an
+opt-in block on `vless` proxies, with the names and defaults of
+[Rerowros/veles](https://github.com/Rerowros/veles) so configs written for Veles load unchanged:
+
+```yaml
+mux.cool:
+  enabled: true
+  max-concurrency: 8        # sessions at once per carrier (default 8)
+  max-connections: 128      # sessions over a carrier's lifetime, then a new one (default 128)
+  max-carriers: 0           # carriers at once, 0 = no limit
+  xudp-concurrency: 0       # > 0: UDP gets its own pool of that width; 0 = shares the TCP pool
+  xudp-proxy-udp443: reject # reject (default) | allow | skip
+```
+
+`xudp-proxy-udp443` is Xray's policy for UDP/443 (QUIC): `reject` refuses it, so browsers fall back
+to TCP inside the mux; `allow` carries it over the mux; `skip` sends it over a plain VLESS
+connection (with the proxy's own `packet-encoding`). A carrier idle for 16 s closes; a session
+waits up to 100 ms for its first data so the New frame carries it, as in Xray.
+
+Refused at load time with a config error: `mux.cool` on a non-`vless` proxy, together with an
+enabled `smux`, with a Vision `flow` (Vision splices the TLS of one TCP connection; Xray refuses
+mux with Vision for TCP too), and with `network: xdrive` (0004 already runs its own Mux.Cool
+client inside the outbound; the two stay separate because 0004's is TCP-only and tied to the XDrive
+session lifetime, and merging would change 0004). A disabled block is ignored. Without the block
+nothing changes: the VLESS outbound sends the Mux command only for the carrier dial the wrapper
+marks in its context (the exact metadata of that dial), so a plain connection to `v1.mux.cool`, or a
+`dialer-proxy` hop that inherits the context, stays an ordinary TCP request. Share links carry no
+mux setting (Veles' share-link changes are 0032 and 0035), so the converter is untouched.
+
+Ported from Veles P15, client side, at f3d6ddaf (v1.19.33-veles.3; added in 278fbabc): the
+`transport/muxcool` client (codec, sessions, pool, carrier limiter), the `MuxCool` wrapper and the
+parser block. Veles took P15 from [legiz-ru/Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core)
+(branch `v1-19-34`), author Jolymmiles, commits 8ab053b11ea8, 321b7c1a2615, 88ff3e6e8223,
+00806cdf91f4 and 9090c2c0ee19. Licence: Veles and Prizrak-Core (a fork of snakem982/mihomo) are
+GPL-3.0, like mihomo; the ported files carry no headers and there is no NOTICE. The server side
+(`server*.go`, the listener) and the tests that need it or an Xray binary are left out.
+
+Tests in the patch (Veles' client tests): the codec against Xray's frame vectors and malformed
+input; sessions (full duplex, deadlines, End/Error, a payload-free New for server-first protocols);
+packet sessions (XUDP frames, datagram boundaries, a response without target, a full queue that
+does not stall the carrier); the worker (serialized writes, demultiplexing, unknown sessions,
+malformed frames, write failure); the pool (reuse and growth at the limit, lifetime rotation with
+monotonic ids, idle close, coalesced dials, `max-carriers` shared by the TCP and XUDP pools, close
+during a dial); an independent Xray-compatible echo server for streams, stress and XUDP GlobalID
+across carriers; the wrapper (sentinel dial, UDP/443 policies, GlobalID, pools, close order) and
+the parser (defaults, every refusal above). SlothClash's own: the Mux command only for the marked
+carrier, and `mux.cool` over xdrive refused.
+
+Lab (`tests/reality-lab/muxcool_test.go`, same `XRAY_LAB=1` switch, runs in "Core build"): Xray
+26.11.9 in Docker with a plain VLESS inbound, the core under test in front, a counting TCP relay per
+proxy. 8 concurrent streams of 1 MiB each come back intact over 1 carrier (8 connections without
+the key); UDP joins that carrier as XUDP with every datagram echoed; UDP/443 is carried (`allow`),
+refused with no connection and the reason in the log (`reject`) or sent over one plain VLESS
+connection (`skip`); the stock core ignores the key and opens 8 connections. Measured on Windows
+(Docker Desktop, loopback, 4 runs): 8 x 1 MiB echoed in a median 256 ms (200-257) over the mux and
+245 ms (225-310) without it, the same within noise; the gain is fewer handshakes on real paths,
+not loopback throughput.
+
+mihomo: none claimed. Delete when mihomo has an Xray Mux.Cool client.
+
 ### 0040 Listeners: closed flag without a data race
 
 The accept and read loops of 20 inbound listeners in mihomo (socks TCP/UDP, http, mixed, redir,
@@ -860,10 +927,40 @@ which are out of scope here.
 
 mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrClosed`) for this.
 
+### 0041 REALITY: chrome when no `client-fingerprint` is set
+
+REALITY only works over uTLS, and stock mihomo fails every dial of a REALITY proxy without
+`client-fingerprint` with `REALITY is based on uTLS, please set a client-fingerprint`. Xray clients
+send chrome when a share link has no `fp=`, so such links (and hand-written configs that leave the
+key out) worked everywhere but here. The patch dials them with the `chrome` hello. That is Chrome 133,
+the stock meaning of `chrome` (0029 leaves it alone); a config that wants Chrome 155 names
+`chrome155`.
+
+Only the empty value changes. `client-fingerprint: none` (and Xray's `unsafe` / `hellogolang`, see
+0008) still means no uTLS and still fails the dial; an explicit fingerprint is used as written; a
+plain TLS proxy without the key keeps Go's own hello. The default is applied in `StreamTLSConn`,
+which every REALITY dial goes through (VLESS, VMess and Trojan, every transport, proxy-providers
+included), after config parsing, so 0031's `mlkem-client-fingerprint` and 0002's key-share choice
+see chrome like an explicit `chrome`.
+
+Ported from [Nemu-x/ClashFest](https://github.com/Nemu-x/ClashFest) core patch 0032 (PR #291,
+GPL-3.0), which takes it from [Rerowros/veles](https://github.com/Rerowros/veles) P7 (GPL-3.0).
+
+Tests in the patch (`transport/vmess`, over a pipe, reading the ClientHello the dial sends): without
+the key the REALITY hello is chrome's (cipher suites, groups, signature schemes and versions, GREASE
+normalised, 32-byte REALITY session id) and carries no ML-DSA scheme, so it is Chrome 133 and not
+Chrome 155; `none`, `unsafe` and `HelloGolang` still fail; `firefox`, `safari`, `ios` and `chrome155`
+keep their own hellos; plain TLS without the key sends the same hello as with `none`, not chrome's.
+The first test fails on the series without this patch. The REALITY lab has a no-fingerprint row (Auto
+and forced) on every browser server: the patched core passes it like `chrome`, the stock core fails
+it.
+
+mihomo: none claimed. Delete when mihomo picks a default fingerprint for REALITY itself.
+
 ### What else Rerowros/veles changes
 
-[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030 and
-0031-0038 take parts of it. The rest is not taken:
+[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,
+0031-0039 and 0041 take parts of it. The rest is not taken:
 
 - **Already here:** client version 26.11.9 (0001/0029), XHTTP packet-up uploads in flight
   (P5/P8, 0037), per-proxy client version (0005), Chrome 155
@@ -871,7 +968,6 @@ mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrC
 - **Changes stock behaviour:**
   - `chrome` meaning Chrome 155;
   - the automatic swap to chrome for a parrot without the hybrid share;
-  - a REALITY proxy without `client-fingerprint` defaulting to chrome;
   - the controller refusing a non-loopback address without a secret (P17);
   - redacted `GET /configs`.
 - **Server only:**
@@ -884,8 +980,8 @@ mihomo: none claimed. Delete when mihomo's listeners use an atomic (or `net.ErrC
   - the AnyTLS stream cap;
   - the VLESS addons and XHTTP upload-queue bounds;
   - the Linux GC ballast;
-  - `age` CLI key files.
-- **Too large for a patch here:** the VLESS `mux.cool` client and server (P15).
+  - `age` CLI key files;
+  - the `mux.cool` server (the server half of P15; 0039 is the client).
 
 ## What the app does with the Citrus surface
 

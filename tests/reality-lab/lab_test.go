@@ -50,11 +50,11 @@ const (
 // its default fingerprint).
 var xrayVersions = []string{"24.12.31", "25.7.25", "26.4.13", "26.7.11", "26.7.28", "26.9.9", "26.9.30", "26.10.21", "26.10.29", "26.11.9"}
 
-// browserVersions get firefox, safari and chrome155 rows (Auto and forced) next
-// to chrome: one per key-share generation plus every current release, because
-// the firefox (Firefox 148) and safari (Safari 26.3) parrots of metacubex/utls
-// v1.9.0-alpha.1 (mihomo v1.19.34) carry the hybrid share and 0029 adds the
-// Chrome 155 hello.
+// browserVersions get firefox, safari, chrome155 and no-fingerprint rows (Auto
+// and forced) next to chrome: one per key-share generation plus every current
+// release, because the firefox (Firefox 148) and safari (Safari 26.3) parrots
+// of metacubex/utls v1.9.0-alpha.1 (mihomo v1.19.34) carry the hybrid share,
+// 0029 adds the Chrome 155 hello and 0041 dials REALITY without a fingerprint.
 var browserVersions = map[string]bool{"24.12.31": true, "26.4.13": true, "26.9.9": true, "26.9.30": true, "26.10.21": true, "26.10.29": true, "26.11.9": true}
 
 // officialXray are releases teddysun/xray has not published (yet): the lab
@@ -75,10 +75,11 @@ const patchedClientVersion = "26.11.9"
 // X25519MLKEM768 share: chrome (Chrome 133), chrome155 (0029), and from
 // mihomo v1.19.34 (metacubex/utls v1.9.0-alpha.1) firefox (Firefox 148) and
 // safari (Safari 26.3) too, and Xray's hellofirefox_148 / hellosafari_26_3,
-// which 0008 maps to those parrots.
+// which 0008 maps to those parrots. No fingerprint is chrome in the patched
+// core (0041); stock mihomo never dials it.
 func hybridParrot(fingerprint string) bool {
 	switch fingerprint {
-	case "chrome", "chrome155", "firefox", "safari", "hellofirefox_148", "hellosafari_26_3":
+	case "", "chrome", "chrome155", "firefox", "safari", "hellofirefox_148", "hellosafari_26_3":
 		return true
 	}
 	return false
@@ -112,7 +113,11 @@ type row struct {
 }
 
 func (r row) name() string {
-	n := fmt.Sprintf("%s-%s-%s", r.srv.version, r.srv.variant, r.fingerprint)
+	fingerprint := r.fingerprint
+	if fingerprint == "" {
+		fingerprint = "nofp"
+	}
+	n := fmt.Sprintf("%s-%s-%s", r.srv.version, r.srv.variant, fingerprint)
 	if r.forced {
 		n += "-forced"
 	}
@@ -168,9 +173,10 @@ func expectPatched(policy, clientVersion string) func(row) bool {
 // expectStock models stock mihomo: client version 1.8.2, hybrid share only
 // when forced and only from a parrot that has it (chrome, and from v1.19.34
 // firefox and safari), unknown top-level keys ignored. It does not know
-// chrome155 or Xray's names (0008), and REALITY needs a fingerprint it knows.
+// chrome155 or Xray's names (0008), and REALITY needs a fingerprint it knows
+// (without one every dial fails; 0041 makes it chrome).
 func expectStock(r row) bool {
-	if r.fingerprint == "chrome155" || r.fingerprint == "hellofirefox_148" || r.fingerprint == "hellosafari_26_3" || !versionGate(r, "1.8.2") {
+	if r.fingerprint == "" || r.fingerprint == "chrome155" || r.fingerprint == "hellofirefox_148" || r.fingerprint == "hellosafari_26_3" || !versionGate(r, "1.8.2") {
 		return false
 	}
 	return acceptsShare(r.srv.version, r.forced && hybridParrot(r.fingerprint))
@@ -194,7 +200,7 @@ func TestRealityMatrix(t *testing.T) {
 	for _, s := range servers {
 		rows = append(rows, row{srv: s, fingerprint: "chrome"}, row{srv: s, fingerprint: "chrome", forced: true})
 		if s.variant == "plain" && browserVersions[s.version] {
-			for _, fp := range []string{"firefox", "safari", "chrome155", "hellofirefox_148", "hellosafari_26_3"} {
+			for _, fp := range []string{"", "firefox", "safari", "chrome155", "hellofirefox_148", "hellosafari_26_3"} {
 				rows = append(rows, row{srv: s, fingerprint: fp}, row{srv: s, fingerprint: fp, forced: true})
 			}
 		}
@@ -376,11 +382,15 @@ func startCore(t *testing.T, bin string, keys map[string]any, rows []row, portBa
 			opts["support-x25519mlkem768"] = true
 		}
 		name := fmt.Sprintf("p%d", i)
-		proxies = append(proxies, map[string]any{
+		proxy := map[string]any{
 			"name": name, "type": "vless", "server": "127.0.0.1", "port": r.srv.port, "uuid": labUUID,
-			"flow": "xtls-rprx-vision", "tls": true, "servername": labSNI, "client-fingerprint": r.fingerprint,
+			"flow": "xtls-rprx-vision", "tls": true, "servername": labSNI,
 			"network": "tcp", "udp": true, "reality-opts": opts,
-		})
+		}
+		if r.fingerprint != "" {
+			proxy["client-fingerprint"] = r.fingerprint
+		}
+		proxies = append(proxies, proxy)
 		listeners = append(listeners, map[string]any{"name": "l" + name, "type": "mixed", "listen": "127.0.0.1", "port": ports[i], "proxy": name})
 	}
 	cfg := map[string]any{

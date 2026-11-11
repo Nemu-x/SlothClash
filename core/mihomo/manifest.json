@@ -156,6 +156,10 @@
       "sha256": "ca2566ade3b80aafd1264f3647298f229c7d19279c6d10a4b3e5a3db0da733ef"
     },
     {
+      "file": "0037-xhttp-packet-up-pipelining.patch",
+      "sha256": "4711fbeac1b7dc7beec3d7154cef4a19877a0fc5e0fe28f73e01f4ed4942a162"
+    },
+    {
       "file": "0040-listener-close-races.patch",
       "sha256": "0525f2d6c077618ce24f225fb25631eba2261afcf0cc5cd084fe2442a1b3ef53"
     }

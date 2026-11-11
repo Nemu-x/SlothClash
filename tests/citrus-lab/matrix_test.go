@@ -180,9 +180,21 @@ func matrixCases(f *fixtures) []labCase {
 		{name: "xhttp/reality-packet-up-GET-header-default-key", patched: pass, stock: refused,
 			why:   "no uplink-data-key: patch 0028 defaults it to X-Data; stock sends header \"-0\" instead of \"X-Data-0\"",
 			build: xhttpGET(f, "")},
+
+		// --- XHTTP packet-up uploads: core patch 0037 keeps up to 8 in flight ---
+		{name: "xhttp/reality-packet-up-upload", patched: pass, stock: pass,
+			why:   "8 MiB uploaded through XHTTP packet-up over REALITY (h2) arrives intact: the server puts the pipelined uploads back in order",
+			build: xhttpPacketUp(f, nil), verify: packetUpUpload},
+		{name: "xhttp/reality-packet-up-upload-max-buffered-posts-8", patched: pass, stock: pass,
+			why:   "the same against sc-max-buffered-posts 8, the smallest that holds 0037's window (Citrus answers 503 to more uploads in progress than that before the client has authenticated)",
+			build: xhttpPacketUp(f, obj{"sc-max-buffered-posts": "8"}), verify: packetUpUpload},
 	}
 	for _, mode := range []string{"stream-one", "packet-up", "stream-up"} {
-		cases = append(cases, labCase{name: "xhttp/h3-" + mode, feature: "xhttp-h3", patched: pass, stock: pass,
+		var verify func(c *cellCtx, got outcome) error
+		if mode == "packet-up" {
+			verify = packetUpUpload // 0037 pipelines the uploads over HTTP/3 too
+		}
+		cases = append(cases, labCase{name: "xhttp/h3-" + mode, feature: "xhttp-h3", patched: pass, stock: pass, verify: verify,
 			why: "XHTTP over HTTP/3 (the inbound listens on UDP only)",
 			build: single(func() obj {
 				return tlsServer(obj{"type": "vless", "users": []obj{{"username": "alice", "uuid": f.idA}},
@@ -278,6 +290,18 @@ func xhttpGET(f *fixtures, key string) func(c *cellCtx) (obj, error) {
 			opts["uplink-data-key"] = key
 		}
 		return merge(f.realityClient(nil), obj{"flow": "", "network": "xhttp", "alpn": []string{"h2"}, "udp": false, "xhttp-opts": opts})
+	}, nil)
+}
+
+// xhttpPacketUp is VLESS-REALITY-XHTTP in packet-up mode over h2 with the
+// uplink in POST bodies, the default.
+func xhttpPacketUp(f *fixtures, serverXHTTP obj) func(c *cellCtx) (obj, error) {
+	return single(func() obj {
+		return merge(f.realityServer(nil), obj{"users": []obj{{"username": "alice", "uuid": f.idA}},
+			"xhttp-config": merge(obj{"path": "/xh", "mode": "packet-up"}, serverXHTTP)})
+	}, func(int) obj {
+		return merge(f.realityClient(nil), obj{"flow": "", "network": "xhttp", "alpn": []string{"h2"}, "udp": false,
+			"xhttp-opts": obj{"path": "/xh", "mode": "packet-up"}})
 	}, nil)
 }
 

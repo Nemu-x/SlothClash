@@ -561,6 +561,35 @@ func tcpRound(c *http.Client) error {
 	return nil
 }
 
+// packetUpUploadBytes is what packetUpUpload sends: 8 uploads of
+// sc-max-each-post-bytes (1 MB by default) and more.
+const packetUpUploadBytes = 8 << 20
+
+// packetUpUpload is a verify step: a passing cell must also carry a
+// packetUpUploadBytes POST to the echo's /sum intact. The speed goes to the
+// cell's detail.
+func packetUpUpload(c *cellCtx, got outcome) error {
+	if got != pass {
+		return nil
+	}
+	blob := make([]byte, packetUpUploadBytes)
+	rand.Read(blob)
+	sum := sha256.Sum256(blob)
+	start := time.Now()
+	resp, err := socksClient(c.mixedPort, time.Minute).Post("http://"+echoAddr+"/sum", "application/octet-stream", bytes.NewReader(blob))
+	if err != nil {
+		return fmt.Errorf("%d MiB upload: %w", packetUpUploadBytes>>20, err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	took := time.Since(start)
+	if err != nil || string(body) != hex.EncodeToString(sum[:]) {
+		return fmt.Errorf("%d MiB upload did not arrive intact: %q, %v", packetUpUploadBytes>>20, trunc(body), err)
+	}
+	c.notes = append(c.notes, fmt.Sprintf("%d MiB upload intact, %.0f Mbit/s", packetUpUploadBytes>>20, float64(packetUpUploadBytes)*8/took.Seconds()/1e6))
+	return nil
+}
+
 func trunc(b []byte) string {
 	if len(b) > 80 {
 		return string(b[:80]) + "..."

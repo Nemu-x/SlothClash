@@ -1,5 +1,5 @@
 # Citrus compatibility fixture, see docs/core-patches.md (Citrus compatibility suite).
-# Source: getmikan/Citrus@62d1f567 docs/config.yaml (proxies 582-1873)
+# Source: getmikan/Citrus@22da58f1 docs/config.yaml (proxies 588-1880)
 # License: GPL-3.0 (Citrus, like ClashFest). Copied as test data.
 # Changes from the source (ClashFest):
 #   - placeholders `[YOUR_SERVER_IP]` / `[YOUR_SS_PASSWORD]` / `[YOUR_RESTLS_PASSWORD]` (YAML lists) replaced by strings
@@ -51,20 +51,21 @@ proxies: # socks5
     server: server
     port: 44046
     psk: yourpsk
-    # version: 4 # support 1/2/3/4/5
-    # udp: true # support UDP on version 3/4/5
-    # reuse: false # v4/5 only
+    # version: 4 # support 1/2/3/4/5/6
+    # udp: true # support UDP on version 3/4/5/6
+    # reuse: false # v4/5/6 only
+    # mode: default # v6 only, default / unshaped, must match the server
     # obfs-opts:
-    #   mode: http # or tls/shadow-tls/restls/jls
+    #   mode: http # or tls/shadow-tls/restls/jls (http/tls are not available on v6)
 
   - name: "snell-shadow-tls"
     type: snell
     server: server
     port: 44046
     psk: yourpsk
-    # version: 4 # support 1/2/3/4/5
-    # udp: true # support UDP on version 3/4/5
-    # reuse: false # v4/5 only
+    # version: 4 # support 1/2/3/4/5/6
+    # udp: true # support UDP on version 3/4/5/6
+    # reuse: false # v4/5/6 only
     # client-fingerprint: chrome
     obfs-opts:
       mode: shadow-tls
@@ -78,7 +79,7 @@ proxies: # socks5
     server: server
     port: 44046
     psk: yourpsk
-    # version: 4 # support 1/2/3/4/5
+    # version: 4 # support 1/2/3/4/5/6
     # client-fingerprint: chrome
     obfs-opts:
       mode: restls
@@ -91,7 +92,7 @@ proxies: # socks5
     server: server
     port: 44046
     psk: yourpsk
-    # version: 4 # support 1/2/3/4/5
+    # version: 4 # support 1/2/3/4/5/6
     # client-fingerprint: chrome
     obfs-opts:
       mode: jls
@@ -334,7 +335,7 @@ proxies: # socks5
     # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
     # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
     # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
-    # client-fingerprint: random # Available: "chrome","firefox","safari","random","none"
+    # client-fingerprint: random # Available: "chrome" (Chrome 155),"chrome133","firefox","safari","random","none"
     # ech-opts:
     #   enable: true # 必须手动开启
     #   # 如果config为空则通过dns解析，不为空则通过该值指定，格式为经过base64编码的ech参数（dig +short TYPE65 tls-ech.dev）
@@ -404,7 +405,7 @@ proxies: # socks5
       public-key: CrrQSjAG_YkHLwvM2M-7XkKJilgL5upBKCp0od0tLhE
       short-id: 10f897e26c4b9478 # optional
       # support-x25519mlkem768: true # 默认开启 (Xray v26.9.8+ 服务端要求), 仅旧版服务端需设为 false; 无 X25519MLKEM768 的 client-fingerprint 会自动注入
-      # client-version: 26.10.10 # optional, 上报给服务端的 Xray 版本 (minClientVer/maxClientVer), 默认 26.10.10
+      # client-version: 26.11.9 # optional, 上报给服务端的 Xray 版本 (minClientVer/maxClientVer), 默认 26.11.9
       # mldsa65-verify: xxx # optional, Xray 的 mldsa65Verify (分享链接 pqv), base64url 编码的 ML-DSA-65 公钥
     client-fingerprint: chrome # cannot be empty
 
@@ -442,7 +443,7 @@ proxies: # socks5
     udp: true
     tls: true
     network: ws
-    # client-fingerprint: random # Available: "chrome","firefox","safari","random","none"
+    # client-fingerprint: random # Available: "chrome" (Chrome 155),"chrome133","firefox","safari","random","none"
     servername: example.com # priority over wss host
     # skip-cert-verify: true
     # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
@@ -633,7 +634,7 @@ proxies: # socks5
     server: server
     port: 443
     password: yourpsk
-    # client-fingerprint: random # Available: "chrome","firefox","safari","random","none"
+    # client-fingerprint: random # Available: "chrome" (Chrome 155),"chrome133","firefox","safari","random","none"
     # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
     # 下面两项如果填写则开启 mTLS（需要同时填写）
     # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径

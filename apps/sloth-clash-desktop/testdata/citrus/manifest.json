@@ -812,8 +812,8 @@
       "file": "citrus-snell-v6.yaml",
       "cases": {
         "": {
-          "outcome": "deferred:Snell v6 is not in mihomo v1.19.33 (the core rejects version 6); it comes with the next mihomo release, Citrus took it from mihomo Alpha. Citrus refuses mode unsafe-raw (no PSK, no encryption) while that release accepts it: decide on the core bump",
-          "citrus-only": ["proxies[0].version", "proxies[0].mode"]
+          "outcome": "accept",
+          "note": "Snell v6 (default / unshaped) is in stock mihomo since v1.19.34, the same code as Citrus b0f91a16 transport/snell. Only difference: mihomo also accepts mode: unsafe-raw (no PSK, no encryption), which Citrus refuses; the Citrus docs do not show it, so it is not a case here"
         }
       }
     },

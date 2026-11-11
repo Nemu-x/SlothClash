@@ -1050,8 +1050,9 @@ SLOTH_MIHOMO_BIN=<patched core> go test -count=1 -run TestCitrusCompat -v .
 ```
 
 Without a core that carries the series the test skips. Outcomes at Citrus `b0f91a16`
-(v1.0.0-beta.3, released 2026-11-11): 161 cases, 153 accept, 6 unsupported, 2 deferred, the same as
-at its release candidate `22da58f1` (the tag adds only the mihomo v1.19.34 dependency bumps,
+(v1.0.0-beta.3, released 2026-11-11), with mihomo v1.19.34: 161 cases, 154 accept, 6 unsupported,
+1 deferred. Before the Snell v6 case was accepted it was 153 / 6 / 2, the same as at the release
+candidate `22da58f1` (the tag adds only the mihomo v1.19.34 dependency bumps,
 `metacubex/utls` v1.9.0-alpha.1 among them, Go toolchain pins, an age key fix and the changelog;
 none of it is in the examples) (at `62d1f567`: 156, 149 / 6 / 1; at `ecaa9466`:
 145, 140 / 4 / 1).
@@ -1063,10 +1064,12 @@ New client surface between `62d1f567` and beta.3, case by case:
   `citrus-xray-fingerprints` (0029). Citrus' `chrome` became Chrome 155; ours stays Chrome 133 as in
   stock mihomo (0029 explains why). The REALITY client-version and fingerprint comments of the
   examples follow Citrus (26.11.9, Chrome 155).
-- **deferred**: Snell v6 (`citrus-snell-v6`): `version: 6` and its `mode` are not in mihomo
-  v1.19.33, so the core rejects such a proxy (and with it a provider or a top-level config). It comes
-  with the next mihomo release, from which Citrus took it. That release also accepts `mode:
-  unsafe-raw` (no PSK, no encryption), which Citrus refuses: decide on that core bump.
+- **accept** (since the core is mihomo v1.19.34): Snell v6 (`citrus-snell-v6`), `version: 6` and
+  its `mode`, the same code as Citrus `transport/snell`. The example's `psk: yourpsk` is replaced by a
+  15-byte placeholder (noted in the fixture header): v6 needs 12 to 255 bytes, and Citrus and the
+  core both refuse the 7-byte example, so with it the case failed although Snell v6 itself works.
+  The core also accepts `mode: unsafe-raw` (no PSK, no encryption), which Citrus refuses; it logs a
+  warning for it at config load (0042). The Citrus docs do not show that mode, so it is not a case.
 - **not a client key**: `mux-option.max-streams` (sing-mux inbound limit), the Snell v6 and mieru
   `tcp-idle-timeout` listener options, the listener `dns-mode`. Nothing new in `tls.ca-roots`,
   `tls.ca-denylist`, `geox-sha256` (0026, 0027) or the `type: desync` options since `62d1f567`.

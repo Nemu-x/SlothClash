@@ -627,6 +627,20 @@ effect, and `Close` runs its hooks once.
 
 mihomo: none claimed. Delete when mihomo's XHTTP conn keeps separate deadlines.
 
+### 0035 Share links: no credentials in the skip warning
+
+When the core parses a subscription of share links (a proxy-provider whose body is not YAML) and a
+`vless://` or `vmess://` link fails, mihomo logs `error:... line:<the whole link>`: the UUID, the
+REALITY keys and any password end up in the log, which users paste into bug reports. The patch logs
+`skip vless link to <host:port> (<name>): <error>` instead. Nothing else changes; the link is
+skipped as before.
+
+From [Rerowros/veles](https://github.com/Rerowros/veles) `common/convert/converter.go` (GPL-3.0).
+Tests: a failing VLESS link with a REALITY key and a failing VMess link are logged without the UUID,
+the key or the query, and with the server and the name.
+
+mihomo: none claimed. Delete when mihomo stops logging the link.
+
 ## What the app does with the Citrus surface
 
 - **User-Agent.** The subscription User-Agent advertises Citrus client compatibility the way a

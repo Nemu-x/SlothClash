@@ -50,6 +50,9 @@
 - Downloads through TLS-based proxies (Trojan, VLESS and VMess over TLS, REALITY) are faster and use less CPU: the core now decrypts ahead while it writes and sends what it has decrypted in one write instead of one per TLS record. In a local benchmark 16 parallel Trojan downloads went from 2.1 to 2.9 GB/s with about a quarter less CPU per GB; a single download was about 18 % faster.
 - An idle connection through such a proxy holds about 22 KB less memory (2000 idle Trojan connections: 140 MB → 96 MB). Shadowsocks, uploads and `DIRECT` connections behave as before.
 
+**🔀 VLESS: Xray mux (`mux.cool`)**
+- New opt-in `mux.cool` block on VLESS nodes (`enabled`, `max-concurrency`, `max-connections`, `max-carriers`, `xudp-concurrency`, `xudp-proxy-udp443`, the same names as in Veles): the node's TCP connections and UDP share a few VLESS connections the way Xray's `mux` does, with UDP as XUDP. UDP to port 443 (QUIC) is refused by default so browsers fall back to TCP; `allow` carries it over the mux, `skip` sends it over a plain connection. It cannot be combined with `smux`, a Vision `flow` or XDrive: the core refuses such a config with an error that names the conflict. Nodes without the block are unchanged.
+
 ### Русский
 
 **🧩 XHTTP: ссылки с данными в заголовках работают**
@@ -99,6 +102,9 @@
 **⚡ Быстрее загрузка, меньше памяти на соединение**
 - Загрузка через прокси на TLS (Trojan, VLESS и VMess поверх TLS, REALITY) стала быстрее и тратит меньше процессора: ядро расшифровывает данные наперёд, пока пишет, и отправляет всё расшифрованное одной записью, а не отдельной записью на каждую TLS-запись. В локальном замере 16 параллельных загрузок через Trojan ускорились с 2,1 до 2,9 ГБ/с, а процессора на гигабайт уходит примерно на четверть меньше; одиночная загрузка стала быстрее примерно на 18 %.
 - Простаивающее соединение через такой прокси занимает примерно на 22 КБ меньше памяти (2000 простаивающих соединений Trojan: 140 МБ → 96 МБ). Shadowsocks, отправка и соединения `DIRECT` работают как раньше.
+
+**🔀 VLESS: мультиплексирование Xray (`mux.cool`)**
+- Новый необязательный блок `mux.cool` у узлов VLESS (`enabled`, `max-concurrency`, `max-connections`, `max-carriers`, `xudp-concurrency`, `xudp-proxy-udp443`, те же имена, что в Veles): TCP-соединения и UDP узла идут через несколько общих соединений VLESS, как `mux` в Xray, а UDP передаётся как XUDP. UDP на порт 443 (QUIC) по умолчанию отклоняется, чтобы браузер перешёл на TCP; `allow` пускает его через мультиплексор, `skip` — отдельным обычным соединением. Блок нельзя сочетать со `smux`, с `flow` Vision и с XDrive: ядро не примет такой конфиг и назовёт конфликт в ошибке. Узлы без блока работают как раньше.
 
 ## Sloth Clash desktop `0.10.0` — 2026-10-31
 

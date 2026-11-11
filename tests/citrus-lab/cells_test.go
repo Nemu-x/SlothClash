@@ -53,6 +53,9 @@ type cellCtx struct {
 	servers []*proc
 	sports  []int
 	state   any // per-case data between build and verify
+
+	mixedPort int      // the core's socks/HTTP port, once it runs
+	notes     []string // measurements verify adds to the cell's detail
 }
 
 func (c *cellCtx) port() int {
@@ -133,6 +136,7 @@ func (c *cellCtx) startCore(client obj) (*proc, int, error) {
 		return nil, 0, err
 	}
 	c.procs = append(c.procs, p)
+	c.mixedPort = mp
 	return p, mp, p.waitReady(mp)
 }
 
@@ -237,6 +241,9 @@ func runCell(lc labCase, col column, band int, attempt int) (res cellResult) {
 	}
 	if res.err == nil && lc.verify != nil {
 		res.err = lc.verify(c, res.got)
+		if len(c.notes) > 0 {
+			res.detail += "; " + strings.Join(c.notes, "; ")
+		}
 	}
 	return
 }

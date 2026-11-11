@@ -108,6 +108,9 @@ under test. Images are `teddysun/xray`; a release not published there yet (26.11
 from the official `Xray-linux-64.zip`, pinned by its SHA-256 in the test. The expected result of each cell comes from a model of the server generations, so a
 regression in either direction fails the test. "Core build" runs it against the freshly built
 core and the stock core of the same tag, on every core PR and on every release.
+`TestXHTTPPacketUp` in the same lab sends 16 MiB through VLESS-REALITY-XHTTP packet-up to Xray
+24.12.31, 25.7.25, 26.11.9 and 26.11.9 with `scMaxBufferedPosts: 7`, to a hash endpoint on the host
+(`host.docker.internal`), checks the hash and logs the speed of each core (0037).
 
 ```bash
 cd tests/reality-lab
@@ -136,7 +139,8 @@ internet past the downloads and no Docker. Which Citrus is pinned in `tests/citr
    tag: REALITY `mldsa65-verify` right and wrong, `min-client-ver` / `max-client-ver` against the
    default and the per-proxy `client-version`, `reality-mlkem` auto/on/off/forced against a
    `require-x25519mlkem768` server, wrong UUID and short-id, XHTTP stream-up, packet-up with the
-   uplink in GET headers, XHTTP over HTTP/3, ECH in base64, `xray tls ech --pem` and wrapped form plus
+   uplink in GET headers, packet-up uploads of 8 MiB with a hash check (also against
+   `sc-max-buffered-posts: 8` and over HTTP/3, speed in the cell's detail), XHTTP over HTTP/3, ECH in base64, `xray tls ech --pem` and wrapped form plus
    a wrong config, `type: chain` across two Citrus inbounds (the entry hop's log must show the exit
    hop, not the echo), ShadowQUIC, and XDrive `local` / `template`, which the shipped core must refuse
    without writing to the storage. A case the Citrus version does not serve is skipped by name
@@ -670,6 +674,90 @@ a config with `external-ui: .`, `./` or the home directory loads with the UI off
 
 mihomo: none claimed. Delete when mihomo refuses such a directory itself.
 
+### 0037 XHTTP: packet-up keeps several uploads in flight
+
+In `packet-up` mode mihomo sends an upload request and waits for its response before it sends the
+next one, so upload speed is capped at one `sc-max-each-post-bytes` per round trip plus
+`sc-min-posts-interval-ms`, whatever the link. Xray's client does not wait: it starts an upload
+every `sc-min-posts-interval-ms` (30 ms by default) and the server puts the uploads back in order by
+seq, buffering up to `sc-max-buffered-posts` out-of-order uploads (30 by default in Xray, mihomo and
+Citrus) and dropping the session past that.
+
+The patch does the same with a bound. The next upload starts once the **headers** of the previous
+one are written, so the server sees the seqs in order while the bodies go out side by side; the
+interval paces uploads, not writes, so data after a pause goes out at once. Uploads wait for their
+response in a window of 8 seqs: seq N starts only once seq N-8 has been answered. The window is
+counted in seqs, not requests, so a server never holds more than 7 uploads ahead of the one it waits
+for, however the requests are reordered; a slow seq holds the window instead of letting later ones
+run past the server's buffer. `sc-max-each-post-bytes` and `sc-min-posts-interval-ms` keep their
+meaning. A failed upload (transport error or a status other than 200) aborts the others and fails
+the next `Write`, as a failed upload did before. `Close` waits up to a second for the uploads in
+flight, then cancels them. With `alpn: [http/1.1]` every upload still waits for its response:
+HTTP/1.1 cannot multiplex, so each upload in flight would need a connection (and a TLS or REALITY
+handshake) of its own. The server side is unchanged; mihomo's listener already reorders by seq.
+
+The client code is the same as ClashFest core patch 0038
+([Nemu-x/ClashFest#295](https://github.com/Nemu-x/ClashFest/pull/295)); only the patch number in
+its comments differs, so the two clients stay in sync. The first version of this patch started the
+next upload only once the whole previous request (body included) was written, like Xray's client.
+Behind a reverse proxy or CDN that gives each HTTP/2 stream a small flow-control window, that
+serialises the bodies and gains nothing over stock (nginx below: 10 Mbit/s at 50 ms against 56 when
+the next upload starts after the headers). Direct to Xray or Citrus the two are within noise.
+
+Why 8: at the default 30 ms interval 8 uploads keep the pipeline full up to a 240 ms round trip, and
+the bound stays far below the default buffer of 30. Server limits checked in the sources:
+Xray 24.12.31 to 26.x fail a session once more than `scMaxBufferedPosts` uploads wait past the
+missing seq (its client has no bound at all and relies on the interval); mihomo's queue does the
+same; Citrus (and its own client, which keeps up to 30 in flight) also answers 503 to more than
+`sc-max-buffered-posts` uploads in progress before the client has authenticated. So the patch
+works with a server's `sc-max-buffered-posts` down to 7 (Xray, mihomo) or 8 (Citrus).
+
+Measured (lab on Windows, Docker Desktop; 16 MiB POST through the core's HTTP proxy to a hash
+endpoint, VLESS-XHTTP packet-up over h2 with default `sc-*` settings; round trip added by a
+delaying TCP proxy in front of the server; 5 rounds per cell with the order of the cores rotated
+each round, median [min-max] Mbit/s). stock is the v1.19.34 release binary; write-wait is the first
+version of this patch (next upload after the whole request); 0037 is this patch. Xray 26.11.9 and
+Citrus beta.2 are reached over REALITY; nginx-front is nginx 1.27 terminating TLS with h2 and
+proxying HTTP/1.1 to Xray 26.11.9 (`proxy_request_buffering off`):
+
+| Server | Added RTT | stock | write-wait | 0037 |
+| --- | --- | --- | --- | --- |
+| Xray 26.11.9 | 0 | 130 [44-139] | 167 [146-169] | 171 [151-177] |
+| Xray 26.11.9 | 30 ms | 88 [82-90] | 147 [136-157] | 158 [140-159] |
+| Xray 26.11.9 | 100 ms | 48 [34-49] | 63 [43-63] | 60 [41-61] |
+| Citrus beta.2 | 0 | 167 [165-169] | 173 [166-176] | 175 [144-176] |
+| Citrus beta.2 | 30 ms | 96 [94-98] | 144 [34-152] | 156 [149-161] |
+| Citrus beta.2 | 100 ms | 48 [47-50] | 59 [42-60] | 59 [58-61] |
+| nginx-front | 0 | 179 [161-187] | 249 [111-250] | 250 [187-251] |
+| nginx-front | 50 ms | 9 [9-9] | 10 [9-10] | 56 [56-57] |
+| nginx-front | 100 ms | 5 [5-5] | 5 [5-5] | 29 [29-29] |
+
+An earlier run of the write-wait version against Xray 24.12.31 gave the same picture as 26.11.9
+(132 / 88 / 47 stock against 174 / 157 / 64 at 0 / 30 / 100 ms). Direct to the server at 100 ms
+every client is likely held by the server's HTTP/2 receive window (all uploads of a session share
+one connection), so more requests in flight do not help there.
+
+The seq window follows [Rerowros/veles](https://github.com/Rerowros/veles) (P5/P8,
+`transport/xhttp/client.go`, GPL-3.0); the HTTP/1.1 exception follows getmikan/Citrus
+(`transport/xhttp/client.go`, GPL-3.0). Veles' server changes and its request timeout are not
+taken: the server already reorders, and a stuck upload is ended by the connection's deadlines
+(0034) or `Close`. Tests (`packet_up_pipelining_test.go`, the same as ClashFest's, helpers after
+Veles' `packet_up_veles_test.go`): the stream is reassembled in order while the server answers out
+of order, over h2 and HTTP/1.1, with the uplink in POST bodies and in GET headers; at most 8 (one
+over HTTP/1.1) are in flight and `Write` blocks while the server holds every response; a slow seq 0
+holds seq 8 back while 1-7 are answered, against a queue the size of Xray's smallest
+`scMaxBufferedPosts` that holds the window; the interval paces requests, not writes; a refused
+upload aborts the others and fails `Write`; `Close` with stuck uploads returns and leaves no
+goroutine; `Close` delivers the tail; with a 100 ms response time pipelining is several times
+faster; the whole client against mihomo's server handler echoes the stream back. Lab:
+`TestXHTTPPacketUp` in the REALITY lab (16 MiB through Xray 24.12.31, 25.7.25, 26.11.9 and 26.11.9
+with `scMaxBufferedPosts: 7`, hash checked, speed logged), and the Citrus lab's
+`xhttp/reality-packet-up-upload` (also with `sc-max-buffered-posts: 8`) and `xhttp/h3-packet-up`
+cells upload 8 MiB with a hash check.
+
+mihomo: none claimed. Delete when mihomo's packet-up client keeps uploads in flight with a bound
+like this one.
+
 ### 0038 Relay: small buffer while idle, batched writes while busy, lazy `BufferedConn` reader
 
 `N.Relay` copies both directions with sing's `bufio.Copy`. For a source that is neither a socket nor
@@ -872,14 +960,14 @@ mihomo: none claimed. Delete when mihomo picks a default fingerprint for REALITY
 ### What else Rerowros/veles changes
 
 [Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,
-0031-0036, 0038, 0039 and 0041 take parts of it. The rest is not taken:
+0031-0039 and 0041 take parts of it. The rest is not taken:
 
-- **Already here:** client version 26.11.9 (0001/0029), per-proxy client version (0005), Chrome 155
+- **Already here:** client version 26.11.9 (0001/0029), XHTTP packet-up uploads in flight
+  (P5/P8, 0037), per-proxy client version (0005), Chrome 155
   (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004).
 - **Changes stock behaviour:**
   - `chrome` meaning Chrome 155;
   - the automatic swap to chrome for a parrot without the hybrid share;
-  - XHTTP packet-up uploads with several requests in flight (P5/P8);
   - the controller refusing a non-loopback address without a secret (P17);
   - redacted `GET /configs`.
 - **Server only:**

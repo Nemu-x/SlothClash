@@ -156,6 +156,10 @@
       "sha256": "ca2566ade3b80aafd1264f3647298f229c7d19279c6d10a4b3e5a3db0da733ef"
     },
     {
+      "file": "0037-xhttp-packet-up-pipelining.patch",
+      "sha256": "d255abd8f6def09252172c80267fdd5778fbacbd997155f307f4898bc9dec153"
+    },
+    {
       "file": "0038-relay-batched-small-buffer-copy.patch",
       "sha256": "6b04e0872d360011435198dd42b86f493e59fb417e5cc1abda114ea1ae21938f"
     },

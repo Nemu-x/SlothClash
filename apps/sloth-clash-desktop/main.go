@@ -27,6 +27,9 @@ func main() {
 	loadDesktopPrefs()
 	startHidden := trayEnabled() && currentDesktopPrefs().UI.IsStartMinimized()
 
+	workW, workH := primaryWorkAreaLogical()
+	win := fitWindowToWorkArea(windowSize{Width: 1100, Height: 720, MinWidth: 960, MinHeight: 640}, workW, workH)
+
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:       "Sloth Clash",
@@ -36,10 +39,12 @@ func main() {
 		// covered ~88%×107% of a 1366x768 screen which made the window taller
 		// than the viewport on default Windows scaling. Min* values stay
 		// the same so the rules editor and YAML modals still fit.
-		Width:     1100,
-		Height:    720,
-		MinWidth:  960,
-		MinHeight: 640,
+		// fitWindowToWorkArea trims these on small / high-scaling screens so
+		// the title bar never lands above the top edge (window_fit.go).
+		Width:            win.Width,
+		Height:           win.Height,
+		MinWidth:         win.MinWidth,
+		MinHeight:        win.MinHeight,
 		Frameless:        false,
 		BackgroundColour: &options.RGBA{R: 18, G: 17, B: 16, A: 1},
 		AssetServer: &assetserver.Options{

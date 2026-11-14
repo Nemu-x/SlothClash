@@ -178,6 +178,12 @@ func TestDesyncOnlyProfileRejectsSubscriptionFields(t *testing.T) {
 	const id = "profile-1"
 	a := &App{profiles: []Profile{{ID: id, Name: "d", Type: "local", Kind: profileKindDesyncOnly}}}
 	a.state.Profile.Profiles = a.profiles
+	// Under go test slothDataRoot is one temp dir for the whole process, so
+	// other tests may already have left a runtime/profile-1/config.yaml there;
+	// the check below must only see what the refused writers did.
+	if err := os.RemoveAll(a.GetProfilePaths(id).DataDir); err != nil {
+		t.Fatal(err)
+	}
 	pair, err := a.GenerateAgeKeyPair("x25519")
 	if err != nil {
 		t.Fatal(err)

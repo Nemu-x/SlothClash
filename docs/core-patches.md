@@ -546,8 +546,8 @@ reality-opts:
 
 The hello is used for every handshake that offers the hybrid share (`support-x25519mlkem768`, policy
 `on`, or Auto after the server relayed a classic hello); classic handshakes keep
-`client-fingerprint`. A name without the share (`ios`, `chrome120`, ...) or an unknown name fails
-the proxy at load time. `random` is one pick per process and may land on `ios`; chrome, one of its
+`client-fingerprint`. A name without the share (`ios`, `chrome120`, ...) or an unknown name is
+ignored with a warning (0043; it failed the proxy at load time before). `random` is one pick per process and may land on `ios`; chrome, one of its
 picks, is used then, so the config does not fail on some starts only. Without the key nothing
 changes. The choice stays with the config: the core never picks a hello on its own.
 
@@ -587,7 +587,8 @@ The names and values follow Xray finalmask `fragment` (Xray-core v26.10.21, MPL-
 
 Everything after that passes untouched. Only TCP connections of the proxy's own dialer are wrapped
 (UDP and QUIC are not), so the outer TLS or REALITY hello of `vless`, `trojan`, `vmess`, `anytls`,
-... is what gets split. An invalid block fails that proxy at load time. A VLESS or VMess share link
+... is what gets split. An invalid block is dropped with a warning at load time and the proxy runs
+unsplit (0043; it failed the proxy before). A VLESS or VMess share link
 with Xray's `fm` parameter (`{"tcp":[{"type":"fragment","settings":{...}}]}`) gets the same block
 when the core parses it; other masks are ignored, and a mask that does not parse is dropped, not
 the link. Without the block nothing changes: the dialer is the stock one.
@@ -850,7 +851,8 @@ to TCP inside the mux; `allow` carries it over the mux; `skip` sends it over a p
 connection (with the proxy's own `packet-encoding`). A carrier idle for 16 s closes; a session
 waits up to 100 ms for its first data so the New frame carries it, as in Xray.
 
-Refused at load time with a config error: `mux.cool` on a non-`vless` proxy, together with an
+Ignored at load time with a warning that names the conflict (0043; a config error before):
+`mux.cool` on a non-`vless` proxy, together with an
 enabled `smux`, with a Vision `flow` (Vision splices the TLS of one TCP connection; Xray refuses
 mux with Vision for TCP too), and with `network: xdrive` (0004 already runs its own Mux.Cool
 client inside the outbound; the two stay separate because 0004's is TCP-only and tied to the XDrive
@@ -988,14 +990,47 @@ on the series without the patch.
 
 mihomo: none claimed. Delete when mihomo warns about or refuses `unsafe-raw` itself.
 
+### 0043 Proxy options: unusable values are ignored, not fatal
+
+`fragment-opts` (0032), `mux.cool` (0039), `reality-opts.client-version` (0005) and
+`reality-opts.mlkem-client-fingerprint` (0031) failed the whole profile when a value could not apply,
+so one such node made the core reject a subscription that stock mihomo, which ignores keys it does
+not know, loads. Each is now dropped with a warning in the core log and the proxy loads without it:
+
+- `fragment-opts` that does not decode or parse: no fragmentation (`[Proxy] <name>: ignore
+  unsupported fragment-opts: ...`); the caller's mapping is copied, not modified;
+- `mux.cool` with invalid options, on a non-vless proxy, with a Vision `flow`, with enabled `smux` or
+  with `network: xdrive`, and a non-map `mux.cool`: no MuxCool wrapper (`[Proxy] <name>: ignore
+  mux.cool: ...`);
+- an invalid `client-version`: the global REALITY client version;
+- an unknown `mlkem-client-fingerprint` or one without the X25519MLKEM768 share: the default ML-KEM
+  handshake (the warning names the reason).
+
+`reality-opts.mldsa65-verify` (0007) stays a config error: it pins the server, and dropping it would
+weaken the check. `smux` over `network: xdrive` (0004) also stays an error. The warning goes to the
+core log only; the app adds no text of its own.
+
+Origin: [Rerowros/veles](https://github.com/Rerowros/veles) v1.19.34-veles.1 (`ff6de754`,
+GPL-3.0), the same change as [Nemu-x/ClashFest](https://github.com/Nemu-x/ClashFest) core patch 0040,
+adapted to this series. Tests in the patch: `adapter` (fragment-opts and mux.cool load, warn once per
+bad block, no wrapper, the caller's mapping unchanged), `adapter/outbound` (the REALITY fields stay
+unset, the fingerprint warning carries the reason). The Citrus compatibility suite is unchanged
+(161 cases, 154 accept, 6 unsupported, 1 deferred).
+
+mihomo: none claimed. Delete together with the patches it softens.
+
 ### What else Rerowros/veles changes
 
-[Veles](https://github.com/Rerowros/veles) (v1.19.33-veles.3) is a mihomo fork. 0029, 0030,
-0031-0039 and 0041 take parts of it. The rest is not taken:
+[Veles](https://github.com/Rerowros/veles) (checked up to v1.19.34-veles.1) is a mihomo fork. 0029,
+0030, 0031-0039, 0041 and 0043 take parts of it. The rest is not taken:
 
 - **Already here:** client version 26.11.9 (0001/0029), XHTTP packet-up uploads in flight
   (P5/P8, 0037), per-proxy client version (0005), Chrome 155
-  (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004).
+  (0029), the ML-KEM memo with the silent probe (0002/0030), XDrive (0004), the v1.19.34 base and
+  graceful proxy keys (0043).
+- **Not yet, needs app work:** the log of failed dials (`GET`/`DELETE /connections/failed`,
+  `failedTotal` in `GET /connections`, `dial.error` on `/events`). It is useful only with a screen
+  that shows it; take it together with that screen.
 - **Changes stock behaviour:**
   - `chrome` meaning Chrome 155;
   - the automatic swap to chrome for a parrot without the hybrid share;

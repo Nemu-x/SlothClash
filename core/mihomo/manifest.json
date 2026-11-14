@@ -178,6 +178,10 @@
     {
       "file": "0042-snell-unsafe-raw-warning.patch",
       "sha256": "077d4e278bb75bcb0f7190eb902b91febf31ee6dd5208ef2fd034f37a96ec4bc"
+    },
+    {
+      "file": "0043-proxy-options-graceful.patch",
+      "sha256": "74610d0a0a23b55c9bc950c6ba9d93fd0a01edac3808fc4ef1efcd900e90ccf1"
     }
   ],
   "assets": {

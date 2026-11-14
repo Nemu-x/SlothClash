@@ -1,0 +1,410 @@
+SlothClash core patch 0043: unusable proxy options are ignored, not fatal.
+
+fragment-opts (0032), mux.cool (0039), reality-opts.client-version (0005)
+and reality-opts.mlkem-client-fingerprint (0031) failed the whole profile
+when a value could not apply: an unknown packets mode, a negative mux.cool
+limit, mux.cool on a non-vless proxy or next to a Vision flow, smux or
+xdrive, an unknown fingerprint or one without the X25519MLKEM768 key share,
+a malformed version. One such node made the core reject a subscription that
+stock mihomo, which ignores keys it does not know, loads. Now each is
+dropped with a warning in the core log and the proxy loads without it: no
+fragmentation, no mux.cool wrapper, the global REALITY client version, the
+default ML-KEM handshake. reality-opts.mldsa65-verify stays a config error:
+it pins the server, dropping it would weaken the check.
+
+Origin: Rerowros/veles v1.19.34-veles.1 (ff6de754, graceful handling of
+Veles proxy keys), as ported to ClashFest (its patch 0040). Delete when the
+patches it softens are dropped.
+
+Tests: adapter (fragment-opts and mux.cool load with a warning, the caller's
+mapping is not modified, no MuxCool wrapper), adapter/outbound (an invalid
+client-version or mlkem-client-fingerprint leaves the field unset and the
+fingerprint warning names the reason).
+
+diff --git a/adapter/outbound/reality.go b/adapter/outbound/reality.go
+index 948b691..ce9f711 100644
+--- a/adapter/outbound/reality.go
++++ b/adapter/outbound/reality.go
+@@ -8,6 +8,7 @@ import (
+ 	"fmt"
+ 
+ 	tlsC "github.com/metacubex/mihomo/component/tls"
++	"github.com/metacubex/mihomo/log"
+ )
+ 
+ type RealityOptions struct {
+@@ -49,12 +50,16 @@ func (o RealityOptions) Parse() (*tlsC.RealityConfig, error) {
+ 			return nil, errors.New("invalid REALITY short ID")
+ 		}
+ 
++		// SlothClash 0043 (from Rerowros/veles): an unusable client-version or
++		// mlkem-client-fingerprint is ignored with a warning and the defaults
++		// apply, instead of failing the whole profile. mldsa65-verify stays a
++		// config error: it pins the server, dropping it would weaken the check.
+ 		if o.ClientVersion != "" {
+-			clientVersion, err := tlsC.ParseRealityClientVersion(o.ClientVersion)
+-			if err != nil {
+-				return nil, err
++			if clientVersion, cvErr := tlsC.ParseRealityClientVersion(o.ClientVersion); cvErr != nil {
++				log.Warnln("REALITY: ignore invalid client-version %q: %s", o.ClientVersion, cvErr.Error())
++			} else {
++				config.ClientVersion = &clientVersion
+ 			}
+-			config.ClientVersion = &clientVersion
+ 		}
+ 
+ 		if o.Mldsa65Verify != "" {
+@@ -65,9 +70,10 @@ func (o RealityOptions) Parse() (*tlsC.RealityConfig, error) {
+ 		}
+ 
+ 		if o.MLKEMClientFingerprint != "" {
+-			config.MLKEMFingerprint, err = tlsC.ParseRealityMLKEMFingerprint(o.MLKEMClientFingerprint)
+-			if err != nil {
+-				return nil, err
++			if fingerprint, fpErr := tlsC.ParseRealityMLKEMFingerprint(o.MLKEMClientFingerprint); fpErr != nil {
++				log.Warnln("REALITY: ignore mlkem-client-fingerprint: %s", fpErr.Error())
++			} else {
++				config.MLKEMFingerprint = fingerprint
+ 			}
+ 		}
+ 
+diff --git a/adapter/outbound/reality_client_version_test.go b/adapter/outbound/reality_client_version_test.go
+index 891735b..6dd3ad9 100644
+--- a/adapter/outbound/reality_client_version_test.go
++++ b/adapter/outbound/reality_client_version_test.go
+@@ -27,8 +27,12 @@ func TestRealityOptionsClientVersion(t *testing.T) {
+ 	for _, bad := range []string{"26.9", "26.9.x", "300.1.1", "26.9.9.9"} {
+ 		o := base
+ 		o.ClientVersion = bad
+-		if _, err := o.Parse(); err == nil {
+-			t.Errorf("client-version %q accepted", bad)
++		// SlothClash 0043: ignored with a warning, the global version applies.
++		cfg, err := o.Parse()
++		if err != nil {
++			t.Errorf("client-version %q: %v", bad, err)
++		} else if cfg.ClientVersion != nil {
++			t.Errorf("client-version %q set %v", bad, *cfg.ClientVersion)
+ 		}
+ 	}
+ }
+diff --git a/adapter/outbound/reality_mlkem_fingerprint_test.go b/adapter/outbound/reality_mlkem_fingerprint_test.go
+index fa5df4a..7de1c23 100644
+--- a/adapter/outbound/reality_mlkem_fingerprint_test.go
++++ b/adapter/outbound/reality_mlkem_fingerprint_test.go
+@@ -3,6 +3,9 @@ package outbound
+ import (
+ 	"strings"
+ 	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/log"
+ )
+ 
+ // SlothClash core patch 0031: reality-opts.mlkem-client-fingerprint.
+@@ -26,11 +29,32 @@ func TestRealityOptionsMLKEMClientFingerprint(t *testing.T) {
+ 		t.Fatalf("mlkem-client-fingerprint not parsed: %v", cfg.MLKEMFingerprint)
+ 	}
+ 
++	// SlothClash 0043: an unknown name or one without the hybrid share is
++	// ignored with a warning naming the reason; the default handshake applies.
++	sub := log.Subscribe()
++	defer log.UnSubscribe(sub)
+ 	for bad, msg := range map[string]string{"ios": "no X25519MLKEM768", "chrome120": "no X25519MLKEM768", "nope": "invalid"} {
+ 		o := base
+ 		o.MLKEMClientFingerprint = bad
+-		if _, err := o.Parse(); err == nil || !strings.Contains(err.Error(), msg) {
+-			t.Errorf("mlkem-client-fingerprint %q: err = %v, want one containing %q", bad, err, msg)
++		cfg, err := o.Parse()
++		if err != nil {
++			t.Fatalf("mlkem-client-fingerprint %q: %v", bad, err)
++		}
++		if cfg.MLKEMFingerprint != nil {
++			t.Fatalf("mlkem-client-fingerprint %q set %v", bad, *cfg.MLKEMFingerprint)
++		}
++		deadline := time.After(5 * time.Second)
++	wait:
++		for {
++			select {
++			case event := <-sub:
++				if event.LogLevel == log.WARNING && strings.Contains(event.Payload, "mlkem-client-fingerprint") &&
++					strings.Contains(event.Payload, bad) && strings.Contains(event.Payload, msg) {
++					break wait
++				}
++			case <-deadline:
++				t.Fatalf("mlkem-client-fingerprint %q: no warning containing %q", bad, msg)
++			}
+ 		}
+ 	}
+ }
+diff --git a/adapter/parser.go b/adapter/parser.go
+index 988c344..eb80b2e 100644
+--- a/adapter/parser.go
++++ b/adapter/parser.go
+@@ -8,6 +8,7 @@ import (
+ 	"github.com/metacubex/mihomo/common/structure"
+ 	"github.com/metacubex/mihomo/component/fragment"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
+ 	"github.com/metacubex/mihomo/transport/vless"
+ )
+ 
+@@ -18,16 +19,28 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 		return nil, fmt.Errorf("missing type")
+ 	}
+ 
+-	// SlothClash 0032: an invalid fragment-opts block fails the proxy at load
+-	// time, not on every dial
+-	var fragmentOption struct {
+-		FragmentOpts fragment.Options `proxy:"fragment-opts,omitempty"`
+-	}
+-	if err := decoder.Decode(mapping, &fragmentOption); err != nil {
+-		return nil, err
+-	}
+-	if _, err := fragmentOption.FragmentOpts.Parse(); err != nil {
+-		return nil, err
++	// SlothClash 0032: fragment-opts is checked once at load time, not on
++	// every dial. SlothClash 0043 (from Rerowros/veles): an unusable block is
++	// dropped with a warning and the proxy loads without fragmentation, as
++	// stock mihomo ignores keys it does not know.
++	if _, ok := mapping["fragment-opts"]; ok {
++		var fragmentOption struct {
++			FragmentOpts fragment.Options `proxy:"fragment-opts,omitempty"`
++		}
++		fragErr := decoder.Decode(mapping, &fragmentOption)
++		if fragErr == nil {
++			_, fragErr = fragmentOption.FragmentOpts.Parse()
++		}
++		if fragErr != nil {
++			log.Warnln("[Proxy] %v: ignore unsupported fragment-opts: %s", mapping["name"], fragErr.Error())
++			cleaned := make(map[string]any, len(mapping))
++			for k, v := range mapping {
++				if k != "fragment-opts" {
++					cleaned[k] = v
++				}
++			}
++			mapping = cleaned
++		}
+ 	}
+ 
+ 	opt := applyProxyOptions(options...)
+@@ -254,10 +267,9 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ 	}
+ 
+ 	if muxCoolMapping, ok := mapping["mux.cool"].(map[string]any); ok {
+-		proxy, err = wrapMuxCool(mapping, muxCoolMapping, proxy, decoder)
+-		if err != nil {
+-			return nil, err
+-		}
++		proxy = wrapMuxCool(mapping, muxCoolMapping, proxy, decoder)
++	} else if rawMuxCool, exist := mapping["mux.cool"]; exist && rawMuxCool != nil {
++		log.Warnln("[Proxy] %s: ignore non-map mux.cool option", proxy.Name())
+ 	}
+ 
+ 	if muxMapping, muxExist := mapping["smux"].(map[string]any); muxExist {
+@@ -285,14 +297,17 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
+ // wrapMuxCool applies the opt-in "mux.cool" block of a vless proxy: TCP
+ // streams and UDP (XUDP) share pooled VLESS Mux.Cool carriers, as Xray's
+ // outbound "mux" does. A disabled block leaves the proxy untouched.
+-func wrapMuxCool(mapping, muxCoolMapping map[string]any, proxy outbound.ProxyAdapter, decoder *structure.Decoder) (outbound.ProxyAdapter, error) {
++// SlothClash 0043 (from Rerowros/veles): a block that cannot apply is ignored
++// with a warning and the proxy runs without mux.cool instead of failing the
++// whole profile.
++func wrapMuxCool(mapping, muxCoolMapping map[string]any, proxy outbound.ProxyAdapter, decoder *structure.Decoder) outbound.ProxyAdapter {
+ 	option := outbound.MuxCoolOption{}
+ 	if err := decoder.Decode(muxCoolMapping, &option); err != nil {
+-		_ = proxy.Close()
+-		return nil, err
++		log.Warnln("[Proxy] %s: ignore invalid mux.cool options: %s", proxy.Name(), err.Error())
++		return proxy
+ 	}
+ 	if !option.Enabled {
+-		return proxy, nil
++		return proxy
+ 	}
+ 	err := checkMuxCool(mapping, decoder)
+ 	var wrapped outbound.ProxyAdapter
+@@ -300,10 +315,10 @@ func wrapMuxCool(mapping, muxCoolMapping map[string]any, proxy outbound.ProxyAda
+ 		wrapped, err = outbound.NewMuxCool(option, proxy)
+ 	}
+ 	if err != nil {
+-		_ = proxy.Close()
+-		return nil, err
++		log.Warnln("[Proxy] %s: ignore mux.cool: %s", proxy.Name(), err.Error())
++		return proxy
+ 	}
+-	return wrapped, nil
++	return wrapped
+ }
+ 
+ func checkMuxCool(mapping map[string]any, decoder *structure.Decoder) error {
+diff --git a/adapter/parser_fragment_test.go b/adapter/parser_fragment_test.go
+index 93dc0ea..15ee919 100644
+--- a/adapter/parser_fragment_test.go
++++ b/adapter/parser_fragment_test.go
+@@ -1,7 +1,11 @@
+ package adapter
+ 
+ import (
++	"strings"
+ 	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/log"
+ 
+ 	"github.com/stretchr/testify/require"
+ )
+@@ -26,8 +30,33 @@ func TestParseProxyFragmentOpts(t *testing.T) {
+ 	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "1-3", "length": 50, "delay": "5-10", "max-split": 4}))
+ 	require.NoError(t, err)
+ 
+-	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "tlshello", "length": "0-5"}))
+-	require.ErrorContains(t, err, "fragment-opts.length")
+-	_, err = ParseProxy(fragmentVlessMapping(map[string]any{"packets": "first"}))
+-	require.ErrorContains(t, err, "fragment-opts.packets")
++	// SlothClash 0043: an unusable block is dropped with a warning, the proxy loads.
++	sub := log.Subscribe()
++	defer log.UnSubscribe(sub)
++	bad := []map[string]any{
++		{"packets": "tlshello", "length": "0-5"},
++		{"packets": "first"},
++		{"delay": "soon"},
++		{"packets": []any{1, 2}},
++	}
++	for _, opts := range bad {
++		mapping := fragmentVlessMapping(opts)
++		proxy, err := ParseProxy(mapping)
++		require.NoError(t, err, "fragment-opts %v", opts)
++		require.NotNil(t, proxy)
++		_ = proxy.Close()
++		require.Contains(t, mapping, "fragment-opts", "the caller's mapping must not be modified")
++	}
++	warned := 0
++	deadline := time.After(5 * time.Second)
++	for warned < len(bad) {
++		select {
++		case event := <-sub:
++			if event.LogLevel == log.WARNING && strings.Contains(event.Payload, "ignore unsupported fragment-opts") {
++				warned++
++			}
++		case <-deadline:
++			t.Fatalf("got %d fragment-opts warnings, want %d", warned, len(bad))
++		}
++	}
+ }
+diff --git a/adapter/parser_muxcool_test.go b/adapter/parser_muxcool_test.go
+index 27fb62a..e7306d9 100644
+--- a/adapter/parser_muxcool_test.go
++++ b/adapter/parser_muxcool_test.go
+@@ -4,8 +4,10 @@ import (
+ 	"reflect"
+ 	"strings"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/metacubex/mihomo/adapter/outbound"
++	"github.com/metacubex/mihomo/log"
+ )
+ 
+ func TestParseProxyMuxCoolConfigurations(t *testing.T) {
+@@ -66,7 +68,9 @@ func TestParseProxyMuxCoolConfigurations(t *testing.T) {
+ 	}
+ }
+ 
+-func TestParseProxyRejectsInvalidMuxCoolConfigurations(t *testing.T) {
++// SlothClash 0043: a mux.cool block that cannot apply is ignored with a warning;
++// the proxy loads unwrapped instead of failing the whole profile.
++func TestParseProxyIgnoresInvalidMuxCoolConfigurations(t *testing.T) {
+ 	tests := []struct {
+ 		name    string
+ 		mapping map[string]any
+@@ -123,17 +127,38 @@ func TestParseProxyRejectsInvalidMuxCoolConfigurations(t *testing.T) {
+ 
+ 	for _, tt := range tests {
+ 		t.Run(tt.name, func(t *testing.T) {
+-			parsed, err := ParseProxy(tt.mapping)
+-			if parsed != nil {
+-				_ = parsed.Close()
+-			}
+-			if err == nil || !strings.Contains(err.Error(), tt.match) {
+-				t.Fatalf("error = %v, want substring %q", err, tt.match)
+-			}
++			requireMuxCoolIgnored(t, tt.mapping, tt.match)
+ 		})
+ 	}
+ }
+ 
++// requireMuxCoolIgnored parses mapping, expects it to load without a MuxCool
++// wrapper and a warning that mentions match.
++func requireMuxCoolIgnored(t *testing.T, mapping map[string]any, match string) {
++	t.Helper()
++	sub := log.Subscribe()
++	defer log.UnSubscribe(sub)
++	parsed, err := ParseProxy(mapping)
++	if err != nil {
++		t.Fatalf("ParseProxy: %v", err)
++	}
++	defer parsed.Close()
++	if wrapped, ok := unwrapAutoClose(t, parsed.Adapter()).(*outbound.MuxCool); ok {
++		t.Fatalf("adapter = %T, want no MuxCool wrapper", wrapped)
++	}
++	deadline := time.After(5 * time.Second)
++	for {
++		select {
++		case event := <-sub:
++			if event.LogLevel == log.WARNING && strings.Contains(event.Payload, "mux.cool") && strings.Contains(event.Payload, match) {
++				return
++			}
++		case <-deadline:
++			t.Fatalf("no mux.cool warning mentioning %q", match)
++		}
++	}
++}
++
+ func vlessMapping(extra map[string]any) map[string]any {
+ 	mapping := map[string]any{
+ 		"name": "vless", "type": "vless", "server": "127.0.0.1", "port": 443,
+@@ -145,19 +170,13 @@ func vlessMapping(extra map[string]any) map[string]any {
+ 	return mapping
+ }
+ 
+-func TestParseProxyRejectsMuxCoolWithVLESSVision(t *testing.T) {
++func TestParseProxyIgnoresMuxCoolWithVLESSVision(t *testing.T) {
+ 	for _, flow := range []string{"xtls-rprx-vision", "xtls-rprx-vision-udp443"} {
+ 		t.Run(flow, func(t *testing.T) {
+-			parsed, err := ParseProxy(vlessMapping(map[string]any{
++			requireMuxCoolIgnored(t, vlessMapping(map[string]any{
+ 				"flow":     flow,
+ 				"mux.cool": map[string]any{"enabled": true},
+-			}))
+-			if parsed != nil {
+-				_ = parsed.Close()
+-			}
+-			if err == nil || !strings.Contains(err.Error(), "mux.cool cannot be used with VLESS flow") {
+-				t.Fatalf("error = %v, want mux.cool/flow conflict", err)
+-			}
++			}), "mux.cool cannot be used with VLESS flow")
+ 		})
+ 	}
+ }
+@@ -208,7 +227,7 @@ func unwrapAutoClose(t *testing.T, adapter any) any {
+ 
+ // xdrive (patch 0004) already runs its own Mux.Cool client inside the VLESS
+ // outbound; a mux.cool carrier on top of it would nest two muxes.
+-func TestParseProxyRejectsMuxCoolOverXDrive(t *testing.T) {
++func TestParseProxyIgnoresMuxCoolOverXDrive(t *testing.T) {
+ 	mapping := map[string]any{
+ 		"name": "xdrive", "type": "vless", "server": "127.0.0.1", "port": 443,
+ 		"uuid": "27848739-7e62-4138-9fd3-098a63964b6b", "network": "xdrive",
+@@ -216,11 +235,5 @@ func TestParseProxyRejectsMuxCoolOverXDrive(t *testing.T) {
+ 		"xdrive-opts": map[string]any{"service": "local", "remote-folder": t.TempDir()},
+ 		"mux.cool":    map[string]any{"enabled": true},
+ 	}
+-	parsed, err := ParseProxy(mapping)
+-	if parsed != nil {
+-		_ = parsed.Close()
+-	}
+-	if err == nil || !strings.Contains(err.Error(), "xdrive") {
+-		t.Fatalf("error = %v, want xdrive conflict", err)
+-	}
++	requireMuxCoolIgnored(t, mapping, "xdrive")
+ }

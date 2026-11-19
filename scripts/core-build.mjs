@@ -176,7 +176,8 @@ export function patchedGoPackages(patches) {
 /**
  * Stock packages a patch touches whose own stock tests the series does not
  * run: only the tests of the series there (`run`, a -run pattern), and under
- * the race detector without `raceSkip` (a top-level -skip pattern). They are
+ * the race detector without `raceSkip` (a top-level -skip pattern) and with
+ * `raceEnv` added to the environment; `args` go to both runs. They are
  * vetted like every patched package. An entry needs a measured reason that
  * reproduces on the stock tag without the series, so nothing a patch brings
  * in is hidden here.
@@ -191,19 +192,35 @@ export const SCOPED_TEST_PACKAGES = {
   //  - race in transport/vless/vision (TestInboundVless_Reality) and in
   //    github.com/metacubex/restls-client-go (TestInboundVless_Restls). The
   //    FinalMask tests without the Reality and Restls cases are race-clean.
-  './listener/inbound/': { run: 'FinalMask', raceSkip: 'Reality|Restls' },
+  // Every case opens 128 connections at once in its Concurrent subtest, and
+  // the stock HTTP server behind the tunnel drops a connection whose client
+  // SETTINGS take over 2 s. With all the cases in parallel on 4 CPUs that
+  // happens in 16 of 25 plain runs (any mask chain, an empty one included;
+  // no race report); -parallel 2 makes it 0 of 10. Under the race detector
+  // a single case still misses it (1 of 12), so there the harness's own
+  // SKIP_CONCURRENT_TEST switch turns the Concurrent subtests off; they run
+  // in the plain test. Measured in golang:1.26.11, --cpus=4, 2026-11-19.
+  './listener/inbound/': {
+    run: 'FinalMask',
+    args: ['-parallel', '2'],
+    raceSkip: 'Reality|Restls',
+    raceEnv: { SKIP_CONCURRENT_TEST: '1' },
+  },
 }
 
-/** The `go test` invocations for the patched packages, scoped ones apart. */
+/**
+ * The `go test` invocations for the patched packages, scoped ones apart:
+ * [{ args, env }], env being extra variables for that invocation.
+ */
 export function goTestRuns(pkgs, race) {
   const plain = pkgs.filter((p) => !SCOPED_TEST_PACKAGES[p])
-  const runs = plain.length ? [plain] : []
+  const runs = plain.length ? [{ args: plain, env: {} }] : []
   for (const p of pkgs) {
     const scope = SCOPED_TEST_PACKAGES[p]
     if (!scope) continue
-    const args = ['-run', scope.run]
+    const args = ['-run', scope.run, ...(scope.args ?? [])]
     if (race && scope.raceSkip) args.push('-skip', scope.raceSkip)
-    runs.push([...args, p])
+    runs.push({ args: [...args, p], env: race ? (scope.raceEnv ?? {}) : {} })
   }
   return runs
 }
@@ -377,18 +394,21 @@ export function buildCore({
       // --test-only run already vets, so this is the tests only.
       const pkgs = patchedGoPackages(patches)
       log(`==> go test -race of the patched packages: ${pkgs.join(' ')}`)
-      for (const args of goTestRuns(pkgs, true)) {
-        run('go', ['test', '-race', '-count=1', ...args], {
+      for (const t of goTestRuns(pkgs, true)) {
+        run('go', ['test', '-race', '-count=1', ...t.args], {
           cwd: src,
-          env: { ...env, CGO_ENABLED: '1' },
+          env: { ...env, ...t.env, CGO_ENABLED: '1' },
         })
       }
     } else if (!skipTests) {
       const pkgs = patchedGoPackages(patches)
       log(`==> go vet + tests of the patched packages: ${pkgs.join(' ')}`)
       run('go', ['vet', ...pkgs], { cwd: src, env })
-      for (const args of goTestRuns(pkgs, false)) {
-        run('go', ['test', '-count=1', ...args], { cwd: src, env })
+      for (const t of goTestRuns(pkgs, false)) {
+        run('go', ['test', '-count=1', ...t.args], {
+          cwd: src,
+          env: { ...env, ...t.env },
+        })
       }
       if (process.platform === 'win32' && coreFeatures(m).includes('desync')) {
         log('==> native Windows desync library tests')

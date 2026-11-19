@@ -1,0 +1,729 @@
+SlothClash core patch 0046: client-fingerprint firefox156 / firefox160.
+
+Firefox 156 and 160 send the same fresh ClientHello: Firefox 148 without
+the ECDSA CBC suites and the FFDHE groups, with a GREASE ECH payload of 240
+bytes. metacubex/utls v1.9.0-alpha.1 stops at 148, so the spec is data in
+component/tls/firefox160.go, applied through HelloCustom like chrome155
+(0029); customHello in chrome155.go now serves both behind the same
+fingerprintSpec / uClient hooks (session cache handled, fallback to Firefox
+148 when the spec cannot apply). The GREASE ECH enc is drawn uniformly per
+connection, as NSS does. Names firefox156, firefox160 and Xray's
+hellofirefox_156, hellofirefox_160; "firefox" stays Firefox 148.
+
+Ported from Prizrak-Core v1.19.34-r4.
+The fixtures are its captures of the browsers. Delete when mihomo moves to
+a utls release with these profiles.
+
+Tests: component/tls (byte for byte against the captures except key shares
+and GREASE ECH contents, enc uniformity, firefox stays 148, a TLS 1.3
+handshake with a session cache, REALITY key-share gate under On and Off),
+config (the names load in a profile).
+
+diff --git a/component/tls/chrome155.go b/component/tls/chrome155.go
+index aeeb375..0bf1f0e 100644
+--- a/component/tls/chrome155.go
++++ b/component/tls/chrome155.go
+@@ -172,39 +172,62 @@ func chrome155Spec() *utls.ClientHelloSpec {
+ 	}
+ }
+ 
+-// fingerprintSpec is utls.UTLSIdToSpec that also knows HelloChrome155.
++// customHello returns the spec of a profile carried in this package, the
++// built-in parrot to fall back to, and whether id is one: HelloChrome155, and
++// HelloFirefox156 / HelloFirefox160 (SlothClash 0046).
++func customHello(id UClientHelloID) (spec func() (*utls.ClientHelloSpec, error), fallback UClientHelloID, ok bool) {
++	switch id {
++	case HelloChrome155:
++		return func() (*utls.ClientHelloSpec, error) { return chrome155Spec(), nil }, utls.HelloChrome_133, true
++	case HelloFirefox156, HelloFirefox160:
++		return firefox160Spec, utls.HelloFirefox_148, true
++	}
++	return nil, UClientHelloID{}, false
++}
++
++// fingerprintSpec is utls.UTLSIdToSpec that also knows the profiles of
++// customHello.
+ func fingerprintSpec(id UClientHelloID) (utls.ClientHelloSpec, error) {
+-	if id == HelloChrome155 {
+-		return *chrome155Spec(), nil
++	if spec, _, ok := customHello(id); ok {
++		s, err := spec()
++		if err != nil {
++			return utls.ClientHelloSpec{}, err
++		}
++		return *s, nil
+ 	}
+ 	return utls.UTLSIdToSpec(id)
+ }
+ 
+-// uClient is utls.UClient that also knows HelloChrome155. Every utls client of
+-// the core is created through it (UClient below, REALITY, JLS).
++// uClient is utls.UClient that also knows the profiles of customHello. Every
++// utls client of the core is created through it (UClient below, REALITY, JLS).
+ func uClient(c net.Conn, config *utls.Config, fingerprint UClientHelloID) *UConn {
+-	if fingerprint != HelloChrome155 {
++	spec, fallback, ok := customHello(fingerprint)
++	if !ok {
+ 		return utls.UClient(c, config, fingerprint)
+ 	}
+ 	customConfig := config
+ 	if config != nil && config.ClientSessionCache != nil && !config.SessionTicketsDisabled && !config.PreferSkipResumptionOnNilExtension {
+-		// The spec has no pre_shared_key extension (neither has Chrome's first
+-		// hello), and utls panics in BuildHandshakeState when a HelloCustom
+-		// client finds a cached TLS 1.3 session. The built-in parrots skip
+-		// resumption in that case; so does this one. A copy, so the caller's
+-		// config is left as it was.
++		// The specs have no pre_shared_key extension (neither has the
++		// browsers' first hello), and utls panics in BuildHandshakeState when
++		// a HelloCustom client finds a cached TLS 1.3 session. The built-in
++		// parrots skip resumption in that case; so do these. A copy, so the
++		// caller's config is left as it was.
+ 		customConfig = config.Clone()
+ 		customConfig.PreferSkipResumptionOnNilExtension = true
+ 	}
+ 	uConn := utls.UClient(c, customConfig, utls.HelloCustom)
+-	if err := uConn.ApplyPreset(chrome155Spec()); err != nil {
++	s, err := spec()
++	if err == nil {
++		err = uConn.ApplyPreset(s)
++	}
++	if err != nil {
+ 		// ApplyPreset fails on a config no hello can be built from (no
+ 		// ServerName and no InsecureSkipVerify, an empty or oversized
+-		// NextProtos entry) or a failing random source. Chrome 133 is the
+-		// closest hello; the config error then comes back from its
++		// NextProtos entry) or a failing random source. The fallback is the
++		// closest built-in hello; the config error then comes back from its
+ 		// BuildHandshakeState.
+-		log.Warnln("chrome155 fingerprint: %v, falling back to chrome133", err)
+-		return utls.UClient(c, config, utls.HelloChrome_133)
++		log.Warnln("%s %s fingerprint: %v, falling back to %s %s", fingerprint.Client, fingerprint.Version, err, fallback.Client, fallback.Version)
++		return utls.UClient(c, config, fallback)
+ 	}
+ 	return uConn
+ }
+diff --git a/component/tls/firefox160.go b/component/tls/firefox160.go
+new file mode 100644
+index 0000000..a695c6b
+--- /dev/null
++++ b/component/tls/firefox160.go
+@@ -0,0 +1,125 @@
++package tls
++
++import (
++	"crypto/rand"
++
++	utls "github.com/metacubex/utls"
++	"github.com/metacubex/utls/dicttls"
++)
++
++// SlothClash core patch 0046: the Firefox 156 / 160 ClientHello as
++// client-fingerprint "firefox156" / "firefox160" (and Xray's
++// "hellofirefox_156" / "hellofirefox_160"). "firefox" stays Firefox 148.
++// Ported from Prizrak-Core v1.19.34-r4.
++// The profiles are the Firefox 156 and 160 fingerprints of its utls fork,
++// checked there against captures of the browsers.
++//
++// metacubex/utls v1.9.0-alpha.1 stops at Firefox 148, so the spec is carried
++// here as data and applied through HelloCustom + ApplyPreset, as chrome155
++// (SlothClash 0029) does, through customHello in chrome155.go; the library itself is not forked or replaced. Firefox 156
++// dropped the ECDSA CBC suites and the FFDHE groups of 148 and grew the GREASE
++// ECH payload by one byte; Firefox 160 sends the same fresh hello.
++//
++// NSS draws the GREASE ECH enc as uniformly random bytes, while utls generates
++// an X25519 public key, whose last byte never has the top bit set. The spec
++// draws the enc itself, per connection.
++//
++// "firefox" keeps mihomo's meaning (Firefox 148). Delete when mihomo moves to
++// a utls release that ships these profiles (then map the names to it).
++
++var (
++	HelloFirefox156 = UClientHelloID{Client: utls.HelloFirefox_148.Client, Version: "156"}
++	HelloFirefox160 = UClientHelloID{Client: utls.HelloFirefox_148.Client, Version: "160"}
++)
++
++// firefox160Spec returns a fresh spec: utls mutates it per connection.
++func firefox160Spec() (*utls.ClientHelloSpec, error) {
++	enc := make([]byte, 32) // Nenc of DHKEM(X25519, HKDF-SHA256)
++	if _, err := rand.Read(enc); err != nil {
++		return nil, err
++	}
++	return &utls.ClientHelloSpec{
++		TLSVersMin: utls.VersionTLS12,
++		TLSVersMax: utls.VersionTLS13,
++		CipherSuites: []uint16{
++			utls.TLS_AES_128_GCM_SHA256,
++			utls.TLS_CHACHA20_POLY1305_SHA256,
++			utls.TLS_AES_256_GCM_SHA384,
++			utls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
++			utls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
++			utls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
++			utls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
++			utls.TLS_RSA_WITH_AES_128_GCM_SHA256,
++			utls.TLS_RSA_WITH_AES_256_GCM_SHA384,
++			utls.TLS_RSA_WITH_AES_128_CBC_SHA,
++			utls.TLS_RSA_WITH_AES_256_CBC_SHA,
++		},
++		CompressionMethods: []uint8{0x00},
++		Extensions: []utls.TLSExtension{
++			&utls.SNIExtension{},
++			&utls.ExtendedMasterSecretExtension{},
++			&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
++			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{
++				utls.X25519MLKEM768,
++				utls.X25519,
++				utls.CurveP256,
++				utls.CurveP384,
++				utls.CurveP521,
++			}},
++			&utls.SupportedPointsExtension{SupportedPoints: []uint8{0x00}},
++			&utls.SessionTicketExtension{},
++			&utls.ALPNExtension{AlpnProtocols: []string{"h2", "http/1.1"}},
++			&utls.StatusRequestExtension{},
++			&utls.FakeDelegatedCredentialsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
++				utls.ECDSAWithP256AndSHA256,
++				utls.ECDSAWithP384AndSHA384,
++				utls.ECDSAWithP521AndSHA512,
++				utls.ECDSAWithSHA1,
++			}},
++			&utls.SCTExtension{},
++			&utls.KeyShareExtension{KeyShares: append(
++				utls.ReuseHybridAndClassicalKeyShares(
++					utls.KeyShare{Group: utls.X25519MLKEM768},
++					utls.KeyShare{Group: utls.X25519},
++				),
++				utls.KeyShare{Group: utls.CurveP256},
++			)},
++			&utls.SupportedVersionsExtension{Versions: []uint16{
++				utls.VersionTLS13,
++				utls.VersionTLS12,
++			}},
++			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
++				utls.ECDSAWithP256AndSHA256,
++				utls.ECDSAWithP384AndSHA384,
++				utls.ECDSAWithP521AndSHA512,
++				utls.PSSWithSHA256,
++				utls.PSSWithSHA384,
++				utls.PSSWithSHA512,
++				utls.PKCS1WithSHA256,
++				utls.PKCS1WithSHA384,
++				utls.PKCS1WithSHA512,
++				utls.ECDSAWithSHA1,
++				utls.PKCS1WithSHA1,
++			}},
++			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
++			&utls.FakeRecordSizeLimitExtension{Limit: 0x4001},
++			&utls.UtlsCompressCertExtension{Algorithms: []utls.CertCompressionAlgo{
++				utls.CertCompressionZlib,
++				utls.CertCompressionBrotli,
++				utls.CertCompressionZstd,
++			}},
++			&utls.GREASEEncryptedClientHelloExtension{
++				CandidateCipherSuites: []utls.HPKESymmetricCipherSuite{
++					{KdfId: dicttls.HKDF_SHA256, AeadId: dicttls.AEAD_AES_128_GCM},
++					{KdfId: dicttls.HKDF_SHA256, AeadId: dicttls.AEAD_CHACHA20_POLY1305},
++				},
++				EncapsulatedKey:      enc,
++				CandidatePayloadLens: []uint16{224}, // +16: 240, NSS's size for host names up to 107 bytes
++			},
++		},
++	}, nil
++}
+diff --git a/component/tls/firefox160_helpers_test.go b/component/tls/firefox160_helpers_test.go
+new file mode 100644
+index 0000000..44153a3
+--- /dev/null
++++ b/component/tls/firefox160_helpers_test.go
+@@ -0,0 +1,177 @@
++package tls
++
++// Helpers of the SlothClash core patch 0046 tests (firefox160_test.go): a
++// ClientHello parser that keeps every extension body, and the generated
++// hellos of a fingerprint name, plain and through REALITY. The 0029 tests
++// (chrome155_test.go) keep their own, narrower helpers.
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"encoding/hex"
++	"io"
++	"net"
++	"sort"
++	"testing"
++	"time"
++
++	utls "github.com/metacubex/utls"
++)
++
++type parsedClientHello struct {
++	version      uint16
++	sessionIDLen int
++	cipherSuites []uint16
++	compression  []byte
++	extensionIDs []uint16          // wire order
++	extensions   map[uint16][]byte // extension_data by type
++}
++
++func isGREASE(v uint16) bool {
++	return v>>8 == v&0xff && v&0xf == 0xa
++}
++
++// parseClientHello reads a ClientHello handshake message (with its four-byte
++// header) and replaces every GREASE extension type with 0x0a0a.
++func parseClientHello(t *testing.T, raw []byte) parsedClientHello {
++	t.Helper()
++	if len(raw) < 4 || raw[0] != 1 || int(raw[1])<<16|int(raw[2])<<8|int(raw[3]) != len(raw)-4 {
++		t.Fatalf("not a ClientHello handshake message, %d bytes", len(raw))
++	}
++	b := raw[4:]
++	next := func(n int) []byte {
++		t.Helper()
++		if len(b) < n {
++			t.Fatalf("ClientHello truncated")
++		}
++		out := b[:n]
++		b = b[n:]
++		return out
++	}
++	var hello parsedClientHello
++	hello.version = binary.BigEndian.Uint16(next(2))
++	next(32) // random
++	hello.sessionIDLen = len(next(int(next(1)[0])))
++	suites := next(int(binary.BigEndian.Uint16(next(2))))
++	for i := 0; i+1 < len(suites); i += 2 {
++		hello.cipherSuites = append(hello.cipherSuites, binary.BigEndian.Uint16(suites[i:]))
++	}
++	hello.compression = next(int(next(1)[0]))
++	if extLen := int(binary.BigEndian.Uint16(next(2))); extLen != len(b) {
++		t.Fatalf("extensions length %d, %d bytes left", extLen, len(b))
++	}
++	hello.extensions = map[uint16][]byte{}
++	for len(b) > 0 {
++		id := binary.BigEndian.Uint16(next(2))
++		data := next(int(binary.BigEndian.Uint16(next(2))))
++		if isGREASE(id) {
++			id = 0x0a0a
++		}
++		hello.extensionIDs = append(hello.extensionIDs, id)
++		hello.extensions[id] = data
++	}
++	return hello
++}
++
++// ungrease replaces GREASE values in a list of uint16 that starts at offset.
++func ungrease(data []byte, offset int) []byte {
++	out := bytes.Clone(data)
++	for i := offset; i+1 < len(out); i += 2 {
++		if isGREASE(binary.BigEndian.Uint16(out[i:])) {
++			out[i], out[i+1] = 0x0a, 0x0a
++		}
++	}
++	return out
++}
++
++func ungreaseSuites(suites []uint16) []uint16 {
++	out := append([]uint16(nil), suites...)
++	for i, suite := range out {
++		if isGREASE(suite) {
++			out[i] = 0x0a0a
++		}
++	}
++	return out
++}
++
++func sortedIDs(ids []uint16) []uint16 {
++	out := append([]uint16(nil), ids...)
++	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
++	return out
++}
++
++func equalUint16s(a, b []uint16) bool {
++	if len(a) != len(b) {
++		return false
++	}
++	for i := range a {
++		if a[i] != b[i] {
++			return false
++		}
++	}
++	return true
++}
++
++// keyShareShape returns "group:length" of every key share, GREASE as 0a0a.
++func keyShareShape(t *testing.T, data []byte) []string {
++	t.Helper()
++	var out []string
++	for b := data[2:]; len(b) > 0; {
++		if len(b) < 4 {
++			t.Fatalf("key_share truncated")
++		}
++		group, n := binary.BigEndian.Uint16(b), int(binary.BigEndian.Uint16(b[2:]))
++		if isGREASE(group) {
++			group = 0x0a0a
++		}
++		out = append(out, hex.EncodeToString([]byte{byte(group >> 8), byte(group)})+":"+hex.EncodeToString([]byte{byte(n >> 8), byte(n)}))
++		b = b[4+n:]
++	}
++	return out
++}
++
++func buildRawClientHello(t *testing.T, name string, serverName string) []byte {
++	t.Helper()
++	id, ok := GetFingerprint(name)
++	if !ok {
++		t.Fatalf("fingerprint %q not found", name)
++	}
++	client, server := net.Pipe()
++	t.Cleanup(func() { client.Close(); server.Close() })
++	uConn := UClient(client, &utls.Config{ServerName: serverName}, id)
++	if err := uConn.BuildHandshakeState(); err != nil {
++		t.Fatalf("BuildHandshakeState(%s): %v", name, err)
++	}
++	return uConn.HandshakeState.Hello.Raw
++}
++
++func captureRealityHello(t *testing.T, fingerprint UClientHelloID, config *RealityConfig) *utls.PubClientHelloMsg {
++	t.Helper()
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	deadline := time.Now().Add(5 * time.Second)
++	_ = client.SetDeadline(deadline)
++	_ = server.SetDeadline(deadline)
++	done := make(chan struct{})
++	go func() {
++		defer close(done)
++		_, _ = GetRealityConn(context.Background(), client, fingerprint, "www.example.com", config)
++	}()
++	header := make([]byte, 5)
++	if _, err := io.ReadFull(server, header); err != nil {
++		t.Fatalf("read ClientHello header: %v", err)
++	}
++	body := make([]byte, int(binary.BigEndian.Uint16(header[3:5])))
++	if _, err := io.ReadFull(server, body); err != nil {
++		t.Fatalf("read ClientHello: %v", err)
++	}
++	_ = server.Close()
++	<-done
++	hello := utls.UnmarshalClientHello(body)
++	if hello == nil {
++		t.Fatal("captured record is not a ClientHello")
++	}
++	return hello
++}
+diff --git a/component/tls/firefox160_test.go b/component/tls/firefox160_test.go
+new file mode 100644
+index 0000000..5982e97
+--- /dev/null
++++ b/component/tls/firefox160_test.go
+@@ -0,0 +1,229 @@
++package tls
++
++// SlothClash core patch 0046 tests. The fixtures are ClientHello handshake
++// messages of fresh connections of Firefox 156.0 and 160.0, one per line.
++// Ported from Prizrak-Core v1.19.34-r4 (the testdata of its utls fork).
++
++import (
++	"bytes"
++	"crypto/ecdh"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/binary"
++	"encoding/hex"
++	"io"
++	"math/big"
++	"net"
++	"os"
++	"strings"
++	"testing"
++	"time"
++
++	utls "github.com/metacubex/utls"
++)
++
++func readHelloFixture(t *testing.T, path string) [][]byte {
++	t.Helper()
++	data, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var hellos [][]byte
++	for _, line := range strings.Split(string(data), "\n") {
++		line = strings.TrimSpace(line)
++		if line == "" || strings.HasPrefix(line, "#") {
++			continue
++		}
++		raw, err := hex.DecodeString(line)
++		if err != nil {
++			t.Fatal(err)
++		}
++		hellos = append(hellos, raw)
++	}
++	if len(hellos) == 0 {
++		t.Fatalf("%s: no hellos", path)
++	}
++	return hellos
++}
++
++// sniHost reads the host name of a server_name extension.
++func sniHost(t *testing.T, data []byte) string {
++	t.Helper()
++	if len(data) < 5 || data[2] != 0 {
++		t.Fatalf("server_name %x", data)
++	}
++	return string(data[5 : 5+int(binary.BigEndian.Uint16(data[3:]))])
++}
++
++func TestFirefox160MatchesBrowserCapture(t *testing.T) {
++	const (
++		extKeyShare = 51
++		extECH      = 0xfe0d
++	)
++	for _, tc := range []struct {
++		fixture string
++		names   []string
++	}{
++		{"testdata/firefox156_clienthellos.hex", []string{"firefox156", "hellofirefox_156", "HelloFirefox_156"}},
++		{"testdata/firefox160_clienthellos.hex", []string{"firefox160", "hellofirefox_160"}},
++	} {
++		for i, raw := range readHelloFixture(t, tc.fixture) {
++			want := parseClientHello(t, raw)
++			host := sniHost(t, want.extensions[0])
++			for _, name := range tc.names {
++				got := parseClientHello(t, buildRawClientHello(t, name, host))
++
++				if got.version != want.version || got.sessionIDLen != want.sessionIDLen {
++					t.Fatalf("%s %s: version %04x, session ID %d bytes; Firefox sends %04x and %d", name, host, got.version, got.sessionIDLen, want.version, want.sessionIDLen)
++				}
++				if !equalUint16s(got.cipherSuites, want.cipherSuites) {
++					t.Fatalf("%s: cipher suites %04x, Firefox sends %04x", name, got.cipherSuites, want.cipherSuites)
++				}
++				if !bytes.Equal(got.compression, want.compression) {
++					t.Fatalf("%s: compression %x, Firefox sends %x", name, got.compression, want.compression)
++				}
++				// Firefox does not shuffle: the order is part of the fingerprint.
++				if !equalUint16s(got.extensionIDs, want.extensionIDs) {
++					t.Fatalf("%s %s (#%d): extensions %04x, Firefox sends %04x", name, host, i, got.extensionIDs, want.extensionIDs)
++				}
++				for _, id := range want.extensionIDs {
++					g, w := got.extensions[id], want.extensions[id]
++					switch id {
++					case extKeyShare:
++						if gs, ws := keyShareShape(t, g), keyShareShape(t, w); strings.Join(gs, ",") != strings.Join(ws, ",") {
++							t.Fatalf("%s: key shares %v, Firefox sends %v", name, gs, ws)
++						}
++						continue
++					case extECH:
++						// Random AEAD (AES-128-GCM or ChaCha20-Poly1305, the
++						// captures have both), config id, enc and payload:
++						// compare the layout.
++						aead := binary.BigEndian.Uint16(g[3:5])
++						if len(g) != len(w) || !bytes.Equal(g[:3], w[:3]) || (aead != 1 && aead != 3) || !bytes.Equal(g[6:8], w[6:8]) {
++							t.Fatalf("%s: GREASE ECH %x..., %d bytes; Firefox sends %x..., %d bytes", name, g[:8], len(g), w[:8], len(w))
++						}
++						continue
++					}
++					if !bytes.Equal(g, w) {
++						t.Fatalf("%s: extension %04x = %x, Firefox sends %x", name, id, g, w)
++					}
++				}
++			}
++		}
++	}
++}
++
++// NSS draws the GREASE ECH enc uniformly; an X25519 public key never has the
++// top bit of its last byte set.
++func TestFirefox160GreaseECHEncIsUniform(t *testing.T) {
++	const extECH = 0xfe0d
++	topBit := 0
++	for i := 0; i < 64; i++ {
++		got := parseClientHello(t, buildRawClientHello(t, "firefox160", "example.com"))
++		ech := got.extensions[extECH]
++		if binary.BigEndian.Uint16(ech[6:8]) != 32 {
++			t.Fatalf("GREASE ECH enc is %d bytes, want 32", binary.BigEndian.Uint16(ech[6:8]))
++		}
++		if ech[8+31]&0x80 != 0 {
++			topBit++
++		}
++	}
++	if topBit == 0 || topBit == 64 {
++		t.Fatalf("top bit of the enc's last byte set in %d of 64 hellos", topBit)
++	}
++}
++
++// "firefox" keeps mihomo's meaning (Firefox 148): the patch only adds names.
++func TestFirefoxStaysStock(t *testing.T) {
++	id, ok := GetFingerprint("firefox")
++	if !ok || id == HelloFirefox156 || id == HelloFirefox160 {
++		t.Fatalf("firefox is %v", id)
++	}
++	for _, id := range []UClientHelloID{HelloFirefox156, HelloFirefox160} {
++		if !FingerprintSupportsX25519MLKEM768(id) {
++			t.Fatalf("%v: no X25519MLKEM768 share", id)
++		}
++	}
++}
++
++// A full handshake with a Go TLS 1.3 server, then a second connection with
++// the session cache filled: the spec has no pre_shared_key, so the second
++// hello must still be built (no utls panic) and complete.
++func TestFirefox160Handshake(t *testing.T) {
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer ln.Close()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"example.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
++	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	serverConfig := &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
++	go func() {
++		for {
++			conn, err := ln.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer conn.Close()
++				server := tls.Server(conn, serverConfig)
++				if server.Handshake() == nil {
++					_, _ = server.Write([]byte{1})
++					_, _ = io.Copy(io.Discard, server)
++				}
++			}()
++		}
++	}()
++
++	config := &utls.Config{ServerName: "example.com", InsecureSkipVerify: true, ClientSessionCache: utls.NewLRUClientSessionCache(1)}
++	for i := 0; i < 2; i++ {
++		conn, err := net.Dial("tcp", ln.Addr().String())
++		if err != nil {
++			t.Fatal(err)
++		}
++		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
++		uConn := UClient(conn, config, HelloFirefox160)
++		if err := uConn.Handshake(); err != nil {
++			t.Fatalf("handshake %d: %v", i, err)
++		}
++		if _, err := io.ReadFull(uConn, make([]byte, 1)); err != nil {
++			t.Fatalf("read %d: %v", i, err)
++		}
++		if _, ok := parseClientHello(t, uConn.HandshakeState.Hello.Raw).extensions[0xfe0d]; !ok {
++			t.Fatalf("hello %d is not Firefox 160", i)
++		}
++		_ = uConn.Close()
++	}
++}
++
++// firefox160 through REALITY: with the hybrid share it passes the XTLS/REALITY
++// key-share gate as itself.
++func TestFirefox160Reality(t *testing.T) {
++	key, err := ecdh.X25519().GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer SetRealityMLKEMPolicy(RealityMLKEMAuto)
++	for _, policy := range []RealityMLKEMPolicy{RealityMLKEMOn, RealityMLKEMOff} {
++		SetRealityMLKEMPolicy(policy)
++		hello := captureRealityHello(t, HelloFirefox160, &RealityConfig{PublicKey: key.PublicKey()})
++		got := parseClientHello(t, hello.Raw)
++		if _, ok := got.extensions[0x001c]; !ok { // record_size_limit: Firefox, not Chrome
++			t.Fatalf("policy %d: REALITY hello is not Firefox", policy)
++		}
++		_, ok := xrayAcceptsKeyShares(hello.KeyShares)
++		if want := policy == RealityMLKEMOn; ok != want {
++			t.Fatalf("policy %d: Xray 26.9.8+ key-share gate = %v, want %v (shares %v)", policy, ok, want, hello.KeyShares)
++		}
++	}
++}
+diff --git a/component/tls/testdata/firefox156_clienthellos.hex b/component/tls/testdata/firefox156_clienthellos.hex
+new file mode 100644
+index 0000000..2bae086
+--- /dev/null
++++ b/component/tls/testdata/firefox156_clienthellos.hex
+@@ -0,0 +1,4 @@
++# Firefox 156.0 on macOS 26, headless, ALPN h2,http/1.1, captured 2026-11-02.
++# One ClientHello handshake message per line: SNI x.com, then example.com.
++01000752030310ce99f62fcf935bae3290d2b8421f5f783da07f2561203cded6d7d04c1819df206a38d1c7f6c558b3619323f5adef0e6de522c24166c7e72301d7ae7ecae2fbda001e130113031302c02bc02fcca9cca8c02cc030c013c014009c009d002f0035010006eb0000000a0008000005782e636f6d00170000ff01000100000a000c000a11ec001d001700180019000b00020100002300000010000e000c02683208687474702f312e310005000501000000000022000a00080403050306030203001200000033052f052d11ec04c04a69b2eb39b54f9b35edb124a65ab3067373f1216905da573a25af4073320546548d046489bc1bda486915630ff3a0b963d0caeef10c22a52b3b18b7a3d2cbae667d70b8c0b5ec6ce4a4c85c3c32e03989ef177435333219271dac46b9e7749f93d76732114d99c6ab5a8243d8571744ea2df4b747798b51423079a2577fb1d779431aaf609a69d767a69338c0339747584767a5254038f0684ca6c51707c6c98a204f9001e9dbb9659476c759ae22d8041225743238b2cc8915ac6c0e0827c9e8694668b37ded273e27fc534d9c02d374584687ab66ec7c546660877462ad209e56d2905a22a9145baf97581845d51a9ad946cef76e4449ccd2794fb7047ba8937107d1515a4c4854a73ced2a0f0c817b0d7acb2c0cb2c1f198674aa413a608738bab2c485b88bc9c3cb38f4d09b789b18db53a768504af289ac00a36aa9fc521e755760127cccf7a2e3463a9e858c645458d4a64871b78778c7337759cc19dec3854531c08eb5376ac116b9bc592365b678b1f74c6a776250ed853bb767bc4e6f100c2ba0b4d36c6405bc06ffbc0ffa8cfb2cc83e151a1b9e0108c47a017587b82661392a1cd9b07982303c02b61b61b336363e25f6fa7b8535660c02c992a08144f7097e2d67c7d1a6e0843c56b2072fd7196f8da40131091fc72bbae4a3eeac08d549b6aa00c3a4e40a30884424e591474833fc166890a308a83d1594a7b05e498c928f9c0f8619fc3085df9706d0d920b1c190b321c03fb012ddc254ed7ca4c5962a687ca571d93cddf19c82e9326b550c2dc2805734b883f7b3df224831bac3989a8384e7717379ba2dac260b833132c6a2ce6674728b3815456bc31d57cc39b5b32922d3d553f34c17149d8c95cf442dc27b2cad755365486a5d7613f9254f6e127c7fc8d8121b47e164947e654ac38a47583bb1b841a61c6a9b8d5c535d2c55d542ce8f1761b2c59c7a8c421385dc02ca399fb38aed47d48073218379b28b2c9d99a96ab8482c6690512c3533cd546263485fe794641c35fb3262f5364be7265922e56c26f4b4e4cf84315f7822d43083099359f1cc9f3b11749c9a990120aebb7c6a4e79c5be65e433c01d1e4010d0729a44104874c5e0e66be9b57aa48170e4c0231765790591766fd65c883d440d955344fc12edffb75b93b1ab46a87d5e2cd9b83a690039bad06a2386394fd26c08344ca1dc40b9ba17a80247efa463c5d7c11b1021559b5b6be6a3e2f714f6f3c4140fb77e0b544c067388bc0ab25732ed271198b8251cf199da84c70398c3901631a7b5b3a819aa144464eed2b71e32b9c6a0537af151a4db37cc998ae07997321048008b33c1e447e5bc69d1d0cc2a1163785339e48d343189ac158f53c7baba89928559c9ccbff23c83593248af8928c39858f77b599d378c71a8021b170e36401c8612670349354ba43402aa674e500478c6e679ba301886d11477e87b7c767c05365b0222ed3ac3f1cb1bf144fdc9b553dbb0943109c700c324523076fac97de26c950c45814e16502135896b4279986bdc176b770f8931f46664a6301f02573979a9b5dec74e9e0c2828b9bf158bda3d07dd8c92b1ee526279c9a6879860c880a01d06134357ce2ba02a0ead110828a3736e429bee58dd57cbaefb2d206e7c6018bbdccbbc22ab0da3f014bfa2e66d1e6a6ad63581eedd9ac02483e065f5cd4e8e11d1d5e95fa75c709001d0020014bfa2e66d1e6a6ad63581eedd9ac02483e065f5cd4e8e11d1d5e95fa75c70900170041048f72d06e5ceadc5a0c51550f7af6cd0561ae8fbe8fa722107fb1fc5d12ea8be9f9778513b106cb4855d8d3f754e044a77792a1de0b9afa570894539a69101661002b00050403040303000d0018001604030503060308040805080604010501060102030201002d00020101001c00024001001b000706000100020003fe0d011a0000010001ee002083575738fbe4718abea8c007aba9b1060afc14c54d671d986102dab21f75da8e00f0ed04e17954986c5f7e79ebd316aff1cfd5083dd13dfa6a809db117e3f9cbbef05f6fa7f2e15936c036c23d01b659ed9788d131f8738cdc351b0b23101257c7f9b8a0487f2e16f6d4ac1b174cf80476d24bdc0a20168734ccfc87159c77acc3922ef22bf349bf72b59ede7db5566ec48e4c92404aa23b1f50bfc0b304b71fbe1d227f5f24465208d03f797b5085eb685cbf5d7562d09931ade36f02766334999cb2af62bb97aee49deb5accaad549209d9cd7801e79f2047ccaa1988709f6e00cdda280999ab2800dfa6e9b2e7bfd3130b91b05697d4389d48d26ae89b6a8b4a24a3c86a059b7876434326f63a2270913
++01000758030398662355eedf679f482cbcf345bdebcc74a7d9c71c5bcf26f8f65df2d50eb14a20f2587bd0be9d04a3eb17d3c60bc8b37ff39a733a56b180a69e94f1e3b8c677c1001e130113031302c02bc02fcca9cca8c02cc030c013c014009c009d002f0035010006f100000010000e00000b6578616d706c652e636f6d00170000ff01000100000a000c000a11ec001d001700180019000b00020100002300000010000e000c02683208687474702f312e310005000501000000000022000a00080403050306030203001200000033052f052d11ec04c0b658072cb82d2f807eb1a437b0b90b959087d8cc9d8bf8bf23a92730d0b1b1aa48440c9beeb6abb5d17720d4296182244725a6bd963ceba9b66e333130918baed96796e4a6be161fd1c4cc406521c95610e1446c588cbf541218bcb38ae5e8cf7cecbfca3b1e2e9c59fca06b7c3ba74ff88b09949ec6a393ab459c2d671d17aa5948e7673428adf7716330932c5ce63480155d60722bf2f230c76aaa41934495c985831182fd197b55dca6777a2fd79a171a802da1b792be587aa1f218c406a3e997c467f38f403c8a0d597541ba0dba775950ba680dec00b5ec8b4de9a3b9a0a4a2c394e7b51322406dc3923585dc16c33c7f70c9344e59b8e8a2c155ea40e47049223c4a4a83780c5c4d2b879ab4e54354b35562d99dc3243e121b697c12c4dafc7877149136b0a6a536a52deb169fd735e50040147ba25bcb03db243ccc3b35c7a33f55c4202db49d5c21625fd348b4ea3264c36c9a91b6d2e989308c01d575c51701bca2458e2267374f2347afc5365de21da2f0adb1b9cdb3449138f242452c4fe8c47562a2786763909ee78710cb250ab6708059ac096114328a1c2c0249b1f0ba59dc44eb74944da3b45c9a878c86af22e53d18454aa67c39365a206f5b3a890263bdb26ebf96a042125e5d53af20ea46d400a8a0b0cb44a7b364c42a3086917315a1cdb49da26bcb62fba3eed66d5931a155f1364c1aa0a33265cab482661a452c102d57069cee600e31220387b745c2e88aec3c9c5d517d81b78ba1b720c935bd9eb2b417dc72da993242f43148fc37f8cc9708326b37682fdff68132ca4153f0a05178752f648c6fb82d51845c831020f485983d3a47d9f44412110c899201532699c58520acec866a1747f2a5307075b9369c80d37638b0729a639197b265c9006b1531c66835026b9e67bc7e5ccd8056cc29d9c8b5529244847f059b5c8b5a5ce6ea98d0433e10863654f94e2ebb064d02c648959954ca3c5bc2864d76964a5ac40a89b4ca28922dbb7b35d8c198a9bf958007dc442d283b4b14b1708a6c9cd8ea86ed2c8eb9881a62f4a4afd606efb79a1b98a2c1f74a554592def89fd26424a3a07c17282ba180360aa0ceaca80c90fc44d6a071d98b51059844bf1542c8b2a61b9c5109fabaedda5b2827c8ff99151ef5adc4b532f7db809c09ad7030bdc4a23bd6eb84b267a16ea4937bb9cf92269b0692086772211bea928c510217f24e1d5c0bf0b7be26e98675b4af10990003d37359148e5b8cb2e49930b0730ecaf7a41c72be8b577f3bea9047c399899878651681295804f0373e8630c7a491858b29a494770669eab2cf5a56f0eb92df4a3ac798a20d4b8f25e4b27f88319338a6bba6bf4ed64905aa0fe6d707e1d39c63cc193a5737d0517686f18c95357a7c797bd0e8529289067e154223bca2dc4843508885604bc7bd474d7ee5401d0b96fe58814b67771ac94c3f0bc54f17411057757fb48c68c8a0d0c5cfdfb50da8f2cf4bd5061e34ca99a74d4f447a206a3857a077e50c34bc731491f750a8b643bef41c095285897cc56da91a917b0959279646b1c81f599825a96870e7aaa33073203b1e01ba2a1c0b369632a4de698db0173900d43f53d77b0681398e5366badf1d83cf8a941c8927fb1649bb85dce236826b3a479fcb79d655435b4c003732f3bdd412de7268c423ed889a8bdae33c9fb618240195e7ddf6ee060e001d00204c003732f3bdd412de7268c423ed889a8bdae33c9fb618240195e7ddf6ee060e0017004104f922b44b0165009291210eecd23c7c3c1fd8e7c76911876d984b8a46cdfcda2952681ce081fc2886023cacb950153e6d8752e18b93a7b73804b8826afa2c1132002b00050403040303000d0018001604030503060308040805080604010501060102030201002d00020101001c00024001001b000706000100020003fe0d011a00000100012f0020b3afc1e09ce96084dfe30e0a869d652190cfa5d622dec57105854031d11a4b4b00f0d2bef2f94b927e31a4bb666cda051ff552d154956f07338a3276530ab3cfcf6e332cc0d0838740feb587d71a47cd2dae69d723f61d440861057e1b3d581ecc077b6305d944a279e38490570f988dc977d45e3f5452461fb4a342b370fc391491ccb292c12ab966f3d7b03827dce5fbec9a3dc8ea01034a1b6680803902187df70af6f942b3a0bd584798202724f3facf7f104fde1a444eeb5d02db93bc792098894b0ea1f51fd223591d3afde7b3720b074ae563d8061c29635966cbfd5925e8180f77a06759c7f40ab9899d8cae7c5d6a1038104083a89a2fd24c89f4f5eddea509e2f46ada5d29b348687c601a4425
+diff --git a/component/tls/testdata/firefox160_clienthellos.hex b/component/tls/testdata/firefox160_clienthellos.hex
+new file mode 100644
+index 0000000..cb9cc17
+--- /dev/null
++++ b/component/tls/testdata/firefox160_clienthellos.hex
+@@ -0,0 +1,7 @@
++# Firefox 160.0 (macOS 26.6, arm64, Mozilla release build 20261104181552),
++# headless with fresh profiles, ALPN h2,http/1.1, captured 2026-11-11 by ferrum
++# (tests/fixtures/firefox-160.json, ferrum v0.26.1). One ClientHello handshake
++# message per line: SNI example.com, x.com, example.com.
++01000758030354feb6c7d754c5fd3aabce4da169a47e979720681a63e261554d5c797a790c1720aeac62290054191650fbc916b720c442d97090f8127557b80d5ab62fa9222e45001e130113031302c02bc02fcca9cca8c02cc030c013c014009c009d002f0035010006f100000010000e00000b6578616d706c652e636f6d00170000ff01000100000a000c000a11ec001d001700180019000b00020100002300000010000e000c02683208687474702f312e310005000501000000000022000a00080403050306030203001200000033052f052d11ec04c097d90e1bf5838a645edfdc5ceb7b01cb519fb8992cc1581af19a33d707313b94bd3c3cb2a3ccb450b72c86a61915342fdf0725f51c296f45cb733c1852c48e307c48ccb530d8e4aab294721ac26d7498b619b6b98ca21667537d0d4390a8931f1bc37e339c199b2943aff61d9dba573bf2a662812f8a9b14b2473a31a31fcbe371dcf86ada50cdab8c2a60d393d407537cc4a1150806b9bbca77c0a6919a0dcc49ae16796fbe3408aa2b83b8f8af5a0860868671696736cad4caea674e23a169986b48e25c23d61cb65df65509412782e109979959499648951a42b804cf76cb7c58971ae2abba849acae9b968bf54ca8bb24cecc7726fd27b9157a55309618ae29b8d8c5269766fb7a1bc9c054ec057114b0c5392d1596b54a202b57943e597529b0876274947084905d1a13d596051bacd0de69a90e0c42ce592c017cd7429b450a7bc9f730d9f54bf95c016b42bb0352210704c7ee2542093e653eca96619d484e49a2831f4a14d42877ec51b59b97d0399a9edf54c33029282d3b615524add15c5c2db498b125bddf7bc4d57439087c6b53289e5895def60a99351945559a6723055effa5d3b7cb19be00bbcb06d5da9763ce638ef791c6fa08887e9a424a0794b89a14a66c89399ace63144a7a863db284474875b81495a65e03289fcc19ad0c30ee15445e12393db2c2307337b7885cb1b82c3d9c1cba8805e59b707a857cd87a42b94a6b1b989f4214e967a024ab4b747c3b475fa0d5c72795e3c531743a4006547c5032fa40b4c4b713cc859956febb8bfb33d9fdb4eaeb2b189c458c1677f1501c17527b7ef086277549aa5dc07f9fa66ddb89bbea7b3847682321c5a2792223c090ee538c4b82b38943cc2f3f26a23c06065a07e22fa4af5f2674dc914b76bbd38c81fffc5441716a4b7934a85330bb8c9be797ba3371114779c4151517c20d3c4ba8897affa557b8662f6339721fcb329d371583279e12b78049ba462b1b668061eba975d35fca5a6d14c1ae1269d03282a234d6e881fd4710790c795ebb0022dcba1e66945fa2273d2457435d26f6806b21bf8b66f0491797c9f551695e6e5998af11bb65c498e6381bc5c939eb0378a2644309ccea964a6205340c6d38c830b6590759e47523efc75640557a5c29515cc25682c028efb54102f5cce56132d3b9198d5304147f2964e917f2c2363c62bb6ab7a5083c88506613c1f736c0b18519e132609b22cefca77160c56d3e2b2330a5a452408ff812273e62053669343e6459ad5717e243725909a257548472ab3bb4239d79c27cbb14ecd373f760134d57718252c648e53249d471c82c669b0f163d93a9bdd016830c7b105a54f32dc0d3d38af4aa39376d91343ba474b8542f288cdc3a02d301a878d47b1097b3ed7498a92d511a99627e75c7630d41ffe2728d4580787cc348181bf46a283d393887a30221cea4d51295a1ffb0241734dd2133454f3681caa22f5ac1b4e8a73abe56ca74cc2b20335b81180ff55090b585b8b7c2c37e764395624014871d33bab667c7d5b1b771b642e05f940e96b5b14dc675f7227b603610e3c6961a6c77a3776f4b063187a4919f5452d932e1a4c3d9d20a990e45302679fa9e9c63e6f5f1c90eec92a5b1558b412f5e3bfb773f64514d59b7c15eb7b536d6ec7ee566ee4aafa3cbe777508dbf1b41e34e80d2c2c3d9fb3be97df4aee3d12de3a63001d0020566ee4aafa3cbe777508dbf1b41e34e80d2c2c3d9fb3be97df4aee3d12de3a630017004104d5ae86fb001d589b4546e9d06a3ec08db5d6e306a9e0b1f4f806610bb7155d249c8aca3dbc4fb3ac37ffd5c3de9f5b77067efce48c2dcafb256516fa9d35d930002b00050403040303000d0018001604030503060308040805080604010501060102030201002d00020101001c00024001001b000706000100020003fe0d011a00000100033000205513ea51d58f7de9cb0c26e85e25a2c49d84001f46cfc03b950a9a6a3245df7900f05568a392c0067bf137edf62b71394bac2ccc141335602517cad1ffe0bc3e91077729deb007f32723200a920429f57be39841a8f9e23fbf065771c5439e87659c9d81289589bfdf303dea0e2fd0bb2183a27bdbd8c20c22bc0a8126d1c97221e8699140759a3ecd9cc473faebf5b47b6e75c0b0064d0bf1ce40cbc582a6e37e5756098ef5a23c98f48fabbaee71518b1a56ce680e0ae232444cccf6c6db82cf38d9ac46f91d2682a96a0ddc1d809c95029015edf156bbcf2d3639b543cb289b67a80d488adf54838a8bc73bfeed00414ae1e4e6939d7aabe257df7f0c109d49a7af6e20a41f97959d6343ba760e5a045c
++01000752030366a82875177ac757eb7ce8c577b0b611379d35062316f592f42cda64bd666bb020c06890051c965db49f1b03c83fefa5b6ed8abfc5e8fef38579a57fe3a0067121001e130113031302c02bc02fcca9cca8c02cc030c013c014009c009d002f0035010006eb0000000a0008000005782e636f6d00170000ff01000100000a000c000a11ec001d001700180019000b00020100002300000010000e000c02683208687474702f312e310005000501000000000022000a00080403050306030203001200000033052f052d11ec04c03f2158b01c4f8ab70b053a0eca06a1891a1f40826ab544c2ac5976954c2022a2a77f0b2d25390da07a5f79084ef0bc82f7a24d4a345bd22c2fe6b47ff228b8dbd3cee5c54ad919ac1d6a8b01c4593e39339207bc7196692f9c3cfc430c391366eb531f07ac26c2a986382b5c9ba5b33605cca4e44d4c7733c52368dce25a5e84582aa16cb656cdaa41a397da90f37c5b65d554e617aa7ff644ac100d5daa023576bc1b0943f523ca12930f468547f89026d426c8ef4a10a9d2b32c37aef4a945ae6878a52b8177166715270b84e7c6c60143705634fe73abab0688870c1b54f4779a90a45593708c6c01d81b26e7141f1d5a0634912390605c8447ca03c747e9a97fe60990d658abd3153d2a1201d75354cdc220f7f7155fea51c1120cddc54cdfc40f117c32ae03a98d3a9983a4684eb265ee3301490898ede8b7b5417f3ef3077ee73141261208fc98ed6628c5ec8c45583c47694112f9445d075aa04a118daa9f5333099e3bb9961813d43a81f4165ba337894b965e140b4cbf14ac55315d4e0b61d08a2e789923cc79aeb9673d22da8a2fd490f8d6b7598aacf1937e6bb57fa4708755b881dc1783a8d643c4c298e4289c536aaeb2a2cb92278e2711608e991f59e9396830b45928811224b16fe7c8cdd5181c3989edc7ccbc299e643c9c75e0096f7b5548ca14a0bc4e9934696a66a99a047d01f3c901e7a324005aa1dca60ef731480aabddf73435411668dc5b43cb8bc0e59822b130612bbeef8a77639915dfb26ffac563a70751138aafd6e767c3ecae12cb5124f7613158a3ec1c8f2317c474635cd314a524a649a97983a6da6dd2591277138922350dd8c4a9f3a1794b24bd2d7727dc7b5196639ec08cb1f5d16781b61a64d6c6ee092891aa44a1184a4623039949545bf7af3b031582b16ab97a722da0c771d86ab4a3b03094ca0ab98d4b928ff2b9a75c10380f367a6bb1792c40aba8533a91523fa1c2307004520f89a126b103b82b605ce40bcc8b8d11fa501c0ca9fae6a1b61915e364bb741837178234291920ce0b8ceee09e97a11546aa4b53255ac105ba7e111433527ebf646ddf87337da007ae2436ca62290a79cce38a830a0ba6b93ccd7eb8739e4702a60b476c1b5ffc950bfd968ad853af0d02263db8bc0b5a75cb82979aa91c4027389295a6d5326dd79132b4e3a0f352c3e1e298c8b82ec5cb9916d7196a075233c709dca9998063b62d29ad5dfa49af74a5abd628f79816c9b1b8b4b1ceaaeba9820bb28dab9ed5b6a7d58c69fe0b3748a877fa123e7fa5b9ac61338e5798ffe198eb957e970991dcd884250291dd3c1b6fd4046282791e23b920080aee8b2987d03daaec01c5ca3bd12b5c7f9b26bb92abe7282e25c361f7821a3bc14da8c1148a504a40e11522b564c015a877749e1f498dd4655437f5b4c7c0533033c7bc27c37b41119f5696c2e8b19cc52606ea0f3b5a99ed51bf4964bbe451440c7a9a78a1804ca873185386dc1507f5a70300b59054b29e90f49dd9ec02de83baa2045cbb4c033afa9768371548eb6e658702ff6c1923061e65a02a137b06eb207e95437b3100cdacf6195585408483a49e8301e1da04237925f59b52791887c277214ba8bd3bcddb9453d8582febd1efd119e3ef6e1ba9ed1fa4667f9abcf7d8f3e80d7b336b9d92a93e5c973ac29cf81c5835353b96247a658d573c37139a68d63b001d00200d7b336b9d92a93e5c973ac29cf81c5835353b96247a658d573c37139a68d63b001700410434d6a5b6d27db3afc5f5c59642f029497eaae347471b4055d8983ba57158532284bb1cea02ef1d11539a30513f38339186bbd7bf1b30adb25a5057caf8a2b219002b00050403040303000d0018001604030503060308040805080604010501060102030201002d00020101001c00024001001b000706000100020003fe0d011a0000010001a40020f8555e6b0ca288d22d6c1bc92bac65a1b72bce9cdb4f01874781c6cf4b5f27a600f049f8e9d6f1c7f101a48f96d284fb33eb8a0482aef2987721d94b983341e1a6497e4cfa6fe7dcfc9bc179e11a492aa71d6b0df7202aedac6eac128b77613edbb77af9aad4b1c297da94777e6cdb40d67ba9645bb370fda9d9a5b3a5677f0be3becb06006ff6724c49672953e937fb05eddb35e2f9a3f5008febe9c1a5817c6c93aa5e37df939a389132bf1411e6f66f3162467bebad44dc81aa390badb81936c5b6a2f2f3d6aa4be015cb02102192b6a0f3c5db1f47862629c34d76d1965402f6deb18428e222c0af1b7959f43fa19603d9289f0b3f8f14f41bbe8300d264a06f89ae4bf9d8ca558c4107617b62c2c02c
++010007580303fbea893fbacd3bea23d7a9d2008882ec163920e624a36a7f922636c3a103f0a620553fc807c18ec9b3d6ad562828b0321e346d8d73973aa423b5db11d47578680e001e130113031302c02bc02fcca9cca8c02cc030c013c014009c009d002f0035010006f100000010000e00000b6578616d706c652e636f6d00170000ff01000100000a000c000a11ec001d001700180019000b00020100002300000010000e000c02683208687474702f312e310005000501000000000022000a00080403050306030203001200000033052f052d11ec04c00e8833c67a9ade505d58d5b40c14073b11bb8404cb55ccb36cc784146a3e97d337992a077dd75590256a5b733b72150cf25083af6207bfeb9f15139e204b0eb58a055739661b60a54d31a6eaa6ce4974cf45e5ca78429884b47a04ba5ed8678fc72a4922ebc992421267c807c95b7789154398382c33882a8cf8843d2a5887b91e7c7522cb7b2db5c5cabf069f1731cf3815bdf820427e0975cff96d6da61be41b2f520658bb01481dd86dbd68066701450cd1205d34410b0b7050fa8b1a1552b0480da9974107db53540bb9129c17d3e3022a605aa6461bf0e444eac6cb0c807411bc6996d497e598adfe9067e1d97472e6af26ccb6aab125122a30f3085f69b86ccff38ff304c39bda8c2c17025fda0c435501db759d5ca106d654ad734960779341a8711b29bc037e889d01e85e4785469043a81cfc36b28b21ee377aedf8bd3a5b7f8ea0001dc1c1ee2566de616258a906f9d228bf6c2adfbac0e8b16593533af4aaa1db803bafa440eb245c26855906baac06740c1989ac6746916d7a97d6a6377bfa4c74390e16e769c3380925fb810707a076c08fdbd0ab3b85c150723f7dc4c32b582584733fb0728c819330adf207913bb9460c64138c025299ca8ae651d9c08eb52a516d33585dd68b93566612eac7cf0362494b9177e3bec3c02c815ac36dec601eb040a42251d971777f9802eedabcdc5968400376cb77a936c222eb3b3c4d27cdd4216c9d19ac393cc433b0a8e0e8abbf37a3bd188032cc1efaeb78406584efb53e33a789a8074aa5b49459540b9025af0d2540038985ca997a97d5b9ac072b69f261331c369beb00fddbcb323b1e54fc1fd8c29f161569e4953ae3cc8711b97c16a6bcbb606a6cea2c368516937254e1a7495906b565bb8b4d5bb10fb631cc5032e3c88ac9645e5407082d546817e786bbb63425c81f2831aec99046152acd3aa02d6b758b3ddc5ca1bb7b1d45295477999c86813833ad12542e47b516852376d41c4b08b431b6518a5e604708396680d45874e3acda1c0e566891a2f501a191cf16a51ff91688560b815b5a74c39a14a62a717f1b9b2962969965b365334f5b2143ef344b45a2b899e64e837797b8781356159821e54ea5519e5c8ab1f61b255d258814203687c4b445d1264e78c4dc66544ccabdf48942c35591bb4641bb8403eafb91a11c40c1eb76770120fce5581b701e26e49e1eeb26f89195509c153a9061df2b5eea08aa86c2a2054421b0979ed57a8cf543cc43c8c48b233eb411206c81372c2cbefff7249e3a9bdd371a6a9b8f7b31888f76c017c25d06c4c09cd5a71aeb8f157b72792614cec321fa722cace903d9a6b85834b49443cd6a7c0752c8a6390387327b9dda56b91e37130e8a73e13c64fff435b9cb30a4e3be2264235880ceb4ea61a22bbdab557535096490c06424809e6a23949a0acd8610412c541e205b4710713f7127a291594de9c707b973776c5cbf5b563f266504c034039590530a2017cf0b5629c27537932e54ac8b4e6b3d95663c5e4ba4c2d25eea62ba08a47dc3385cef701af3d7299ac602829a55fa1bbba405759694a06599b67f280047ca1333d3ba1492ad8ce5ab124883877c11cb9a8099fa01befd6094aad4856b4fe573461ab20c3dbd93c425e1a03c2066ac2bb49c39c835ce19be4a8486636b8407d398912fa2618ecc6a413a9f0e7237bf76510f5f445a001d0020ce19be4a8486636b8407d398912fa2618ecc6a413a9f0e7237bf76510f5f445a0017004104c3d565f0fccc84cf14bd3a375b67cd973a03d4d1f350a09d12cce366db9f11252b786e679ea7876ef1d3e70be712fb687fa00c8ea72cdfb1b43f754ac7ef4787002b00050403040303000d0018001604030503060308040805080604010501060102030201002d00020101001c00024001001b000706000100020003fe0d011a0000010001a50020b440f147a7b539c86f38946a67d2e1b6afc08802bc139077bb52f3af9a58f07c00f05f972cf962fa421c32d8f6430ffc024ecdb0160656fa3974dcc2d17a0793b6e20f7fb27a8452e77432f50a579f867436cdde81bce06e257917e7eee4c8139115d8fde4d948d81074da1a24ab949f8ec52ef50872588b777c65297dfd3bf3330b17fb92407a6d2a1047f75211dc998b79e28cad969b031553c8aa4d7de731d0de4ffe924913e71f4a11788121c2d91f89b55e0e7a84c657fa13ab70fe5567a308493c7970e292cd90ad7deb3a8eb65aed0e13d9745a137c67508d0084f57bca32ff1eae082d5956e2e0cd79e6d762c4212be7a1d0e158bcd5686e3df7b1fcca29b45958f8f40ef2830f221cee4b613b9a
+diff --git a/component/tls/utls.go b/component/tls/utls.go
+index 222ab3b..15d584f 100644
+--- a/component/tls/utls.go
++++ b/component/tls/utls.go
+@@ -102,6 +102,8 @@ var fingerprints = map[string]UClientHelloID{
+ 	"chrome120":  utls.HelloChrome_120,
+ 	"chrome133":  utls.HelloChrome_133, // SlothClash 0029: what "chrome" is, by its version (as Citrus names it)
+ 	"chrome155":  HelloChrome155,       // SlothClash 0029: Chrome 155, Xray 26.11.9's and Citrus' "chrome"
++	"firefox156": HelloFirefox156,      // SlothClash 0046: Firefox 156 (same hello as 160)
++	"firefox160": HelloFirefox160,      // SlothClash 0046: Firefox 160; "firefox" stays Firefox 148
+ 	"firefox120": utls.HelloFirefox_120,
+ 	"safari16":   utls.HelloSafari_16_0,
+ 
+diff --git a/component/tls/utls_xray_names.go b/component/tls/utls_xray_names.go
+index 4bdcc00..f367355 100644
+--- a/component/tls/utls_xray_names.go
++++ b/component/tls/utls_xray_names.go
+@@ -19,6 +19,8 @@ var xrayFingerprints = map[string]UClientHelloID{
+ 
+ 	"hellofirefox_120":                 utls.HelloFirefox_120,
+ 	"hellofirefox_148":                 utls.HelloFirefox_148,
++	"hellofirefox_156":                 HelloFirefox156, // SlothClash 0046
++	"hellofirefox_160":                 HelloFirefox160, // SlothClash 0046
+ 	"hellochrome_120":                  utls.HelloChrome_120,
+ 	"hellochrome_131":                  utls.HelloChrome_131,
+ 	"hellochrome_133":                  utls.HelloChrome_133,
+diff --git a/config/firefox160_test.go b/config/firefox160_test.go
+new file mode 100644
+index 0000000..eb5a8ef
+--- /dev/null
++++ b/config/firefox160_test.go
+@@ -0,0 +1,21 @@
++package config
++
++// SlothClash core patch 0046 at the profile level: client-fingerprint
++// firefox156 / firefox160 and the Xray names load (finalMaskTestNode and
++// parseFinalMaskProfile come from the 0044 test); "firefox" stays valid.
++
++import "testing"
++
++func TestFirefox160FingerprintProfileAccepted(t *testing.T) {
++	fingerprints := []string{"firefox156", "firefox160", "hellofirefox_156", "HelloFirefox_160", "firefox"}
++	var nodes []string
++	for _, fp := range fingerprints {
++		nodes = append(nodes, finalMaskTestNode(fp, "vless", fp, ""))
++	}
++	proxies := parseFinalMaskProfile(t, nodes...)
++	for _, fp := range fingerprints {
++		if _, ok := proxies[fp]; !ok {
++			t.Fatalf("client-fingerprint %s: proxy missing", fp)
++		}
++	}
++}

@@ -1019,6 +1019,123 @@ unset, the fingerprint warning carries the reason). The Citrus compatibility sui
 
 mihomo: none claimed. Delete together with the patches it softens.
 
+### 0044 finalmask on vless and trojan
+
+Xray-core's `finalmask` (`streamSettings.finalmask`) as a `finalmask` block on `vless` and `trojan`
+proxies and inbounds: a chain of masks between the socket and TLS / REALITY, written as in Xray
+(first entry outermost, `settings` nesting optional).
+
+```yaml
+finalmask:
+  tcp:
+    - type: fragment
+      packets: "1-1"
+      length: 10-20
+  udp:                 # xhttp over HTTP/3 only
+    - type: noise
+      noise:
+        - rand: 10-20
+```
+
+- `tcp`: `header-custom`, `fragment`, `sudoku`, `xmc`. `fragment` runs on `component/fragment`
+  (0032); per-piece `lengths` / `delays` lists of more than one entry are refused.
+- `udp`: `noise`, `header-custom`, `sudoku`, `udphop`, `xdns`; used only by `type: vless`,
+  `network: xhttp` with `alpn: [h3]`.
+
+Xray's camelCase keys (`maxSplit`, `randRange`) are read as the kebab-case of the options
+(`max-split`, `rand-range`) at every depth, so a block copied verbatim from Xray JSON or a panel
+decodes completely instead of losing those keys silently.
+
+Remnawave (3.4+) does not emit `finalmask` in its mihomo output on its own. The operator copies it
+with a Host Mapper operation on the host:
+`{"mihomo": [{"op": "copy", "from": "$host.streamOverrides.finalMask", "to": "finalmask"}]}`. The
+mapper runs for the response rule that serves the mihomo format; our subscription User-Agent
+(`clash.meta/<v> ...`) matches Remnawave's default "Mihomo Clients" rule
+(`^(?:...|clash(?:-verge|-nyanpasu|x meta|[-.]?meta))`, case-insensitive, checked before the
+generic `^clash` rule), so the block arrives unless the operator changed the rules.
+
+With REALITY, `fragment` with `packets: tlshello` and pieces too small for the first TLS record to
+hold the SNI (about 150 bytes for Firefox) is refused by the server, which looks for the SNI in the
+first record only; Xray-core 26.11.9 fails the same way against the same server. Split TCP segments
+instead (`packets: "1-1"`).
+
+Every mask opens its sockets through the proxy's dialer, so `interface-name`, `routing-mark`,
+`auto-detect-interface` and `dialer-proxy` apply. A block that cannot be used does not fail the
+profile (in the spirit of 0043): the proxy loads, the core logs `[Proxy] <name>: unusable
+finalmask, the proxy will not connect: ...`, and every dial fails (`finalmask.Broken`), so the node
+never goes out without its masks. Unusable means: a bad option, an unknown mask, UDP masks on
+another network, any mask on `network: xdrive` (0004 talks to a storage service that cannot take
+masks off; the xdrive dial checks the chain too), and `xicmp`.
+
+`xicmp` is refused on every platform. It opens its ICMP sockets itself (`icmp.ListenPacket` on the
+wildcard address), not through the proxy's dialer, so interface binding does not apply: with TUN
+and auto-route the echo requests to the server would enter the core's own tunnel, whose stack
+answers echo requests itself. The package stays in the patch (with its unit tests on fake sockets)
+for the day its sockets can be bound to the outbound interface.
+
+Ported from Prizrak-Core v1.19.34-r4 (`634043dc`), through ClashFest core patch 0041, adapted to
+this series: its fragment transport replaced by `component/fragment` (0032), its trojan listener
+hunk rebased on 0040, the Xray interop test that needs a utls fork left out, graceful errors, the
+`xicmp` refusal and the xdrive rule added. Xray-core code keeps its MPL-2.0 notices.
+
+Tests in the patch: `transport/finalmask/...` (every mask, the option registry with the camelCase
+keys and the xicmp refusal), `adapter` (vless / trojan parse; an unusable block, xicmp and xdrive
+load and fail their dials), `adapter/outbound`, `listener/inbound` (loopback client to inbound with
+the same chains), and `config` (`finalmask_test.go`: a profile with valid blocks loads with working
+chains, one with unusable blocks still loads and those proxies fail with the finalmask error).
+`adapter/finalmask_xray_test.go` runs against an Xray-core binary with finalmask and is skipped
+without `XRAY_BINARY`. The core build runs only the series' tests in `listener/inbound`
+(`SCOPED_TEST_PACKAGES` in `scripts/core-build.mjs`): the stock tests there leave about 20,400
+sockets in TIME_WAIT, more than the ephemeral ports of Windows, and race in Vision and Restls code
+on the stock tag.
+
+Not ported: VLESS over mKCP with the UDP chain (Prizrak `7583dd0a`), xdns DoH resolvers
+(`8b42dafe`, `9cec8374`; the HTTP/3 variant needs a quic-go change), the share-link `fm` beyond
+`fragment` (0032).
+
+mihomo: none claimed. Delete when mihomo ships finalmask.
+
+### 0045 finalmask: the compact xdns spelling
+
+`<domain>[:<method>]+udp://<server>` resolvers and `<domain>[:<method>]` zones, as the first Xray
+xdns (v26.1.31 to v26.9.9) and the panels of that time write them, with that client's wire (DNSTT
+framing, polls doubling from 500 ms to 10 s, resolver rotation); the structured form speaks the
+current wire. The two spellings do not mix; compact zones on an inbound are refused.
+
+Ported from Prizrak-Core v1.19.34-r4 (`586bc431`, `eb5b04df`). Tests: `transport/finalmask/xdns`,
+`transport/finalmask/option`. Delete with 0044.
+
+### 0046 TLS: `firefox156` / `firefox160`
+
+Firefox 156 and 160 send the same fresh ClientHello: Firefox 148 without the ECDSA CBC suites and
+the FFDHE groups, with a GREASE ECH payload of 240 bytes. `metacubex/utls` v1.9.0-alpha.1 stops at
+148, so the spec is data in `component/tls/firefox160.go`, applied through `HelloCustom` like
+`chrome155` (0029): `customHello` in `chrome155.go` now serves both profiles behind the same
+`fingerprintSpec` / `uClient` hooks (session-cache handling, fallback to the closest built-in
+parrot, Firefox 148 here, when a spec cannot apply). The GREASE ECH enc is drawn uniformly per
+connection, as NSS does, instead of the X25519 public key utls would put there (whose last byte
+never has the top bit set).
+
+| Name | Hello |
+|---|---|
+| `firefox156`, `firefox160`, `hellofirefox_156`, `hellofirefox_160` (Xray names, any case) | Firefox 156 / 160 |
+| `firefox` (stock) | Firefox 148, as in stock mihomo |
+
+Ported from Prizrak-Core v1.19.34-r4 (the Firefox 156 and 160 fingerprints of its utls fork,
+`36e99b0`, `f7b2359`), with its browser captures as fixtures (`testdata/firefox156_clienthellos.hex`,
+`testdata/firefox160_clienthellos.hex`).
+
+Tests in the patch: `component/tls` (byte for byte against the captures except key shares and the
+GREASE ECH contents, uniform enc, `firefox` stays 148, a TLS 1.3 handshake with a session cache,
+REALITY with the hybrid share under policy On and without it under Off), `config` (the names load
+in a profile).
+
+Known gap: utls keeps only the private key of the first classical key share, so a server that
+picks P-256 from Firefox's X25519 + P-256 shares fails the handshake (refraction-networking/utls
+#402, fixed upstream in #416, not in metacubex/utls). REALITY and common TLS servers pick X25519.
+
+mihomo: none claimed. Delete when mihomo moves to a utls release with these profiles.
+
 ### What else Rerowros/veles changes
 
 [Veles](https://github.com/Rerowros/veles) (checked up to v1.19.34-veles.1) is a mihomo fork. 0029,

@@ -182,6 +182,18 @@
     {
       "file": "0043-proxy-options-graceful.patch",
       "sha256": "74610d0a0a23b55c9bc950c6ba9d93fd0a01edac3808fc4ef1efcd900e90ccf1"
+    },
+    {
+      "file": "0044-finalmask.patch",
+      "sha256": "64fbdf9aa8e120fca9cc7223ba230a2bd9a0d2d17743ead610115626e475b012"
+    },
+    {
+      "file": "0045-finalmask-xdns-compact.patch",
+      "sha256": "2c4a40446a831a1eb5cfd6728726f6dfc298089b8e6b7861cbaa3f7745cec333"
+    },
+    {
+      "file": "0046-tls-firefox160.patch",
+      "sha256": "9606216462d7896969f7f084136d4f5e21b39b8ee00a48af4179c26976a6b69d"
     }
   ],
   "assets": {

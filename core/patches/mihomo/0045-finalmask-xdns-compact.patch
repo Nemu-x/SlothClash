@@ -1,0 +1,849 @@
+SlothClash core patch 0045: finalmask, the compact xdns spelling.
+
+"<domain>[:<method>]+udp://<server>" resolvers and "<domain>[:<method>]"
+zones, as the first Xray xdns (v26.1.31 to v26.9.9) and the panels of that
+time write them, with that client's wire (DNSTT framing, polls doubling
+from 500 ms to 10 s, resolver rotation); the structured form speaks the
+current wire. The two spellings do not mix; compact zones on an inbound are
+refused.
+
+Ported from Prizrak-Core v1.19.34-r4.
+Delete with 0044.
+
+Tests: transport/finalmask/xdns, transport/finalmask/option.
+
+diff --git a/transport/finalmask/option/option.go b/transport/finalmask/option/option.go
+index 72c4b78..9cedecf 100644
+--- a/transport/finalmask/option/option.go
++++ b/transport/finalmask/option/option.go
+@@ -197,6 +197,15 @@ func BuildUDPMask(entry map[string]any) (finalmask.UDPMask, error) {
+ 		}
+ 		return udphop.New(o)
+ 	case "xdns":
++		// The first Xray xdns spelled a resolver as
++		// "<domain>[:<method>]+udp://<server>" and had its own framing on
++		// the wire; settings written so get that client.
++		if legacy, ok, err := xdns.ParseCompact(settings); ok || err != nil {
++			if err != nil {
++				return nil, err
++			}
++			return legacy, nil
++		}
+ 		var o xdns.Option
+ 		if err := decodeMask(settings, &o); err != nil {
+ 			return nil, err
+diff --git a/transport/finalmask/option/option_test.go b/transport/finalmask/option/option_test.go
+index 40ecece..c1240c5 100644
+--- a/transport/finalmask/option/option_test.go
++++ b/transport/finalmask/option/option_test.go
+@@ -75,6 +75,19 @@ func TestAcceptsXraySettings(t *testing.T) {
+ 	require.True(t, fm.HasUDP())
+ }
+ 
++// The compact resolver spelling of the first Xray xdns builds the mask too.
++func TestXDNSCompactResolvers(t *testing.T) {
++	fm, err := (&Option{UDP: []map[string]any{
++		{"type": "xdns", "resolvers": []any{"t.example.com:aaaa+udp://1.1.1.1:53", "t.example.com:aaaa+udp://8.8.8.8"}},
++	}}).Parse()
++	require.NoError(t, err)
++	require.True(t, fm.HasUDP())
++	_, err = (&Option{UDP: []map[string]any{
++		{"type": "xdns", "resolvers": []any{"t.example.com+quic://1.1.1.1"}},
++	}}).Parse()
++	require.Error(t, err)
++}
++
+ func TestRejects(t *testing.T) {
+ 	for name, o := range map[string]*Option{
+ 		"no type":        {TCP: []map[string]any{{"packets": "tlshello"}}},
+diff --git a/transport/finalmask/xdns/compact.go b/transport/finalmask/xdns/compact.go
+new file mode 100644
+index 0000000..485f208
+--- /dev/null
++++ b/transport/finalmask/xdns/compact.go
+@@ -0,0 +1,134 @@
++// SlothClash core patch 0045: the compact (first Xray-core) xdns spelling and wire.
++// Ported from Prizrak-Core v1.19.34-r4.
++
++package xdns
++
++import (
++	"errors"
++	"fmt"
++	"strings"
++)
++
++// ParseCompact reads the settings of the first Xray-core xdns: a `resolvers`
++// entry "<domain>[:<method>]+udp://<server>" names the zone, the record
++// type (txt by default, a, aaaa) and one resolver; a `domains` entry
++// "<domain>[:<method>]" names a server zone. That xdns has its own framing
++// on the wire (see LegacyConfig), so a config in this spelling gets the
++// client of that time; ok is false when the settings are not written so.
++// The two spellings are different protocols and do not mix.
++func ParseCompact(settings map[string]any) (_ *LegacyConfig, ok bool, err error) {
++	domains, _ := settings["domains"].([]any)
++	resolvers, _ := settings["resolvers"].([]any)
++	compact, structured := 0, 0
++	for _, entry := range append(append([]any{}, domains...), resolvers...) {
++		if _, isString := entry.(string); isString {
++			compact++
++		} else {
++			structured++
++		}
++	}
++	if compact == 0 {
++		return nil, false, nil
++	}
++	if structured > 0 {
++		return nil, true, errors.New("xdns: the compact spelling (\"t.example.com:aaaa+udp://1.1.1.1:53\") is the first xdns, whose wire format the structured {names}/{addrs} entries of the current xdns do not speak; write all entries one way")
++	}
++	for key := range settings {
++		switch key {
++		case "domains", "resolvers":
++		default:
++			return nil, true, fmt.Errorf("xdns: %s belongs to the current xdns, the compact spelling of the first one has only domains and resolvers", key)
++		}
++	}
++	c := &LegacyConfig{}
++	for _, entry := range domains {
++		spec := entry.(string)
++		name, _, err := parseCompactDomain(spec, "")
++		if err != nil {
++			return nil, true, fmt.Errorf("xdns: domain %q: %w", spec, err)
++		}
++		c.Domains = append(c.Domains, name)
++	}
++	for _, entry := range resolvers {
++		spec := entry.(string)
++		name, rrType, server, err := parseCompactResolver(spec)
++		if err != nil {
++			return nil, true, fmt.Errorf("xdns: resolver %q: %w", spec, err)
++		}
++		resolver, err := ParseResolver(server)
++		if err != nil {
++			return nil, true, err
++		}
++		c.Resolvers = append(c.Resolvers, LegacyResolver{Zone: name, Type: rrType, Resolver: resolver})
++	}
++	return c, true, nil
++}
++
++// rrTypeFromMethod reads the method of a compact entry: txt (also the
++// empty method), a or aaaa.
++func rrTypeFromMethod(method string) (uint16, error) {
++	switch strings.ToLower(method) {
++	case "", "txt":
++		return TypeTXT, nil
++	case "a":
++		return TypeA, nil
++	case "aaaa":
++		return TypeAAAA, nil
++	default:
++		return 0, fmt.Errorf("unsupported method %q, want txt, a or aaaa", method)
++	}
++}
++
++// parseCompactDomain splits "<domain>[:<method>]". With a defaultMethod the
++// record type is always set (a resolver entry defaults to TXT); without one
++// a bare domain keeps every type (0).
++func parseCompactDomain(spec, defaultMethod string) (string, uint16, error) {
++	domain, method := spec, ""
++	hasMethod := false
++	if i := strings.LastIndex(spec, ":"); i >= 0 {
++		domain, method = spec[:i], spec[i+1:]
++		hasMethod = true
++	} else if defaultMethod != "" {
++		method = defaultMethod
++		hasMethod = true
++	}
++	domain = strings.TrimSuffix(strings.TrimSpace(domain), ".")
++	if domain == "" {
++		return "", 0, errors.New("empty domain")
++	}
++	if !hasMethod {
++		return domain, 0, nil
++	}
++	rrType, err := rrTypeFromMethod(method)
++	if err != nil {
++		return "", 0, err
++	}
++	return domain, rrType, nil
++}
++
++// parseCompactResolver splits "<domain>[:<method>]+<scheme>://<server>".
++// The first client knew udp only; tcp is accepted the way the structured
++// `addrs` accept it.
++func parseCompactResolver(spec string) (string, uint16, string, error) {
++	head, server, ok := strings.Cut(spec, "+")
++	if !ok {
++		return "", 0, "", errors.New("invalid resolver scheme, want <domain>[:<method>]+udp://<server>")
++	}
++	scheme, rest, ok := strings.Cut(server, "://")
++	if !ok {
++		return "", 0, "", errors.New("invalid resolver scheme, want <domain>[:<method>]+udp://<server>")
++	}
++	switch strings.ToLower(scheme) {
++	case "udp", "tcp":
++	default:
++		return "", 0, "", fmt.Errorf("unknown resolver scheme %q, want udp or tcp", scheme)
++	}
++	if rest == "" {
++		return "", 0, "", errors.New("empty resolver server")
++	}
++	name, rrType, err := parseCompactDomain(head, "txt")
++	if err != nil {
++		return "", 0, "", err
++	}
++	return name, rrType, strings.ToLower(scheme) + "://" + rest, nil
++}
+diff --git a/transport/finalmask/xdns/compact_test.go b/transport/finalmask/xdns/compact_test.go
+new file mode 100644
+index 0000000..4359941
+--- /dev/null
++++ b/transport/finalmask/xdns/compact_test.go
+@@ -0,0 +1,210 @@
++package xdns
++
++import (
++	"bytes"
++	"context"
++	"crypto/rand"
++	"encoding/binary"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++	"golang.org/x/net/dns/dnsmessage"
++)
++
++// The compact spelling of the first xdns client: the zone, the record type
++// and the resolver in one string, built into the client of that time.
++func TestParseCompactResolvers(t *testing.T) {
++	cfg, ok, err := ParseCompact(map[string]any{
++		"resolvers": []any{
++			"auth.example.com:aaaa+udp://77.88.8.8:53",
++			"auth.example.com:AAAA+udp://8.8.8.8",
++			"t.example.com+udp://1.1.1.1",
++			"t.example.com:a+tcp://9.9.9.9:53",
++		},
++	})
++	require.NoError(t, err)
++	require.True(t, ok)
++	require.Equal(t, []LegacyResolver{
++		{Zone: "auth.example.com", Type: TypeAAAA, Resolver: ResolverConfig{Type: "udp", Addr: "77.88.8.8:53"}},
++		{Zone: "auth.example.com", Type: TypeAAAA, Resolver: ResolverConfig{Type: "udp", Addr: "8.8.8.8:53"}},
++		{Zone: "t.example.com", Type: TypeTXT, Resolver: ResolverConfig{Type: "udp", Addr: "1.1.1.1:53"}},
++		{Zone: "t.example.com", Type: TypeA, Resolver: ResolverConfig{Type: "tcp", Addr: "9.9.9.9:53"}},
++	}, cfg.Resolvers)
++}
++
++// Structured settings are the current xdns and are left to it.
++func TestParseCompactLeavesStructuredSettingsAlone(t *testing.T) {
++	_, ok, err := ParseCompact(map[string]any{
++		"domains":   []any{map[string]any{"names": []any{"t.example.com"}}},
++		"resolvers": []any{map[string]any{"addrs": []any{"1.1.1.1"}}},
++	})
++	require.NoError(t, err)
++	require.False(t, ok)
++}
++
++func TestParseCompactRejects(t *testing.T) {
++	for spec, want := range map[string]string{
++		"bad://127.0.0.1:53":           "invalid resolver scheme",
++		"t.example.com+quic://1.1.1.1": "unknown resolver scheme",
++		"t.example.com+udp://":         "empty resolver server",
++		"t.example.com:mx+udp://1.1.1": "unsupported method",
++		":aaaa+udp://1.1.1.1":          "empty domain",
++	} {
++		_, ok, err := ParseCompact(map[string]any{"resolvers": []any{spec}})
++		require.True(t, ok, spec)
++		require.Error(t, err, spec)
++		require.Contains(t, err.Error(), want, spec)
++	}
++	// The two spellings are two protocols.
++	_, _, err := ParseCompact(map[string]any{"resolvers": []any{
++		"t.example.com+udp://1.1.1.1",
++		map[string]any{"addrs": []any{"udp://8.8.8.8:53"}},
++	}})
++	require.ErrorContains(t, err, "write all entries one way")
++	_, _, err = ParseCompact(map[string]any{"resolvers": []any{"t.example.com+udp://1.1.1.1"}, "extra-poll": 1})
++	require.ErrorContains(t, err, "extra-poll belongs to the current xdns")
++	_, _, err = ParseCompact(map[string]any{"domains": []any{"t.example.com:mx"}})
++	require.ErrorContains(t, err, "unsupported method")
++}
++
++// Only the client of the first xdns is ported.
++func TestLegacyServerSideIsRefused(t *testing.T) {
++	cfg, ok, err := ParseCompact(map[string]any{"domains": []any{"t.example.com:aaaa"}})
++	require.NoError(t, err)
++	require.True(t, ok)
++	_, err = cfg.WrapPacketConnServer(nil)
++	require.ErrorContains(t, err, "is not ported")
++}
++
++// legacyEchoServer answers queries the way the first xdns server does,
++// sending back each packet it got from a client, in TXT, A or AAAA records
++// as the query asks.
++func legacyEchoServer(t *testing.T, zone string) string {
++	t.Helper()
++	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
++	require.NoError(t, err)
++	t.Cleanup(func() { conn.Close() })
++	go func() {
++		pending := map[[8]byte][][]byte{}
++		buf := make([]byte, 4096)
++		for {
++			n, addr, err := conn.ReadFrom(buf)
++			if err != nil {
++				return
++			}
++			var msg dnsmessage.Message
++			if msg.Unpack(buf[:n]) != nil || len(msg.Questions) != 1 {
++				continue
++			}
++			q := msg.Questions[0]
++			name := strings.TrimSuffix(strings.ToLower(q.Name.String()), "."+zone+".")
++			raw, err := legacyBase32.DecodeString(strings.ToUpper(strings.ReplaceAll(name, ".", "")))
++			if err != nil || len(raw) < 9 || raw[8] < legacyMaxPacket {
++				continue
++			}
++			var id [8]byte
++			copy(id[:], raw)
++			rest := raw[9+int(raw[8]-legacyMaxPacket):]
++			if len(rest) > 0 && int(rest[0]) == len(rest)-1 {
++				pending[id] = append(pending[id], append([]byte(nil), rest[1:]...))
++			}
++			var payload []byte
++			for _, p := range pending[id] {
++				payload = binary.BigEndian.AppendUint16(payload, uint16(len(p)))
++				payload = append(payload, p...)
++			}
++			delete(pending, id)
++			resp := dnsmessage.Message{
++				Header:    dnsmessage.Header{ID: msg.ID, Response: true, Authoritative: true},
++				Questions: msg.Questions,
++			}
++			rh := dnsmessage.ResourceHeader{Name: q.Name, Type: q.Type, Class: q.Class, TTL: 60}
++			switch q.Type {
++			case dnsmessage.TypeTXT:
++				var strs []string
++				for p := payload; len(p) > 0; {
++					size := len(p)
++					if size > 255 {
++						size = 255
++					}
++					strs = append(strs, string(p[:size]))
++					p = p[size:]
++				}
++				if strs == nil {
++					strs = []string{""}
++				}
++				resp.Answers = append(resp.Answers, dnsmessage.Resource{Header: rh, Body: &dnsmessage.TXTResource{TXT: strs}})
++			case dnsmessage.TypeA, dnsmessage.TypeAAAA:
++				size := 4
++				if q.Type == dnsmessage.TypeAAAA {
++					size = 16
++				}
++				chunk := size - legacyIPHeader
++				records := (len(payload) + chunk - 1) / chunk
++				if records == 0 {
++					records = 1
++				}
++				for i := 0; i < records; i++ {
++					data := make([]byte, size)
++					part := payload[i*chunk:]
++					if len(part) > chunk {
++						part = part[:chunk]
++					}
++					data[0], data[1] = byte(i), byte(len(part))
++					copy(data[legacyIPHeader:], part)
++					var body dnsmessage.ResourceBody
++					if size == 4 {
++						r := &dnsmessage.AResource{}
++						copy(r.A[:], data)
++						body = r
++					} else {
++						r := &dnsmessage.AAAAResource{}
++						copy(r.AAAA[:], data)
++						body = r
++					}
++					// Shuffled order: the index puts the chunks back.
++					resp.Answers = append([]dnsmessage.Resource{{Header: rh, Body: body}}, resp.Answers...)
++				}
++			}
++			out, err := resp.Pack()
++			if err == nil {
++				_, _ = conn.WriteTo(out, addr)
++			}
++		}
++	}()
++	return conn.LocalAddr().String()
++}
++
++func TestLegacyClientRoundTrip(t *testing.T) {
++	for _, method := range []string{"txt", "a", "aaaa"} {
++		method := method
++		t.Run(method, func(t *testing.T) {
++			addr := legacyEchoServer(t, "t.example.com")
++			cfg, ok, err := ParseCompact(map[string]any{"resolvers": []any{
++				"t.example.com:" + method + "+udp://" + addr,
++				"t.example.com:" + method + "+udp://" + addr,
++			}})
++			require.NoError(t, err)
++			require.True(t, ok)
++			conn, err := cfg.WrapPacketConnClient(context.Background(), nil, nil, localDialer())
++			require.NoError(t, err)
++			defer conn.Close()
++
++			for _, size := range []int{1, 77, 120} { // 120 is about the most a query name has room for
++				p := make([]byte, size)
++				_, _ = rand.Read(p)
++				_, err := conn.WriteTo(p, nil)
++				require.NoError(t, err)
++				buf := make([]byte, 4096)
++				n, _, err := readWithTimeout(conn, buf, 10*time.Second)
++				require.NoError(t, err, "size %d", size)
++				require.True(t, bytes.Equal(p, buf[:n]), "size %d", size)
++			}
++			_, err = conn.WriteTo(make([]byte, legacyMaxPacket), nil)
++			require.ErrorContains(t, err, "does not fit")
++		})
++	}
++}
+diff --git a/transport/finalmask/xdns/legacy.go b/transport/finalmask/xdns/legacy.go
+new file mode 100644
+index 0000000..2ee0bff
+--- /dev/null
++++ b/transport/finalmask/xdns/legacy.go
+@@ -0,0 +1,429 @@
++// SlothClash core patch 0045: the compact (first Xray-core) xdns spelling and wire.
++// Ported from Prizrak-Core v1.19.34-r4.
++
++package xdns
++
++import (
++	"bytes"
++	"context"
++	"encoding/base32"
++	"encoding/binary"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/metacubex/mihomo/transport/finalmask"
++
++	"golang.org/x/net/dns/dnsmessage"
++)
++
++// The first Xray-core xdns (v26.1.31 to v26.9.9, before "Refactor and new
++// parameters") put DNSTT's framing on the wire, which the later xdns this
++// package follows no longer reads: a query name carries, in lower-case
++// base32, the 8-byte client ID, a byte 224+n, n random bytes and, unless the
++// query is a poll, one length byte and the packet; an answer carries
++// packets as 2-byte big-endian lengths and data, in one TXT record or in A
++// or AAAA records of {index, length, data}. Its settings had their own
++// spelling, a resolver as "<domain>[:<method>]+udp://<server>", so a config
++// written that way meets a server of that time and speaks this framing.
++
++const (
++	legacyPaddingData = 3
++	legacyPaddingPoll = 8
++	legacyMaxPacket   = 224 // the length byte 224+n tells padding from data
++	legacyEDNS0       = 4096
++	legacyIPHeader    = 2 // index and length in front of an A/AAAA chunk
++	legacyQueueSize   = 256
++)
++
++var legacyBase32 = base32.StdEncoding.WithPadding(base32.NoPadding)
++
++// LegacyResolver is one resolver entry of the first xdns: the zone and the
++// record type to query it with, and the resolver.
++type LegacyResolver struct {
++	Zone     string
++	Type     uint16
++	Resolver ResolverConfig
++}
++
++// LegacyConfig is the mask built from the first xdns settings. Only the
++// client side is ported: Domains, the server's zones, are kept to name the
++// error an inbound gets.
++type LegacyConfig struct {
++	Domains   []string
++	Resolvers []LegacyResolver
++}
++
++// HandleDial marks the mask as one that reaches the network only through
++// its own resolvers.
++func (c *LegacyConfig) HandleDial() {}
++
++func (c *LegacyConfig) WrapPacketConnClient(ctx context.Context, _ net.PacketConn, _ *finalmask.Destination, dialer *finalmask.Dialer) (net.PacketConn, error) {
++	return NewLegacyClient(ctx, c, dialer)
++}
++
++func (c *LegacyConfig) WrapPacketConnServer(net.PacketConn) (net.PacketConn, error) {
++	return nil, errors.New("xdns: the server of the first xdns (compact domains such as \"t.example.com:aaaa\") is not ported; write domains as {names: [...]} for the current xdns")
++}
++
++type legacyResolver struct {
++	Resolver
++	zone  string // lower case, no trailing dot
++	qtype uint16
++	sends atomic.Uint32
++}
++
++type legacyClient struct {
++	clientID  [8]byte
++	resolvers []*legacyResolver
++	zones     []string
++	index     int // next resolver, used by the send loop only
++
++	readCh  chan packet
++	writeCh chan []byte
++	pollCh  chan struct{}
++	closeCh chan struct{}
++	once    sync.Once
++}
++
++// NewLegacyClient opens the resolvers and starts the send and receive loops
++// of the first xdns client.
++func NewLegacyClient(ctx context.Context, c *LegacyConfig, dialer *finalmask.Dialer) (net.PacketConn, error) {
++	if len(c.Resolvers) == 0 {
++		return nil, errors.New("xdns: empty resolvers")
++	}
++	client := &legacyClient{
++		readCh:  make(chan packet, legacyQueueSize),
++		writeCh: make(chan []byte, legacyQueueSize),
++		pollCh:  make(chan struct{}, pollLimit),
++		closeCh: make(chan struct{}),
++	}
++	mustRead(client.clientID[:])
++	seen := map[string]bool{}
++	for _, entry := range c.Resolvers {
++		resolver, err := NewResolver(ctx, entry.Resolver, dialer)
++		if err != nil {
++			for _, r := range client.resolvers {
++				r.Close()
++			}
++			return nil, err
++		}
++		zone := strings.ToLower(strings.TrimSuffix(entry.Zone, "."))
++		client.resolvers = append(client.resolvers, &legacyResolver{Resolver: resolver, zone: zone, qtype: entry.Type})
++		if !seen[zone] {
++			seen[zone] = true
++			client.zones = append(client.zones, zone)
++		}
++	}
++	for _, r := range client.resolvers {
++		go client.recv(r)
++	}
++	go client.sendLoop()
++	return client, nil
++}
++
++func (c *legacyClient) closed() bool {
++	select {
++	case <-c.closeCh:
++		return true
++	default:
++		return false
++	}
++}
++
++// sendLoop sends the queued packets and, between them, polls: at once after
++// an answer carried data, else after a delay that doubles up to 10 s while
++// nothing comes, as the first client did.
++func (c *legacyClient) sendLoop() {
++	delay := initPollDelay
++	timer := time.NewTimer(delay)
++	defer timer.Stop()
++	for {
++		var p []byte
++		expired := false
++		select {
++		case p = <-c.writeCh:
++		default:
++			select {
++			case <-c.closeCh:
++				return
++			case p = <-c.writeCh:
++			case <-c.pollCh:
++			case <-timer.C:
++				expired = true
++			}
++		}
++		if p != nil {
++			select {
++			case <-c.pollCh:
++			default:
++			}
++		}
++		if expired {
++			delay = time.Duration(float64(delay) * pollDelayMultiplier)
++			if delay > maxPollDelay {
++				delay = maxPollDelay
++			}
++		} else {
++			if !timer.Stop() {
++				select {
++				case <-timer.C:
++				default:
++				}
++			}
++			delay = initPollDelay
++		}
++		timer.Reset(delay)
++		if c.closed() {
++			return
++		}
++		c.send(p)
++	}
++}
++
++// send writes one query to the next resolver: the one after the last,
++// skipping those that were sent more often without an answer since.
++func (c *legacyClient) send(p []byte) {
++	cur := c.index
++	r := c.resolvers[cur]
++	if query, err := legacyQuery(p, c.clientID, r.zone, r.qtype); err == nil {
++		sent := r.sends.Add(1)
++		r.Send(query)
++		for {
++			c.index = (c.index + 1) % len(c.resolvers)
++			if c.index == cur || c.resolvers[c.index].sends.Load() < sent {
++				break
++			}
++		}
++	}
++}
++
++func (c *legacyClient) recv(r *legacyResolver) {
++	buf := make([]byte, finalmask.UDPSize)
++	for {
++		n, err := r.Read(buf)
++		if err != nil {
++			return
++		}
++		packets := legacyAnswerPackets(buf[:n], c.zones)
++		if len(packets) == 0 {
++			continue
++		}
++		for _, p := range packets {
++			select {
++			case c.readCh <- packet{p: p, addr: r.Addr()}:
++			case <-c.closeCh:
++				return
++			default:
++			}
++		}
++		r.sends.Store(0)
++		select {
++		case c.pollCh <- struct{}{}:
++		default:
++		}
++	}
++}
++
++func (c *legacyClient) ReadFrom(p []byte) (int, net.Addr, error) {
++	select {
++	case pkt := <-c.readCh:
++		return copy(p, pkt.p), pkt.addr, nil
++	case <-c.closeCh:
++		return 0, nil, net.ErrClosed
++	}
++}
++
++func (c *legacyClient) WriteTo(p []byte, _ net.Addr) (int, error) {
++	if c.closed() {
++		return 0, io.ErrClosedPipe
++	}
++	if len(p) == 0 || len(p) >= legacyMaxPacket {
++		// The first client dropped these too; mKCP sizes its packets by
++		// its MTU, which a DNS tunnel keeps small.
++		return 0, fmt.Errorf("xdns: a %d-byte packet does not fit the first xdns framing (1 to %d bytes)", len(p), legacyMaxPacket-1)
++	}
++	select {
++	case c.writeCh <- append([]byte(nil), p...):
++	default: // queue full: dropped, as a congested socket would
++	}
++	return len(p), nil
++}
++
++func (c *legacyClient) Close() error {
++	c.once.Do(func() {
++		close(c.closeCh)
++		for _, r := range c.resolvers {
++			r.Close()
++		}
++	})
++	return nil
++}
++
++func (c *legacyClient) LocalAddr() net.Addr { return &net.UDPAddr{IP: net.IPv4zero} }
++
++func (c *legacyClient) SetDeadline(time.Time) error { return nil }
++
++func (c *legacyClient) SetReadDeadline(time.Time) error { return nil }
++
++func (c *legacyClient) SetWriteDeadline(time.Time) error { return nil }
++
++// legacyQuery builds the query of the first client for p, a poll when p is
++// empty.
++func legacyQuery(p []byte, clientID [8]byte, zone string, qtype uint16) ([]byte, error) {
++	if len(p) >= legacyMaxPacket {
++		return nil, errors.New("xdns: packet too long")
++	}
++	n := legacyPaddingData
++	if len(p) == 0 {
++		n = legacyPaddingPoll
++	}
++	raw := make([]byte, 0, 8+1+n+1+len(p))
++	raw = append(raw, clientID[:]...)
++	raw = append(raw, byte(legacyMaxPacket+n))
++	pad := make([]byte, n)
++	mustRead(pad)
++	raw = append(raw, pad...)
++	if len(p) > 0 {
++		raw = append(raw, byte(len(p)))
++		raw = append(raw, p...)
++	}
++	encoded := strings.ToLower(legacyBase32.EncodeToString(raw))
++	var name strings.Builder
++	for len(encoded) > 0 {
++		size := len(encoded)
++		if size > 63 {
++			size = 63
++		}
++		name.WriteString(encoded[:size])
++		name.WriteByte('.')
++		encoded = encoded[size:]
++	}
++	name.WriteString(zone)
++	name.WriteByte('.')
++	// The wire form is one byte longer than the dotted name.
++	if name.Len()+1 > 255 {
++		return nil, errors.New("xdns: query name too long")
++	}
++	qname, err := dnsmessage.NewName(name.String())
++	if err != nil {
++		return nil, err
++	}
++	var id [2]byte
++	mustRead(id[:])
++	msg := dnsmessage.Message{
++		Header: dnsmessage.Header{ID: binary.BigEndian.Uint16(id[:]), RecursionDesired: true},
++		Questions: []dnsmessage.Question{{
++			Name:  qname,
++			Type:  dnsmessage.Type(qtype),
++			Class: dnsmessage.ClassINET,
++		}},
++		Additionals: []dnsmessage.Resource{{
++			Header: dnsmessage.ResourceHeader{
++				Name:  dnsmessage.MustNewName("."),
++				Type:  dnsmessage.TypeOPT,
++				Class: dnsmessage.Class(legacyEDNS0),
++			},
++			Body: &dnsmessage.OPTResource{},
++		}},
++	}
++	return msg.Pack()
++}
++
++// legacyAnswerPackets reads the packets an answer of the first server
++// carries; nil when it is not one or carries none.
++func legacyAnswerPackets(b []byte, zones []string) [][]byte {
++	var parser dnsmessage.Parser
++	header, err := parser.Start(b)
++	if err != nil || !header.Response || header.RCode != dnsmessage.RCodeSuccess {
++		return nil
++	}
++	if err := parser.SkipAllQuestions(); err != nil {
++		return nil
++	}
++	answers, err := parser.AllAnswers()
++	if err != nil || len(answers) == 0 {
++		return nil
++	}
++	for _, answer := range answers {
++		if !inZones(answer.Header.Name.String(), zones) {
++			return nil
++		}
++	}
++	payload := legacyAnswerPayload(answers)
++	var packets [][]byte
++	for len(payload) >= 2 {
++		n := int(binary.BigEndian.Uint16(payload))
++		if len(payload) < 2+n {
++			break
++		}
++		packets = append(packets, append([]byte(nil), payload[2:2+n]...))
++		payload = payload[2+n:]
++	}
++	return packets
++}
++
++// legacyAnswerPayload joins the data of the answers: the strings of one TXT
++// record, or the chunks of A or AAAA records put in order by their index.
++func legacyAnswerPayload(answers []dnsmessage.Resource) []byte {
++	switch body := answers[0].Body.(type) {
++	case *dnsmessage.TXTResource:
++		if len(answers) != 1 {
++			return nil
++		}
++		var payload bytes.Buffer
++		for _, s := range body.TXT {
++			payload.WriteString(s)
++		}
++		return payload.Bytes()
++	case *dnsmessage.AResource, *dnsmessage.AAAAResource:
++	default:
++		return nil
++	}
++	if len(answers) > 256 {
++		return nil
++	}
++	parts := make([][]byte, len(answers))
++	for _, answer := range answers {
++		var data []byte
++		switch body := answer.Body.(type) {
++		case *dnsmessage.AResource:
++			data = body.A[:]
++		case *dnsmessage.AAAAResource:
++			data = body.AAAA[:]
++		}
++		if data == nil || answer.Header.Type != answers[0].Header.Type {
++			return nil
++		}
++		idx, n := int(data[0]), int(data[1])
++		if idx >= len(parts) || n > len(data)-legacyIPHeader || parts[idx] != nil {
++			return nil
++		}
++		parts[idx] = data[legacyIPHeader : legacyIPHeader+n]
++	}
++	var payload bytes.Buffer
++	for _, part := range parts {
++		if part == nil {
++			return nil
++		}
++		payload.Write(part)
++	}
++	return payload.Bytes()
++}
++
++// inZones reports whether name ("a.b.t.example.com.") lies in one of the
++// zones, comparing labels without case.
++func inZones(name string, zones []string) bool {
++	name = strings.ToLower(strings.TrimSuffix(name, "."))
++	for _, zone := range zones {
++		if name == zone || strings.HasSuffix(name, "."+zone) {
++			return true
++		}
++	}
++	return false
++}

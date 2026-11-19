@@ -1,3 +1,33 @@
+## Sloth Clash desktop `0.11.0` — 2026-11-19
+
+> ℹ️ **You may be asked once to reinstall the helper service** after this update: the core changed. On Windows the installer handles it; on macOS and Linux click the banner and accept the prompt.
+
+### English
+
+**🎭 Xray finalmask on VLESS and Trojan**
+- New `finalmask` block on `vless` and `trojan` proxies: Xray's chain of masks between the socket and TLS / REALITY, written as in Xray (first entry outermost, `settings` nesting optional). TCP masks: `header-custom`, `fragment`, `sudoku`, `xmc`. UDP masks (`noise`, `header-custom`, `sudoku`, `udphop`, `xdns`) apply to VLESS over XHTTP with `alpn: [h3]` only. Xray's camelCase keys (`maxSplit`, `randRange`) are understood, so a block copied from Xray JSON or a panel works as is; `xdns` also accepts the older compact `<domain>+udp://<server>` spelling.
+- Every mask dials through the proxy's own dialer, so `interface-name`, `routing-mark`, `auto-detect-interface` and `dialer-proxy` apply to it.
+- A block the core cannot use does not fail the subscription: the node loads, the core log says `unusable finalmask, the proxy will not connect`, and the node refuses every connection instead of going out without its masks. That covers bad options, unknown masks, UDP masks on another network, any mask on `network: xdrive`, and `xicmp`.
+- `xicmp` is not supported: its ICMP sockets do not go through the proxy's dialer, so with TUN they would loop back into the app's own tunnel.
+- Remnawave does not put `finalmask` into its mihomo output by itself. Panel operators add it with a Host Mapper operation on the host: `{"mihomo": [{"op": "copy", "from": "$host.streamOverrides.finalMask", "to": "finalmask"}]}`. Sloth Clash's subscription User-Agent matches Remnawave's default "Mihomo Clients" rule, so the block arrives unless the rules were changed.
+- Known limit: a pasted `vless://` link keeps only the `fragment` part of Xray's `fm` parameter; other masks from a link are dropped. Subscriptions in mihomo format carry the full block.
+
+**🦊 Firefox 156 / 160 fingerprint**
+- New `client-fingerprint` names `firefox156` and `firefox160` (and Xray's `hellofirefox_156`, `hellofirefox_160`): the current Firefox hello, checked against real browser captures. `firefox` itself stays Firefox 148, as in stock mihomo. If the new hello cannot be applied to a connection, the core falls back to Firefox 148 and logs it.
+
+### Русский
+
+**🎭 Xray finalmask на VLESS и Trojan**
+- Новый блок `finalmask` у прокси `vless` и `trojan`: цепочка масок Xray между сокетом и TLS / REALITY, записывается как в Xray (первая запись внешняя, вложенность `settings` необязательна). TCP-маски: `header-custom`, `fragment`, `sudoku`, `xmc`. UDP-маски (`noise`, `header-custom`, `sudoku`, `udphop`, `xdns`) работают только для VLESS поверх XHTTP с `alpn: [h3]`. Ключи Xray в camelCase (`maxSplit`, `randRange`) понимаются, так что блок, скопированный из JSON Xray или из панели, работает как есть; `xdns` принимает и старую компактную запись `<domain>+udp://<server>`.
+- Каждая маска подключается через dialer самого прокси, поэтому на неё действуют `interface-name`, `routing-mark`, `auto-detect-interface` и `dialer-proxy`.
+- Блок, который ядро не может использовать, не ломает подписку: узел загружается, в логе ядра пишется `unusable finalmask, the proxy will not connect`, и узел отказывает во всех соединениях, а не уходит в сеть без масок. Это неверные параметры, неизвестные маски, UDP-маски на другом транспорте, любые маски на `network: xdrive` и `xicmp`.
+- `xicmp` не поддерживается: его ICMP-сокеты идут мимо dialer прокси, и с TUN они заворачивались бы обратно в туннель самого приложения.
+- Remnawave сам не добавляет `finalmask` в выдачу для mihomo. Операторы панели добавляют его операцией Host Mapper на хосте: `{"mihomo": [{"op": "copy", "from": "$host.streamOverrides.finalMask", "to": "finalmask"}]}`. User-Agent подписки Sloth Clash попадает в стандартное правило Remnawave «Mihomo Clients», так что блок приходит, если правила не меняли.
+- Известное ограничение: из вставленной ссылки `vless://` берётся только часть `fragment` параметра Xray `fm`; остальные маски из ссылки отбрасываются. Подписки в формате mihomo передают блок целиком.
+
+**🦊 Отпечаток Firefox 156 / 160**
+- Новые имена `client-fingerprint` `firefox156` и `firefox160` (и имена Xray `hellofirefox_156`, `hellofirefox_160`): актуальный hello Firefox, сверенный с реальными записями браузера. Сам `firefox` остаётся Firefox 148, как в стоковом mihomo. Если новый hello нельзя применить к соединению, ядро откатывается на Firefox 148 и пишет об этом в лог.
+
 ## Sloth Clash desktop `0.10.1` — 2026-11-14
 
 > ℹ️ **You may be asked once to reinstall the helper service** after this update: the core changed. On Windows the installer handles it; on macOS and Linux click the banner and accept the prompt.
